@@ -48,39 +48,11 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ env.VITE_FIREBASE_APP_ID }}
           VITE_GITHUB_TOKEN: ${{ env.VITE_GITHUB_TOKEN }}
 
-      - name: Generate firebase.json
-        run: |
-          cat > firebase.json << 'EOF'
-          {
-            "hosting": {
-              "site": "sozu-dashboard-dev",
-              "public": "dist",
-              "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-              "rewrites": [{ "source": "**", "destination": "/index.html" }],
-              "headers": [
-                {
-                  "source": "/index.html",
-                  "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }]
-                },
-                {
-                  "source": "/**/*.@(js|css|woff|woff2)",
-                  "headers": [{ "key": "Cache-Control", "value": "max-age=31536000, immutable" }]
-                }
-              ]
-            },
-            "firestore": {
-              "rules": "firestore.rules"
-            }
-          }
-          EOF
-
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
       - name: Deploy Firestore Rules
         run: firebase deploy --only firestore:rules --project sozu-admin-dev
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ env.GOOGLE_APPLICATION_CREDENTIALS }}
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
