@@ -14,11 +14,20 @@ export function useAuth() {
     const unsub = onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
       if (!user) { setStatus("unauthenticated"); setAppUser(null); return; }
-      await seedSuperuser();
-      const profile = await getUserByEmail(user.email!);
-      if (!profile) { setStatus("unauthorized"); setAppUser(null); return; }
-      setAppUser(profile);
-      setStatus("authorized");
+      try {
+        await seedSuperuser();
+      } catch {
+        // El documento ya existe o no tiene permisos de creación — continuar
+      }
+      try {
+        const profile = await getUserByEmail(user.email!);
+        if (!profile) { setStatus("unauthorized"); setAppUser(null); return; }
+        setAppUser(profile);
+        setStatus("authorized");
+      } catch {
+        setStatus("unauthorized");
+        setAppUser(null);
+      }
     });
     return unsub;
   }, []);

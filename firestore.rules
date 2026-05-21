@@ -3,12 +3,23 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{email} {
+      // Self-read
       allow read: if request.auth != null && request.auth.token.email == email;
+
+      // Superusers pueden leer todos los documentos
+      allow read: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'superuser';
+
+      // Superusers pueden escribir sobre otros usuarios (no pueden tocar al superusuario raíz)
       allow write: if request.auth != null
         && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'superuser'
         && email != 'jorge.mendoza@sozu.com';
-      allow read: if request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'superuser';
+
+      // Bootstrap: jorge.mendoza@sozu.com puede crear su propio documento si no existe
+      allow create: if request.auth != null
+        && request.auth.token.email == 'jorge.mendoza@sozu.com'
+        && email == 'jorge.mendoza@sozu.com'
+        && request.resource.data.role == 'superuser';
     }
   }
 }
