@@ -22,32 +22,37 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_GCP_DEV }}
 
-      - name: Get secrets from GCP Secret Manager
-        id: secrets
-        uses: google-github-actions/get-secretmanager-secrets@v2
-        with:
-          secrets: |
-            VITE_FIREBASE_API_KEY:sozu-admin-dev/DASHBOARD_FIREBASE_API_KEY
-            VITE_FIREBASE_AUTH_DOMAIN:sozu-admin-dev/DASHBOARD_FIREBASE_AUTH_DOMAIN
-            VITE_FIREBASE_PROJECT_ID:sozu-admin-dev/DASHBOARD_FIREBASE_PROJECT_ID
-            VITE_FIREBASE_STORAGE_BUCKET:sozu-admin-dev/DASHBOARD_FIREBASE_STORAGE_BUCKET
-            VITE_FIREBASE_MESSAGING_SENDER_ID:sozu-admin-dev/DASHBOARD_FIREBASE_MESSAGING_SENDER_ID
-            VITE_FIREBASE_APP_ID:sozu-admin-dev/DASHBOARD_FIREBASE_APP_ID
-            VITE_GITHUB_TOKEN:sozu-admin-dev/DASHBOARD_GITHUB_TOKEN
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get secrets from Secret Manager
+        run: |
+          VITE_FIREBASE_API_KEY=$(gcloud secrets versions access latest --secret=DASHBOARD_FIREBASE_API_KEY --project=sozu-admin-dev)
+          echo "VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY" >> $GITHUB_ENV
+
+          VITE_FIREBASE_AUTH_DOMAIN=$(gcloud secrets versions access latest --secret=DASHBOARD_FIREBASE_AUTH_DOMAIN --project=sozu-admin-dev)
+          echo "VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN" >> $GITHUB_ENV
+
+          VITE_FIREBASE_PROJECT_ID=$(gcloud secrets versions access latest --secret=DASHBOARD_FIREBASE_PROJECT_ID --project=sozu-admin-dev)
+          echo "VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID" >> $GITHUB_ENV
+
+          VITE_FIREBASE_STORAGE_BUCKET=$(gcloud secrets versions access latest --secret=DASHBOARD_FIREBASE_STORAGE_BUCKET --project=sozu-admin-dev)
+          echo "VITE_FIREBASE_STORAGE_BUCKET=$VITE_FIREBASE_STORAGE_BUCKET" >> $GITHUB_ENV
+
+          VITE_FIREBASE_MESSAGING_SENDER_ID=$(gcloud secrets versions access latest --secret=DASHBOARD_FIREBASE_MESSAGING_SENDER_ID --project=sozu-admin-dev)
+          echo "VITE_FIREBASE_MESSAGING_SENDER_ID=$VITE_FIREBASE_MESSAGING_SENDER_ID" >> $GITHUB_ENV
+
+          VITE_FIREBASE_APP_ID=$(gcloud secrets versions access latest --secret=DASHBOARD_FIREBASE_APP_ID --project=sozu-admin-dev)
+          echo "VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID" >> $GITHUB_ENV
+
+          VITE_GITHUB_TOKEN=$(gcloud secrets versions access latest --secret=DASHBOARD_GITHUB_TOKEN --project=sozu-admin-dev)
+          echo "VITE_GITHUB_TOKEN=$VITE_GITHUB_TOKEN" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: npm ci
 
       - name: Build
         run: npm run build
-        env:
-          VITE_FIREBASE_API_KEY: ${{ steps.secrets.outputs.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ steps.secrets.outputs.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ steps.secrets.outputs.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ steps.secrets.outputs.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ steps.secrets.outputs.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID: ${{ steps.secrets.outputs.VITE_FIREBASE_APP_ID }}
-          VITE_GITHUB_TOKEN: ${{ steps.secrets.outputs.VITE_GITHUB_TOKEN }}
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
