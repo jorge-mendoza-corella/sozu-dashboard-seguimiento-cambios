@@ -55,5 +55,4 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_GCP_DEV }}
           projectId: sozu-admin-dev
           target: sozu-dashboard-dev
-        env:
-          FIREBASE_CLI_PREVIEWS: hostingchannels
+          channelId: live
