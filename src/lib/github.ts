@@ -38,6 +38,7 @@ export interface WorkflowRun {
   conclusion: string | null;
   createdAt: string;
   url: string;
+  headBranch: string | null;
 }
 
 export interface RepoStatus {
@@ -64,7 +65,7 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
     const [branchesResp, prsResp, runsResp] = await Promise.all([
       octokit.repos.listBranches({ owner, repo, per_page: 20 }),
       octokit.pulls.list({ owner, repo, state: "open", per_page: 20 }),
-      octokit.actions.listWorkflowRunsForRepo({ owner, repo, per_page: 10 }),
+      octokit.actions.listWorkflowRunsForRepo({ owner, repo, per_page: 20 }),
     ]);
 
     // Ordenar antes de slicear: main y dev primero, así nunca quedan fuera por paginación
@@ -106,13 +107,17 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
       checksState: "unknown" as const,
     }));
 
-    const latestRuns: WorkflowRun[] = runsResp.data.workflow_runs.slice(0, 3).map((r) => ({
-      name: r.name ?? "Workflow",
-      status: r.status ?? "unknown",
-      conclusion: r.conclusion ?? null,
-      createdAt: r.created_at,
-      url: r.html_url,
-    }));
+    const latestRuns: WorkflowRun[] = runsResp.data.workflow_runs
+      .filter((r) => (r.name ?? "").toLowerCase().includes("deploy"))
+      .slice(0, 3)
+      .map((r) => ({
+        name: r.name ?? "Workflow",
+        status: r.status ?? "unknown",
+        conclusion: r.conclusion ?? null,
+        createdAt: r.created_at,
+        url: r.html_url,
+        headBranch: r.head_branch ?? null,
+      }));
 
     return { owner, repo, label, branches, openPRs, latestRuns };
   } catch (err: unknown) {

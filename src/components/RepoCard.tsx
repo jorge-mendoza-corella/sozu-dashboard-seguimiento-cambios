@@ -80,12 +80,21 @@ export function RepoCard({ status }: Props) {
 
   const StateIcon = stateConfig.icon;
 
+  const accentColor = {
+    ok:      "from-emerald-500 to-emerald-400",
+    pending: "from-amber-500 to-amber-400",
+    failing: "from-red-500 to-red-400",
+    error:   "from-slate-400 to-slate-300",
+  }[state];
+
   return (
     <Card className={cn(
-      "flex flex-col h-full transition-all",
+      "flex flex-col h-full transition-all overflow-hidden",
       hasPRs && "ring-2 ring-amber-400 ring-offset-2",
       isCIRunning && !hasPRs && "ring-2 ring-blue-400 ring-offset-2",
     )}>
+      {/* Acento de color superior */}
+      <div className={cn("h-1 w-full bg-gradient-to-r", isCIRunning ? "from-blue-500 to-blue-400" : accentColor)} />
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
