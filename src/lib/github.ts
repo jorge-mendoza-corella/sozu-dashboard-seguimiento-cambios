@@ -98,7 +98,7 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
       checksState: "unknown" as const,
     }));
 
-    const latestRuns: WorkflowRun[] = runsResp.data.workflow_runs.slice(0, 5).map((r) => ({
+    const latestRuns: WorkflowRun[] = runsResp.data.workflow_runs.slice(0, 3).map((r) => ({
       name: r.name ?? "Workflow",
       status: r.status ?? "unknown",
       conclusion: r.conclusion ?? null,

@@ -1,12 +1,23 @@
-import { AlertCircle, CheckCircle2, RefreshCw, GitBranch, GitPullRequest, Zap } from "lucide-react";
+import { useState } from "react";
+import {
+  AlertCircle, CheckCircle2, RefreshCw,
+  GitBranch, GitPullRequest, Zap,
+  EyeOff, ChevronDown, ChevronUp,
+} from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BranchRow } from "./BranchRow";
 import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
-import type { RepoStatus } from "@/lib/github";
+import type { BranchInfo, RepoStatus } from "@/lib/github";
 
-interface Props { status: RepoStatus }
+function sortBranches(branches: BranchInfo[]): BranchInfo[] {
+  return [
+    ...branches.filter((b) => b.name === "main"),
+    ...branches.filter((b) => b.name === "dev"),
+    ...branches.filter((b) => b.name !== "main" && b.name !== "dev"),
+  ];
+}
 
 function getOverallState(status: RepoStatus): "ok" | "pending" | "failing" | "error" {
   if (status.error) return "error";
@@ -17,13 +28,45 @@ function getOverallState(status: RepoStatus): "ok" | "pending" | "failing" | "er
   return "ok";
 }
 
+interface Props { status: RepoStatus }
+
 export function RepoCard({ status }: Props) {
+  const [hiddenBranches, setHiddenBranches] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(`hidden-branches-${status.repo}`);
+      return stored ? new Set<string>(JSON.parse(stored)) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
+  const [showHidden, setShowHidden] = useState(false);
+
+  const hideBranch = (name: string) => {
+    setHiddenBranches((prev) => {
+      const next = new Set(prev);
+      next.add(name);
+      localStorage.setItem(`hidden-branches-${status.repo}`, JSON.stringify([...next]));
+      return next;
+    });
+  };
+
+  const unhideBranch = (name: string) => {
+    setHiddenBranches((prev) => {
+      const next = new Set(prev);
+      next.delete(name);
+      localStorage.setItem(`hidden-branches-${status.repo}`, JSON.stringify([...next]));
+      return next;
+    });
+  };
+
+  const sorted = sortBranches(status.branches);
+  const visibleBranches = sorted.filter((b) => !hiddenBranches.has(b.name));
+  const hiddenList = sorted.filter((b) => hiddenBranches.has(b.name));
+
   const state = getOverallState(status);
   const stateConfig = {
-    ok: { icon: CheckCircle2, color: "text-green-600", label: "Todo en orden", badge: "success" as const },
-    pending: { icon: GitPullRequest, color: "text-amber-600", label: "Cambios pendientes", badge: "warning" as const },
-    failing: { icon: AlertCircle, color: "text-red-600", label: "CI fallando", badge: "destructive" as const },
-    error: { icon: AlertCircle, color: "text-muted-foreground", label: "Error al cargar", badge: "outline" as const },
+    ok:      { icon: CheckCircle2,  color: "text-green-600",         label: "Todo en orden",      badge: "success"     as const },
+    pending: { icon: GitPullRequest, color: "text-amber-600",        label: "Cambios pendientes",  badge: "warning"     as const },
+    failing: { icon: AlertCircle,   color: "text-red-600",           label: "CI fallando",         badge: "destructive" as const },
+    error:   { icon: AlertCircle,   color: "text-muted-foreground",  label: "Error al cargar",     badge: "outline"     as const },
   }[state];
 
   const StateIcon = stateConfig.icon;
@@ -42,17 +85,40 @@ export function RepoCard({ status }: Props) {
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4 flex-1">
-        {/* Branches */}
+        {/* Ramas */}
         <div>
           <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-            <GitBranch className="h-3.5 w-3.5" /> Ramas ({status.branches.length})
+            <GitBranch className="h-3.5 w-3.5" />
+            Ramas ({visibleBranches.length}{hiddenList.length > 0 ? `+${hiddenList.length}` : ""})
           </h4>
           <div className="space-y-0">
-            {status.branches.slice(0, 8).map((b) => <BranchRow key={b.name} branch={b} />)}
+            {visibleBranches.map((b) => (
+              <BranchRow key={b.name} branch={b} onHide={() => hideBranch(b.name)} />
+            ))}
           </div>
+
+          {hiddenList.length > 0 && (
+            <button
+              onClick={() => setShowHidden((v) => !v)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-2 px-1 transition-colors"
+            >
+              <EyeOff className="h-3 w-3" />
+              {hiddenList.length} {hiddenList.length === 1 ? "rama oculta" : "ramas ocultas"}
+              {showHidden
+                ? <ChevronUp className="h-3 w-3 ml-0.5" />
+                : <ChevronDown className="h-3 w-3 ml-0.5" />}
+            </button>
+          )}
+          {showHidden && hiddenList.length > 0 && (
+            <div className="mt-1">
+              {hiddenList.map((b) => (
+                <BranchRow key={b.name} branch={b} onUnhide={() => unhideBranch(b.name)} />
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Open PRs */}
+        {/* PRs abiertos */}
         <div>
           <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             <GitPullRequest className="h-3.5 w-3.5" /> PRs abiertos ({status.openPRs.length})
@@ -60,7 +126,7 @@ export function RepoCard({ status }: Props) {
           <PRList prs={status.openPRs} />
         </div>
 
-        {/* Latest Workflow Runs */}
+        {/* Últimos 3 workflows */}
         <div>
           <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             <Zap className="h-3.5 w-3.5" /> Últimos workflows
@@ -87,7 +153,7 @@ export function RepoCardSkeleton() {
       </CardHeader>
       <CardContent>
         <div className="space-y-2">
-          {[1,2,3].map((i) => <div key={i} className="h-4 bg-muted rounded animate-pulse" />)}
+          {[1, 2, 3].map((i) => <div key={i} className="h-4 bg-muted rounded animate-pulse" />)}
         </div>
       </CardContent>
     </Card>
