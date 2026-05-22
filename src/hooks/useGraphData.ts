@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 const GRAPH_URL =
-  "https://raw.githubusercontent.com/jorge-mendoza-corella/sozu-docs/main/graphify-out/graph.json";
+  "https://api.github.com/repos/jorge-mendoza-corella/sozu-docs/contents/graphify-out/graph.json";
 
 export interface GraphNode {
   id: string;
@@ -31,7 +31,10 @@ export function useGraphData() {
     queryFn: async () => {
       const token = import.meta.env.VITE_GITHUB_TOKEN;
       const res = await fetch(GRAPH_URL, {
-        headers: token ? { Authorization: `token ${token}` } : {},
+        headers: {
+          Accept: "application/vnd.github.v3.raw",
+          ...(token ? { Authorization: `token ${token}` } : {}),
+        },
       });
       if (!res.ok) throw new Error("No se pudo cargar graph.json");
       const raw = await res.json();
