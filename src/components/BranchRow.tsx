@@ -1,27 +1,28 @@
-import { GitBranch, ArrowUpCircle, EyeOff, Eye } from "lucide-react";
+import { GitBranch, ArrowUpCircle, EyeOff, Eye, GitPullRequest } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { BranchInfo } from "@/lib/github";
 
 interface Props {
   branch: BranchInfo;
+  hasPR?: boolean;
   onHide?: () => void;
   onUnhide?: () => void;
 }
 
-export function BranchRow({ branch, onHide, onUnhide }: Props) {
+export function BranchRow({ branch, hasPR, onHide, onUnhide }: Props) {
   const isMain = branch.name === "main";
   const isDev = branch.name === "dev";
-  const hasPendingToDev = !isDev && !isMain && branch.aheadOfDev > 0;
-  const hasPendingToMain = !isMain && branch.aheadOfMain > 0;
-  const hasPending = hasPendingToDev || hasPendingToMain;
   const isHidden = !!onUnhide;
+
+  const aheadOfDev = !isDev && !isMain ? branch.aheadOfDev : 0;
+  const aheadOfMain = !isMain ? branch.aheadOfMain : 0;
 
   return (
     <div
       className={cn(
         "group flex items-center gap-2 py-1.5 border-b last:border-0 rounded-sm px-1 -mx-1 transition-colors",
-        hasPending && !isHidden && "bg-amber-50 dark:bg-amber-950/20",
+        hasPR && !isHidden && "bg-amber-50 dark:bg-amber-950/20",
         isHidden && "opacity-50",
       )}
     >
@@ -36,23 +37,33 @@ export function BranchRow({ branch, onHide, onUnhide }: Props) {
         {branch.name}
       </span>
       <span className="text-xs font-mono text-muted-foreground">{branch.lastCommitSha}</span>
+
+      {/* Etiquetas de identidad */}
       {isMain && <Badge variant="success" className="text-[10px]">PRD</Badge>}
       {isDev && <Badge variant="info" className="text-[10px]">DEV</Badge>}
-      {hasPendingToDev && (
+
+      {/* PR abierto en esta rama */}
+      {hasPR && (
         <Badge variant="warning" className="flex items-center gap-0.5 text-[10px]">
-          <ArrowUpCircle className="h-2.5 w-2.5" />
-          {branch.aheadOfDev}→dev
+          <GitPullRequest className="h-2.5 w-2.5" />
+          PR
         </Badge>
       )}
-      {hasPendingToMain && (
-        <Badge
-          variant={isDev ? "warning" : "outline"}
-          className="flex items-center gap-0.5 text-[10px]"
-        >
+
+      {/* Commits por delante — informacional, color neutro */}
+      {aheadOfDev > 0 && (
+        <Badge variant="outline" className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
           <ArrowUpCircle className="h-2.5 w-2.5" />
-          {branch.aheadOfMain}→main
+          {aheadOfDev} vs dev
         </Badge>
       )}
+      {aheadOfMain > 0 && (
+        <Badge variant="outline" className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+          <ArrowUpCircle className="h-2.5 w-2.5" />
+          {aheadOfMain} vs main
+        </Badge>
+      )}
+
       {onHide && (
         <button
           onClick={onHide}

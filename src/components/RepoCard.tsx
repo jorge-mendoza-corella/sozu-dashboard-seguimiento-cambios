@@ -1,11 +1,12 @@
 import { useState } from "react";
 import {
-  AlertCircle, CheckCircle2, RefreshCw,
+  AlertCircle, CheckCircle2, RefreshCw, Loader2,
   GitBranch, GitPullRequest, Zap,
   EyeOff, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { BranchRow } from "./BranchRow";
 import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
@@ -23,8 +24,8 @@ function getOverallState(status: RepoStatus): "ok" | "pending" | "failing" | "er
   if (status.error) return "error";
   const failing = status.latestRuns.some((r) => r.conclusion === "failure");
   if (failing) return "failing";
-  const pending = status.openPRs.length > 0 || status.branches.some((b) => b.aheadOfMain > 0);
-  if (pending) return "pending";
+  // "Cambios pendientes" = hay PRs abiertos
+  if (status.openPRs.length > 0) return "pending";
   return "ok";
 }
 
@@ -61,7 +62,15 @@ export function RepoCard({ status }: Props) {
   const visibleBranches = sorted.filter((b) => !hiddenBranches.has(b.name));
   const hiddenList = sorted.filter((b) => hiddenBranches.has(b.name));
 
+  // Ramas que tienen al menos un PR abierto
+  const branchesWithPR = new Set(status.openPRs.map((pr) => pr.head));
+
   const state = getOverallState(status);
+  const hasPRs = status.openPRs.length > 0;
+  const isCIRunning = status.latestRuns.some(
+    (r) => r.status === "in_progress" || r.status === "queued"
+  );
+
   const stateConfig = {
     ok:      { icon: CheckCircle2,  color: "text-green-600",         label: "Todo en orden",      badge: "success"     as const },
     pending: { icon: GitPullRequest, color: "text-amber-600",        label: "Cambios pendientes",  badge: "warning"     as const },
@@ -72,14 +81,25 @@ export function RepoCard({ status }: Props) {
   const StateIcon = stateConfig.icon;
 
   return (
-    <Card className="flex flex-col h-full">
+    <Card className={cn(
+      "flex flex-col h-full transition-all",
+      hasPRs && "ring-2 ring-amber-400 ring-offset-2",
+      isCIRunning && !hasPRs && "ring-2 ring-blue-400 ring-offset-2",
+    )}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <StateIcon className={`h-5 w-5 shrink-0 ${stateConfig.color}`} />
+            {isCIRunning
+              ? <Loader2 className="h-5 w-5 shrink-0 text-blue-500 animate-spin" />
+              : <StateIcon className={`h-5 w-5 shrink-0 ${stateConfig.color}`} />}
             <CardTitle className="text-base truncate">{status.label}</CardTitle>
           </div>
-          <Badge variant={stateConfig.badge} className="shrink-0 text-[10px]">{stateConfig.label}</Badge>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {isCIRunning && (
+              <Badge variant="info" className="text-[10px]">CI corriendo</Badge>
+            )}
+            <Badge variant={stateConfig.badge} className="text-[10px]">{stateConfig.label}</Badge>
+          </div>
         </div>
         {status.error && <p className="text-xs text-destructive mt-1">{status.error}</p>}
       </CardHeader>
@@ -93,7 +113,12 @@ export function RepoCard({ status }: Props) {
           </h4>
           <div className="space-y-0">
             {visibleBranches.map((b) => (
-              <BranchRow key={b.name} branch={b} onHide={() => hideBranch(b.name)} />
+              <BranchRow
+                key={b.name}
+                branch={b}
+                hasPR={branchesWithPR.has(b.name)}
+                onHide={() => hideBranch(b.name)}
+              />
             ))}
           </div>
 

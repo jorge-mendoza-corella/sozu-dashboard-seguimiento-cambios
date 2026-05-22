@@ -67,8 +67,16 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
       octokit.actions.listWorkflowRunsForRepo({ owner, repo, per_page: 10 }),
     ]);
 
+    // Ordenar antes de slicear: main y dev primero, así nunca quedan fuera por paginación
+    const rawBranches = branchesResp.data;
+    const sortedRaw = [
+      ...rawBranches.filter((b) => b.name === "main"),
+      ...rawBranches.filter((b) => b.name === "dev"),
+      ...rawBranches.filter((b) => b.name !== "main" && b.name !== "dev"),
+    ];
+
     const branches: BranchInfo[] = await Promise.all(
-      branchesResp.data.slice(0, 10).map(async (b) => {
+      sortedRaw.slice(0, 10).map(async (b) => {
         const [aheadMain, aheadDev] = await Promise.all([
           b.name !== "main" ? getAheadBy(owner, repo, "main", b.name) : Promise.resolve(0),
           b.name !== "dev" && b.name !== "main" ? getAheadBy(owner, repo, "dev", b.name) : Promise.resolve(0),
