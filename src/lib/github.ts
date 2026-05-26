@@ -195,10 +195,14 @@ export async function mergeWithBypass(
     await reviewerOctokit.pulls.createReview({
       owner, repo, pull_number: pullNumber, event: "APPROVE", body: "",
     });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "";
-    // Si falla por ser PR propio del reviewer, el token principal aprueba
-    if (msg.toLowerCase().includes("own pull request") || msg.toLowerCase().includes("approve your own")) {
+  } catch (e: unknown) {
+    // Octokit pone el mensaje real de GitHub en e.response.data.message, no en e.message
+    const apiMsg: string = (
+      (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? ""
+    ).toLowerCase();
+    const isOwnPR = apiMsg.includes("own pull request") || apiMsg.includes("approve your own");
+    if (isOwnPR) {
+      // PR creado por el reviewer — usar el token principal para aprobar
       await octokit.pulls.createReview({
         owner, repo, pull_number: pullNumber, event: "APPROVE", body: "",
       });
