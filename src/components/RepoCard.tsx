@@ -133,7 +133,7 @@ export function RepoCard({ status, onRefetch }: Props) {
 
   return (
     <Card className={cn(
-      "flex flex-col h-full transition-all overflow-hidden",
+      "flex flex-col h-full transition-all",
       isDeployingToMain && "ring-4 ring-emerald-500 ring-offset-2 shadow-xl shadow-emerald-500/25",
       isDeployingToDev && !isDeployingToMain && "ring-2 ring-blue-400 ring-offset-2",
       !isDeployingToMain && !isDeployingToDev && hasPRs && "ring-2 ring-amber-400 ring-offset-2",

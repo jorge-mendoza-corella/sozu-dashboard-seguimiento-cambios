@@ -23,7 +23,6 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
   const [openPanel, setOpenPanel] = useState<{ prNumber: number; mode: PanelMode } | null>(null);
   const [activeEvent, setActiveEvent] = useState<ReviewEvent | null>(null);
   const [comment, setComment] = useState("");
-  const [mergeMethod, setMergeMethod] = useState<"merge" | "squash" | "rebase">("squash");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ prNumber: number; ok: boolean; msg: string } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -81,7 +80,7 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
   const handleMerge = async (pr: PullRequest) => {
     setLoading(true);
     try {
-      await mergePR(owner, repo, pr.number, mergeMethod);
+      await mergePR(owner, repo, pr.number, "merge");
       setResult({ prNumber: pr.number, ok: true, msg: `Merge completado · ${pr.head} → ${pr.base}` });
       setTimeout(() => { closePanel(); onRefetch?.(); }, 2000);
     } catch (e) {
@@ -333,9 +332,9 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
             {isMergeOpen && (
               <div
                 ref={panelRef}
-                className="absolute right-0 top-full mt-1 z-50 w-72 rounded-lg border bg-background shadow-xl p-3"
+                className="absolute right-0 top-full mt-1 z-50 w-60 rounded-lg border bg-background shadow-xl p-3"
               >
-                <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center gap-2 mb-2">
                   <MergeIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
                   <span className="text-xs font-semibold">Confirmar merge · PR #{pr.number}</span>
                 </div>
@@ -348,49 +347,31 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
 
                 {result?.prNumber === pr.number ? (
                   <div className={cn(
-                    "flex items-center gap-2 p-2 rounded text-sm font-medium",
+                    "flex items-center gap-2 p-2 rounded text-xs font-medium",
                     result.ok ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300"
                               : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300",
                   )}>
-                    {result.ok ? <CheckCircle className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
+                    {result.ok ? <CheckCircle className="h-3.5 w-3.5 shrink-0" /> : <XCircle className="h-3.5 w-3.5 shrink-0" />}
                     {result.msg}
                   </div>
                 ) : (
-                  <>
-                    <div className="flex gap-1 mb-3">
-                      {(["squash", "merge", "rebase"] as const).map((m) => (
-                        <button
-                          key={m}
-                          onClick={() => setMergeMethod(m)}
-                          className={cn(
-                            "flex-1 text-[10px] py-1 rounded border font-medium transition-colors capitalize",
-                            mergeMethod === m
-                              ? "bg-violet-100 text-violet-700 border-violet-300 dark:bg-violet-900/50 dark:text-violet-200 dark:border-violet-600"
-                              : "bg-muted/40 text-muted-foreground border-border hover:bg-muted",
-                          )}
-                        >
-                          {m}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleMerge(pr)}
-                        disabled={loading}
-                        className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors"
-                      >
-                        {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <MergeIcon className="h-3 w-3" />}
-                        Hacer merge
-                      </button>
-                      <button
-                        onClick={closePanel}
-                        disabled={loading}
-                        className="px-3 text-xs text-muted-foreground hover:text-foreground py-1.5 rounded hover:bg-muted transition-colors"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleMerge(pr)}
+                      disabled={loading}
+                      className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors"
+                    >
+                      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <MergeIcon className="h-3 w-3" />}
+                      Hacer merge
+                    </button>
+                    <button
+                      onClick={closePanel}
+                      disabled={loading}
+                      className="px-3 text-xs text-muted-foreground hover:text-foreground py-1.5 rounded hover:bg-muted transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
                 )}
               </div>
             )}
