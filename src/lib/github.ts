@@ -178,8 +178,8 @@ export async function mergePR(
   });
 }
 
-// Para ramas no-producción: aprueba con el reviewer token y luego hace merge.
-// Esto bypasea la regla de "at least 1 approving review" sin tocar main.
+// Para ramas no-producción: aprueba y luego hace merge (bypass de branch protection).
+// Intenta aprobar con reviewer token; si el PR es de esa misma cuenta, usa el token principal.
 export async function mergeWithBypass(
   owner: string,
   repo: string,
@@ -188,18 +188,25 @@ export async function mergeWithBypass(
   if (!reviewerOctokit) {
     throw new Error("Token de revisor no configurado. Agrega VITE_GITHUB_REVIEWER_TOKEN al .env");
   }
-  await reviewerOctokit.pulls.createReview({
-    owner,
-    repo,
-    pull_number: pullNumber,
-    event: "APPROVE",
-    body: "",
-  });
+
+  try {
+    await reviewerOctokit.pulls.createReview({
+      owner, repo, pull_number: pullNumber, event: "APPROVE", body: "",
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    // Si falla por ser PR propio del reviewer, el token principal aprueba
+    if (msg.toLowerCase().includes("own pull request") || msg.toLowerCase().includes("approve your own")) {
+      await octokit.pulls.createReview({
+        owner, repo, pull_number: pullNumber, event: "APPROVE", body: "",
+      });
+    } else {
+      throw e;
+    }
+  }
+
   await octokit.pulls.merge({
-    owner,
-    repo,
-    pull_number: pullNumber,
-    merge_method: "merge",
+    owner, repo, pull_number: pullNumber, merge_method: "merge",
   });
 }
 
