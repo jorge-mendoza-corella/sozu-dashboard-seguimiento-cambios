@@ -1,26 +1,29 @@
 import { useState, useRef, useEffect } from "react";
 import {
   GitPullRequest, GitMerge, Rocket, ArrowRight,
-  Clock, CheckCircle, XCircle, MessageCircle, Loader2,
+  Clock, CheckCircle, CheckCircle2, XCircle, MessageCircle, Loader2, GitMerge as MergeIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { PullRequest } from "@/lib/github";
-import { submitReview } from "@/lib/github";
+import { submitReview, mergePR } from "@/lib/github";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 
 type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
+type PanelMode = "review" | "merge";
 
 interface Props {
   prs: PullRequest[];
   owner: string;
   repo: string;
+  onRefetch?: () => void;
 }
 
-export function PRList({ prs, owner, repo }: Props) {
-  const [openPanel, setOpenPanel] = useState<number | null>(null);
+export function PRList({ prs, owner, repo, onRefetch }: Props) {
+  const [openPanel, setOpenPanel] = useState<{ prNumber: number; mode: PanelMode } | null>(null);
   const [activeEvent, setActiveEvent] = useState<ReviewEvent | null>(null);
   const [comment, setComment] = useState("");
+  const [mergeMethod, setMergeMethod] = useState<"merge" | "squash" | "rebase">("squash");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ prNumber: number; ok: boolean; msg: string } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -42,11 +45,11 @@ export function PRList({ prs, owner, repo }: Props) {
     setResult(null);
   };
 
-  const togglePanel = (prNumber: number) => {
-    if (openPanel === prNumber) {
+  const togglePanel = (prNumber: number, mode: PanelMode) => {
+    if (openPanel?.prNumber === prNumber && openPanel.mode === mode) {
       closePanel();
     } else {
-      setOpenPanel(prNumber);
+      setOpenPanel({ prNumber, mode });
       setActiveEvent(null);
       setComment("");
       setResult(null);
@@ -63,12 +66,29 @@ export function PRList({ prs, owner, repo }: Props) {
         ok: true,
         msg: event === "APPROVE" ? "¡Aprobado!" : "Enviado correctamente",
       });
-      setTimeout(closePanel, 2500);
+      setTimeout(() => { closePanel(); onRefetch?.(); }, 2000);
     } catch (e) {
       setResult({
         prNumber: pr.number,
         ok: false,
         msg: e instanceof Error ? e.message : "Error al enviar la revisión",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMerge = async (pr: PullRequest) => {
+    setLoading(true);
+    try {
+      await mergePR(owner, repo, pr.number, mergeMethod);
+      setResult({ prNumber: pr.number, ok: true, msg: `Merge completado · ${pr.head} → ${pr.base}` });
+      setTimeout(() => { closePanel(); onRefetch?.(); }, 2000);
+    } catch (e) {
+      setResult({
+        prNumber: pr.number,
+        ok: false,
+        msg: e instanceof Error ? e.message : "Error al hacer merge",
       });
     } finally {
       setLoading(false);
@@ -86,8 +106,18 @@ export function PRList({ prs, owner, repo }: Props) {
       {sorted.map((pr) => {
         const isToMain = pr.base === "main";
         const isDev    = pr.base === "dev";
-        const hasPendingReview = pr.requestedReviewers.length > 0;
-        const isPanelOpen = openPanel === pr.number;
+        const rd = pr.reviewDecision;
+        const hasPendingReview = rd === "REVIEW_REQUIRED";
+        const isApproved       = rd === "APPROVED";
+        const hasChangesReq    = rd === "CHANGES_REQUESTED";
+        const hasAnyReviewBadge = hasPendingReview || isApproved || hasChangesReq;
+
+        // Merge visible: para main solo si aprobado; para otros siempre
+        const canMerge = isToMain ? isApproved : true;
+
+        const isPanelOpen  = openPanel?.prNumber === pr.number;
+        const isReviewOpen = isPanelOpen && openPanel?.mode === "review";
+        const isMergeOpen  = isPanelOpen && openPanel?.mode === "merge";
 
         return (
           <div key={pr.number} className="relative">
@@ -95,11 +125,13 @@ export function PRList({ prs, owner, repo }: Props) {
               className={cn(
                 "flex items-start gap-2 p-2 rounded-md transition-colors",
                 isToMain
-                  ? "bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-700/60 hover:bg-emerald-100/70 dark:hover:bg-emerald-950/50"
+                  ? "bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-700/60"
                   : isDev
-                    ? "bg-sky-50/60 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-800/40 hover:bg-sky-100/60 dark:hover:bg-sky-950/40"
+                    ? "bg-sky-50/60 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-800/40"
                     : "border border-transparent hover:bg-muted/50",
                 hasPendingReview && "ring-1 ring-amber-300 dark:ring-amber-700/60",
+                isApproved && "ring-1 ring-green-300 dark:ring-green-700/60",
+                hasChangesReq && "ring-1 ring-red-300 dark:ring-red-700/60",
               )}
             >
               {/* Área principal → abre GitHub */}
@@ -155,56 +187,77 @@ export function PRList({ prs, owner, repo }: Props) {
                 )}
                 {pr.draft && <Badge variant="outline" className="text-[10px]">Draft</Badge>}
 
-                {hasPendingReview && (
+                {/* Badge de estado de review */}
+                {hasAnyReviewBadge && (
                   <button
-                    onClick={() => togglePanel(pr.number)}
-                    title={`Review solicitada a: ${pr.requestedReviewers.join(", ")}`}
+                    onClick={() => togglePanel(pr.number, "review")}
+                    title={hasPendingReview ? `Review solicitada a: ${pr.requestedReviewers.join(", ")}` : rd === "APPROVED" ? "Aprobado" : "Cambios solicitados"}
                     className={cn(
                       "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border",
-                      "bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-200",
-                      "dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700/60 dark:hover:bg-amber-900/60",
-                      isPanelOpen && "ring-1 ring-amber-500 dark:ring-amber-400",
+                      hasPendingReview && "bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700/60",
+                      isApproved && "bg-green-100 text-green-700 border-green-300 hover:bg-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700/60",
+                      hasChangesReq && "bg-red-100 text-red-700 border-red-300 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700/60",
+                      isReviewOpen && "ring-1 ring-current",
                     )}
                   >
-                    <Clock className="h-2.5 w-2.5" />
-                    Review
+                    {hasPendingReview && <Clock className="h-2.5 w-2.5" />}
+                    {isApproved && <CheckCircle2 className="h-2.5 w-2.5" />}
+                    {hasChangesReq && <XCircle className="h-2.5 w-2.5" />}
+                    {hasPendingReview ? "Review" : isApproved ? "Aprobado" : "Cambios"}
+                  </button>
+                )}
+
+                {/* Botón de merge */}
+                {canMerge && (
+                  <button
+                    onClick={() => togglePanel(pr.number, "merge")}
+                    title={`Hacer merge de PR #${pr.number}`}
+                    className={cn(
+                      "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border",
+                      "bg-violet-100 text-violet-700 border-violet-300 hover:bg-violet-200",
+                      "dark:bg-violet-900/40 dark:text-violet-300 dark:border-violet-700/60 dark:hover:bg-violet-900/60",
+                      isMergeOpen && "ring-1 ring-violet-500 dark:ring-violet-400",
+                    )}
+                  >
+                    <MergeIcon className="h-2.5 w-2.5" />
+                    Merge
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Panel de acción de review */}
-            {isPanelOpen && (
+            {/* Panel de review */}
+            {isReviewOpen && (
               <div
                 ref={panelRef}
                 className="absolute right-0 top-full mt-1 z-50 w-72 rounded-lg border bg-background shadow-xl p-3"
               >
                 <div className="flex items-center gap-2 mb-2">
-                  <Clock className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                  <span className="text-xs font-semibold">Revisión pendiente · PR #{pr.number}</span>
+                  {hasPendingReview && <Clock className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
+                  {isApproved && <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />}
+                  {hasChangesReq && <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
+                  <span className="text-xs font-semibold">
+                    {hasPendingReview ? "Revisión pendiente" : isApproved ? "PR aprobado" : "Cambios solicitados"} · PR #{pr.number}
+                  </span>
                 </div>
 
-                <div className="flex flex-wrap gap-1 mb-3">
-                  {pr.requestedReviewers.map((r) => (
-                    <span
-                      key={r}
-                      className="inline-flex items-center gap-0.5 text-[11px] bg-muted rounded px-1.5 py-0.5 font-mono"
-                    >
-                      <span className="text-muted-foreground">@</span>{r}
-                    </span>
-                  ))}
-                </div>
+                {pr.requestedReviewers.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {pr.requestedReviewers.map((r) => (
+                      <span key={r} className="inline-flex items-center gap-0.5 text-[11px] bg-muted rounded px-1.5 py-0.5 font-mono">
+                        <span className="text-muted-foreground">@</span>{r}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {result?.prNumber === pr.number ? (
                   <div className={cn(
                     "flex items-center gap-2 p-2 rounded text-sm font-medium",
-                    result.ok
-                      ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300"
-                      : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+                    result.ok ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+                              : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300",
                   )}>
-                    {result.ok
-                      ? <CheckCircle className="h-4 w-4 shrink-0" />
-                      : <XCircle className="h-4 w-4 shrink-0" />}
+                    {result.ok ? <CheckCircle className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
                     {result.msg}
                   </div>
                 ) : activeEvent === "REQUEST_CHANGES" || activeEvent === "COMMENT" ? (
@@ -223,8 +276,8 @@ export function PRList({ prs, owner, repo }: Props) {
                         className={cn(
                           "flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded transition-colors",
                           activeEvent === "REQUEST_CHANGES"
-                            ? "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-900/60"
-                            : "bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/40 dark:text-sky-300 dark:hover:bg-sky-900/60",
+                            ? "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300"
+                            : "bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/40 dark:text-sky-300",
                           "disabled:opacity-50 disabled:cursor-not-allowed",
                         )}
                       >
@@ -249,7 +302,7 @@ export function PRList({ prs, owner, repo }: Props) {
                       <button
                         onClick={() => handleReview(pr, "APPROVE")}
                         disabled={loading}
-                        className="flex-1 flex items-center justify-center gap-1 text-xs font-medium py-1.5 rounded bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/40 dark:text-green-300 dark:hover:bg-green-900/60 disabled:opacity-50 transition-colors"
+                        className="flex-1 flex items-center justify-center gap-1 text-xs font-medium py-1.5 rounded bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/40 dark:text-green-300 disabled:opacity-50 transition-colors"
                       >
                         {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
                         Aprobar
@@ -257,7 +310,7 @@ export function PRList({ prs, owner, repo }: Props) {
                       <button
                         onClick={() => setActiveEvent("REQUEST_CHANGES")}
                         disabled={loading}
-                        className="flex-1 flex items-center justify-center gap-1 text-xs font-medium py-1.5 rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-900/60 disabled:opacity-50 transition-colors"
+                        className="flex-1 flex items-center justify-center gap-1 text-xs font-medium py-1.5 rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 disabled:opacity-50 transition-colors"
                       >
                         <XCircle className="h-3 w-3" />
                         Cambios
@@ -265,10 +318,76 @@ export function PRList({ prs, owner, repo }: Props) {
                       <button
                         onClick={() => setActiveEvent("COMMENT")}
                         disabled={loading}
-                        className="flex-1 flex items-center justify-center gap-1 text-xs font-medium py-1.5 rounded bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/40 dark:text-sky-300 dark:hover:bg-sky-900/60 disabled:opacity-50 transition-colors"
+                        className="flex-1 flex items-center justify-center gap-1 text-xs font-medium py-1.5 rounded bg-sky-100 text-sky-700 hover:bg-sky-200 dark:bg-sky-900/40 dark:text-sky-300 disabled:opacity-50 transition-colors"
                       >
                         <MessageCircle className="h-3 w-3" />
                         Comentar
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Panel de merge con confirmación */}
+            {isMergeOpen && (
+              <div
+                ref={panelRef}
+                className="absolute right-0 top-full mt-1 z-50 w-72 rounded-lg border bg-background shadow-xl p-3"
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <MergeIcon className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                  <span className="text-xs font-semibold">Confirmar merge · PR #{pr.number}</span>
+                </div>
+
+                <p className="text-[11px] text-muted-foreground mb-3">
+                  <span className="font-mono font-semibold text-foreground">{pr.head}</span>
+                  {" → "}
+                  <span className="font-mono font-semibold text-foreground">{pr.base}</span>
+                </p>
+
+                {result?.prNumber === pr.number ? (
+                  <div className={cn(
+                    "flex items-center gap-2 p-2 rounded text-sm font-medium",
+                    result.ok ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+                              : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+                  )}>
+                    {result.ok ? <CheckCircle className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
+                    {result.msg}
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex gap-1 mb-3">
+                      {(["squash", "merge", "rebase"] as const).map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => setMergeMethod(m)}
+                          className={cn(
+                            "flex-1 text-[10px] py-1 rounded border font-medium transition-colors capitalize",
+                            mergeMethod === m
+                              ? "bg-violet-100 text-violet-700 border-violet-300 dark:bg-violet-900/50 dark:text-violet-200 dark:border-violet-600"
+                              : "bg-muted/40 text-muted-foreground border-border hover:bg-muted",
+                          )}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleMerge(pr)}
+                        disabled={loading}
+                        className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors"
+                      >
+                        {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <MergeIcon className="h-3 w-3" />}
+                        Hacer merge
+                      </button>
+                      <button
+                        onClick={closePanel}
+                        disabled={loading}
+                        className="px-3 text-xs text-muted-foreground hover:text-foreground py-1.5 rounded hover:bg-muted transition-colors"
+                      >
+                        Cancelar
                       </button>
                     </div>
                   </>

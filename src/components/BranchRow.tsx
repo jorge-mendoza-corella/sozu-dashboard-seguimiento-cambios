@@ -1,4 +1,4 @@
-import { GitBranch, ArrowUpCircle, EyeOff, Eye, GitPullRequest } from "lucide-react";
+import { GitBranch, ArrowUpCircle, EyeOff, Eye, GitPullRequest, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { BranchInfo } from "@/lib/github";
@@ -8,9 +8,10 @@ interface Props {
   hasPR?: boolean;
   onHide?: () => void;
   onUnhide?: () => void;
+  onCreatePR?: () => void;
 }
 
-export function BranchRow({ branch, hasPR, onHide, onUnhide }: Props) {
+export function BranchRow({ branch, hasPR, onHide, onUnhide, onCreatePR }: Props) {
   const isMain = branch.name === "main";
   const isDev = branch.name === "dev";
   const isHidden = !!onUnhide;
@@ -62,6 +63,18 @@ export function BranchRow({ branch, hasPR, onHide, onUnhide }: Props) {
           <ArrowUpCircle className="h-2.5 w-2.5" />
           {aheadOfMain} vs main
         </Badge>
+      )}
+
+      {/* Crear PR — solo si no es main ni tiene PR abierto */}
+      {onCreatePR && !isMain && !hasPR && (
+        <button
+          onClick={onCreatePR}
+          className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-50 text-violet-600 border border-violet-200 hover:bg-violet-100 dark:bg-violet-900/20 dark:text-violet-400 dark:border-violet-800/50 dark:hover:bg-violet-900/40 transition-all"
+          title={`Crear PR desde ${branch.name}`}
+        >
+          <Plus className="h-2.5 w-2.5" />
+          PR
+        </button>
       )}
 
       {onHide && (

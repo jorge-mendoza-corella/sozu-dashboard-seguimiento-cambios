@@ -3,6 +3,7 @@ import {
   AlertCircle, CheckCircle2, RefreshCw, Loader2,
   GitBranch, GitPullRequest, Zap,
   EyeOff, ChevronDown, ChevronUp, Rocket, ArrowRight,
+  X, CheckCircle, XCircle,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +12,7 @@ import { BranchRow } from "./BranchRow";
 import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
+import { createPR } from "@/lib/github";
 
 function sortBranches(branches: BranchInfo[]): BranchInfo[] {
   return [
@@ -28,9 +30,42 @@ function getOverallState(status: RepoStatus): "ok" | "pending" | "failing" | "er
   return "ok";
 }
 
-interface Props { status: RepoStatus }
+interface Props {
+  status: RepoStatus;
+  onRefetch?: () => void;
+}
 
-export function RepoCard({ status }: Props) {
+export function RepoCard({ status, onRefetch }: Props) {
+  const [newPR, setNewPR] = useState<{ head: string; title: string; base: string; body: string } | null>(null);
+  const [newPRLoading, setNewPRLoading] = useState(false);
+  const [newPRResult, setNewPRResult] = useState<{ ok: boolean; msg: string; url?: string } | null>(null);
+
+  const openCreatePR = (branchName: string) => {
+    const defaultBase = branchName === "dev" ? "main" : "dev";
+    setNewPR({ head: branchName, title: branchName, base: defaultBase, body: "" });
+    setNewPRResult(null);
+  };
+
+  const closeCreatePR = () => {
+    setNewPR(null);
+    setNewPRResult(null);
+    setNewPRLoading(false);
+  };
+
+  const handleCreatePR = async () => {
+    if (!newPR || !newPR.title.trim()) return;
+    setNewPRLoading(true);
+    try {
+      const { number, url } = await createPR(status.owner, status.repo, newPR.title.trim(), newPR.head, newPR.base, newPR.body.trim());
+      setNewPRResult({ ok: true, msg: `PR #${number} creado`, url });
+      setTimeout(() => { closeCreatePR(); onRefetch?.(); }, 2500);
+    } catch (e) {
+      setNewPRResult({ ok: false, msg: e instanceof Error ? e.message : "Error al crear PR" });
+    } finally {
+      setNewPRLoading(false);
+    }
+  };
+
   const [hiddenBranches, setHiddenBranches] = useState<Set<string>>(() => {
     try {
       const stored = localStorage.getItem(`hidden-branches-${status.repo}`);
@@ -184,6 +219,7 @@ export function RepoCard({ status }: Props) {
                 branch={b}
                 hasPR={branchesWithPR.has(b.name)}
                 onHide={() => hideBranch(b.name)}
+                onCreatePR={() => openCreatePR(b.name)}
               />
             ))}
           </div>
@@ -207,6 +243,84 @@ export function RepoCard({ status }: Props) {
               ))}
             </div>
           )}
+
+          {/* Panel de crear PR */}
+          {newPR && (
+            <div className="mt-3 rounded-lg border border-violet-200 dark:border-violet-800/50 bg-violet-50/60 dark:bg-violet-900/10 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">
+                  <GitPullRequest className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
+                  <span className="text-xs font-semibold text-violet-800 dark:text-violet-200">
+                    Crear PR desde <span className="font-mono">{newPR.head}</span>
+                  </span>
+                </div>
+                <button onClick={closeCreatePR} className="text-muted-foreground hover:text-foreground transition-colors">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              {newPRResult ? (
+                <div className={cn(
+                  "flex items-center gap-2 p-2 rounded text-xs font-medium",
+                  newPRResult.ok ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+                                 : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+                )}>
+                  {newPRResult.ok ? <CheckCircle className="h-3.5 w-3.5 shrink-0" /> : <XCircle className="h-3.5 w-3.5 shrink-0" />}
+                  {newPRResult.msg}
+                  {newPRResult.url && (
+                    <a href={newPRResult.url} target="_blank" rel="noopener noreferrer" className="ml-auto text-[10px] underline">
+                      Ver PR
+                    </a>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={newPR.title}
+                    onChange={(e) => setNewPR((p) => p ? { ...p, title: e.target.value } : null)}
+                    placeholder="Título del PR"
+                    className="w-full text-xs rounded border bg-background px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-violet-400 placeholder:text-muted-foreground"
+                  />
+                  <div className="flex gap-2 items-center">
+                    <span className="text-[10px] text-muted-foreground shrink-0">Base:</span>
+                    <select
+                      value={newPR.base}
+                      onChange={(e) => setNewPR((p) => p ? { ...p, base: e.target.value } : null)}
+                      className="flex-1 text-xs rounded border bg-background px-2 py-1 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                    >
+                      {status.branches.filter((b) => b.name !== newPR.head).map((b) => (
+                        <option key={b.name} value={b.name}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <textarea
+                    value={newPR.body}
+                    onChange={(e) => setNewPR((p) => p ? { ...p, body: e.target.value } : null)}
+                    placeholder="Descripción (opcional)"
+                    className="w-full text-xs rounded border bg-background px-2 py-1.5 resize-none h-14 focus:outline-none focus:ring-1 focus:ring-violet-400 placeholder:text-muted-foreground"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleCreatePR}
+                      disabled={newPRLoading || !newPR.title.trim()}
+                      className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors"
+                    >
+                      {newPRLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitPullRequest className="h-3 w-3" />}
+                      Crear PR
+                    </button>
+                    <button
+                      onClick={closeCreatePR}
+                      disabled={newPRLoading}
+                      className="px-3 text-xs text-muted-foreground hover:text-foreground py-1.5 rounded hover:bg-muted transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* PRs abiertos */}
@@ -214,7 +328,7 @@ export function RepoCard({ status }: Props) {
           <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             <GitPullRequest className="h-3.5 w-3.5" /> PRs abiertos ({status.openPRs.length})
           </h4>
-          <PRList prs={status.openPRs} owner={status.owner} repo={status.repo} />
+          <PRList prs={status.openPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} />
         </div>
 
         {/* Últimos deploys */}

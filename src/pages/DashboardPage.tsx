@@ -79,7 +79,7 @@ export function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
           {isLoading
             ? Array.from({ length: 5 }).map((_, i) => <RepoCardSkeleton key={i} />)
-            : data?.map((repo) => <RepoCard key={repo.repo} status={repo} />)}
+            : data?.map((repo) => <RepoCard key={repo.repo} status={repo} onRefetch={() => refetch()} />)}
         </div>
       </div>
     </div>

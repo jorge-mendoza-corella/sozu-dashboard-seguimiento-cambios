@@ -35,6 +35,7 @@ export interface PullRequest {
   draft: boolean;
   checksState: "success" | "failure" | "pending" | "unknown";
   requestedReviewers: string[];
+  reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
 }
 
 export interface WorkflowRun {
@@ -54,6 +55,30 @@ export interface RepoStatus {
   openPRs: PullRequest[];
   latestRuns: WorkflowRun[];
   error?: string;
+}
+
+async function getPRReviewDecision(
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  requestedReviewers: string[],
+): Promise<"APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null> {
+  try {
+    const { data: reviews } = await octokit.pulls.listReviews({ owner, repo, pull_number: pullNumber });
+    const latestByUser = new Map<string, string>();
+    for (const review of reviews) {
+      if (review.state !== "COMMENTED" && review.user?.login) {
+        latestByUser.set(review.user.login, review.state);
+      }
+    }
+    const states = [...latestByUser.values()];
+    if (states.includes("CHANGES_REQUESTED")) return "CHANGES_REQUESTED";
+    if (states.includes("APPROVED")) return "APPROVED";
+    if (requestedReviewers.length > 0) return "REVIEW_REQUIRED";
+    return null;
+  } catch {
+    return requestedReviewers.length > 0 ? "REVIEW_REQUIRED" : null;
+  }
 }
 
 async function getAheadBy(owner: string, repo: string, base: string, head: string): Promise<number> {
@@ -100,18 +125,25 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
       })
     );
 
-    const openPRs: PullRequest[] = prsResp.data.map((pr) => ({
-      number: pr.number,
-      title: pr.title,
-      state: pr.state,
-      head: pr.head.ref,
-      base: pr.base.ref,
-      url: pr.html_url,
-      createdAt: pr.created_at,
-      draft: pr.draft ?? false,
-      checksState: "unknown" as const,
-      requestedReviewers: pr.requested_reviewers?.map((r) => r.login) ?? [],
-    }));
+    const openPRs: PullRequest[] = await Promise.all(
+      prsResp.data.map(async (pr) => {
+        const requestedReviewers = pr.requested_reviewers?.map((r) => r.login) ?? [];
+        const reviewDecision = await getPRReviewDecision(owner, repo, pr.number, requestedReviewers);
+        return {
+          number: pr.number,
+          title: pr.title,
+          state: pr.state,
+          head: pr.head.ref,
+          base: pr.base.ref,
+          url: pr.html_url,
+          createdAt: pr.created_at,
+          draft: pr.draft ?? false,
+          checksState: "unknown" as const,
+          requestedReviewers,
+          reviewDecision,
+        };
+      }),
+    );
 
     const latestRuns: WorkflowRun[] = runsResp.data.workflow_runs
       .filter((r) => (r.name ?? "").toLowerCase().includes("deploy"))
@@ -130,6 +162,32 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
     const msg = err instanceof Error ? err.message : "Error desconocido";
     return { owner, repo, label, branches: [], openPRs: [], latestRuns: [], error: msg };
   }
+}
+
+export async function mergePR(
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  mergeMethod: "merge" | "squash" | "rebase" = "squash",
+): Promise<void> {
+  await octokit.pulls.merge({
+    owner,
+    repo,
+    pull_number: pullNumber,
+    merge_method: mergeMethod,
+  });
+}
+
+export async function createPR(
+  owner: string,
+  repo: string,
+  title: string,
+  head: string,
+  base: string,
+  body: string = "",
+): Promise<{ number: number; url: string }> {
+  const { data } = await octokit.pulls.create({ owner, repo, title, head, base, body });
+  return { number: data.number, url: data.html_url };
 }
 
 export async function submitReview(
