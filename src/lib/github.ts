@@ -2,6 +2,10 @@ import { Octokit } from "@octokit/rest";
 
 const octokit = new Octokit({ auth: import.meta.env.VITE_GITHUB_TOKEN });
 
+const reviewerOctokit = import.meta.env.VITE_GITHUB_REVIEWER_TOKEN
+  ? new Octokit({ auth: import.meta.env.VITE_GITHUB_REVIEWER_TOKEN })
+  : null;
+
 export const REPOS = [
   { owner: "jorgeIMendoza", repo: "sozu-admin", label: "sozu-admin" },
   { owner: "jorgeIMendoza", repo: "sozu-supabase-migrations", label: "sozu-supabase-migrations" },
@@ -30,6 +34,7 @@ export interface PullRequest {
   createdAt: string;
   draft: boolean;
   checksState: "success" | "failure" | "pending" | "unknown";
+  requestedReviewers: string[];
 }
 
 export interface WorkflowRun {
@@ -105,6 +110,7 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
       createdAt: pr.created_at,
       draft: pr.draft ?? false,
       checksState: "unknown" as const,
+      requestedReviewers: pr.requested_reviewers?.map((r) => r.login) ?? [],
     }));
 
     const latestRuns: WorkflowRun[] = runsResp.data.workflow_runs
@@ -124,4 +130,23 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
     const msg = err instanceof Error ? err.message : "Error desconocido";
     return { owner, repo, label, branches: [], openPRs: [], latestRuns: [], error: msg };
   }
+}
+
+export async function submitReview(
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
+  body: string = "",
+): Promise<void> {
+  if (!reviewerOctokit) {
+    throw new Error("Token de revisor no configurado. Agrega VITE_GITHUB_REVIEWER_TOKEN al .env");
+  }
+  await reviewerOctokit.pulls.createReview({
+    owner,
+    repo,
+    pull_number: pullNumber,
+    event,
+    body,
+  });
 }
