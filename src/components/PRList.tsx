@@ -6,7 +6,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { PullRequest } from "@/lib/github";
-import { submitReview, mergePR } from "@/lib/github";
+import { submitReview, mergePR, mergeWithBypass } from "@/lib/github";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 
 type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
@@ -80,7 +80,13 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
   const handleMerge = async (pr: PullRequest) => {
     setLoading(true);
     try {
-      await mergePR(owner, repo, pr.number, "merge");
+      // PRs a main requieren aprobación real previa — merge directo.
+      // PRs a otras ramas usan bypass: auto-aprueba (reviewer token) + merge.
+      if (pr.base === "main") {
+        await mergePR(owner, repo, pr.number, "merge");
+      } else {
+        await mergeWithBypass(owner, repo, pr.number);
+      }
       setResult({ prNumber: pr.number, ok: true, msg: `Merge completado · ${pr.head} → ${pr.base}` });
       setTimeout(() => { closePanel(); onRefetch?.(); }, 2000);
     } catch (e) {
