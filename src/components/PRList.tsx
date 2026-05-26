@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import {
   GitPullRequest, GitMerge, Rocket, ArrowRight,
   Clock, CheckCircle, CheckCircle2, XCircle, MessageCircle, Loader2, GitMerge as MergeIcon,
+  User, UserCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -161,7 +162,7 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
                   )}>
                     {pr.title}
                   </p>
-                  <div className="flex items-center gap-1 text-xs mt-0.5">
+                  <div className="flex items-center gap-1 text-xs mt-0.5 flex-wrap">
                     <span className={cn("font-mono", isToMain ? "text-emerald-700 dark:text-emerald-300" : "text-muted-foreground")}>
                       {pr.head}
                     </span>
@@ -174,6 +175,29 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
                     </span>
                     <span className="text-muted-foreground">·</span>
                     <span className="text-muted-foreground">{formatDistanceToNow(pr.createdAt)}</span>
+                  </div>
+                  {/* Autor y reviewers */}
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    {pr.author && (
+                      <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                        <User className="h-2.5 w-2.5" />
+                        <span className="font-mono">{pr.author}</span>
+                      </span>
+                    )}
+                    {pr.requestedReviewers.length > 0 && (
+                      <span className="flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                        <UserCheck className="h-2.5 w-2.5" />
+                        {pr.requestedReviewers.map((r) => (
+                          <span key={r} className="font-mono">{r}</span>
+                        ))}
+                      </span>
+                    )}
+                    {pr.reviewDecision === "APPROVED" && (
+                      <span className="flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
+                        <UserCheck className="h-2.5 w-2.5" />
+                        <span>aprobado</span>
+                      </span>
+                    )}
                   </div>
                 </div>
               </a>

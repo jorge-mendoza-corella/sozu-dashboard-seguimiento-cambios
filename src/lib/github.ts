@@ -34,6 +34,7 @@ export interface PullRequest {
   createdAt: string;
   draft: boolean;
   checksState: "success" | "failure" | "pending" | "unknown";
+  author: string;
   requestedReviewers: string[];
   reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
 }
@@ -139,6 +140,7 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
           createdAt: pr.created_at,
           draft: pr.draft ?? false,
           checksState: "unknown" as const,
+          author: pr.user?.login ?? "",
           requestedReviewers,
           reviewDecision,
         };
