@@ -180,36 +180,25 @@ export async function mergePR(
   });
 }
 
-// Para ramas no-producción: aprueba y luego hace merge (bypass de branch protection).
-// Intenta aprobar con reviewer token; si el PR es de esa misma cuenta, usa el token principal.
+// Para ramas no-producción: aprueba y hace merge (bypass de branch protection).
+// prAuthor determina qué token aprueba: siempre el token distinto al autor del PR.
 export async function mergeWithBypass(
   owner: string,
   repo: string,
   pullNumber: number,
+  prAuthor: string,
 ): Promise<void> {
   if (!reviewerOctokit) {
     throw new Error("Token de revisor no configurado. Agrega VITE_GITHUB_REVIEWER_TOKEN al .env");
   }
 
-  try {
-    await reviewerOctokit.pulls.createReview({
-      owner, repo, pull_number: pullNumber, event: "APPROVE", body: "",
-    });
-  } catch (e: unknown) {
-    // Octokit pone el mensaje real de GitHub en e.response.data.message, no en e.message
-    const apiMsg: string = (
-      (e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? ""
-    ).toLowerCase();
-    const isOwnPR = apiMsg.includes("own pull request") || apiMsg.includes("approve your own");
-    if (isOwnPR) {
-      // PR creado por el reviewer — usar el token principal para aprobar
-      await octokit.pulls.createReview({
-        owner, repo, pull_number: pullNumber, event: "APPROVE", body: "",
-      });
-    } else {
-      throw e;
-    }
-  }
+  // Saber el login del reviewer para no aprobar su propio PR
+  const { data: reviewerUser } = await reviewerOctokit.users.getAuthenticated();
+  const approverOctokit = prAuthor === reviewerUser.login ? octokit : reviewerOctokit;
+
+  await approverOctokit.pulls.createReview({
+    owner, repo, pull_number: pullNumber, event: "APPROVE", body: "",
+  });
 
   await octokit.pulls.merge({
     owner, repo, pull_number: pullNumber, merge_method: "merge",

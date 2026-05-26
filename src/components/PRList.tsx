@@ -86,7 +86,7 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
       if (pr.base === "main") {
         await mergePR(owner, repo, pr.number, "merge");
       } else {
-        await mergeWithBypass(owner, repo, pr.number);
+        await mergeWithBypass(owner, repo, pr.number, pr.author);
       }
       setResult({ prNumber: pr.number, ok: true, msg: `Merge completado · ${pr.head} → ${pr.base}` });
       setTimeout(() => { closePanel(); onRefetch?.(); }, 2000);
