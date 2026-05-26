@@ -40,7 +40,7 @@ export function useGraphData() {
       const raw = await res.json();
       return {
         nodes: (raw.nodes ?? []) as GraphNode[],
-        edges: (raw.edges ?? []) as GraphEdge[],
+        edges: (raw.links ?? raw.edges ?? []) as GraphEdge[],
       };
     },
     staleTime: 10 * 60 * 1000,
