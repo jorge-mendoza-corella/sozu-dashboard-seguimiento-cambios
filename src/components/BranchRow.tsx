@@ -9,9 +9,10 @@ interface Props {
   onHide?: () => void;
   onUnhide?: () => void;
   onCreatePR?: () => void;
+  alwaysShowCreatePR?: boolean;
 }
 
-export function BranchRow({ branch, hasPR, onHide, onUnhide, onCreatePR }: Props) {
+export function BranchRow({ branch, hasPR, onHide, onUnhide, onCreatePR, alwaysShowCreatePR }: Props) {
   const isMain = branch.name === "main";
   const isDev = branch.name === "dev";
   const isHidden = !!onUnhide;
@@ -65,15 +66,20 @@ export function BranchRow({ branch, hasPR, onHide, onUnhide, onCreatePR }: Props
         </Badge>
       )}
 
-      {/* Crear PR — solo si no es main ni tiene PR abierto */}
-      {onCreatePR && !isMain && !hasPR && (
+      {/* Crear PR */}
+      {onCreatePR && (
         <button
           onClick={onCreatePR}
-          className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-50 text-violet-600 border border-violet-200 hover:bg-violet-100 dark:bg-violet-900/20 dark:text-violet-400 dark:border-violet-800/50 dark:hover:bg-violet-900/40 transition-all"
-          title={`Crear PR desde ${branch.name}`}
+          className={cn(
+            "flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium border transition-all",
+            "bg-violet-50 text-violet-600 border-violet-200 hover:bg-violet-100",
+            "dark:bg-violet-900/20 dark:text-violet-400 dark:border-violet-800/50 dark:hover:bg-violet-900/40",
+            alwaysShowCreatePR ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          )}
+          title={`Crear PR desde ${branch.name} → ${isDev ? "main" : "dev"}`}
         >
           <Plus className="h-2.5 w-2.5" />
-          PR
+          {isDev ? "PR → main" : "PR"}
         </button>
       )}
 

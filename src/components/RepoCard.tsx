@@ -97,6 +97,9 @@ export function RepoCard({ status, onRefetch }: Props) {
   const hiddenList = sorted.filter((b) => hiddenBranches.has(b.name));
 
   const branchesWithPR = new Set(status.openPRs.map((pr) => pr.head));
+  const hasDevToMainPR = status.openPRs.some((pr) => pr.head === "dev" && pr.base === "main");
+  const devBranch = status.branches.find((b) => b.name === "dev");
+  const devAheadOfMain = devBranch?.aheadOfMain ?? 0;
 
   const state = getOverallState(status);
   const hasPRs = status.openPRs.length > 0;
@@ -213,15 +216,22 @@ export function RepoCard({ status, onRefetch }: Props) {
             Ramas ({visibleBranches.length}{hiddenList.length > 0 ? `+${hiddenList.length}` : ""})
           </h4>
           <div className="space-y-0">
-            {visibleBranches.map((b) => (
-              <BranchRow
-                key={b.name}
-                branch={b}
-                hasPR={branchesWithPR.has(b.name)}
-                onHide={() => hideBranch(b.name)}
-                onCreatePR={() => openCreatePR(b.name)}
-              />
-            ))}
+            {visibleBranches.map((b) => {
+              const isDevBranch = b.name === "dev";
+              const showCreatePR = isDevBranch
+                ? devAheadOfMain > 0 && !hasDevToMainPR
+                : !branchesWithPR.has(b.name) && b.name !== "main";
+              return (
+                <BranchRow
+                  key={b.name}
+                  branch={b}
+                  hasPR={branchesWithPR.has(b.name)}
+                  onHide={() => hideBranch(b.name)}
+                  onCreatePR={showCreatePR ? () => openCreatePR(b.name) : undefined}
+                  alwaysShowCreatePR={isDevBranch}
+                />
+              );
+            })}
           </div>
 
           {hiddenList.length > 0 && (
