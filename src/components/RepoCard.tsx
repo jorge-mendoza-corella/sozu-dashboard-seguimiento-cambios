@@ -252,7 +252,7 @@ export function RepoCard({ status, onRefetch }: Props) {
             {visibleBranches.map((b) => {
               const isDevBranch = b.name === "dev";
               const showCreatePR = isDevBranch
-                ? devAheadOfMain > 0 && !hasDevToMainPR
+                ? devAheadOfMain > 0 && !hasDevToMainPR && !isDeployingToDev
                 : !branchesWithPR.has(b.name) && b.name !== "main";
               return (
                 <BranchRow
