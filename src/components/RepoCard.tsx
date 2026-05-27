@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   AlertCircle, CheckCircle2, RefreshCw, Loader2,
   GitBranch, GitPullRequest, Zap,
@@ -41,6 +41,17 @@ export function RepoCard({ status, onRefetch }: Props) {
   const [newPR, setNewPR] = useState<{ head: string; title: string; base: string; body: string } | null>(null);
   const [newPRLoading, setNewPRLoading] = useState(false);
   const [newPRResult, setNewPRResult] = useState<{ ok: boolean; msg: string; url?: string } | null>(null);
+  // Optimistic: ramas donde ya se creó un PR pero el refetch aún no llegó
+  const [optimisticPRHeads, setOptimisticPRHeads] = useState<Set<string>>(new Set());
+
+  // Limpia optimisticPRHeads cuando el refetch ya trajo el PR real
+  useEffect(() => {
+    const realHeads = new Set(status.openPRs.map((pr) => pr.head));
+    setOptimisticPRHeads((prev) => {
+      const next = new Set([...prev].filter((h) => !realHeads.has(h)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [status.openPRs]);
 
   const openCreatePR = (branchName: string) => {
     const defaultBase = branchName === "dev" ? "main" : "dev";
@@ -60,6 +71,7 @@ export function RepoCard({ status, onRefetch }: Props) {
     try {
       const { number, url } = await createPR(status.owner, status.repo, newPR.title.trim(), newPR.head, newPR.base, newPR.body.trim());
       setNewPRResult({ ok: true, msg: `PR #${number} creado`, url });
+      setOptimisticPRHeads((prev) => new Set([...prev, newPR.head]));
       setTimeout(() => { closeCreatePR(); onRefetch?.(); }, 2500);
     } catch (e) {
       setNewPRResult({ ok: false, msg: e instanceof Error ? e.message : "Error al crear PR" });
@@ -98,8 +110,8 @@ export function RepoCard({ status, onRefetch }: Props) {
   const visibleBranches = sorted.filter((b) => !hiddenBranches.has(b.name));
   const hiddenList = sorted.filter((b) => hiddenBranches.has(b.name));
 
-  const branchesWithPR = new Set(status.openPRs.map((pr) => pr.head));
-  const hasDevToMainPR = status.openPRs.some((pr) => pr.head === "dev" && pr.base === "main");
+  const branchesWithPR = new Set([...status.openPRs.map((pr) => pr.head), ...optimisticPRHeads]);
+  const hasDevToMainPR = status.openPRs.some((pr) => pr.head === "dev" && pr.base === "main") || optimisticPRHeads.has("dev");
   const devBranch = status.branches.find((b) => b.name === "dev");
   const devAheadOfMain = devBranch?.aheadOfMain ?? 0;
 

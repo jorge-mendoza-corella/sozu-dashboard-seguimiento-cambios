@@ -218,22 +218,27 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
 
                 {/* Badge de estado de review */}
                 {hasAnyReviewBadge && (
-                  <button
-                    onClick={() => togglePanel(pr.number, "review")}
-                    title={hasPendingReview ? `Review solicitada a: ${pr.requestedReviewers.join(", ")}` : rd === "APPROVED" ? "Aprobado" : "Cambios solicitados"}
-                    className={cn(
-                      "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border",
-                      hasPendingReview && "bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700/60",
-                      isApproved && "bg-green-100 text-green-700 border-green-300 hover:bg-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700/60",
-                      hasChangesReq && "bg-red-100 text-red-700 border-red-300 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700/60",
-                      isReviewOpen && "ring-1 ring-current",
-                    )}
-                  >
-                    {hasPendingReview && <Clock className="h-2.5 w-2.5" />}
-                    {isApproved && <CheckCircle2 className="h-2.5 w-2.5" />}
-                    {hasChangesReq && <XCircle className="h-2.5 w-2.5" />}
-                    {hasPendingReview ? "Review" : isApproved ? "Aprobado" : "Cambios"}
-                  </button>
+                  isApproved ? (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border bg-green-100 text-green-700 border-green-300 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700/60">
+                      <CheckCircle2 className="h-2.5 w-2.5" />
+                      Aprobado
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => togglePanel(pr.number, "review")}
+                      title={hasPendingReview ? `Review solicitada a: ${pr.requestedReviewers.join(", ")}` : "Cambios solicitados"}
+                      className={cn(
+                        "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border",
+                        hasPendingReview && "bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700/60",
+                        hasChangesReq && "bg-red-100 text-red-700 border-red-300 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700/60",
+                        isReviewOpen && "ring-1 ring-current",
+                      )}
+                    >
+                      {hasPendingReview && <Clock className="h-2.5 w-2.5" />}
+                      {hasChangesReq && <XCircle className="h-2.5 w-2.5" />}
+                      {hasPendingReview ? "Review" : "Cambios"}
+                    </button>
+                  )
                 )}
 
                 {/* Botón de merge */}
