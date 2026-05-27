@@ -1,4 +1,4 @@
-import { RefreshCw, Clock, GitBranch, AlertCircle, CheckCircle2, GitPullRequest } from "lucide-react";
+import { RefreshCw, Clock, GitBranch, AlertCircle, CheckCircle2, GitPullRequest, ArrowUpCircle, Rocket } from "lucide-react";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { RepoCard, RepoCardSkeleton } from "@/components/RepoCard";
 import { Button } from "@/components/ui/button";
@@ -9,12 +9,26 @@ export function DashboardPage() {
   const { data, isLoading, isFetching, dataUpdatedAt, refetch } = useGitHubStatus();
 
   const summary = data
-    ? {
-        total: data.length,
-        ok: data.filter((r) => !r.error && r.latestRuns.every((x) => x.conclusion !== "failure") && r.openPRs.length === 0).length,
-        withPRs: data.filter((r) => r.openPRs.length > 0).length,
-        failing: data.filter((r) => r.latestRuns.some((x) => x.conclusion === "failure")).length,
-      }
+    ? (() => {
+        const getDevBranch = (r: typeof data[0]) => r.branches.find((b) => b.name === "dev");
+        return {
+          total: data.length,
+          // PRD al día: dev sincronizado con main, sin PRs, sin fallos
+          prdSynced: data.filter((r) => {
+            const dev = getDevBranch(r);
+            return !r.error &&
+              (dev?.aheadOfMain ?? 0) === 0 &&
+              r.openPRs.length === 0 &&
+              r.latestRuns.every((x) => x.conclusion !== "failure");
+          }).length,
+          // Dev tiene cambios que aún no están en main/PRD
+          devPending: data.filter((r) => (getDevBranch(r)?.aheadOfMain ?? 0) > 0).length,
+          // PRs abiertos (de cualquier tipo)
+          withPRs: data.filter((r) => r.openPRs.length > 0).length,
+          // CI fallando
+          failing: data.filter((r) => r.latestRuns.some((x) => x.conclusion === "failure")).length,
+        };
+      })()
     : null;
 
   return (
@@ -31,25 +45,39 @@ export function DashboardPage() {
             <p className="text-sm text-muted-foreground">
               CI/CD · Ramas · PRs · Workflows — se actualiza cada 2 min
             </p>
-            {/* Summary chips */}
+            {/* Summary chips — pipeline: PRD → DEV → PRs → fallos */}
             {summary && !isLoading && (
               <div className="flex flex-wrap items-center gap-2 mt-3">
                 <Badge variant="outline" className="gap-1 text-[11px] bg-white/80 dark:bg-slate-900/80">
                   <span className="h-1.5 w-1.5 rounded-full bg-slate-400 inline-block" />
                   {summary.total} repos
                 </Badge>
-                {summary.ok > 0 && (
+
+                {/* PRD al día */}
+                {summary.prdSynced > 0 && (
                   <Badge variant="outline" className="gap-1 text-[11px] bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300">
-                    <CheckCircle2 className="h-3 w-3" />
-                    {summary.ok} en orden
+                    <Rocket className="h-3 w-3" />
+                    {summary.prdSynced} en PRD
                   </Badge>
                 )}
+
+                {/* Dev con cambios pendientes a PRD */}
+                {summary.devPending > 0 && (
+                  <Badge variant="outline" className="gap-1 text-[11px] bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900/50 text-blue-700 dark:text-blue-300">
+                    <ArrowUpCircle className="h-3 w-3" />
+                    {summary.devPending} dev → PRD pendiente
+                  </Badge>
+                )}
+
+                {/* PRs abiertos */}
                 {summary.withPRs > 0 && (
                   <Badge variant="outline" className="gap-1 text-[11px] bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900/50 text-amber-700 dark:text-amber-300">
                     <GitPullRequest className="h-3 w-3" />
                     {summary.withPRs} con PRs
                   </Badge>
                 )}
+
+                {/* CI fallando */}
                 {summary.failing > 0 && (
                   <Badge variant="outline" className="gap-1 text-[11px] bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-300">
                     <AlertCircle className="h-3 w-3" />
