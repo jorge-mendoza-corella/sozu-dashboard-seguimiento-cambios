@@ -26,6 +26,7 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ prNumber: number; ok: boolean; msg: string } | null>(null);
+  const [mergedPRs, setMergedPRs] = useState<Set<number>>(new Set());
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -88,6 +89,7 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
       } else {
         await mergeWithBypass(owner, repo, pr.number, pr.author);
       }
+      setMergedPRs((prev) => new Set([...prev, pr.number]));
       setResult({ prNumber: pr.number, ok: true, msg: `Merge completado · ${pr.head} → ${pr.base}` });
       setTimeout(() => { closePanel(); onRefetch?.(); }, 2000);
     } catch (e) {
@@ -118,9 +120,9 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
         const hasChangesReq    = rd === "CHANGES_REQUESTED";
         const hasAnyReviewBadge = hasPendingReview || isApproved || hasChangesReq;
 
-        // Merge visible solo en PRs non-main sin aprobar (bypass antes de review)
-        // PRs a main o ya aprobados se mergean desde GitHub directamente
-        const canMerge = !isApproved && !isToMain;
+        // main: merge solo si aprobado | non-main: merge solo si aún no aprobado
+        // mergedPRs oculta el botón de inmediato tras confirmar el merge
+        const canMerge = !mergedPRs.has(pr.number) && (isToMain ? isApproved : !isApproved);
 
         const isPanelOpen  = openPanel?.prNumber === pr.number;
         const isReviewOpen = isPanelOpen && openPanel?.mode === "review";
