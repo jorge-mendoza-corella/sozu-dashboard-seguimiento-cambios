@@ -3,7 +3,7 @@ import {
   AlertCircle, CheckCircle2, RefreshCw, Loader2,
   GitBranch, GitPullRequest, Zap,
   EyeOff, ChevronDown, ChevronUp, Rocket, ArrowRight,
-  X, CheckCircle, XCircle,
+  X, CheckCircle, XCircle, ArrowUpCircle,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,11 +22,13 @@ function sortBranches(branches: BranchInfo[]): BranchInfo[] {
   ];
 }
 
-function getOverallState(status: RepoStatus): "ok" | "pending" | "failing" | "error" {
+function getOverallState(status: RepoStatus): "ok" | "devPending" | "pending" | "failing" | "error" {
   if (status.error) return "error";
   const failing = status.latestRuns.some((r) => r.conclusion === "failure");
   if (failing) return "failing";
   if (status.openPRs.length > 0) return "pending";
+  const dev = status.branches.find((b) => b.name === "dev");
+  if ((dev?.aheadOfMain ?? 0) > 0) return "devPending";
   return "ok";
 }
 
@@ -115,10 +117,11 @@ export function RepoCard({ status, onRefetch }: Props) {
   );
 
   const stateConfig = {
-    ok:      { icon: CheckCircle2,   color: "text-green-600",        label: "Todo en orden",      badge: "success"     as const },
-    pending: { icon: GitPullRequest, color: "text-amber-600",        label: "Cambios pendientes", badge: "warning"     as const },
-    failing: { icon: AlertCircle,    color: "text-red-600",          label: "CI fallando",        badge: "destructive" as const },
-    error:   { icon: AlertCircle,    color: "text-muted-foreground", label: "Error al cargar",    badge: "outline"     as const },
+    ok:         { icon: CheckCircle2,   color: "text-green-600",        label: "Todo en orden",          badge: "success"     as const },
+    devPending: { icon: ArrowUpCircle,  color: "text-blue-600",         label: "Dev por pasar a PRD",    badge: "info"        as const },
+    pending:    { icon: GitPullRequest, color: "text-amber-600",        label: "Cambios pendientes",     badge: "warning"     as const },
+    failing:    { icon: AlertCircle,    color: "text-red-600",          label: "CI fallando",            badge: "destructive" as const },
+    error:      { icon: AlertCircle,    color: "text-muted-foreground", label: "Error al cargar",        badge: "outline"     as const },
   }[state];
 
   const StateIcon = stateConfig.icon;
@@ -128,10 +131,11 @@ export function RepoCard({ status, onRefetch }: Props) {
     : isDeployingToDev
       ? "from-blue-500 to-blue-400"
       : {
-          ok:      "from-emerald-500 to-emerald-400",
-          pending: "from-amber-500 to-amber-400",
-          failing: "from-red-500 to-red-400",
-          error:   "from-slate-400 to-slate-300",
+          ok:         "from-emerald-500 to-emerald-400",
+          devPending: "from-blue-500 to-blue-400",
+          pending:    "from-amber-500 to-amber-400",
+          failing:    "from-red-500 to-red-400",
+          error:      "from-slate-400 to-slate-300",
         }[state];
 
   return (
@@ -139,6 +143,7 @@ export function RepoCard({ status, onRefetch }: Props) {
       "flex flex-col h-full transition-all",
       isDeployingToMain && "ring-4 ring-emerald-500 ring-offset-2 shadow-xl shadow-emerald-500/25",
       isDeployingToDev && !isDeployingToMain && "ring-2 ring-blue-400 ring-offset-2",
+      !isDeployingToMain && !isDeployingToDev && state === "devPending" && "ring-2 ring-blue-400 ring-offset-2",
       !isDeployingToMain && !isDeployingToDev && hasPRs && "ring-2 ring-amber-400 ring-offset-2",
     )}>
       {/* Acento superior — animado cuando hay deploy a main */}
