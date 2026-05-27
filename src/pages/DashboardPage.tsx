@@ -1,4 +1,4 @@
-import { RefreshCw, Clock, GitBranch, AlertCircle, CheckCircle2, GitPullRequest, ArrowUpCircle, Rocket } from "lucide-react";
+import { RefreshCw, Clock, GitBranch, AlertCircle, GitPullRequest, ArrowUpCircle, Rocket } from "lucide-react";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { RepoCard, RepoCardSkeleton } from "@/components/RepoCard";
 import { Button } from "@/components/ui/button";
