@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 
-const GRAPH_URL =
-  "https://raw.githubusercontent.com/jorge-mendoza-corella/sozu-docs/main/graphify-out/graph.json";
+const REPO = "jorge-mendoza-corella/sozu-docs";
+const BRANCH = "main";
+const GRAPH_PATH = "graphify-out/graph.json";
 
 export interface GraphNode {
   id: string;
@@ -30,13 +31,33 @@ export function useGraphData() {
     queryKey: ["graph-data"],
     queryFn: async () => {
       const token = import.meta.env.VITE_GITHUB_TOKEN;
-      const res = await fetch(GRAPH_URL, {
-        headers: {
-          ...(token ? { Authorization: `token ${token}` } : {}),
-        },
-      });
-      if (!res.ok) throw new Error(`No se pudo cargar graph.json (${res.status})`);
-      const raw = await res.json();
+      const baseHeaders: Record<string, string> = {
+        Accept: "application/vnd.github+json",
+        ...(token ? { Authorization: `token ${token}` } : {}),
+      };
+
+      // Step 1: Get blob SHA via recursive tree — avoids the 1 MB Contents API limit
+      const treeRes = await fetch(
+        `https://api.github.com/repos/${REPO}/git/trees/${BRANCH}?recursive=1`,
+        { headers: baseHeaders }
+      );
+      if (!treeRes.ok)
+        throw new Error(`Error al obtener árbol del repositorio (${treeRes.status})`);
+      const { tree } = (await treeRes.json()) as {
+        tree: { path: string; type: string; sha: string }[];
+      };
+      const entry = tree.find((e) => e.path === GRAPH_PATH && e.type === "blob");
+      if (!entry) throw new Error("graph.json no encontrado en el repositorio");
+
+      // Step 2: Fetch raw blob — Git Data API supports files up to 100 MB
+      const blobRes = await fetch(
+        `https://api.github.com/repos/${REPO}/git/blobs/${entry.sha}`,
+        { headers: { ...baseHeaders, Accept: "application/vnd.github.raw+json" } }
+      );
+      if (!blobRes.ok)
+        throw new Error(`Error al cargar graph.json (${blobRes.status})`);
+      const raw = await blobRes.json();
+
       return {
         nodes: (raw.nodes ?? []) as GraphNode[],
         edges: (raw.links ?? raw.edges ?? []) as GraphEdge[],
