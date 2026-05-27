@@ -37,6 +37,7 @@ export interface PullRequest {
   author: string;
   requestedReviewers: string[];
   reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+  hasConflict: boolean;
 }
 
 export interface WorkflowRun {
@@ -129,7 +130,10 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
     const openPRs: PullRequest[] = await Promise.all(
       prsResp.data.map(async (pr) => {
         const requestedReviewers = pr.requested_reviewers?.map((r) => r.login) ?? [];
-        const reviewDecision = await getPRReviewDecision(owner, repo, pr.number, requestedReviewers);
+        const [reviewDecision, prDetail] = await Promise.all([
+          getPRReviewDecision(owner, repo, pr.number, requestedReviewers),
+          octokit.pulls.get({ owner, repo, pull_number: pr.number }).catch(() => null),
+        ]);
         return {
           number: pr.number,
           title: pr.title,
@@ -143,6 +147,7 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
           author: pr.user?.login ?? "",
           requestedReviewers,
           reviewDecision,
+          hasConflict: prDetail?.data.mergeable === false,
         };
       }),
     );

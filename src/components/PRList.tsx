@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import {
   GitPullRequest, GitMerge, Rocket, ArrowRight,
   Clock, CheckCircle, CheckCircle2, XCircle, MessageCircle, Loader2, GitMerge as MergeIcon,
-  User, UserCheck,
+  User, UserCheck, AlertTriangle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -119,6 +119,7 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
         const isApproved       = rd === "APPROVED";
         const hasChangesReq    = rd === "CHANGES_REQUESTED";
         const hasAnyReviewBadge = hasPendingReview || isApproved || hasChangesReq;
+        const hasConflict = pr.hasConflict;
 
         // main: merge solo si aprobado | non-main: merge solo si aún no aprobado
         // mergedPRs oculta el botón de inmediato tras confirmar el merge
@@ -133,14 +134,17 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
             <div
               className={cn(
                 "flex items-start gap-2 p-2 rounded-md transition-colors",
-                isToMain
-                  ? "bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-700/60"
-                  : isDev
-                    ? "bg-sky-50/60 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-800/40"
-                    : "border border-transparent hover:bg-muted/50",
-                hasPendingReview && "ring-1 ring-amber-300 dark:ring-amber-700/60",
-                isApproved && "ring-1 ring-green-300 dark:ring-green-700/60",
-                hasChangesReq && "ring-1 ring-red-300 dark:ring-red-700/60",
+                hasConflict
+                  ? "bg-orange-50 dark:bg-orange-950/30 border border-orange-400 dark:border-orange-600/60"
+                  : isToMain
+                    ? "bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-700/60"
+                    : isDev
+                      ? "bg-sky-50/60 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-800/40"
+                      : "border border-transparent hover:bg-muted/50",
+                !hasConflict && hasPendingReview && "ring-1 ring-amber-300 dark:ring-amber-700/60",
+                !hasConflict && isApproved && "ring-1 ring-green-300 dark:ring-green-700/60",
+                !hasConflict && hasChangesReq && "ring-1 ring-red-300 dark:ring-red-700/60",
+                hasConflict && "ring-2 ring-orange-400 dark:ring-orange-500/70",
               )}
             >
               {/* Área principal → abre GitHub */}
@@ -207,6 +211,18 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
 
               {/* Badges — fuera del enlace */}
               <div className="flex items-center gap-1 shrink-0">
+                {hasConflict && (
+                  <a
+                    href={pr.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-700/60"
+                    title="Este PR tiene conflictos — resuélvelos en GitHub"
+                  >
+                    <AlertTriangle className="h-2.5 w-2.5" />
+                    Resolver conflictos
+                  </a>
+                )}
                 {isToMain && (
                   <Badge className="text-[9px] py-0 px-1.5 bg-emerald-600 text-white border-emerald-700 dark:bg-emerald-700 dark:border-emerald-600 font-bold tracking-wide">
                     → PRD
