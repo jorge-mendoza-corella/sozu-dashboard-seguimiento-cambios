@@ -118,8 +118,9 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
         const hasChangesReq    = rd === "CHANGES_REQUESTED";
         const hasAnyReviewBadge = hasPendingReview || isApproved || hasChangesReq;
 
-        // Merge visible: para main solo si aprobado; para otros solo si aún no aprobado
-        const canMerge = isToMain ? isApproved : !isApproved;
+        // Merge visible solo en PRs non-main sin aprobar (bypass antes de review)
+        // PRs a main o ya aprobados se mergean desde GitHub directamente
+        const canMerge = !isApproved && !isToMain;
 
         const isPanelOpen  = openPanel?.prNumber === pr.number;
         const isReviewOpen = isPanelOpen && openPanel?.mode === "review";
