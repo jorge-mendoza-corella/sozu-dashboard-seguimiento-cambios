@@ -214,6 +214,21 @@ export async function createPR(
   body: string = "",
 ): Promise<{ number: number; url: string }> {
   const { data } = await octokit.pulls.create({ owner, repo, title, head, base, body });
+
+  if (reviewerOctokit) {
+    try {
+      const { data: reviewerUser } = await reviewerOctokit.users.getAuthenticated();
+      await octokit.pulls.requestReviewers({
+        owner,
+        repo,
+        pull_number: data.number,
+        reviewers: [reviewerUser.login],
+      });
+    } catch {
+      // Si falla asignar reviewer no bloqueamos la creación del PR
+    }
+  }
+
   return { number: data.number, url: data.html_url };
 }
 
