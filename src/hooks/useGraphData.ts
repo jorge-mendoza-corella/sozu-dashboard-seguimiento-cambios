@@ -30,7 +30,7 @@ export function useGraphData() {
   return useQuery<GraphData>({
     queryKey: ["graph-data"],
     queryFn: async () => {
-      const token = import.meta.env.VITE_GITHUB_TOKEN;
+      const token = import.meta.env.VITE_GITHUB_DOCS_TOKEN;
       const baseHeaders: Record<string, string> = {
         Accept: "application/vnd.github+json",
         ...(token ? { Authorization: `token ${token}` } : {}),

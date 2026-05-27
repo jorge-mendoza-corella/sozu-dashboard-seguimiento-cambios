@@ -51,6 +51,8 @@ jobs:
           VITE_GITHUB_REVIEWER_TOKEN=$(gcloud secrets versions access latest --secret=DASHBOARD_GITHUB_REVIEWER_TOKEN --project=sozu-admin-dev)
           echo "VITE_GITHUB_REVIEWER_TOKEN=$VITE_GITHUB_REVIEWER_TOKEN" >> $GITHUB_ENV
 
+          echo "VITE_GITHUB_DOCS_TOKEN=${{ secrets.DASHBOARD_GITHUB_DOCS_TOKEN }}" >> $GITHUB_ENV
+
       - name: Install dependencies
         run: npm ci
 
