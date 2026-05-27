@@ -183,6 +183,34 @@ export function RepoCard({ status, onRefetch }: Props) {
         </div>
       )}
 
+      {/* ══════════════════════════════════════════════
+          BANNER TODO EN PRD  (estado ok, sin deploy activo)
+          ══════════════════════════════════════════════ */}
+      {state === "ok" && !isDeployingToMain && (
+        <div className="bg-gradient-to-r from-emerald-50 via-white to-teal-50 dark:from-emerald-950/40 dark:via-slate-900 dark:to-teal-950/30 border-b border-emerald-200/70 dark:border-emerald-800/30 px-4 py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/50 ring-1 ring-emerald-300/70 dark:ring-emerald-700/50">
+                <Rocket className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-600/70 dark:text-emerald-400/60 leading-none mb-0.5">
+                  En producción
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-black text-emerald-700 dark:text-emerald-300 tracking-tight leading-none">MAIN</span>
+                  <ArrowRight className="h-3 w-3 text-emerald-500/70 dark:text-emerald-500" />
+                  <span className="rounded bg-emerald-200/80 dark:bg-emerald-800/50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-300/50 dark:ring-emerald-700/40">
+                    PRD
+                  </span>
+                </div>
+              </div>
+            </div>
+            <CheckCircle2 className="h-4.5 w-4.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
+          </div>
+        </div>
+      )}
+
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
