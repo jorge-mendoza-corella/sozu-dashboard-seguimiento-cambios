@@ -59,6 +59,24 @@ export interface RepoStatus {
   error?: string;
 }
 
+/**
+ * True si el deploy MÁS RECIENTE de alguna rama falló. Un deploy exitoso
+ * posterior en la misma rama limpia el fallo previo, así que no se reporta
+ * como fallando. `latestRuns` viene ordenado más-nuevo-primero, por lo que
+ * el primer run visto por rama es el último deploy de esa rama.
+ */
+export function hasFailingDeploy(latestRuns: WorkflowRun[]): boolean {
+  const latestByBranch = new Map<string, WorkflowRun>();
+  for (const r of latestRuns) {
+    const key = r.headBranch ?? "";
+    if (!latestByBranch.has(key)) latestByBranch.set(key, r);
+  }
+  for (const r of latestByBranch.values()) {
+    if (r.conclusion === "failure") return true;
+  }
+  return false;
+}
+
 async function getPRReviewDecision(
   owner: string,
   repo: string,

@@ -1,6 +1,7 @@
 import { RefreshCw, Clock, GitBranch, AlertCircle, GitPullRequest, ArrowUpCircle, Rocket } from "lucide-react";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { RepoCard, RepoCardSkeleton } from "@/components/RepoCard";
+import { hasFailingDeploy } from "@/lib/github";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatDistanceToNow } from "@/lib/timeUtils";
@@ -19,14 +20,14 @@ export function DashboardPage() {
             return !r.error &&
               (dev?.aheadOfMain ?? 0) === 0 &&
               r.openPRs.length === 0 &&
-              r.latestRuns.every((x) => x.conclusion !== "failure");
+              !hasFailingDeploy(r.latestRuns);
           }).length,
           // Dev tiene cambios que aún no están en main/PRD
           devPending: data.filter((r) => (getDevBranch(r)?.aheadOfMain ?? 0) > 0).length,
           // PRs abiertos (de cualquier tipo)
           withPRs: data.filter((r) => r.openPRs.length > 0).length,
           // CI fallando
-          failing: data.filter((r) => r.latestRuns.some((x) => x.conclusion === "failure")).length,
+          failing: data.filter((r) => hasFailingDeploy(r.latestRuns)).length,
         };
       })()
     : null;

@@ -12,7 +12,7 @@ import { BranchRow } from "./BranchRow";
 import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
-import { createPR } from "@/lib/github";
+import { createPR, hasFailingDeploy } from "@/lib/github";
 
 function sortBranches(branches: BranchInfo[]): BranchInfo[] {
   return [
@@ -24,8 +24,7 @@ function sortBranches(branches: BranchInfo[]): BranchInfo[] {
 
 function getOverallState(status: RepoStatus): "ok" | "devPending" | "pending" | "failing" | "error" {
   if (status.error) return "error";
-  const failing = status.latestRuns.some((r) => r.conclusion === "failure");
-  if (failing) return "failing";
+  if (hasFailingDeploy(status.latestRuns)) return "failing";
   if (status.openPRs.length > 0) return "pending";
   const dev = status.branches.find((b) => b.name === "dev");
   if ((dev?.aheadOfMain ?? 0) > 0) return "devPending";
