@@ -113,13 +113,27 @@ async function getAheadBy(owner: string, repo: string, base: string, head: strin
 export async function fetchRepoStatus(owner: string, repo: string, label: string): Promise<RepoStatus> {
   try {
     const [branchesResp, prsResp, runsResp] = await Promise.all([
-      octokit.repos.listBranches({ owner, repo, per_page: 20 }),
+      octokit.repos.listBranches({ owner, repo, per_page: 100 }),
       octokit.pulls.list({ owner, repo, state: "open", per_page: 20 }),
       octokit.actions.listWorkflowRunsForRepo({ owner, repo, per_page: 20 }),
     ]);
 
+    // listBranches devuelve las ramas en orden alfabético y paginado, así que
+    // en repos con muchas ramas (cambios_*, feat/*) "main" puede quedar fuera.
+    // Traemos main y dev explícitamente si no vinieron en la lista.
+    const rawBranches = [...branchesResp.data];
+    for (const required of ["main", "dev"]) {
+      if (!rawBranches.some((b) => b.name === required)) {
+        try {
+          const { data } = await octokit.repos.getBranch({ owner, repo, branch: required });
+          rawBranches.push(data as unknown as (typeof rawBranches)[number]);
+        } catch {
+          /* la rama no existe en este repo */
+        }
+      }
+    }
+
     // Ordenar antes de slicear: main y dev primero, así nunca quedan fuera por paginación
-    const rawBranches = branchesResp.data;
     const sortedRaw = [
       ...rawBranches.filter((b) => b.name === "main"),
       ...rawBranches.filter((b) => b.name === "dev"),
