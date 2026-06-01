@@ -106,8 +106,11 @@ export function RepoCard({ status, onRefetch }: Props) {
   };
 
   const sorted = sortBranches(status.branches);
-  const visibleBranches = sorted.filter((b) => !hiddenBranches.has(b.name));
-  const hiddenList = sorted.filter((b) => hiddenBranches.has(b.name));
+  // main y dev siempre visibles (en el orden de sortBranches), sin importar
+  // lo guardado en localStorage. Solo las demás ramas pueden ocultarse.
+  const isProtectedBranch = (name: string) => name === "main" || name === "dev";
+  const visibleBranches = sorted.filter((b) => isProtectedBranch(b.name) || !hiddenBranches.has(b.name));
+  const hiddenList = sorted.filter((b) => !isProtectedBranch(b.name) && hiddenBranches.has(b.name));
 
   const branchesWithPR = new Set([...status.openPRs.map((pr) => pr.head), ...optimisticPRHeads]);
   const hasDevToMainPR = status.openPRs.some((pr) => pr.head === "dev" && pr.base === "main") || optimisticPRHeads.has("dev");
@@ -270,7 +273,7 @@ export function RepoCard({ status, onRefetch }: Props) {
                   key={b.name}
                   branch={b}
                   hasPR={branchesWithPR.has(b.name)}
-                  onHide={() => hideBranch(b.name)}
+                  onHide={isProtectedBranch(b.name) ? undefined : () => hideBranch(b.name)}
                   onCreatePR={showCreatePR ? () => openCreatePR(b.name) : undefined}
                   alwaysShowCreatePR={isDevBranch}
                 />
