@@ -21,5 +21,12 @@ service cloud.firestore {
         && email == 'jorge.mendoza@sozu.com'
         && request.resource.data.role == 'superuser';
     }
+
+    // Teléfonos de WhatsApp de contribuidores de GitHub.
+    // Cualquier usuario autenticado (registrado en /users) puede leer y escribir.
+    match /contributors/{login} {
+      allow read, write: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+    }
   }
 }

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Activity, GitBranch, Network, Users, LogOut } from "lucide-react";
+import { Activity, GitBranch, Network, Users, GitCommit, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 const NAV_ITEMS = [
   { to: "/", label: "CI/CD", icon: GitBranch },
   { to: "/graph", label: "Grafo", icon: Network },
+  { to: "/contributors", label: "Contribuidores", icon: GitCommit },
   { to: "/users", label: "Usuarios", icon: Users },
 ];
 

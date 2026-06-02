@@ -6,6 +6,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { GraphPage } from "@/pages/GraphPage";
 import { UsersPage } from "@/pages/UsersPage";
+import { ContributorsPage } from "@/pages/ContributorsPage";
 
 const queryClient = new QueryClient();
 
@@ -31,6 +32,7 @@ function AppRoutes() {
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/graph" element={<GraphPage />} />
+          <Route path="/contributors" element={<ContributorsPage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

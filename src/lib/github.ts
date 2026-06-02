@@ -287,3 +287,65 @@ export async function submitReview(
     body,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Contribuidores
+// ---------------------------------------------------------------------------
+
+export interface ContributorRepoStat {
+  repo: string;
+  contributions: number;
+}
+
+export interface Contributor {
+  login: string;
+  avatarUrl: string;
+  htmlUrl: string;
+  totalContributions: number;
+  repos: ContributorRepoStat[];
+}
+
+const isBot = (login: string, type: string) =>
+  type === "Bot" || /\[bot\]$/i.test(login) || /-bot$/i.test(login);
+
+/**
+ * Agrega los contribuidores de todos los repos de `REPOS`, sumando commits por
+ * usuario y guardando el desglose por repo. Excluye bots.
+ */
+export async function fetchContributors(): Promise<Contributor[]> {
+  const byLogin = new Map<string, Contributor>();
+
+  await Promise.all(
+    REPOS.map(async ({ owner, repo, label }) => {
+      try {
+        const data = await octokit.paginate(octokit.repos.listContributors, {
+          owner,
+          repo,
+          per_page: 100,
+        });
+        for (const c of data) {
+          if (!c.login || isBot(c.login, c.type ?? "")) continue;
+          let entry = byLogin.get(c.login);
+          if (!entry) {
+            entry = {
+              login: c.login,
+              avatarUrl: c.avatar_url ?? "",
+              htmlUrl: c.html_url ?? "",
+              totalContributions: 0,
+              repos: [],
+            };
+            byLogin.set(c.login, entry);
+          }
+          entry.totalContributions += c.contributions ?? 0;
+          entry.repos.push({ repo: label, contributions: c.contributions ?? 0 });
+        }
+      } catch {
+        /* repo sin acceso o error puntual: se omite */
+      }
+    }),
+  );
+
+  return [...byLogin.values()]
+    .map((c) => ({ ...c, repos: c.repos.sort((a, b) => b.contributions - a.contributions) }))
+    .sort((a, b) => b.totalContributions - a.totalContributions);
+}
