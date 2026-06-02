@@ -67,3 +67,26 @@ jobs:
           projectId: sozu-admin-dev
           target: sozu-dashboard-dev
           channelId: live
+
+      - name: Notificar deploy listo (WhatsApp)
+        if: success()
+        env:
+          ENVIRONMENT: DEV
+          N8N_WEBHOOK: https://automatizacion-n8n.fbqqbe.easypanel.host/webhook/manda_notificacion
+          N8N_APIKEY: 80FA62E3FD0C-4477-8B31-8A2CD6AF7B57
+        run: |
+          ACTOR="${{ github.actor }}"
+          # El service account ya está autenticado (paso "Authenticate to Google Cloud").
+          ACCESS_TOKEN="$(gcloud auth print-access-token)"
+          # Teléfono (10 dígitos) guardado para este usuario de GitHub en Firestore.
+          PHONE="$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+            "https://firestore.googleapis.com/v1/projects/sozu-admin-dev/databases/(default)/documents/contributors/${ACTOR}" \
+            | jq -r '.fields.telefonoWhatsapp.stringValue // empty')"
+          if [ -z "$PHONE" ]; then
+            echo "Sin teléfono guardado para '$ACTOR' en contributors; se omite la notificación."
+            exit 0
+          fi
+          curl -s -X POST "$N8N_WEBHOOK" \
+            -H "apikey: $N8N_APIKEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"tipo\":\"wa\",\"telefono\":\"+521${PHONE}\",\"mensajeWA\":\"Ha quedado listo tu deploy en ${ENVIRONMENT}, puedes revisar\",\"instanciaWA\":\"Pruebas de todo\"}"
