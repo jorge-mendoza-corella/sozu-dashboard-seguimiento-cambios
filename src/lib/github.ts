@@ -357,29 +357,22 @@ export async function fetchContributors(): Promise<Contributor[]> {
 // Actividad de commits (analítica ejecutiva)
 // ---------------------------------------------------------------------------
 
-export interface DailyCount {
+/** Un commit individual (ya filtrado de bots) para agregación client-side reactiva. */
+export interface CommitRecord {
   date: string; // YYYY-MM-DD
-  count: number;
+  login: string;
+  repo: string; // label del repo
 }
 
-export interface AuthorActivity {
+export interface ContributorRef {
   login: string;
   avatarUrl: string;
-  total: number;
-  perDay: number; // total / días activos del autor
-}
-
-export interface RepoActivity {
-  repo: string;
-  total: number;
 }
 
 export interface CommitActivity {
-  daily: DailyCount[]; // rango continuo de `windowDays` días, días sin commits = 0
-  byAuthor: AuthorActivity[];
-  byRepo: RepoActivity[];
-  totalCommits: number;
-  activeDays: number; // días (en la ventana) con al menos 1 commit
+  commits: CommitRecord[]; // todos los commits de la ventana (sin bots)
+  authors: ContributorRef[]; // contribuidores distintos (para el filtro), ordenados por total
+  repos: string[]; // labels de repos con actividad (para el filtro)
   windowDays: number;
   since: string; // ISO
 }
@@ -387,17 +380,17 @@ export interface CommitActivity {
 const dayKey = (iso: string) => iso.slice(0, 10); // YYYY-MM-DD
 
 /**
- * Trae los commits de los últimos `windowDays` días de todos los repos de `REPOS`
- * y los agrega por día, por autor y por repo. Excluye bots. Tolera repos sin acceso.
+ * Trae los commits de los últimos `windowDays` días de todos los repos de `REPOS`.
+ * Devuelve la lista cruda de commits (sin bots) + catálogos de autores y repos, para
+ * que la UI pueda filtrar/agregar en vivo. Tolera repos sin acceso.
  */
 export async function fetchCommitActivity(windowDays = 30): Promise<CommitActivity> {
   const since = new Date(Date.now() - windowDays * 86_400_000).toISOString();
 
-  const perDay = new Map<string, number>();
-  const perRepo = new Map<string, number>();
-  // login -> { avatarUrl, total, días activos }
-  const perAuthor = new Map<string, { avatarUrl: string; total: number; days: Set<string> }>();
-  let totalCommits = 0;
+  const commits: CommitRecord[] = [];
+  const avatarByLogin = new Map<string, string>();
+  const totalByLogin = new Map<string, number>();
+  const reposWithActivity = new Set<string>();
 
   await Promise.all(
     REPOS.map(async ({ owner, repo, label }) => {
@@ -414,19 +407,12 @@ export async function fetchCommitActivity(windowDays = 30): Promise<CommitActivi
           const login = c.author?.login ?? c.commit?.author?.name ?? "desconocido";
           if (isBot(login, c.author?.type ?? "")) continue;
 
-          const day = dayKey(dateIso);
-          totalCommits += 1;
-          perDay.set(day, (perDay.get(day) ?? 0) + 1);
-          perRepo.set(label, (perRepo.get(label) ?? 0) + 1);
-
-          let author = perAuthor.get(login);
-          if (!author) {
-            author = { avatarUrl: c.author?.avatar_url ?? "", total: 0, days: new Set() };
-            perAuthor.set(login, author);
+          commits.push({ date: dayKey(dateIso), login, repo: label });
+          reposWithActivity.add(label);
+          totalByLogin.set(login, (totalByLogin.get(login) ?? 0) + 1);
+          if (c.author?.avatar_url && !avatarByLogin.get(login)) {
+            avatarByLogin.set(login, c.author.avatar_url);
           }
-          author.total += 1;
-          author.days.add(day);
-          if (!author.avatarUrl && c.author?.avatar_url) author.avatarUrl = c.author.avatar_url;
         }
       } catch {
         /* repo sin acceso o error puntual: se omite */
@@ -434,34 +420,62 @@ export async function fetchCommitActivity(windowDays = 30): Promise<CommitActivi
     }),
   );
 
-  // Rango continuo de días (zero-fill), del más antiguo al más reciente
-  const daily: DailyCount[] = [];
+  const authors: ContributorRef[] = [...totalByLogin.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([login]) => ({ login, avatarUrl: avatarByLogin.get(login) ?? "" }));
+
+  const repos = REPOS.map((r) => r.label).filter((l) => reposWithActivity.has(l));
+
+  return { commits, authors, repos, windowDays, since };
+}
+
+// --- Agregadores client-side (puros, reutilizables en UI y export) -----------
+
+export interface DailyCount {
+  date: string;
+  count: number;
+}
+export interface AuthorActivity {
+  login: string;
+  total: number;
+  perDay: number;
+}
+export interface RepoActivity {
+  repo: string;
+  total: number;
+}
+
+/** Serie diaria continua (zero-fill) de `windowDays` días desde `since`. */
+export function buildDailySeries(commits: CommitRecord[], since: string, windowDays: number): DailyCount[] {
+  const perDay = new Map<string, number>();
+  for (const c of commits) perDay.set(c.date, (perDay.get(c.date) ?? 0) + 1);
   const startMs = new Date(since).getTime();
+  const out: DailyCount[] = [];
   for (let i = 0; i < windowDays; i++) {
     const day = dayKey(new Date(startMs + i * 86_400_000).toISOString());
-    daily.push({ date: day, count: perDay.get(day) ?? 0 });
+    out.push({ date: day, count: perDay.get(day) ?? 0 });
   }
+  return out;
+}
 
-  const byAuthor: AuthorActivity[] = [...perAuthor.entries()]
-    .map(([login, a]) => ({
-      login,
-      avatarUrl: a.avatarUrl,
-      total: a.total,
-      perDay: a.total / (a.days.size || 1),
-    }))
+export function aggregateByAuthor(commits: CommitRecord[]): AuthorActivity[] {
+  const m = new Map<string, { total: number; days: Set<string> }>();
+  for (const c of commits) {
+    let e = m.get(c.login);
+    if (!e) {
+      e = { total: 0, days: new Set() };
+      m.set(c.login, e);
+    }
+    e.total += 1;
+    e.days.add(c.date);
+  }
+  return [...m.entries()]
+    .map(([login, e]) => ({ login, total: e.total, perDay: e.total / (e.days.size || 1) }))
     .sort((a, b) => b.total - a.total);
+}
 
-  const byRepo: RepoActivity[] = [...perRepo.entries()]
-    .map(([repo, total]) => ({ repo, total }))
-    .sort((a, b) => b.total - a.total);
-
-  return {
-    daily,
-    byAuthor,
-    byRepo,
-    totalCommits,
-    activeDays: perDay.size,
-    windowDays,
-    since,
-  };
+export function aggregateByRepo(commits: CommitRecord[]): RepoActivity[] {
+  const m = new Map<string, number>();
+  for (const c of commits) m.set(c.repo, (m.get(c.repo) ?? 0) + 1);
+  return [...m.entries()].map(([repo, total]) => ({ repo, total })).sort((a, b) => b.total - a.total);
 }
