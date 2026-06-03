@@ -352,3 +352,116 @@ export async function fetchContributors(): Promise<Contributor[]> {
     .map((c) => ({ ...c, repos: c.repos.sort((a, b) => b.contributions - a.contributions) }))
     .sort((a, b) => b.totalContributions - a.totalContributions);
 }
+
+// ---------------------------------------------------------------------------
+// Actividad de commits (analítica ejecutiva)
+// ---------------------------------------------------------------------------
+
+export interface DailyCount {
+  date: string; // YYYY-MM-DD
+  count: number;
+}
+
+export interface AuthorActivity {
+  login: string;
+  avatarUrl: string;
+  total: number;
+  perDay: number; // total / días activos del autor
+}
+
+export interface RepoActivity {
+  repo: string;
+  total: number;
+}
+
+export interface CommitActivity {
+  daily: DailyCount[]; // rango continuo de `windowDays` días, días sin commits = 0
+  byAuthor: AuthorActivity[];
+  byRepo: RepoActivity[];
+  totalCommits: number;
+  activeDays: number; // días (en la ventana) con al menos 1 commit
+  windowDays: number;
+  since: string; // ISO
+}
+
+const dayKey = (iso: string) => iso.slice(0, 10); // YYYY-MM-DD
+
+/**
+ * Trae los commits de los últimos `windowDays` días de todos los repos de `REPOS`
+ * y los agrega por día, por autor y por repo. Excluye bots. Tolera repos sin acceso.
+ */
+export async function fetchCommitActivity(windowDays = 30): Promise<CommitActivity> {
+  const since = new Date(Date.now() - windowDays * 86_400_000).toISOString();
+
+  const perDay = new Map<string, number>();
+  const perRepo = new Map<string, number>();
+  // login -> { avatarUrl, total, días activos }
+  const perAuthor = new Map<string, { avatarUrl: string; total: number; days: Set<string> }>();
+  let totalCommits = 0;
+
+  await Promise.all(
+    REPOS.map(async ({ owner, repo, label }) => {
+      try {
+        const data = await octokit.paginate(octokit.repos.listCommits, {
+          owner,
+          repo,
+          since,
+          per_page: 100,
+        });
+        for (const c of data) {
+          const dateIso = c.commit?.author?.date;
+          if (!dateIso) continue;
+          const login = c.author?.login ?? c.commit?.author?.name ?? "desconocido";
+          if (isBot(login, c.author?.type ?? "")) continue;
+
+          const day = dayKey(dateIso);
+          totalCommits += 1;
+          perDay.set(day, (perDay.get(day) ?? 0) + 1);
+          perRepo.set(label, (perRepo.get(label) ?? 0) + 1);
+
+          let author = perAuthor.get(login);
+          if (!author) {
+            author = { avatarUrl: c.author?.avatar_url ?? "", total: 0, days: new Set() };
+            perAuthor.set(login, author);
+          }
+          author.total += 1;
+          author.days.add(day);
+          if (!author.avatarUrl && c.author?.avatar_url) author.avatarUrl = c.author.avatar_url;
+        }
+      } catch {
+        /* repo sin acceso o error puntual: se omite */
+      }
+    }),
+  );
+
+  // Rango continuo de días (zero-fill), del más antiguo al más reciente
+  const daily: DailyCount[] = [];
+  const startMs = new Date(since).getTime();
+  for (let i = 0; i < windowDays; i++) {
+    const day = dayKey(new Date(startMs + i * 86_400_000).toISOString());
+    daily.push({ date: day, count: perDay.get(day) ?? 0 });
+  }
+
+  const byAuthor: AuthorActivity[] = [...perAuthor.entries()]
+    .map(([login, a]) => ({
+      login,
+      avatarUrl: a.avatarUrl,
+      total: a.total,
+      perDay: a.total / (a.days.size || 1),
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const byRepo: RepoActivity[] = [...perRepo.entries()]
+    .map(([repo, total]) => ({ repo, total }))
+    .sort((a, b) => b.total - a.total);
+
+  return {
+    daily,
+    byAuthor,
+    byRepo,
+    totalCommits,
+    activeDays: perDay.size,
+    windowDays,
+    since,
+  };
+}

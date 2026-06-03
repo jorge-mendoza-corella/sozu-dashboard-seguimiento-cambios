@@ -6,11 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchContributors, type Contributor } from "@/lib/github";
 import { getAllContributorPhones, saveContributorPhone } from "@/lib/firestoreContributors";
-
-const BAR_COLORS = [
-  "#6366f1", "#8b5cf6", "#ec4899", "#f59e0b", "#10b981",
-  "#06b6d4", "#3b82f6", "#ef4444", "#84cc16", "#a855f7",
-];
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ContributorsAnalytics } from "@/components/analytics/ContributorsAnalytics";
+import { BAR_COLORS } from "@/lib/colors";
 
 const TEL_REGEX = /^\d{10}$/;
 
@@ -183,50 +181,63 @@ export function ContributorsPage() {
         </div>
       </div>
 
-      {error && (
-        <Card className="mb-6 border-destructive">
-          <CardContent className="p-4 text-sm text-destructive">{error}</CardContent>
-        </Card>
-      )}
+      <Tabs defaultValue="lista">
+        <TabsList>
+          <TabsTrigger value="lista">Contribuidores</TabsTrigger>
+          <TabsTrigger value="analitica">Analítica ejecutiva</TabsTrigger>
+        </TabsList>
 
-      {loading ? (
-        <div className="flex items-center justify-center h-64 text-muted-foreground">
-          <Loader2 className="h-6 w-6 animate-spin mr-2" /> Cargando contribuidores…
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {contributors.map((c) => (
-            <Card
-              key={c.login}
-              className="cursor-pointer transition-shadow hover:shadow-md"
-              onClick={() => setSelected(c)}
-            >
-              <CardContent className="flex items-center gap-4 p-4">
-                <img src={c.avatarUrl} alt={c.login} className="h-12 w-12 rounded-full border" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold">{c.login}</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <GitCommit className="h-3 w-3" />
-                      {c.totalContributions.toLocaleString()} commits
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Users className="h-3 w-3" />
-                      {c.repos.length} repos
-                    </span>
-                  </div>
-                  {phones[c.login] && (
-                    <Badge variant="secondary" className="mt-2 gap-1">
-                      <Phone className="h-3 w-3" />
-                      {phones[c.login]}
-                    </Badge>
-                  )}
-                </div>
-              </CardContent>
+        <TabsContent value="lista">
+          {error && (
+            <Card className="mb-6 border-destructive">
+              <CardContent className="p-4 text-sm text-destructive">{error}</CardContent>
             </Card>
-          ))}
-        </div>
-      )}
+          )}
+
+          {loading ? (
+            <div className="flex items-center justify-center h-64 text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin mr-2" /> Cargando contribuidores…
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {contributors.map((c) => (
+                <Card
+                  key={c.login}
+                  className="cursor-pointer transition-shadow hover:shadow-md"
+                  onClick={() => setSelected(c)}
+                >
+                  <CardContent className="flex items-center gap-4 p-4">
+                    <img src={c.avatarUrl} alt={c.login} className="h-12 w-12 rounded-full border" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold">{c.login}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                        <span className="inline-flex items-center gap-1">
+                          <GitCommit className="h-3 w-3" />
+                          {c.totalContributions.toLocaleString()} commits
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Users className="h-3 w-3" />
+                          {c.repos.length} repos
+                        </span>
+                      </div>
+                      {phones[c.login] && (
+                        <Badge variant="secondary" className="mt-2 gap-1">
+                          <Phone className="h-3 w-3" />
+                          {phones[c.login]}
+                        </Badge>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="analitica">
+          <ContributorsAnalytics />
+        </TabsContent>
+      </Tabs>
 
       {selected && (
         <DetailModal
