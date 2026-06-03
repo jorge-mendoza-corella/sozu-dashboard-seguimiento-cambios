@@ -34,8 +34,14 @@ export async function addUser(email: string, addedBy: string, role: UserRole = "
 }
 
 export async function removeUser(email: string) {
-  if (email === SUPERUSER_EMAIL) throw new Error("El superusuario no puede eliminarse");
+  if (email === SUPERUSER_EMAIL) throw new Error("El superusuario raíz no puede eliminarse");
   await deleteDoc(doc(db, "users", email));
+}
+
+/** Cambia el rol de un usuario existente (promover a Administrador o degradar a Viewer). */
+export async function setUserRole(email: string, role: UserRole) {
+  if (email === SUPERUSER_EMAIL) throw new Error("No se puede cambiar el rol del superusuario raíz");
+  await setDoc(doc(db, "users", email), { role }, { merge: true });
 }
 
 export async function seedSuperuser() {
