@@ -186,6 +186,9 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
 
     const latestRuns: WorkflowRun[] = runsResp.data.workflow_runs
       .filter((r) => (r.name ?? "").toLowerCase().includes("deploy"))
+      // Solo deploys de las ramas reales (main/dev). Runs en ramas de feature
+      // o PR no deben marcar el repo como fallando ni mostrarse como deploy.
+      .filter((r) => ["main", "dev"].includes(r.head_branch ?? ""))
       .slice(0, 3)
       .map((r) => ({
         name: r.name ?? "Workflow",

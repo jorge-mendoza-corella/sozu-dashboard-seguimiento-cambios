@@ -89,4 +89,4 @@ jobs:
           curl -s -X POST "$N8N_WEBHOOK" \
             -H "apikey: $N8N_APIKEY" \
             -H "Content-Type: application/json" \
-            -d "{\"tipo\":\"wa\",\"telefono\":\"+521${PHONE}\",\"mensajeWA\":\"Ha quedado listo tu deploy en ${ENVIRONMENT}, puedes revisar\",\"instanciaWA\":\"Pruebas de todo\"}"
+            -d "{\"tipo\":\"wa\",\"telefono\":\"+521${PHONE}\",\"mensajeWA\":\"Ha quedado listo tu deploy en ${ENVIRONMENT} del repo ${GITHUB_REPOSITORY##*/}, puedes revisar\",\"instanciaWA\":\"Pruebas de todo\"}"
