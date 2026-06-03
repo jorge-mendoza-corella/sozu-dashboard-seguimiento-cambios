@@ -1,16 +1,4 @@
 import { Loader2, CalendarDays, Trophy, FolderGit2, TrendingUp } from "lucide-react";
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  Cell,
-} from "recharts";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCommitActivity } from "@/hooks/useCommitActivity";
 import { BAR_COLORS } from "@/lib/colors";
@@ -18,11 +6,10 @@ import type { CommitActivity } from "@/lib/github";
 
 const TOP_AUTHORS = 8;
 
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 const fmtDay = (date: string) => {
-  // date = YYYY-MM-DD -> "DD MMM"
   const [, m, d] = date.split("-");
-  const meses = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-  return `${Number(d)} ${meses[Number(m) - 1] ?? ""}`;
+  return `${Number(d)} ${MESES[Number(m) - 1] ?? ""}`;
 };
 
 function SectionCard({
@@ -44,16 +31,117 @@ function SectionCard({
           <h2 className="text-lg font-semibold">{title}</h2>
         </div>
         <div className="mt-2 rounded-md bg-muted/60 p-3 text-sm text-muted-foreground">{summary}</div>
-        <div className="mt-4 h-72 w-full">{children}</div>
+        <div className="mt-4">{children}</div>
       </CardContent>
     </Card>
+  );
+}
+
+/** Gráfico de área/línea en SVG puro (sin dependencias). */
+function DailyAreaChart({ data }: { data: { date: string; count: number }[] }) {
+  const W = 720;
+  const H = 240;
+  const PAD = { top: 12, right: 12, bottom: 28, left: 32 };
+  const innerW = W - PAD.left - PAD.right;
+  const innerH = H - PAD.top - PAD.bottom;
+  const max = Math.max(...data.map((d) => d.count), 1);
+  const n = data.length;
+
+  const x = (i: number) => PAD.left + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+  const y = (v: number) => PAD.top + innerH - (v / max) * innerH;
+
+  const linePts = data.map((d, i) => `${x(i)},${y(d.count)}`).join(" ");
+  const areaPts = `${PAD.left},${PAD.top + innerH} ${linePts} ${PAD.left + innerW},${PAD.top + innerH}`;
+
+  // ~6 etiquetas de fecha en X
+  const step = Math.max(1, Math.ceil(n / 6));
+  const xLabels = data.filter((_, i) => i % step === 0 || i === n - 1);
+
+  // gridlines Y (0, mitad, max)
+  const yTicks = [0, Math.round(max / 2), max].filter((v, i, a) => a.indexOf(v) === i);
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-64 w-full" preserveAspectRatio="none" role="img">
+      <defs>
+        <linearGradient id="dailyFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#6366f1" stopOpacity={0.35} />
+          <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      {yTicks.map((v) => (
+        <g key={v}>
+          <line
+            x1={PAD.left}
+            x2={W - PAD.right}
+            y1={y(v)}
+            y2={y(v)}
+            stroke="currentColor"
+            strokeOpacity={0.12}
+            strokeDasharray="3 3"
+          />
+          <text x={4} y={y(v) + 3} fontSize={10} fill="currentColor" fillOpacity={0.5}>
+            {v}
+          </text>
+        </g>
+      ))}
+      <polygon points={areaPts} fill="url(#dailyFill)" />
+      <polyline points={linePts} fill="none" stroke="#6366f1" strokeWidth={2} strokeLinejoin="round" />
+      {xLabels.map((d) => {
+        const i = data.indexOf(d);
+        return (
+          <text
+            key={d.date}
+            x={x(i)}
+            y={H - 8}
+            fontSize={10}
+            fill="currentColor"
+            fillOpacity={0.6}
+            textAnchor="middle"
+          >
+            {fmtDay(d.date)}
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
+
+/** Barras horizontales en CSS (mismo patrón que el modal de contribuidor). */
+function HBars({
+  items,
+}: {
+  items: { key: string; label: React.ReactNode; value: number; caption?: string }[];
+}) {
+  const max = Math.max(...items.map((i) => i.value), 1);
+  return (
+    <div className="space-y-2">
+      {items.map((it, i) => (
+        <div key={it.key} className="flex items-center gap-3">
+          <span className="w-36 shrink-0 truncate text-xs text-muted-foreground" title={it.key}>
+            {it.label}
+          </span>
+          <div className="h-5 flex-1 overflow-hidden rounded bg-muted">
+            <div
+              className="flex h-full items-center justify-end rounded pr-2 text-[10px] font-medium text-white"
+              style={{
+                width: `${Math.max((it.value / max) * 100, 8)}%`,
+                backgroundColor: BAR_COLORS[i % BAR_COLORS.length],
+              }}
+            >
+              {it.value.toLocaleString()}
+            </div>
+          </div>
+          {it.caption && <span className="w-16 shrink-0 text-right text-[10px] text-muted-foreground">{it.caption}</span>}
+        </div>
+      ))}
+    </div>
   );
 }
 
 function DailyChangesSection({ data }: { data: CommitActivity }) {
   const { daily, totalCommits, windowDays } = data;
   const avg = totalCommits / windowDays;
-  const peak = daily.reduce((max, d) => (d.count > max.count ? d : max), daily[0] ?? { date: "", count: 0 });
+  const peak = daily.reduce((m, d) => (d.count > m.count ? d : m), daily[0] ?? { date: "", count: 0 });
 
   return (
     <SectionCard
@@ -73,31 +161,7 @@ function DailyChangesSection({ data }: { data: CommitActivity }) {
         </>
       }
     >
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={daily} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
-          <defs>
-            <linearGradient id="dailyFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#6366f1" stopOpacity={0.4} />
-              <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-          <XAxis
-            dataKey="date"
-            tickFormatter={fmtDay}
-            tick={{ fontSize: 11 }}
-            interval="preserveStartEnd"
-            minTickGap={24}
-          />
-          <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={32} />
-          <Tooltip
-            labelFormatter={(l) => fmtDay(String(l))}
-            formatter={(v: unknown) => [Number(v), "commits"]}
-            contentStyle={{ fontSize: 12, borderRadius: 8 }}
-          />
-          <Area type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={2} fill="url(#dailyFill)" />
-        </AreaChart>
-      </ResponsiveContainer>
+      <DailyAreaChart data={daily} />
     </SectionCard>
   );
 }
@@ -122,25 +186,14 @@ function TopAuthorsSection({ data }: { data: CommitActivity }) {
         )
       }
     >
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={top} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-          <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-          <YAxis type="category" dataKey="login" tick={{ fontSize: 11 }} width={110} />
-          <Tooltip
-            formatter={(v: unknown, _n: unknown, p: { payload?: { perDay?: number } }) => [
-              `${Number(v)} commits · ${(p.payload?.perDay ?? 0).toFixed(1)}/día`,
-              "Actividad",
-            ]}
-            contentStyle={{ fontSize: 12, borderRadius: 8 }}
-          />
-          <Bar dataKey="total" radius={[0, 4, 4, 0]}>
-            {top.map((a, i) => (
-              <Cell key={a.login} fill={BAR_COLORS[i % BAR_COLORS.length]} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+      <HBars
+        items={top.map((a) => ({
+          key: a.login,
+          label: a.login,
+          value: a.total,
+          caption: `${a.perDay.toFixed(1)}/día`,
+        }))}
+      />
     </SectionCard>
   );
 }
@@ -166,19 +219,14 @@ function TopReposSection({ data }: { data: CommitActivity }) {
         )
       }
     >
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={byRepo} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-          <XAxis dataKey="repo" tick={{ fontSize: 10 }} interval={0} angle={-12} textAnchor="end" height={50} />
-          <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={32} />
-          <Tooltip formatter={(v: unknown) => [Number(v), "commits"]} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-          <Bar dataKey="total" radius={[4, 4, 0, 0]}>
-            {byRepo.map((r, i) => (
-              <Cell key={r.repo} fill={BAR_COLORS[i % BAR_COLORS.length]} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+      <HBars
+        items={byRepo.map((r) => ({
+          key: r.repo,
+          label: r.repo,
+          value: r.total,
+          caption: totalCommits > 0 ? `${((r.total / totalCommits) * 100).toFixed(0)}%` : undefined,
+        }))}
+      />
     </SectionCard>
   );
 }
