@@ -34,9 +34,11 @@ function getOverallState(status: RepoStatus): "ok" | "devPending" | "pending" | 
 interface Props {
   status: RepoStatus;
   onRefetch?: () => void;
+  /** Viewer: solo main/dev, sin ocultas, sin crear/aprobar/merge. */
+  readOnly?: boolean;
 }
 
-export function RepoCard({ status, onRefetch }: Props) {
+export function RepoCard({ status, onRefetch, readOnly = false }: Props) {
   const [newPR, setNewPR] = useState<{ head: string; title: string; base: string; body: string } | null>(null);
   const [newPRLoading, setNewPRLoading] = useState(false);
   const [newPRResult, setNewPRResult] = useState<{ ok: boolean; msg: string; url?: string } | null>(null);
@@ -109,8 +111,11 @@ export function RepoCard({ status, onRefetch }: Props) {
   // main y dev siempre visibles (en el orden de sortBranches), sin importar
   // lo guardado en localStorage. Solo las demás ramas pueden ocultarse.
   const isProtectedBranch = (name: string) => name === "main" || name === "dev";
-  const visibleBranches = sorted.filter((b) => isProtectedBranch(b.name) || !hiddenBranches.has(b.name));
-  const hiddenList = sorted.filter((b) => !isProtectedBranch(b.name) && hiddenBranches.has(b.name));
+  // Viewer: solo main y dev, sin ramas ocultables.
+  const visibleBranches = readOnly
+    ? sorted.filter((b) => isProtectedBranch(b.name))
+    : sorted.filter((b) => isProtectedBranch(b.name) || !hiddenBranches.has(b.name));
+  const hiddenList = readOnly ? [] : sorted.filter((b) => !isProtectedBranch(b.name) && hiddenBranches.has(b.name));
 
   const branchesWithPR = new Set([...status.openPRs.map((pr) => pr.head), ...optimisticPRHeads]);
   const hasDevToMainPR = status.openPRs.some((pr) => pr.head === "dev" && pr.base === "main") || optimisticPRHeads.has("dev");
@@ -265,17 +270,17 @@ export function RepoCard({ status, onRefetch }: Props) {
           <div className="space-y-0">
             {visibleBranches.map((b) => {
               const isDevBranch = b.name === "dev";
-              const showCreatePR = isDevBranch
+              const showCreatePR = !readOnly && (isDevBranch
                 ? devAheadOfMain > 0 && !hasDevToMainPR && !isDeployingToDev
-                : !branchesWithPR.has(b.name) && b.name !== "main";
+                : !branchesWithPR.has(b.name) && b.name !== "main");
               return (
                 <BranchRow
                   key={b.name}
                   branch={b}
                   hasPR={branchesWithPR.has(b.name)}
-                  onHide={isProtectedBranch(b.name) ? undefined : () => hideBranch(b.name)}
+                  onHide={readOnly || isProtectedBranch(b.name) ? undefined : () => hideBranch(b.name)}
                   onCreatePR={showCreatePR ? () => openCreatePR(b.name) : undefined}
-                  alwaysShowCreatePR={isDevBranch}
+                  alwaysShowCreatePR={isDevBranch && !readOnly}
                 />
               );
             })}
@@ -385,7 +390,7 @@ export function RepoCard({ status, onRefetch }: Props) {
           <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             <GitPullRequest className="h-3.5 w-3.5" /> PRs abiertos ({status.openPRs.length})
           </h4>
-          <PRList prs={status.openPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} />
+          <PRList prs={status.openPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} readOnly={readOnly} />
         </div>
 
         {/* Últimos deploys */}

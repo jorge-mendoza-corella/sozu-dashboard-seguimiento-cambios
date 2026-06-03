@@ -18,9 +18,11 @@ interface Props {
   owner: string;
   repo: string;
   onRefetch?: () => void;
+  /** Viewer: sin aprobar/solicitar cambios/merge. */
+  readOnly?: boolean;
 }
 
-export function PRList({ prs, owner, repo, onRefetch }: Props) {
+export function PRList({ prs, owner, repo, onRefetch, readOnly = false }: Props) {
   const [openPanel, setOpenPanel] = useState<{ prNumber: number; mode: PanelMode } | null>(null);
   const [activeEvent, setActiveEvent] = useState<ReviewEvent | null>(null);
   const [comment, setComment] = useState("");
@@ -123,7 +125,7 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
 
         // main: merge solo si aprobado | non-main: merge solo si aún no aprobado
         // mergedPRs oculta el botón de inmediato tras confirmar el merge
-        const canMerge = !mergedPRs.has(pr.number) && (isToMain ? isApproved : !isApproved);
+        const canMerge = !readOnly && !mergedPRs.has(pr.number) && (isToMain ? isApproved : !isApproved);
 
         const isPanelOpen  = openPanel?.prNumber === pr.number;
         const isReviewOpen = isPanelOpen && openPanel?.mode === "review";
@@ -241,6 +243,18 @@ export function PRList({ prs, owner, repo, onRefetch }: Props) {
                     <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border bg-green-100 text-green-700 border-green-300 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700/60">
                       <CheckCircle2 className="h-2.5 w-2.5" />
                       Aprobado
+                    </span>
+                  ) : readOnly ? (
+                    <span
+                      className={cn(
+                        "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border",
+                        hasPendingReview && "bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700/60",
+                        hasChangesReq && "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700/60",
+                      )}
+                    >
+                      {hasPendingReview && <Clock className="h-2.5 w-2.5" />}
+                      {hasChangesReq && <XCircle className="h-2.5 w-2.5" />}
+                      {hasPendingReview ? "Review" : "Cambios"}
                     </span>
                   ) : (
                     <button

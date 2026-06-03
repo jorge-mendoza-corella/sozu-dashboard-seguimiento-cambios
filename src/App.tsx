@@ -10,8 +10,9 @@ import { ContributorsPage } from "@/pages/ContributorsPage";
 
 const queryClient = new QueryClient();
 
-function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { status } = useAuth();
+function AppRoutes() {
+  const { status, appUser } = useAuth();
+
   if (status === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -22,22 +23,20 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   if (status === "unauthenticated" || status === "unauthorized") {
     return <LoginPage />;
   }
-  return <>{children}</>;
-}
 
-function AppRoutes() {
+  // Los viewers no acceden a Grafo ni Usuarios (ni por URL directa).
+  const isViewer = appUser?.role === "viewer";
+
   return (
-    <AuthGuard>
-      <AppLayout>
-        <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/graph" element={<GraphPage />} />
-          <Route path="/contributors" element={<ContributorsPage />} />
-          <Route path="/users" element={<UsersPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AppLayout>
-    </AuthGuard>
+    <AppLayout>
+      <Routes>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/graph" element={isViewer ? <Navigate to="/" replace /> : <GraphPage />} />
+        <Route path="/contributors" element={<ContributorsPage />} />
+        <Route path="/users" element={isViewer ? <Navigate to="/" replace /> : <UsersPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AppLayout>
   );
 }
 

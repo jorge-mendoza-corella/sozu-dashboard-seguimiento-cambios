@@ -1,5 +1,6 @@
 import { RefreshCw, Clock, GitBranch, AlertCircle, GitPullRequest, ArrowUpCircle, Rocket } from "lucide-react";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
+import { useAuth } from "@/hooks/useAuth";
 import { RepoCard, RepoCardSkeleton } from "@/components/RepoCard";
 import { hasFailingDeploy } from "@/lib/github";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,8 @@ import { formatDistanceToNow } from "@/lib/timeUtils";
 
 export function DashboardPage() {
   const { data, isLoading, isFetching, dataUpdatedAt, refetch } = useGitHubStatus();
+  const { appUser } = useAuth();
+  const isViewer = appUser?.role === "viewer";
 
   const summary = data
     ? (() => {
@@ -108,7 +111,9 @@ export function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
           {isLoading
             ? Array.from({ length: 5 }).map((_, i) => <RepoCardSkeleton key={i} />)
-            : data?.map((repo) => <RepoCard key={repo.repo} status={repo} onRefetch={() => refetch()} />)}
+            : data?.map((repo) => (
+                <RepoCard key={repo.repo} status={repo} onRefetch={() => refetch()} readOnly={isViewer} />
+              ))}
         </div>
       </div>
     </div>

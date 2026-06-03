@@ -11,11 +11,16 @@ const NAV_ITEMS = [
   { to: "/users", label: "Usuarios", icon: Users },
 ];
 
+// Rutas que un viewer no puede ver en el nav.
+const VIEWER_HIDDEN = new Set(["/graph", "/users"]);
+
 interface Props { children: React.ReactNode }
 
 export function AppLayout({ children }: Props) {
   const { appUser, logout } = useAuth();
   const { pathname } = useLocation();
+  const isViewer = appUser?.role === "viewer";
+  const navItems = NAV_ITEMS.filter((i) => !isViewer || !VIEWER_HIDDEN.has(i.to));
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -27,7 +32,7 @@ export function AppLayout({ children }: Props) {
             SOZU Tracker
           </Link>
           <nav className="flex items-center gap-1 ml-2">
-            {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+            {navItems.map(({ to, label, icon: Icon }) => (
               <Link
                 key={to}
                 to={to}
