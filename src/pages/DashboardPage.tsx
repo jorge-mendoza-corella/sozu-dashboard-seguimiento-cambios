@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   RefreshCw, Clock, GitBranch, AlertCircle, GitPullRequest, ArrowUpCircle, Rocket, Plus, Settings, FolderGit2, Loader2,
@@ -6,15 +6,15 @@ import {
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
 import { useAuth } from "@/hooks/useAuth";
-import { RepoCard, RepoCardSkeleton } from "@/components/RepoCard";
 import { hasFailingDeploy, type RepoRef, type RepoStatus } from "@/lib/github";
-import { seedDefaultProject } from "@/lib/firestoreProjects";
+import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AddRepoModal } from "@/components/projects/AddRepoModal";
 import { ManageModal } from "@/components/projects/ManageModal";
+import { RepoGrid } from "@/components/projects/RepoGrid";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 
 function computeSummary(data: RepoStatus[]) {
@@ -82,17 +82,34 @@ export function DashboardPage() {
     }
   }, [projects, activeProject]);
 
-  const repoIdsByProject = useMemo(() => {
-    const m = new Map<string, Set<string>>();
+  // Repos por proyecto (preserva el orden manual de getRepos) + índice de estado.
+  const reposByProject = useMemo(() => {
+    const m = new Map<string, MonitoredRepo[]>();
     for (const r of repos) {
-      if (!m.has(r.projectId)) m.set(r.projectId, new Set());
-      m.get(r.projectId)!.add(`${r.owner}/${r.repo}`);
+      if (!m.has(r.projectId)) m.set(r.projectId, []);
+      m.get(r.projectId)!.push(r);
     }
     return m;
   }, [repos]);
 
-  const activeKeys = repoIdsByProject.get(activeProject) ?? new Set<string>();
-  const activeStatus = (data ?? []).filter((s) => activeKeys.has(`${s.owner}/${s.repo}`));
+  const statusByKey = useMemo(() => {
+    const m = new Map<string, RepoStatus>();
+    for (const s of data ?? []) m.set(`${s.owner}/${s.repo}`, s);
+    return m;
+  }, [data]);
+
+  const handleReorder = useCallback(
+    async (ids: string[]) => {
+      await setReposOrder(ids);
+      qc.invalidateQueries({ queryKey: ["repos"] });
+    },
+    [qc],
+  );
+
+  const activeRepos = reposByProject.get(activeProject) ?? [];
+  const activeStatus = (data ?? []).filter((s) =>
+    activeRepos.some((r) => r.owner === s.owner && r.repo === s.repo),
+  );
   const summary = data ? computeSummary(activeStatus) : null;
 
   const busy = loadingProjects || loadingRepos || seeding;
@@ -183,7 +200,7 @@ export function DashboardPage() {
           <Tabs value={activeProject} onValueChange={setActiveProject}>
             <TabsList className="flex-wrap h-auto">
               {projects.map((p) => {
-                const count = repoIdsByProject.get(p.id)?.size ?? 0;
+                const count = reposByProject.get(p.id)?.length ?? 0;
                 return (
                   <TabsTrigger key={p.id} value={p.id} className="gap-1.5">
                     <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
@@ -195,11 +212,10 @@ export function DashboardPage() {
             </TabsList>
 
             {projects.map((p) => {
-              const keys = repoIdsByProject.get(p.id) ?? new Set<string>();
-              const list = (data ?? []).filter((s) => keys.has(`${s.owner}/${s.repo}`));
+              const projectRepos = reposByProject.get(p.id) ?? [];
               return (
                 <TabsContent key={p.id} value={p.id}>
-                  {keys.size === 0 ? (
+                  {projectRepos.length === 0 ? (
                     <div className="flex h-40 flex-col items-center justify-center gap-3 text-muted-foreground">
                       <p>Este proyecto no tiene repositorios.</p>
                       {isRoot && (
@@ -209,13 +225,22 @@ export function DashboardPage() {
                       )}
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
-                      {isLoading
-                        ? Array.from({ length: keys.size }).map((_, i) => <RepoCardSkeleton key={i} />)
-                        : list.map((repo) => (
-                            <RepoCard key={repo.repo} status={repo} onRefetch={() => refetch()} readOnly={isViewer} />
-                          ))}
-                    </div>
+                    <>
+                      {isRoot && (
+                        <p className="mb-3 text-xs text-muted-foreground">
+                          Arrastra las tarjetas para reordenarlas. El orden se guarda automáticamente.
+                        </p>
+                      )}
+                      <RepoGrid
+                        repos={projectRepos}
+                        statusByKey={statusByKey}
+                        isLoading={isLoading}
+                        isViewer={isViewer}
+                        canReorder={isRoot}
+                        onRefetch={() => refetch()}
+                        onReorder={handleReorder}
+                      />
+                    </>
                   )}
                 </TabsContent>
               );

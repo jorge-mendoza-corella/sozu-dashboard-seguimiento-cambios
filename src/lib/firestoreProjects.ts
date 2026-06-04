@@ -1,6 +1,6 @@
 import { db } from "./firebase";
 import {
-  doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs, serverTimestamp, query, where,
+  doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs, serverTimestamp, query, where, writeBatch,
 } from "firebase/firestore";
 import { REPOS } from "./github";
 
@@ -24,6 +24,7 @@ export interface MonitoredRepo {
   repo: string;
   label: string;
   projectId: string;
+  order?: number; // orden manual dentro del proyecto (drag & drop)
   addedBy: string;
   createdAt: unknown;
 }
@@ -78,7 +79,7 @@ export async function getRepos(): Promise<MonitoredRepo[]> {
   const snap = await getDocs(collection(db, "repos"));
   return snap.docs
     .map((d) => ({ id: d.id, ...(d.data() as Omit<MonitoredRepo, "id">) }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+    .sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || a.label.localeCompare(b.label));
 }
 
 export async function addRepo(
@@ -89,14 +90,23 @@ export async function addRepo(
   const ref = doc(db, "repos", id);
   const exists = await getDoc(ref);
   if (exists.exists()) throw new Error("Ese repositorio ya está dado de alta.");
+  const all = await getRepos();
   await setDoc(ref, {
     owner: input.owner,
     repo: input.repo,
     label: input.label.trim() || input.repo,
     projectId: input.projectId,
+    order: all.length, // al final
     addedBy,
     createdAt: serverTimestamp(),
   });
+}
+
+/** Persiste el orden manual de repos (drag & drop). `ids` en el orden deseado. */
+export async function setReposOrder(ids: string[]) {
+  const batch = writeBatch(db);
+  ids.forEach((id, i) => batch.update(doc(db, "repos", id), { order: i }));
+  await batch.commit();
 }
 
 export async function moveRepoToProject(id: string, projectId: string) {
