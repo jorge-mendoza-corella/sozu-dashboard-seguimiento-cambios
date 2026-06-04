@@ -29,7 +29,7 @@ export function UsersPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const isSuperuser = appUser?.role === "superuser";
+  const isRoot = appUser?.email === SUPERUSER_EMAIL;
 
   useEffect(() => {
     getAllUsers().then(setUsers);
@@ -106,10 +106,10 @@ export function UsersPage() {
     }
   };
 
-  if (!isSuperuser) {
+  if (!isRoot) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Solo un administrador puede gestionar accesos.</p>
+        <p className="text-muted-foreground">Solo jorge.mendoza@sozu.com puede gestionar accesos.</p>
       </div>
     );
   }
@@ -181,7 +181,7 @@ export function UsersPage() {
 
           {newRole === "superuser" && (
             <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-              Un Administrador puede gestionar usuarios. La administración de proyectos/repos queda reservada al superusuario raíz.
+              Un Administrador puede operar CI/CD (crear/aprobar/mergear PRs). La gestión de accesos, proyectos y repos queda reservada solo a ti (jorge.mendoza@sozu.com).
             </p>
           )}
           {error && <p className="text-xs text-destructive mt-2">{error}</p>}

@@ -24,17 +24,16 @@ function AppRoutes() {
     return <LoginPage />;
   }
 
-  // Contribuidores: solo el superusuario raíz. Usuarios: solo administradores.
+  // Contribuidores y Usuarios: solo el superusuario raíz (jorge.mendoza@sozu.com).
   // (Bloqueado también por URL directa.)
   const isRoot = appUser?.email === SUPERUSER_EMAIL;
-  const isAdmin = appUser?.role === "superuser";
 
   return (
     <AppLayout>
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/contributors" element={isRoot ? <ContributorsPage /> : <Navigate to="/" replace />} />
-        <Route path="/users" element={isAdmin ? <UsersPage /> : <Navigate to="/" replace />} />
+        <Route path="/users" element={isRoot ? <UsersPage /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppLayout>

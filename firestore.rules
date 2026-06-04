@@ -10,9 +10,9 @@ service cloud.firestore {
       allow read: if request.auth != null
         && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'superuser';
 
-      // Superusers pueden escribir sobre otros usuarios (no pueden tocar al superusuario raíz)
+      // Solo el superusuario raíz (jorge) gestiona accesos (no puede tocar su propio doc raíz)
       allow write: if request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'superuser'
+        && request.auth.token.email == 'jorge.mendoza@sozu.com'
         && email != 'jorge.mendoza@sozu.com';
 
       // Bootstrap: jorge.mendoza@sozu.com puede crear su propio documento si no existe
@@ -35,13 +35,13 @@ service cloud.firestore {
       allow read: if request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
       allow write: if request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'superuser';
+        && request.auth.token.email == 'jorge.mendoza@sozu.com';
     }
     match /repos/{id} {
       allow read: if request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
       allow write: if request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'superuser';
+        && request.auth.token.email == 'jorge.mendoza@sozu.com';
     }
   }
 }
