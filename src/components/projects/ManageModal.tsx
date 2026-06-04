@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
 import {
-  addProject, renameProject, removeProject, moveRepoToProject, removeRepo,
+  addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel,
 } from "@/lib/firestoreProjects";
 import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
 import { useAuth } from "@/hooks/useAuth";
@@ -19,6 +19,7 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
   const [newProject, setNewProject] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
+  const [editingRepo, setEditingRepo] = useState<{ id: string; label: string } | null>(null);
   const [error, setError] = useState("");
 
   const refreshProjects = () => qc.invalidateQueries({ queryKey: ["projects"] });
@@ -140,12 +141,37 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
           {/* Repos */}
           <h3 className="mt-6 text-sm font-semibold text-muted-foreground">Repositorios ({repos.length})</h3>
           <div className="mt-2 space-y-1.5">
-            {repos.map((r) => (
+            {repos.map((r) => {
+              const isEditingRepo = editingRepo?.id === r.id;
+              const saveLabel = () =>
+                run(`lbl-${r.id}`, () => setRepoLabel(r.id, editingRepo!.label), refreshRepos).then(() =>
+                  setEditingRepo(null),
+                );
+              return (
               <div key={r.id} className="flex items-center gap-2 rounded-md border px-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{r.label}</p>
+                  {isEditingRepo ? (
+                    <input
+                      autoFocus
+                      className="w-full rounded border bg-background px-2 py-1 text-sm"
+                      value={editingRepo.label}
+                      onChange={(e) => setEditingRepo({ id: r.id, label: e.target.value })}
+                      onKeyDown={(e) => e.key === "Enter" && saveLabel()}
+                    />
+                  ) : (
+                    <p className="truncate text-sm font-medium">{r.label}</p>
+                  )}
                   <p className="truncate font-mono text-[11px] text-muted-foreground">{r.owner}/{r.repo}</p>
                 </div>
+                {isEditingRepo ? (
+                  <Button size="icon" variant="ghost" className="h-7 w-7" disabled={busy === `lbl-${r.id}`} onClick={saveLabel}>
+                    {busy === `lbl-${r.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                  </Button>
+                ) : (
+                  <Button size="icon" variant="ghost" className="h-7 w-7" title="Renombrar" onClick={() => setEditingRepo({ id: r.id, label: r.label })}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
                 <SelectNative
                   className="w-44"
                   value={r.projectId}
@@ -167,7 +193,8 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                   {busy === `rm-${r.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                 </Button>
               </div>
-            ))}
+              );
+            })}
             {repos.length === 0 && <p className="text-xs text-muted-foreground">Aún no hay repositorios.</p>}
           </div>
 

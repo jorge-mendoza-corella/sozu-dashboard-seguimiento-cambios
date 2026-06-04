@@ -15,6 +15,7 @@ export interface Project {
   order: number;
   createdBy: string;
   createdAt: unknown;
+  seeded?: boolean; // ya se sembraron los repos por defecto (no volver a auto-agregar)
 }
 
 export interface MonitoredRepo {
@@ -102,6 +103,11 @@ export async function moveRepoToProject(id: string, projectId: string) {
   await updateDoc(doc(db, "repos", id), { projectId });
 }
 
+/** Cambia el nombre a mostrar del repo (ej. "Frontend", "Backend"). */
+export async function setRepoLabel(id: string, label: string) {
+  await updateDoc(doc(db, "repos", id), { label: label.trim() });
+}
+
 export async function removeRepo(id: string) {
   await deleteDoc(doc(db, "repos", id));
 }
@@ -109,17 +115,30 @@ export async function removeRepo(id: string) {
 // --- Seeding (migración inicial) --------------------------------------------
 
 /**
- * Si no hay proyectos, crea el proyecto "SOZU" con los repos por defecto
- * (los 5 históricos hardcodeados). Solo lo puede ejecutar un superuser.
+ * Siembra/repara el proyecto "SOZU" con los repos por defecto (los 5 históricos).
+ * Idempotente: se ejecuta una sola vez (marca `seeded` en el proyecto). Si una
+ * siembra previa quedó incompleta, completa los repos faltantes. No vuelve a
+ * agregar repos que el usuario haya eliminado a propósito una vez marcado `seeded`.
+ * Solo lo puede ejecutar un superuser.
  */
 export async function seedDefaultProject(addedBy: string): Promise<boolean> {
   const projects = await getProjects();
-  if (projects.length > 0) return false;
-  const projectId = await addProject("SOZU", addedBy);
+  // Ya sembrado: no hacer nada (respeta repos borrados por el usuario).
+  if (projects.some((p) => p.seeded)) return false;
+
+  // Reusar un proyecto "SOZU" existente (siembra previa incompleta) o crearlo.
+  let projectId = projects.find((p) => p.name === "SOZU")?.id;
+  if (!projectId) projectId = await addProject("SOZU", addedBy);
+
+  const existing = await getRepos();
+  const have = new Set(existing.map((r) => r.id));
   await Promise.all(
-    REPOS.map((r) =>
-      addRepo({ owner: r.owner, repo: r.repo, label: r.label, projectId }, addedBy).catch(() => {}),
-    ),
+    REPOS.map((r) => {
+      if (have.has(repoDocId(r.owner, r.repo))) return Promise.resolve();
+      return addRepo({ owner: r.owner, repo: r.repo, label: r.label, projectId }, addedBy).catch(() => {});
+    }),
   );
+
+  await updateDoc(doc(db, "projects", projectId), { seeded: true });
   return true;
 }

@@ -49,9 +49,11 @@ export function DashboardPage() {
   const [showManage, setShowManage] = useState(false);
   const [seeding, setSeeding] = useState(false);
 
-  // Seed inicial: admin sin proyectos → crea "SOZU" con los repos por defecto.
+  // Seed/repair inicial: admin y aún ningún proyecto marcado como sembrado.
+  // Crea "SOZU" con los repos por defecto o completa los que falten (una vez).
   useEffect(() => {
-    if (!isAdmin || loadingProjects || projects.length > 0 || seeding) return;
+    if (!isAdmin || loadingProjects || loadingRepos || seeding) return;
+    if (projects.some((p) => p.seeded)) return;
     setSeeding(true);
     seedDefaultProject(appUser!.email)
       .then(() =>
@@ -61,7 +63,7 @@ export function DashboardPage() {
         ]),
       )
       .finally(() => setSeeding(false));
-  }, [isAdmin, loadingProjects, projects.length, seeding, appUser, qc]);
+  }, [isAdmin, loadingProjects, loadingRepos, projects, seeding, appUser, qc]);
 
   // Tab activo por defecto = primer proyecto
   useEffect(() => {
