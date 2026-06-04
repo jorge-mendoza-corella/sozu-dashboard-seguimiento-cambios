@@ -59,6 +59,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Deploy Firestore rules
+        # google-github-actions/auth ya exportó GOOGLE_APPLICATION_CREDENTIALS;
+        # firebase-tools lo usa para autenticarse de forma no interactiva.
+        run: npx -y firebase-tools@latest deploy --only firestore:rules --project sozu-admin-dev --non-interactive
+
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:

@@ -6,6 +6,7 @@ const reviewerOctokit = import.meta.env.VITE_GITHUB_REVIEWER_TOKEN
   ? new Octokit({ auth: import.meta.env.VITE_GITHUB_REVIEWER_TOKEN })
   : null;
 
+/** Repos por defecto — usados solo para sembrar el proyecto inicial "SOZU". */
 export const REPOS = [
   { owner: "jorgeIMendoza", repo: "sozu-admin", label: "sozu-admin" },
   { owner: "jorgeIMendoza", repo: "sozu-supabase-migrations", label: "sozu-supabase-migrations" },
@@ -13,6 +14,73 @@ export const REPOS = [
   { owner: "jorgeIMendoza", repo: "sozu-n8n-workflows", label: "sozu-n8n-workflows" },
   { owner: "sozu-com", repo: "server-stp", label: "server-stp" },
 ] as const;
+
+/** Forma mínima de un repo para las funciones de agregación. */
+export interface RepoRef {
+  owner: string;
+  repo: string;
+  label: string;
+}
+
+/** Parsea un link/owner-repo de GitHub. Acepta URL completa, git@, o "owner/repo". */
+export function parseRepoUrl(input: string): { owner: string; repo: string } | null {
+  const s = input.trim();
+  if (!s) return null;
+  // owner/repo simple
+  const simple = s.match(/^([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
+  if (simple) return { owner: simple[1], repo: simple[2] };
+  // URL https o git@
+  const url = s.match(/github\.com[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:[/#?].*)?$/i);
+  if (url) return { owner: url[1], repo: url[2] };
+  return null;
+}
+
+export interface RepoAccess {
+  ok: boolean;
+  status: number;
+  canPush: boolean; // el token principal es colaborador con permiso de escritura
+  isPrivate?: boolean;
+  fullName?: string;
+  error?: string;
+}
+
+/** Valida que el token principal pueda acceder al repo y con qué nivel. */
+export async function validateRepoAccess(owner: string, repo: string): Promise<RepoAccess> {
+  try {
+    const { data } = await octokit.repos.get({ owner, repo });
+    const perms = (data as { permissions?: { push?: boolean; admin?: boolean } }).permissions;
+    return {
+      ok: true,
+      status: 200,
+      canPush: !!(perms?.push || perms?.admin),
+      isPrivate: data.private,
+      fullName: data.full_name,
+    };
+  } catch (err: unknown) {
+    const status = (err as { status?: number })?.status ?? 0;
+    return {
+      ok: false,
+      status,
+      canPush: false,
+      error: status === 404
+        ? "No encontrado o el token no tiene acceso (404)."
+        : status === 403
+          ? "Acceso denegado (403)."
+          : err instanceof Error ? err.message : "Error desconocido",
+    };
+  }
+}
+
+/** Cuentas GitHub detrás de los tokens (para mostrar a quién dar permisos). */
+export async function getTokenAccounts(): Promise<{ primary: string | null; reviewer: string | null }> {
+  const [primary, reviewer] = await Promise.all([
+    octokit.users.getAuthenticated().then((r) => r.data.login).catch(() => null),
+    reviewerOctokit
+      ? reviewerOctokit.users.getAuthenticated().then((r) => r.data.login).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+  return { primary, reviewer };
+}
 
 export interface BranchInfo {
   name: string;
@@ -315,11 +383,11 @@ const isBot = (login: string, type: string) =>
  * Agrega los contribuidores de todos los repos de `REPOS`, sumando commits por
  * usuario y guardando el desglose por repo. Excluye bots.
  */
-export async function fetchContributors(): Promise<Contributor[]> {
+export async function fetchContributors(repos: RepoRef[]): Promise<Contributor[]> {
   const byLogin = new Map<string, Contributor>();
 
   await Promise.all(
-    REPOS.map(async ({ owner, repo, label }) => {
+    repos.map(async ({ owner, repo, label }) => {
       try {
         const data = await octokit.paginate(octokit.repos.listContributors, {
           owner,
@@ -384,7 +452,7 @@ const dayKey = (iso: string) => iso.slice(0, 10); // YYYY-MM-DD
  * Devuelve la lista cruda de commits (sin bots) + catálogos de autores y repos, para
  * que la UI pueda filtrar/agregar en vivo. Tolera repos sin acceso.
  */
-export async function fetchCommitActivity(windowDays = 30): Promise<CommitActivity> {
+export async function fetchCommitActivity(repos: RepoRef[], windowDays = 30): Promise<CommitActivity> {
   const since = new Date(Date.now() - windowDays * 86_400_000).toISOString();
 
   const commits: CommitRecord[] = [];
@@ -393,7 +461,7 @@ export async function fetchCommitActivity(windowDays = 30): Promise<CommitActivi
   const reposWithActivity = new Set<string>();
 
   await Promise.all(
-    REPOS.map(async ({ owner, repo, label }) => {
+    repos.map(async ({ owner, repo, label }) => {
       try {
         const data = await octokit.paginate(octokit.repos.listCommits, {
           owner,
@@ -424,9 +492,9 @@ export async function fetchCommitActivity(windowDays = 30): Promise<CommitActivi
     .sort((a, b) => b[1] - a[1])
     .map(([login]) => ({ login, avatarUrl: avatarByLogin.get(login) ?? "" }));
 
-  const repos = REPOS.map((r) => r.label).filter((l) => reposWithActivity.has(l));
+  const repoLabels = repos.map((r) => r.label).filter((l) => reposWithActivity.has(l));
 
-  return { commits, authors, repos, windowDays, since };
+  return { commits, authors, repos: repoLabels, windowDays, since };
 }
 
 // --- Agregadores client-side (puros, reutilizables en UI y export) -----------

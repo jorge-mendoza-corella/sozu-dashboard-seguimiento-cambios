@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Users, GitCommit, GitBranch, Phone, ExternalLink, X, Loader2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { fetchContributors, type Contributor } from "@/lib/github";
 import { getAllContributorPhones, saveContributorPhone } from "@/lib/firestoreContributors";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ContributorsAnalytics } from "@/components/analytics/ContributorsAnalytics";
+import { useRepos } from "@/hooks/useProjectsRepos";
 import { BAR_COLORS } from "@/lib/colors";
 
 const TEL_REGEX = /^\d{10}$/;
@@ -143,13 +144,20 @@ export function ContributorsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Contributor | null>(null);
+  const { data: repos = [] } = useRepos();
+  const repoRefs = useMemo(() => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })), [repos]);
 
   const load = useCallback(async () => {
+    if (repoRefs.length === 0) {
+      setContributors([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
       const [contribs, phoneMap] = await Promise.all([
-        fetchContributors(),
+        fetchContributors(repoRefs),
         getAllContributorPhones().catch(() => ({})),
       ]);
       setContributors(contribs);
@@ -159,7 +167,7 @@ export function ContributorsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [repoRefs]);
 
   useEffect(() => {
     load();

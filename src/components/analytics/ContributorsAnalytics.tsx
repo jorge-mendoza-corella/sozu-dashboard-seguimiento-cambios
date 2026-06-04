@@ -26,6 +26,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
 import { useCommitActivity } from "@/hooks/useCommitActivity";
+import { useRepos } from "@/hooks/useProjectsRepos";
 import { BAR_COLORS } from "@/lib/colors";
 import { aggregateByAuthor, aggregateByRepo, buildDailySeries } from "@/lib/github";
 import { exportAnalyticsPdf } from "@/lib/exportAnalyticsPdf";
@@ -78,7 +79,9 @@ const baseTooltip = {
 };
 
 export function ContributorsAnalytics() {
-  const { data, isLoading, error } = useCommitActivity(30);
+  const { data: repos = [] } = useRepos();
+  const repoRefs = useMemo(() => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })), [repos]);
+  const { data, isLoading, error } = useCommitActivity(repoRefs, 30);
   const [author, setAuthor] = useState<string>(ALL);
   const [repo, setRepo] = useState<string>(ALL);
   const [exporting, setExporting] = useState(false);
