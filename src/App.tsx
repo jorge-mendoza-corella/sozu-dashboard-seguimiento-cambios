@@ -4,7 +4,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { AppLayout } from "@/components/AppLayout";
 import { LoginPage } from "@/pages/LoginPage";
 import { DashboardPage } from "@/pages/DashboardPage";
-import { GraphPage } from "@/pages/GraphPage";
 import { UsersPage } from "@/pages/UsersPage";
 import { ContributorsPage } from "@/pages/ContributorsPage";
 
@@ -31,7 +30,6 @@ function AppRoutes() {
     <AppLayout>
       <Routes>
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/graph" element={isViewer ? <Navigate to="/" replace /> : <GraphPage />} />
         <Route path="/contributors" element={<ContributorsPage />} />
         <Route path="/users" element={isViewer ? <Navigate to="/" replace /> : <UsersPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
