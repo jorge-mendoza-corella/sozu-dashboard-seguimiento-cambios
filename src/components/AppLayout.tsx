@@ -2,24 +2,23 @@ import { Link, useLocation } from "react-router-dom";
 import { Activity, GitBranch, Users, GitCommit, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
 
+// `show(role, isRoot)` decide la visibilidad de cada item en el nav.
 const NAV_ITEMS = [
-  { to: "/", label: "CI/CD", icon: GitBranch },
-  { to: "/contributors", label: "Contribuidores", icon: GitCommit },
-  { to: "/users", label: "Usuarios", icon: Users },
+  { to: "/", label: "CI/CD", icon: GitBranch, show: () => true },
+  { to: "/contributors", label: "Contribuidores", icon: GitCommit, show: (_r: string | undefined, root: boolean) => root },
+  { to: "/users", label: "Usuarios", icon: Users, show: (r: string | undefined) => r === "superuser" },
 ];
-
-// Rutas que un viewer no puede ver en el nav.
-const VIEWER_HIDDEN = new Set(["/users"]);
 
 interface Props { children: React.ReactNode }
 
 export function AppLayout({ children }: Props) {
   const { appUser, logout } = useAuth();
   const { pathname } = useLocation();
-  const isViewer = appUser?.role === "viewer";
-  const navItems = NAV_ITEMS.filter((i) => !isViewer || !VIEWER_HIDDEN.has(i.to));
+  const isRoot = appUser?.email === SUPERUSER_EMAIL;
+  const navItems = NAV_ITEMS.filter((i) => i.show(appUser?.role, isRoot));
 
   return (
     <div className="min-h-screen flex flex-col">

@@ -12,6 +12,7 @@ export interface AppUser {
   role: UserRole;
   addedBy: string;
   createdAt: unknown;
+  projectIds?: string[]; // proyectos a los que tiene acceso (vacío/undefined = legacy: todos)
 }
 
 export async function getUserByEmail(email: string): Promise<AppUser | null> {
@@ -24,11 +25,17 @@ export async function getAllUsers(): Promise<AppUser[]> {
   return snap.docs.map((d) => d.data() as AppUser);
 }
 
-export async function addUser(email: string, addedBy: string, role: UserRole = "viewer") {
+export async function addUser(
+  email: string,
+  addedBy: string,
+  role: UserRole = "viewer",
+  projectIds: string[] = [],
+) {
   await setDoc(doc(db, "users", email), {
     email,
     role,
     addedBy,
+    projectIds,
     createdAt: serverTimestamp(),
   });
 }
@@ -42,6 +49,12 @@ export async function removeUser(email: string) {
 export async function setUserRole(email: string, role: UserRole) {
   if (email === SUPERUSER_EMAIL) throw new Error("No se puede cambiar el rol del superusuario raíz");
   await setDoc(doc(db, "users", email), { role }, { merge: true });
+}
+
+/** Define a qué proyectos tiene acceso un usuario (mínimo 1). */
+export async function setUserProjects(email: string, projectIds: string[]) {
+  if (projectIds.length === 0) throw new Error("El usuario debe tener al menos un proyecto.");
+  await setDoc(doc(db, "users", email), { projectIds }, { merge: true });
 }
 
 export async function seedSuperuser() {

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { AppLayout } from "@/components/AppLayout";
 import { LoginPage } from "@/pages/LoginPage";
 import { DashboardPage } from "@/pages/DashboardPage";
@@ -23,15 +24,17 @@ function AppRoutes() {
     return <LoginPage />;
   }
 
-  // Los viewers no acceden a Grafo ni Usuarios (ni por URL directa).
-  const isViewer = appUser?.role === "viewer";
+  // Contribuidores: solo el superusuario raíz. Usuarios: solo administradores.
+  // (Bloqueado también por URL directa.)
+  const isRoot = appUser?.email === SUPERUSER_EMAIL;
+  const isAdmin = appUser?.role === "superuser";
 
   return (
     <AppLayout>
       <Routes>
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/contributors" element={<ContributorsPage />} />
-        <Route path="/users" element={isViewer ? <Navigate to="/" replace /> : <UsersPage />} />
+        <Route path="/contributors" element={isRoot ? <ContributorsPage /> : <Navigate to="/" replace />} />
+        <Route path="/users" element={isAdmin ? <UsersPage /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppLayout>

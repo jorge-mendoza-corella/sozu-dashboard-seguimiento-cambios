@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { RepoCard, RepoCardSkeleton } from "@/components/RepoCard";
 import { hasFailingDeploy, type RepoRef, type RepoStatus } from "@/lib/github";
 import { seedDefaultProject } from "@/lib/firestoreProjects";
+import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -32,11 +33,20 @@ function computeSummary(data: RepoStatus[]) {
 export function DashboardPage() {
   const { appUser } = useAuth();
   const isViewer = appUser?.role === "viewer";
-  const isAdmin = appUser?.role === "superuser";
+  const isRoot = appUser?.email === SUPERUSER_EMAIL; // solo jorge gestiona proyectos/repos
   const qc = useQueryClient();
 
-  const { data: projects = [], isLoading: loadingProjects } = useProjects();
+  const { data: allProjects = [], isLoading: loadingProjects } = useProjects();
   const { data: repos = [], isLoading: loadingRepos } = useRepos();
+
+  // Proyectos visibles según el acceso del usuario (root ve todos; legacy sin
+  // projectIds = todos por compatibilidad).
+  const projects = useMemo(() => {
+    if (isRoot) return allProjects;
+    const ids = appUser?.projectIds;
+    if (!ids || ids.length === 0) return allProjects;
+    return allProjects.filter((p) => ids.includes(p.id));
+  }, [allProjects, isRoot, appUser?.projectIds]);
 
   const allRepoRefs: RepoRef[] = useMemo(
     () => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })),
@@ -49,11 +59,11 @@ export function DashboardPage() {
   const [showManage, setShowManage] = useState(false);
   const [seeding, setSeeding] = useState(false);
 
-  // Seed/repair inicial: admin y aún ningún proyecto marcado como sembrado.
+  // Seed/repair inicial: solo el root y aún ningún proyecto marcado como sembrado.
   // Crea "SOZU" con los repos por defecto o completa los que falten (una vez).
   useEffect(() => {
-    if (!isAdmin || loadingProjects || loadingRepos || seeding) return;
-    if (projects.some((p) => p.seeded)) return;
+    if (!isRoot || loadingProjects || loadingRepos || seeding) return;
+    if (allProjects.some((p) => p.seeded)) return;
     setSeeding(true);
     seedDefaultProject(appUser!.email)
       .then(() =>
@@ -63,9 +73,9 @@ export function DashboardPage() {
         ]),
       )
       .finally(() => setSeeding(false));
-  }, [isAdmin, loadingProjects, loadingRepos, projects, seeding, appUser, qc]);
+  }, [isRoot, loadingProjects, loadingRepos, allProjects, seeding, appUser, qc]);
 
-  // Tab activo por defecto = primer proyecto
+  // Tab activo por defecto = primer proyecto visible
   useEffect(() => {
     if (projects.length && !projects.some((p) => p.id === activeProject)) {
       setActiveProject(projects[0].id);
@@ -135,7 +145,7 @@ export function DashboardPage() {
                 {formatDistanceToNow(new Date(dataUpdatedAt).toISOString())}
               </span>
             )}
-            {isAdmin && (
+            {isRoot && (
               <>
                 <Button variant="outline" size="sm" onClick={() => setShowManage(true)} className="bg-white/80 dark:bg-slate-900/80">
                   <Settings className="h-4 w-4 mr-1.5" /> Gestionar
@@ -163,7 +173,7 @@ export function DashboardPage() {
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <FolderGit2 className="h-8 w-8" />
             <p>No hay proyectos todavía.</p>
-            {isAdmin && (
+            {isRoot && (
               <Button size="sm" onClick={() => setShowAdd(true)}>
                 <Plus className="h-4 w-4 mr-1.5" /> Agregar el primer repositorio
               </Button>
@@ -192,7 +202,7 @@ export function DashboardPage() {
                   {keys.size === 0 ? (
                     <div className="flex h-40 flex-col items-center justify-center gap-3 text-muted-foreground">
                       <p>Este proyecto no tiene repositorios.</p>
-                      {isAdmin && (
+                      {isRoot && (
                         <Button size="sm" variant="outline" onClick={() => setShowAdd(true)}>
                           <Plus className="h-4 w-4 mr-1.5" /> Agregar repo
                         </Button>
