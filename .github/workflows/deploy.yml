@@ -62,6 +62,9 @@ jobs:
       - name: Deploy Firestore rules
         # google-github-actions/auth ya exportó GOOGLE_APPLICATION_CREDENTIALS;
         # firebase-tools lo usa para autenticarse de forma no interactiva.
+        # No bloquea el deploy de hosting: si el service account no tiene permisos
+        # (serviceusage.services.get / firebaserules.admin), despliega las reglas a mano.
+        continue-on-error: true
         run: npx -y firebase-tools@latest deploy --only firestore:rules --project sozu-admin-dev --non-interactive
 
       - name: Deploy to Firebase Hosting
