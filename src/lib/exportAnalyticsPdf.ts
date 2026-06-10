@@ -3,6 +3,15 @@ import autoTable from "jspdf-autotable";
 import type { DailyMetrics, RepoMetrics } from "@/lib/github";
 import type { EntityMetrics } from "@/components/analytics/ContributorsAnalytics";
 
+export interface GroupDetail {
+  name: string;
+  members: string[];
+  dev: number;
+  main: number;
+  prs: number;
+  visible: boolean;
+}
+
 interface ExportInput {
   windowDays: number;
   filterLabel: string;
@@ -11,6 +20,7 @@ interface ExportInput {
   leaderRepo?: RepoMetrics;
   byEntity: EntityMetrics[];
   byRepo: RepoMetrics[];
+  groupsDetail: GroupDetail[];
   images: { daily?: string; authors?: string; repos?: string };
 }
 
@@ -26,7 +36,7 @@ const SLATE: [number, number, number] = [100, 116, 139];
 
 /** Genera y descarga un PDF con el reporte ejecutivo de contribuidores. */
 export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
-  const { windowDays, filterLabel, kpis, leader, leaderRepo, byEntity, byRepo, images } = input;
+  const { windowDays, filterLabel, kpis, leader, leaderRepo, byEntity, byRepo, groupsDetail, images } = input;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 40;
@@ -69,6 +79,7 @@ export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
   const gap = Math.max(kpis.dev - kpis.main, 0);
   const narrative = [
     `En los últimos ${windowDays} días se registraron ${kpis.dev.toLocaleString()} commits en la rama dev, ${kpis.main.toLocaleString()} en main y ${kpis.prs.toLocaleString()} pull requests creados, con actividad en ${kpis.activeDays} días distintos.`,
+    `Promedios diarios: ${(kpis.dev / windowDays).toFixed(1)} commits en dev, ${(kpis.main / windowDays).toFixed(1)} en main y ${(kpis.prs / windowDays).toFixed(1)} PRs por día.`,
     gap > 0
       ? `La brecha entre dev y main es de ${gap.toLocaleString()} commits, que representan trabajo aún no integrado a producción.`
       : "Dev y main están alineados: todo el trabajo del periodo está integrado a producción.",
@@ -94,9 +105,9 @@ export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
 
   // --- Tarjetas KPI ---
   const kpiCards = [
-    { label: "Commits dev", value: kpis.dev.toLocaleString() },
-    { label: "Commits main", value: kpis.main.toLocaleString() },
-    { label: "PRs creados", value: kpis.prs.toLocaleString() },
+    { label: `Commits dev · ${(kpis.dev / windowDays).toFixed(1)}/día`, value: kpis.dev.toLocaleString() },
+    { label: `Commits main · ${(kpis.main / windowDays).toFixed(1)}/día`, value: kpis.main.toLocaleString() },
+    { label: `PRs creados · ${(kpis.prs / windowDays).toFixed(1)}/día`, value: kpis.prs.toLocaleString() },
     { label: "Días activos", value: `${kpis.activeDays}` },
   ];
   const cardGap = 12;
@@ -164,6 +175,32 @@ export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
       theme: "striped",
       headStyles: { fillColor: INDIGO },
       styles: { fontSize: 9, cellPadding: 4 },
+      margin: { left: margin, right: margin },
+    });
+    // @ts-expect-error lastAutoTable lo agrega el plugin en runtime
+    y = doc.lastAutoTable.finalY + 16;
+  }
+
+  if (groupsDetail.length) {
+    if (y > 680) {
+      doc.addPage();
+      y = margin;
+    }
+    autoTable(doc, {
+      startY: y,
+      head: [["Grupo", "Miembros", "Dev", "Main", "PRs", "En analítica"]],
+      body: groupsDetail.map((g) => [
+        g.name,
+        g.members.join(", "),
+        g.dev.toLocaleString(),
+        g.main.toLocaleString(),
+        g.prs.toLocaleString(),
+        g.visible ? "Sí" : "No",
+      ]),
+      theme: "striped",
+      headStyles: { fillColor: INDIGO },
+      styles: { fontSize: 8.5, cellPadding: 4 },
+      columnStyles: { 1: { cellWidth: 170 } },
       margin: { left: margin, right: margin },
     });
   }

@@ -312,6 +312,22 @@ export function ContributorsAnalytics() {
   const handleExport = async () => {
     setExporting(true);
     try {
+      // Detalle por grupo (respeta el filtro de repo), para la tabla del PDF.
+      const groupsDetail = groups
+        .filter((g) => g.members.length > 0)
+        .map((g) => {
+          const set = new Set(g.members);
+          const cs = data.commits.filter((c) => set.has(c.login) && (repo === ALL || c.repo === repo));
+          const ps = data.prs.filter((p) => set.has(p.login) && (repo === ALL || p.repo === repo));
+          return {
+            name: g.name,
+            members: g.members,
+            dev: cs.filter((c) => c.inDev).length,
+            main: cs.filter((c) => c.inMain).length,
+            prs: ps.length,
+            visible: g.showInAnalytics,
+          };
+        });
       await exportAnalyticsPdf({
         windowDays: data.windowDays,
         filterLabel,
@@ -320,6 +336,7 @@ export function ContributorsAnalytics() {
         leaderRepo,
         byEntity,
         byRepo,
+        groupsDetail,
         images: {
           daily: dailyRef.current?.toBase64Image(),
           authors: authorsRef.current?.toBase64Image(),
@@ -412,6 +429,10 @@ export function ContributorsAnalytics() {
                   <strong className="text-foreground">{devT.toLocaleString()}</strong> commits en dev ·{" "}
                   <strong className="text-foreground">{mainT.toLocaleString()}</strong> en main ·{" "}
                   <strong className="text-foreground">{prsT.toLocaleString()}</strong> PRs creados.
+                  {" "}Promedios diarios:{" "}
+                  <strong style={{ color: COLOR_DEV }}>{(devT / data.windowDays).toFixed(1)} dev</strong> ·{" "}
+                  <strong style={{ color: COLOR_MAIN }}>{(mainT / data.windowDays).toFixed(1)} main</strong> ·{" "}
+                  <strong style={{ color: COLOR_PRS }}>{(prsT / data.windowDays).toFixed(1)} PRs</strong> por día.
                   {" "}La brecha dev−main ({Math.max(devT - mainT, 0).toLocaleString()}) es trabajo aún no
                   integrado a producción.
                   {peak.dev > 0 && (

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Users, GitCommit, GitBranch, Phone, ExternalLink, X, Loader2, Check,
-  GitPullRequest, Layers, LayoutGrid, Settings2,
+  GitPullRequest, Layers, LayoutGrid, Settings2, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -105,7 +105,11 @@ function DetailModal({
 
           {/* Gráfica de barras (CSS) */}
           <div className="mt-6 space-y-2">
-            <p className="text-sm font-medium">Commits por repositorio</p>
+            <p className="text-sm font-medium">Histórico · commits en rama main (todo el tiempo)</p>
+            <p className="text-[11px] text-muted-foreground">
+              Conteo total desde el inicio del repo, solo rama main (fuente: GitHub, con caché).
+              La tabla de abajo es la ventana de 30 días e incluye dev y PRs — por eso difieren.
+            </p>
             {contributor.repos.map((r, i) => (
               <div key={r.repo} className="flex items-center gap-3">
                 <span className="w-44 shrink-0 truncate text-xs text-muted-foreground" title={r.repo}>
@@ -208,6 +212,14 @@ export function ContributorsPage() {
   const [selected, setSelected] = useState<Contributor | null>(null);
   const [view, setView] = useState<"flat" | "grouped">("flat");
   const [showGroups, setShowGroups] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroupExpand = (id: string) =>
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   const { data: repos = [] } = useRepos();
   const repoRefs = useMemo(() => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })), [repos]);
   const { data: activity } = useCommitActivity(repoRefs, 30);
@@ -337,38 +349,70 @@ export function ContributorsPage() {
                       const members = contributors.filter((c) => g.members.includes(c.login));
                       const total = members.reduce((s, m) => s + m.totalContributions, 0);
                       const repoSet = new Set(members.flatMap((m) => m.repos.map((r) => r.repo)));
+                      const isOpen = expandedGroups.has(g.id);
                       return (
                         <Card key={g.id} className="border-2" style={{ borderColor: g.color }}>
                           <CardContent className="p-4">
-                            <div className="flex items-center gap-2">
-                              <span className="h-3 w-3 rounded-full" style={{ backgroundColor: g.color }} />
+                            <button
+                              className="flex w-full items-center gap-2 text-left"
+                              onClick={() => toggleGroupExpand(g.id)}
+                              title={isOpen ? "Contraer" : "Ver integrantes"}
+                            >
+                              <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: g.color }} />
                               <p className="flex-1 truncate font-semibold">{g.name}</p>
                               <Badge variant="secondary" className="gap-1">
                                 <GitCommit className="h-3 w-3" />
                                 {total.toLocaleString()}
                               </Badge>
-                            </div>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              {members.length} miembro{members.length === 1 ? "" : "s"} · {repoSet.size} repos
-                            </p>
-                            <div className="mt-3 space-y-1.5">
-                              {members.map((m) => (
-                                <button
-                                  key={m.login}
-                                  onClick={() => setSelected(m)}
-                                  className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted"
-                                >
-                                  <img src={m.avatarUrl} alt={m.login} className="h-6 w-6 rounded-full border" />
-                                  <span className="flex-1 truncate text-xs font-medium">{m.login}</span>
-                                  <span className="font-mono text-[11px] text-muted-foreground">
-                                    {m.totalContributions.toLocaleString()}
-                                  </span>
-                                </button>
-                              ))}
-                              {members.length === 0 && (
-                                <p className="text-xs text-muted-foreground">Sin miembros con actividad.</p>
+                              {isOpen ? (
+                                <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </button>
+                            <div className="mt-1 flex items-center gap-2">
+                              <p className="text-xs text-muted-foreground">
+                                {members.length} miembro{members.length === 1 ? "" : "s"} · {repoSet.size} repos
+                              </p>
+                              {!isOpen && (
+                                <div className="flex -space-x-1.5">
+                                  {members.slice(0, 6).map((m) => (
+                                    <img
+                                      key={m.login}
+                                      src={m.avatarUrl}
+                                      alt={m.login}
+                                      title={m.login}
+                                      className="h-5 w-5 rounded-full border-2 border-background"
+                                    />
+                                  ))}
+                                  {members.length > 6 && (
+                                    <span className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-background bg-muted text-[9px] text-muted-foreground">
+                                      +{members.length - 6}
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </div>
+                            {isOpen && (
+                              <div className="mt-3 space-y-1.5">
+                                {members.map((m) => (
+                                  <button
+                                    key={m.login}
+                                    onClick={() => setSelected(m)}
+                                    className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted"
+                                  >
+                                    <img src={m.avatarUrl} alt={m.login} className="h-6 w-6 rounded-full border" />
+                                    <span className="flex-1 truncate text-xs font-medium">{m.login}</span>
+                                    <span className="font-mono text-[11px] text-muted-foreground">
+                                      {m.totalContributions.toLocaleString()}
+                                    </span>
+                                  </button>
+                                ))}
+                                {members.length === 0 && (
+                                  <p className="text-xs text-muted-foreground">Sin miembros con actividad.</p>
+                                )}
+                              </div>
+                            )}
                           </CardContent>
                         </Card>
                       );
