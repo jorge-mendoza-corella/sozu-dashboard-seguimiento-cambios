@@ -274,6 +274,11 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
   }
 }
 
+/** Cierra un PR sin hacer merge. */
+export async function closePR(owner: string, repo: string, pullNumber: number): Promise<void> {
+  await octokit.pulls.update({ owner, repo, pull_number: pullNumber, state: "closed" });
+}
+
 export async function mergePR(
   owner: string,
   repo: string,

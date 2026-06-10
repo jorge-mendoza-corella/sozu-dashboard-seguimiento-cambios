@@ -7,11 +7,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { PullRequest } from "@/lib/github";
-import { submitReview, mergePR, mergeWithBypass } from "@/lib/github";
+import { submitReview, mergePR, mergeWithBypass, closePR } from "@/lib/github";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 
 type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
-type PanelMode = "review" | "merge";
+type PanelMode = "review" | "merge" | "close";
 
 interface Props {
   prs: PullRequest[];
@@ -81,6 +81,24 @@ export function PRList({ prs, owner, repo, onRefetch, readOnly = false }: Props)
     }
   };
 
+  const handleClose = async (pr: PullRequest) => {
+    setLoading(true);
+    try {
+      await closePR(owner, repo, pr.number);
+      setMergedPRs((prev) => new Set([...prev, pr.number])); // oculta botones de inmediato
+      setResult({ prNumber: pr.number, ok: true, msg: `PR #${pr.number} cerrado sin merge` });
+      setTimeout(() => { closePanel(); onRefetch?.(); }, 2000);
+    } catch (e) {
+      setResult({
+        prNumber: pr.number,
+        ok: false,
+        msg: e instanceof Error ? e.message : "Error al cerrar el PR",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleMerge = async (pr: PullRequest) => {
     setLoading(true);
     try {
@@ -126,10 +144,12 @@ export function PRList({ prs, owner, repo, onRefetch, readOnly = false }: Props)
         // main: merge solo si aprobado | non-main: merge solo si aún no aprobado
         // mergedPRs oculta el botón de inmediato tras confirmar el merge
         const canMerge = !readOnly && !mergedPRs.has(pr.number) && (isToMain ? isApproved : !isApproved);
+        const canClose = !readOnly && !mergedPRs.has(pr.number);
 
         const isPanelOpen  = openPanel?.prNumber === pr.number;
         const isReviewOpen = isPanelOpen && openPanel?.mode === "review";
         const isMergeOpen  = isPanelOpen && openPanel?.mode === "merge";
+        const isCloseOpen  = isPanelOpen && openPanel?.mode === "close";
 
         return (
           <div key={pr.number} className="relative">
@@ -290,6 +310,23 @@ export function PRList({ prs, owner, repo, onRefetch, readOnly = false }: Props)
                     Merge
                   </button>
                 )}
+
+                {/* Botón de cerrar sin merge */}
+                {canClose && (
+                  <button
+                    onClick={() => togglePanel(pr.number, "close")}
+                    title={`Cerrar PR #${pr.number} sin merge`}
+                    className={cn(
+                      "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border",
+                      "bg-red-50 text-red-600 border-red-200 hover:bg-red-100",
+                      "dark:bg-red-900/30 dark:text-red-300 dark:border-red-800/60 dark:hover:bg-red-900/50",
+                      isCloseOpen && "ring-1 ring-red-500 dark:ring-red-400",
+                    )}
+                  >
+                    <XCircle className="h-2.5 w-2.5" />
+                    Cerrar
+                  </button>
+                )}
               </div>
             </div>
 
@@ -431,6 +468,54 @@ export function PRList({ prs, owner, repo, onRefetch, readOnly = false }: Props)
                     >
                       {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <MergeIcon className="h-3 w-3" />}
                       Hacer merge
+                    </button>
+                    <button
+                      onClick={closePanel}
+                      disabled={loading}
+                      className="px-3 text-xs text-muted-foreground hover:text-foreground py-1.5 rounded hover:bg-muted transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            {/* Panel de cierre sin merge con confirmación */}
+            {isCloseOpen && (
+              <div
+                ref={panelRef}
+                className="absolute right-0 top-full mt-1 z-50 w-64 rounded-lg border bg-background shadow-xl p-3"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                  <span className="text-xs font-semibold">Cerrar sin merge · PR #{pr.number}</span>
+                </div>
+
+                <p className="text-[11px] text-muted-foreground mb-3">
+                  <span className="font-mono font-semibold text-foreground">{pr.head}</span>
+                  {" → "}
+                  <span className="font-mono font-semibold text-foreground">{pr.base}</span>
+                  {" "}· los cambios NO se integrarán.
+                </p>
+
+                {result?.prNumber === pr.number ? (
+                  <div className={cn(
+                    "flex items-center gap-2 p-2 rounded text-xs font-medium",
+                    result.ok ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+                              : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+                  )}>
+                    {result.ok ? <CheckCircle className="h-3.5 w-3.5 shrink-0" /> : <XCircle className="h-3.5 w-3.5 shrink-0" />}
+                    {result.msg}
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleClose(pr)}
+                      disabled={loading}
+                      className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+                    >
+                      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />}
+                      Cerrar PR
                     </button>
                     <button
                       onClick={closePanel}
