@@ -16,6 +16,9 @@ import { AddRepoModal } from "@/components/projects/AddRepoModal";
 import { ManageModal } from "@/components/projects/ManageModal";
 import { RepoGrid } from "@/components/projects/RepoGrid";
 import { formatDistanceToNow } from "@/lib/timeUtils";
+import { cn } from "@/lib/utils";
+
+type Alert = "failing" | "pending" | "devPending" | null;
 
 function computeSummary(data: RepoStatus[]) {
   const getDev = (r: RepoStatus) => r.branches.find((b) => b.name === "dev");
@@ -98,6 +101,24 @@ export function DashboardPage() {
     return m;
   }, [data]);
 
+  // Alerta por proyecto (para marcar el tab aunque no estés en él):
+  // rojo = algún deploy fallando · ámbar = PRs abiertos · azul = dev por pasar a PRD.
+  const projectAlert = useMemo(() => {
+    const m = new Map<string, Alert>();
+    for (const [pid, list] of reposByProject) {
+      const statuses = list
+        .map((r) => statusByKey.get(`${r.owner}/${r.repo}`))
+        .filter((s): s is RepoStatus => !!s);
+      let sev: Alert = null;
+      if (statuses.some((s) => hasFailingDeploy(s.latestRuns))) sev = "failing";
+      else if (statuses.some((s) => s.openPRs.length > 0)) sev = "pending";
+      else if (statuses.some((s) => (s.branches.find((b) => b.name === "dev")?.aheadOfMain ?? 0) > 0))
+        sev = "devPending";
+      m.set(pid, sev);
+    }
+    return m;
+  }, [reposByProject, statusByKey]);
+
   const handleReorder = useCallback(
     async (ids: string[]) => {
       await setReposOrder(ids);
@@ -119,7 +140,7 @@ export function DashboardPage() {
       {/* Header */}
       <div className="relative overflow-hidden border-b border-border bg-gradient-to-br from-slate-50 via-white to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 px-6 py-5">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-100/40 via-transparent to-transparent dark:from-blue-900/10 pointer-events-none" />
-        <div className="relative flex items-start justify-between gap-4">
+        <div className="relative flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <GitBranch className="h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0" />
@@ -155,7 +176,7 @@ export function DashboardPage() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0 mt-0.5">
+          <div className="flex flex-wrap items-center gap-2 md:shrink-0 md:mt-0.5">
             {dataUpdatedAt > 0 && (
               <span className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground">
                 <Clock className="h-3.5 w-3.5" />
@@ -201,11 +222,27 @@ export function DashboardPage() {
             <TabsList className="flex-wrap h-auto">
               {projects.map((p) => {
                 const count = reposByProject.get(p.id)?.length ?? 0;
+                const alert = projectAlert.get(p.id) ?? null;
+                const alertTitle =
+                  alert === "failing" ? "Deploy fallando" :
+                  alert === "pending" ? "PRs abiertos" :
+                  alert === "devPending" ? "Dev por pasar a PRD" : "";
                 return (
                   <TabsTrigger key={p.id} value={p.id} className="gap-1.5">
                     <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
                     {p.name}
                     <span className="text-[10px] text-muted-foreground">({count})</span>
+                    {alert && (
+                      <span
+                        title={alertTitle}
+                        className={cn(
+                          "ml-0.5 h-2 w-2 rounded-full",
+                          alert === "failing" && "bg-red-500 animate-pulse",
+                          alert === "pending" && "bg-amber-500",
+                          alert === "devPending" && "bg-blue-500",
+                        )}
+                      />
+                    )}
                   </TabsTrigger>
                 );
               })}
