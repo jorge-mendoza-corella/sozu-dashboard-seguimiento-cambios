@@ -228,21 +228,17 @@ export function DashboardPage() {
                   alert === "pending" ? "PRs abiertos" :
                   alert === "devPending" ? "Dev por pasar a PRD" : "";
                 return (
-                  <TabsTrigger key={p.id} value={p.id} className="gap-1.5">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
-                    {p.name}
-                    <span className="text-[10px] text-muted-foreground">({count})</span>
-                    {alert && (
-                      <span
-                        title={alertTitle}
-                        className={cn(
-                          "ml-0.5 h-2 w-2 rounded-full",
-                          alert === "failing" && "bg-red-500 animate-pulse",
-                          alert === "pending" && "bg-amber-500",
-                          alert === "devPending" && "bg-blue-500",
-                        )}
-                      />
-                    )}
+                  <TabsTrigger
+                    key={p.id}
+                    value={p.id}
+                    title={alertTitle || undefined}
+                    className={cn("gap-1.5", alert && `tab-alert tab-alert-${alert}`)}
+                  >
+                    <span className="relative z-10 flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+                      {p.name}
+                      <span className="text-[10px] text-muted-foreground">({count})</span>
+                    </span>
                   </TabsTrigger>
                 );
               })}
