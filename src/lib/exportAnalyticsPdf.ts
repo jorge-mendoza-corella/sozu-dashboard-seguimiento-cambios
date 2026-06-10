@@ -1,15 +1,16 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { AuthorActivity, RepoActivity, DailyCount } from "@/lib/github";
+import type { DailyMetrics, RepoMetrics } from "@/lib/github";
+import type { EntityMetrics } from "@/components/analytics/ContributorsAnalytics";
 
 interface ExportInput {
   windowDays: number;
   filterLabel: string;
-  kpis: { total: number; avg: number; peak: DailyCount; activeDays: number };
-  leaderAuthor?: AuthorActivity;
-  leaderRepo?: RepoActivity;
-  byAuthor: AuthorActivity[];
-  byRepo: RepoActivity[];
+  kpis: { dev: number; main: number; prs: number; total: number; peak: DailyMetrics; activeDays: number };
+  leader?: EntityMetrics;
+  leaderRepo?: RepoMetrics;
+  byEntity: EntityMetrics[];
+  byRepo: RepoMetrics[];
   images: { daily?: string; authors?: string; repos?: string };
 }
 
@@ -25,7 +26,7 @@ const SLATE: [number, number, number] = [100, 116, 139];
 
 /** Genera y descarga un PDF con el reporte ejecutivo de contribuidores. */
 export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
-  const { windowDays, filterLabel, kpis, leaderAuthor, leaderRepo, byAuthor, byRepo, images } = input;
+  const { windowDays, filterLabel, kpis, leader, leaderRepo, byEntity, byRepo, images } = input;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 40;
@@ -54,7 +55,7 @@ export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
   doc.text(`Filtro: ${filterLabel}`, margin, y + 16);
   y += 40;
 
-  // --- Resumen ejecutivo (narrativa) ---
+  // --- Resumen ejecutivo ---
   doc.setTextColor(30, 41, 59);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
@@ -65,22 +66,20 @@ export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
   doc.line(margin, y, margin + 120, y);
   y += 18;
 
+  const gap = Math.max(kpis.dev - kpis.main, 0);
   const narrative = [
-    `En los últimos ${windowDays} días se registraron ${kpis.total.toLocaleString()} commits, con un promedio de ${kpis.avg.toFixed(
-      1,
-    )} por día y actividad en ${kpis.activeDays} días distintos.`,
-    kpis.peak.count > 0
-      ? `El día de mayor actividad fue el ${fmtDay(kpis.peak.date)} con ${kpis.peak.count} commits.`
+    `En los últimos ${windowDays} días se registraron ${kpis.dev.toLocaleString()} commits en la rama dev, ${kpis.main.toLocaleString()} en main y ${kpis.prs.toLocaleString()} pull requests creados, con actividad en ${kpis.activeDays} días distintos.`,
+    gap > 0
+      ? `La brecha entre dev y main es de ${gap.toLocaleString()} commits, que representan trabajo aún no integrado a producción.`
+      : "Dev y main están alineados: todo el trabajo del periodo está integrado a producción.",
+    kpis.peak.dev > 0
+      ? `El día de mayor actividad en dev fue el ${fmtDay(kpis.peak.date)} con ${kpis.peak.dev} commits.`
       : "",
-    leaderAuthor
-      ? `${leaderAuthor.login} es el contribuidor más activo, con ${leaderAuthor.total.toLocaleString()} commits (${leaderAuthor.perDay.toFixed(
-          1,
-        )} por día activo).`
+    leader
+      ? `${leader.label.replace("👥 ", "")}${leader.isGroup ? " (grupo)" : ""} es el contribuidor más activo, con ${leader.dev.toLocaleString()} commits en dev, ${leader.main.toLocaleString()} en main y ${leader.prs.toLocaleString()} PRs.`
       : "",
     leaderRepo
-      ? `El repositorio con más movimiento es ${leaderRepo.repo}, que concentra ${leaderRepo.total.toLocaleString()} commits (${
-          kpis.total > 0 ? ((leaderRepo.total / kpis.total) * 100).toFixed(0) : 0
-        }% del total del periodo).`
+      ? `El repositorio con más movimiento es ${leaderRepo.repo} (${leaderRepo.dev.toLocaleString()} dev / ${leaderRepo.main.toLocaleString()} main / ${leaderRepo.prs.toLocaleString()} PRs).`
       : "",
   ]
     .filter(Boolean)
@@ -95,15 +94,15 @@ export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
 
   // --- Tarjetas KPI ---
   const kpiCards = [
-    { label: "Total commits", value: kpis.total.toLocaleString() },
-    { label: "Promedio / día", value: kpis.avg.toFixed(1) },
-    { label: "Día pico", value: kpis.peak.count > 0 ? `${kpis.peak.count}` : "—" },
+    { label: "Commits dev", value: kpis.dev.toLocaleString() },
+    { label: "Commits main", value: kpis.main.toLocaleString() },
+    { label: "PRs creados", value: kpis.prs.toLocaleString() },
     { label: "Días activos", value: `${kpis.activeDays}` },
   ];
-  const gap = 12;
-  const cardW = (contentW - gap * (kpiCards.length - 1)) / kpiCards.length;
+  const cardGap = 12;
+  const cardW = (contentW - cardGap * (kpiCards.length - 1)) / kpiCards.length;
   kpiCards.forEach((k, i) => {
-    const x = margin + i * (cardW + gap);
+    const x = margin + i * (cardW + cardGap);
     doc.setFillColor(241, 245, 249);
     doc.roundedRect(x, y, cardW, 52, 6, 6, "F");
     doc.setTextColor(...INDIGO);
@@ -117,30 +116,33 @@ export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
   });
   y += 72;
 
-  // --- Gráfica diaria ---
+  // --- Gráficas ---
   if (images.daily) {
-    y = addChart(doc, "Cambios diarios", images.daily, margin, y, contentW, 150);
+    y = addChart(doc, "Cambios diarios (dev / main / PRs)", images.daily, margin, y, contentW, 150);
   }
-
-  // --- Gráficas autores / repos lado a lado ---
   if (images.authors || images.repos) {
-    if (y > 620) {
+    if (y > 600) {
       doc.addPage();
       y = margin;
     }
-    const halfW = (contentW - gap) / 2;
+    const halfW = (contentW - cardGap) / 2;
     const startY = y;
-    if (images.authors) addChart(doc, "Top contribuidores", images.authors, margin, startY, halfW, 150);
-    if (images.repos) addChart(doc, "Commits por repositorio", images.repos, margin + halfW + gap, startY, halfW, 150);
+    if (images.authors) addChart(doc, "Por contribuidor / grupo", images.authors, margin, startY, halfW, 150);
+    if (images.repos) addChart(doc, "Por repositorio", images.repos, margin + halfW + cardGap, startY, halfW, 150);
     y = startY + 150 + 26;
   }
 
   // --- Tablas ---
-  if (byAuthor.length) {
+  if (byEntity.length) {
     autoTable(doc, {
       startY: y + 4,
-      head: [["Contribuidor", "Commits", "Por día activo"]],
-      body: byAuthor.map((a) => [a.login, a.total.toLocaleString(), a.perDay.toFixed(1)]),
+      head: [["Contribuidor / Grupo", "Dev", "Main", "PRs"]],
+      body: byEntity.map((e) => [
+        `${e.label.replace("👥 ", "")}${e.isGroup ? " (grupo)" : ""}`,
+        e.dev.toLocaleString(),
+        e.main.toLocaleString(),
+        e.prs.toLocaleString(),
+      ]),
       theme: "striped",
       headStyles: { fillColor: INDIGO },
       styles: { fontSize: 9, cellPadding: 4 },
@@ -151,18 +153,14 @@ export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
   }
 
   if (byRepo.length) {
-    if (y > 720) {
+    if (y > 700) {
       doc.addPage();
       y = margin;
     }
     autoTable(doc, {
       startY: y,
-      head: [["Repositorio", "Commits", "% del total"]],
-      body: byRepo.map((r) => [
-        r.repo,
-        r.total.toLocaleString(),
-        `${kpis.total > 0 ? ((r.total / kpis.total) * 100).toFixed(0) : 0}%`,
-      ]),
+      head: [["Repositorio", "Dev", "Main", "PRs"]],
+      body: byRepo.map((r) => [r.repo, r.dev.toLocaleString(), r.main.toLocaleString(), r.prs.toLocaleString()]),
       theme: "striped",
       headStyles: { fillColor: INDIGO },
       styles: { fontSize: 9, cellPadding: 4 },

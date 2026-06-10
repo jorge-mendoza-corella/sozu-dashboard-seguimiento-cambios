@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Users, GitCommit, GitBranch, Phone, ExternalLink, X, Loader2, Check } from "lucide-react";
+import {
+  Users, GitCommit, GitBranch, Phone, ExternalLink, X, Loader2, Check,
+  GitPullRequest, Layers, LayoutGrid, Settings2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,19 +11,31 @@ import { fetchContributors, type Contributor } from "@/lib/github";
 import { getAllContributorPhones, saveContributorPhone } from "@/lib/firestoreContributors";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ContributorsAnalytics } from "@/components/analytics/ContributorsAnalytics";
+import { GroupsModal } from "@/components/contributors/GroupsModal";
 import { useRepos } from "@/hooks/useProjectsRepos";
+import { useCommitActivity } from "@/hooks/useCommitActivity";
+import { useContributorGroups } from "@/hooks/useContributorGroups";
 import { BAR_COLORS } from "@/lib/colors";
 
 const TEL_REGEX = /^\d{10}$/;
 
+export interface RepoMetrics30 {
+  repo: string;
+  dev: number;
+  main: number;
+  prs: number;
+}
+
 function DetailModal({
   contributor,
   telefonoActual,
+  metrics30,
   onClose,
   onSaved,
 }: {
   contributor: Contributor;
   telefonoActual?: string;
+  metrics30: RepoMetrics30[] | null; // null = aún cargando
   onClose: () => void;
   onSaved: (login: string, telefono: string) => void;
 }) {
@@ -111,6 +126,53 @@ function DetailModal({
             ))}
           </div>
 
+          {/* Actividad 30 días: dev / main / PRs por repo */}
+          <div className="mt-6 border-t pt-4">
+            <p className="text-sm font-medium">Últimos 30 días · dev / main / PRs</p>
+            {metrics30 === null ? (
+              <p className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Calculando actividad…
+              </p>
+            ) : metrics30.length === 0 ? (
+              <p className="mt-2 text-xs text-muted-foreground">Sin actividad en los últimos 30 días.</p>
+            ) : (
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="py-1.5 pr-2 font-medium">Repositorio</th>
+                      <th className="py-1.5 px-2 text-right font-medium">
+                        <span className="inline-flex items-center gap-1"><GitBranch className="h-3 w-3 text-sky-500" />dev</span>
+                      </th>
+                      <th className="py-1.5 px-2 text-right font-medium">
+                        <span className="inline-flex items-center gap-1"><GitCommit className="h-3 w-3 text-indigo-500" />main</span>
+                      </th>
+                      <th className="py-1.5 pl-2 text-right font-medium">
+                        <span className="inline-flex items-center gap-1"><GitPullRequest className="h-3 w-3 text-amber-500" />PRs</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics30.map((m) => (
+                      <tr key={m.repo} className="border-b last:border-0">
+                        <td className="py-1.5 pr-2 truncate max-w-[180px]" title={m.repo}>{m.repo}</td>
+                        <td className="py-1.5 px-2 text-right font-mono">{m.dev}</td>
+                        <td className="py-1.5 px-2 text-right font-mono">{m.main}</td>
+                        <td className="py-1.5 pl-2 text-right font-mono">{m.prs}</td>
+                      </tr>
+                    ))}
+                    <tr className="font-semibold">
+                      <td className="py-1.5 pr-2">Total</td>
+                      <td className="py-1.5 px-2 text-right font-mono">{metrics30.reduce((s, m) => s + m.dev, 0)}</td>
+                      <td className="py-1.5 px-2 text-right font-mono">{metrics30.reduce((s, m) => s + m.main, 0)}</td>
+                      <td className="py-1.5 pl-2 text-right font-mono">{metrics30.reduce((s, m) => s + m.prs, 0)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           {/* Teléfono WhatsApp */}
           <div className="mt-6 border-t pt-4">
             <label className="flex items-center gap-2 text-sm font-medium">
@@ -144,8 +206,50 @@ export function ContributorsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Contributor | null>(null);
+  const [view, setView] = useState<"flat" | "grouped">("flat");
+  const [showGroups, setShowGroups] = useState(false);
   const { data: repos = [] } = useRepos();
   const repoRefs = useMemo(() => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })), [repos]);
+  const { data: activity } = useCommitActivity(repoRefs, 30);
+  const { data: groups = [] } = useContributorGroups();
+
+  // Métricas 30d (dev/main/PRs por repo) del contribuidor seleccionado.
+  const metrics30 = useMemo<RepoMetrics30[] | null>(() => {
+    if (!selected) return null;
+    if (!activity) return null;
+    const map = new Map<string, RepoMetrics30>();
+    const get = (repo: string) => {
+      let e = map.get(repo);
+      if (!e) {
+        e = { repo, dev: 0, main: 0, prs: 0 };
+        map.set(repo, e);
+      }
+      return e;
+    };
+    for (const c of activity.commits) {
+      if (c.login !== selected.login) continue;
+      const e = get(c.repo);
+      if (c.inDev) e.dev += 1;
+      if (c.inMain) e.main += 1;
+    }
+    for (const p of activity.prs) {
+      if (p.login !== selected.login) continue;
+      get(p.repo).prs += 1;
+    }
+    return [...map.values()].sort((a, b) => b.dev + b.main + b.prs - (a.dev + a.main + a.prs));
+  }, [activity, selected]);
+
+  // login -> grupos a los que pertenece (para chips en las cards)
+  const groupsByLogin = useMemo(() => {
+    const m = new Map<string, { name: string; color: string }[]>();
+    for (const g of groups) {
+      for (const member of g.members) {
+        if (!m.has(member)) m.set(member, []);
+        m.get(member)!.push({ name: g.name, color: g.color });
+      }
+    }
+    return m;
+  }, [groups]);
 
   const load = useCallback(async () => {
     if (repoRefs.length === 0) {
@@ -207,38 +311,157 @@ export function ContributorsPage() {
               <Loader2 className="h-6 w-6 animate-spin mr-2" /> Cargando contribuidores…
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {contributors.map((c) => (
-                <Card
-                  key={c.login}
-                  className="cursor-pointer transition-shadow hover:shadow-md"
-                  onClick={() => setSelected(c)}
-                >
-                  <CardContent className="flex items-center gap-4 p-4">
-                    <img src={c.avatarUrl} alt={c.login} className="h-12 w-12 rounded-full border" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold">{c.login}</p>
-                      <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                        <span className="inline-flex items-center gap-1">
-                          <GitCommit className="h-3 w-3" />
-                          {c.totalContributions.toLocaleString()} commits
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <Users className="h-3 w-3" />
-                          {c.repos.length} repos
-                        </span>
-                      </div>
-                      {phones[c.login] && (
-                        <Badge variant="secondary" className="mt-2 gap-1">
-                          <Phone className="h-3 w-3" />
-                          {phones[c.login]}
-                        </Badge>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <>
+              {/* Toolbar: vista + gestión de grupos */}
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <Button variant={view === "flat" ? "default" : "outline"} size="sm" onClick={() => setView("flat")}>
+                  <LayoutGrid className="mr-1.5 h-4 w-4" /> Individual
+                </Button>
+                <Button variant={view === "grouped" ? "default" : "outline"} size="sm" onClick={() => setView("grouped")}>
+                  <Layers className="mr-1.5 h-4 w-4" /> Agrupado
+                </Button>
+                <Button variant="outline" size="sm" className="ml-auto" onClick={() => setShowGroups(true)}>
+                  <Settings2 className="mr-1.5 h-4 w-4" /> Gestionar grupos
+                </Button>
+              </div>
+
+              {view === "grouped" && (
+                <div className="mb-6 space-y-4">
+                  {groups.length === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      No hay grupos. Crea uno con "Gestionar grupos".
+                    </p>
+                  )}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {groups.map((g) => {
+                      const members = contributors.filter((c) => g.members.includes(c.login));
+                      const total = members.reduce((s, m) => s + m.totalContributions, 0);
+                      const repoSet = new Set(members.flatMap((m) => m.repos.map((r) => r.repo)));
+                      return (
+                        <Card key={g.id} className="border-2" style={{ borderColor: g.color }}>
+                          <CardContent className="p-4">
+                            <div className="flex items-center gap-2">
+                              <span className="h-3 w-3 rounded-full" style={{ backgroundColor: g.color }} />
+                              <p className="flex-1 truncate font-semibold">{g.name}</p>
+                              <Badge variant="secondary" className="gap-1">
+                                <GitCommit className="h-3 w-3" />
+                                {total.toLocaleString()}
+                              </Badge>
+                            </div>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {members.length} miembro{members.length === 1 ? "" : "s"} · {repoSet.size} repos
+                            </p>
+                            <div className="mt-3 space-y-1.5">
+                              {members.map((m) => (
+                                <button
+                                  key={m.login}
+                                  onClick={() => setSelected(m)}
+                                  className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-muted"
+                                >
+                                  <img src={m.avatarUrl} alt={m.login} className="h-6 w-6 rounded-full border" />
+                                  <span className="flex-1 truncate text-xs font-medium">{m.login}</span>
+                                  <span className="font-mono text-[11px] text-muted-foreground">
+                                    {m.totalContributions.toLocaleString()}
+                                  </span>
+                                </button>
+                              ))}
+                              {members.length === 0 && (
+                                <p className="text-xs text-muted-foreground">Sin miembros con actividad.</p>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                  {(() => {
+                    const groupedLogins = new Set(groups.flatMap((g) => g.members));
+                    const ungrouped = contributors.filter((c) => !groupedLogins.has(c.login));
+                    if (ungrouped.length === 0) return null;
+                    return (
+                      <>
+                        <p className="text-sm font-semibold text-muted-foreground">
+                          Sin grupo ({ungrouped.length})
+                        </p>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          {ungrouped.map((c) => (
+                            <Card
+                              key={c.login}
+                              className="cursor-pointer transition-shadow hover:shadow-md"
+                              onClick={() => setSelected(c)}
+                            >
+                              <CardContent className="flex items-center gap-4 p-4">
+                                <img src={c.avatarUrl} alt={c.login} className="h-12 w-12 rounded-full border" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate font-semibold">{c.login}</p>
+                                  <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                                    <span className="inline-flex items-center gap-1">
+                                      <GitCommit className="h-3 w-3" />
+                                      {c.totalContributions.toLocaleString()} commits
+                                    </span>
+                                    <span className="inline-flex items-center gap-1">
+                                      <Users className="h-3 w-3" />
+                                      {c.repos.length} repos
+                                    </span>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {view === "flat" && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {contributors.map((c) => (
+                    <Card
+                      key={c.login}
+                      className="cursor-pointer transition-shadow hover:shadow-md"
+                      onClick={() => setSelected(c)}
+                    >
+                      <CardContent className="flex items-center gap-4 p-4">
+                        <img src={c.avatarUrl} alt={c.login} className="h-12 w-12 rounded-full border" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-semibold">{c.login}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                            <span className="inline-flex items-center gap-1">
+                              <GitCommit className="h-3 w-3" />
+                              {c.totalContributions.toLocaleString()} commits
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <Users className="h-3 w-3" />
+                              {c.repos.length} repos
+                            </span>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            {phones[c.login] && (
+                              <Badge variant="secondary" className="gap-1">
+                                <Phone className="h-3 w-3" />
+                                {phones[c.login]}
+                              </Badge>
+                            )}
+                            {(groupsByLogin.get(c.login) ?? []).map((g) => (
+                              <span
+                                key={g.name}
+                                className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px]"
+                                style={{ borderColor: g.color, color: g.color }}
+                              >
+                                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: g.color }} />
+                                {g.name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </TabsContent>
 
@@ -251,9 +474,14 @@ export function ContributorsPage() {
         <DetailModal
           contributor={selected}
           telefonoActual={phones[selected.login]}
+          metrics30={metrics30}
           onClose={() => setSelected(null)}
           onSaved={handleSaved}
         />
+      )}
+
+      {showGroups && (
+        <GroupsModal logins={contributors.map((c) => c.login)} onClose={() => setShowGroups(false)} />
       )}
     </div>
   );

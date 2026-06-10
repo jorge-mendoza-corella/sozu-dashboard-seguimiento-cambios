@@ -425,11 +425,26 @@ export async function fetchContributors(repos: RepoRef[]): Promise<Contributor[]
 // Actividad de commits (analítica ejecutiva)
 // ---------------------------------------------------------------------------
 
-/** Un commit individual (ya filtrado de bots) para agregación client-side reactiva. */
+/**
+ * Un commit único (dedup por SHA dentro del repo, sin bots).
+ * `inMain`/`inDev` indican en qué rama(s) es alcanzable. Un commit mergeado a
+ * main aparece en ambas; la brecha dev−main = trabajo aún no integrado.
+ */
 export interface CommitRecord {
+  sha: string;
   date: string; // YYYY-MM-DD
   login: string;
   repo: string; // label del repo
+  inMain: boolean;
+  inDev: boolean;
+}
+
+/** Un Pull Request creado dentro de la ventana. */
+export interface PRRecord {
+  date: string; // YYYY-MM-DD (created_at)
+  login: string; // autor del PR
+  repo: string; // label del repo
+  merged: boolean;
 }
 
 export interface ContributorRef {
@@ -438,8 +453,9 @@ export interface ContributorRef {
 }
 
 export interface CommitActivity {
-  commits: CommitRecord[]; // todos los commits de la ventana (sin bots)
-  authors: ContributorRef[]; // contribuidores distintos (para el filtro), ordenados por total
+  commits: CommitRecord[]; // commits únicos de la ventana (sin bots)
+  prs: PRRecord[]; // PRs creados en la ventana (sin bots)
+  authors: ContributorRef[]; // contribuidores distintos, ordenados por actividad
   repos: string[]; // labels de repos con actividad (para el filtro)
   windowDays: number;
   since: string; // ISO
@@ -448,43 +464,91 @@ export interface CommitActivity {
 const dayKey = (iso: string) => iso.slice(0, 10); // YYYY-MM-DD
 
 /**
- * Trae los commits de los últimos `windowDays` días de todos los repos de `REPOS`.
- * Devuelve la lista cruda de commits (sin bots) + catálogos de autores y repos, para
- * que la UI pueda filtrar/agregar en vivo. Tolera repos sin acceso.
+ * Trae actividad de los últimos `windowDays` días por repo:
+ * - Commits de `main` y de `dev` (dedup por SHA, flags inMain/inDev).
+ * - PRs creados en la ventana.
+ * Excluye bots. Tolera repos sin acceso o sin rama dev.
  */
 export async function fetchCommitActivity(repos: RepoRef[], windowDays = 30): Promise<CommitActivity> {
   const since = new Date(Date.now() - windowDays * 86_400_000).toISOString();
+  const sinceMs = new Date(since).getTime();
 
   const commits: CommitRecord[] = [];
+  const prs: PRRecord[] = [];
   const avatarByLogin = new Map<string, string>();
   const totalByLogin = new Map<string, number>();
   const reposWithActivity = new Set<string>();
 
+  const note = (login: string, avatar?: string | null) => {
+    totalByLogin.set(login, (totalByLogin.get(login) ?? 0) + 1);
+    if (avatar && !avatarByLogin.get(login)) avatarByLogin.set(login, avatar);
+  };
+
   await Promise.all(
     repos.map(async ({ owner, repo, label }) => {
-      try {
-        const data = await octokit.paginate(octokit.repos.listCommits, {
-          owner,
-          repo,
-          since,
-          per_page: 100,
-        });
-        for (const c of data) {
-          const dateIso = c.commit?.author?.date;
-          if (!dateIso) continue;
-          const login = c.author?.login ?? c.commit?.author?.name ?? "desconocido";
-          if (isBot(login, c.author?.type ?? "")) continue;
-
-          commits.push({ date: dayKey(dateIso), login, repo: label });
-          reposWithActivity.add(label);
-          totalByLogin.set(login, (totalByLogin.get(login) ?? 0) + 1);
-          if (c.author?.avatar_url && !avatarByLogin.get(login)) {
-            avatarByLogin.set(login, c.author.avatar_url);
+      // commits por rama (dedup por sha dentro del repo)
+      const bySha = new Map<string, CommitRecord>();
+      const fetchBranch = async (branch: "main" | "dev") => {
+        try {
+          const data = await octokit.paginate(octokit.repos.listCommits, {
+            owner,
+            repo,
+            sha: branch,
+            since,
+            per_page: 100,
+          });
+          for (const c of data) {
+            const dateIso = c.commit?.author?.date;
+            if (!dateIso) continue;
+            const login = c.author?.login ?? c.commit?.author?.name ?? "desconocido";
+            if (isBot(login, c.author?.type ?? "")) continue;
+            let rec = bySha.get(c.sha);
+            if (!rec) {
+              rec = { sha: c.sha, date: dayKey(dateIso), login, repo: label, inMain: false, inDev: false };
+              bySha.set(c.sha, rec);
+              note(login, c.author?.avatar_url);
+            }
+            if (branch === "main") rec.inMain = true;
+            else rec.inDev = true;
           }
+        } catch {
+          /* rama inexistente o sin acceso: se omite */
         }
-      } catch {
-        /* repo sin acceso o error puntual: se omite */
-      }
+      };
+
+      // PRs creados en la ventana (state=all, orden desc por creación; corta al salir de la ventana)
+      const fetchPRs = async () => {
+        try {
+          await octokit.paginate(
+            octokit.pulls.list,
+            { owner, repo, state: "all", sort: "created", direction: "desc", per_page: 100 },
+            (response, done) => {
+              const inWindow = [];
+              for (const pr of response.data) {
+                if (new Date(pr.created_at).getTime() < sinceMs) {
+                  done();
+                  break;
+                }
+                inWindow.push(pr);
+              }
+              for (const pr of inWindow) {
+                const login = pr.user?.login ?? "desconocido";
+                if (isBot(login, pr.user?.type ?? "")) continue;
+                prs.push({ date: dayKey(pr.created_at), login, repo: label, merged: !!pr.merged_at });
+                reposWithActivity.add(label);
+                note(login, pr.user?.avatar_url);
+              }
+              return [];
+            },
+          );
+        } catch {
+          /* repo sin acceso: se omite */
+        }
+      };
+
+      await Promise.all([fetchBranch("main"), fetchBranch("dev"), fetchPRs()]);
+      if (bySha.size > 0) reposWithActivity.add(label);
+      commits.push(...bySha.values());
     }),
   );
 
@@ -494,56 +558,114 @@ export async function fetchCommitActivity(repos: RepoRef[], windowDays = 30): Pr
 
   const repoLabels = repos.map((r) => r.label).filter((l) => reposWithActivity.has(l));
 
-  return { commits, authors, repos: repoLabels, windowDays, since };
+  return { commits, prs, authors, repos: repoLabels, windowDays, since };
 }
 
 // --- Agregadores client-side (puros, reutilizables en UI y export) -----------
 
-export interface DailyCount {
+export interface DailyMetrics {
   date: string;
-  count: number;
+  dev: number; // commits alcanzables en dev
+  main: number; // commits alcanzables en main
+  prs: number; // PRs creados
 }
-export interface AuthorActivity {
+export interface AuthorMetrics {
   login: string;
-  total: number;
-  perDay: number;
+  dev: number;
+  main: number;
+  prs: number;
+  total: number; // commits únicos (dev ∪ main)
+  perDay: number; // total / días activos
 }
-export interface RepoActivity {
+export interface RepoMetrics {
   repo: string;
+  dev: number;
+  main: number;
+  prs: number;
   total: number;
 }
 
-/** Serie diaria continua (zero-fill) de `windowDays` días desde `since`. */
-export function buildDailySeries(commits: CommitRecord[], since: string, windowDays: number): DailyCount[] {
-  const perDay = new Map<string, number>();
-  for (const c of commits) perDay.set(c.date, (perDay.get(c.date) ?? 0) + 1);
+/** Serie diaria continua (zero-fill) con las tres métricas. */
+export function buildDailySeries(
+  commits: CommitRecord[],
+  prs: PRRecord[],
+  since: string,
+  windowDays: number,
+): DailyMetrics[] {
+  const byDay = new Map<string, { dev: number; main: number; prs: number }>();
+  const get = (d: string) => {
+    let e = byDay.get(d);
+    if (!e) {
+      e = { dev: 0, main: 0, prs: 0 };
+      byDay.set(d, e);
+    }
+    return e;
+  };
+  for (const c of commits) {
+    const e = get(c.date);
+    if (c.inDev) e.dev += 1;
+    if (c.inMain) e.main += 1;
+  }
+  for (const p of prs) get(p.date).prs += 1;
+
   const startMs = new Date(since).getTime();
-  const out: DailyCount[] = [];
+  const out: DailyMetrics[] = [];
   for (let i = 0; i < windowDays; i++) {
     const day = dayKey(new Date(startMs + i * 86_400_000).toISOString());
-    out.push({ date: day, count: perDay.get(day) ?? 0 });
+    const e = byDay.get(day);
+    out.push({ date: day, dev: e?.dev ?? 0, main: e?.main ?? 0, prs: e?.prs ?? 0 });
   }
   return out;
 }
 
-export function aggregateByAuthor(commits: CommitRecord[]): AuthorActivity[] {
-  const m = new Map<string, { total: number; days: Set<string> }>();
-  for (const c of commits) {
-    let e = m.get(c.login);
+export function aggregateByAuthor(commits: CommitRecord[], prs: PRRecord[]): AuthorMetrics[] {
+  const m = new Map<string, { dev: number; main: number; prs: number; total: number; days: Set<string> }>();
+  const get = (login: string) => {
+    let e = m.get(login);
     if (!e) {
-      e = { total: 0, days: new Set() };
-      m.set(c.login, e);
+      e = { dev: 0, main: 0, prs: 0, total: 0, days: new Set() };
+      m.set(login, e);
     }
+    return e;
+  };
+  for (const c of commits) {
+    const e = get(c.login);
+    if (c.inDev) e.dev += 1;
+    if (c.inMain) e.main += 1;
     e.total += 1;
     e.days.add(c.date);
   }
+  for (const p of prs) get(p.login).prs += 1;
   return [...m.entries()]
-    .map(([login, e]) => ({ login, total: e.total, perDay: e.total / (e.days.size || 1) }))
-    .sort((a, b) => b.total - a.total);
+    .map(([login, e]) => ({
+      login,
+      dev: e.dev,
+      main: e.main,
+      prs: e.prs,
+      total: e.total,
+      perDay: e.total / (e.days.size || 1),
+    }))
+    .sort((a, b) => b.total - a.total || b.prs - a.prs);
 }
 
-export function aggregateByRepo(commits: CommitRecord[]): RepoActivity[] {
-  const m = new Map<string, number>();
-  for (const c of commits) m.set(c.repo, (m.get(c.repo) ?? 0) + 1);
-  return [...m.entries()].map(([repo, total]) => ({ repo, total })).sort((a, b) => b.total - a.total);
+export function aggregateByRepo(commits: CommitRecord[], prs: PRRecord[]): RepoMetrics[] {
+  const m = new Map<string, { dev: number; main: number; prs: number; total: number }>();
+  const get = (repo: string) => {
+    let e = m.get(repo);
+    if (!e) {
+      e = { dev: 0, main: 0, prs: 0, total: 0 };
+      m.set(repo, e);
+    }
+    return e;
+  };
+  for (const c of commits) {
+    const e = get(c.repo);
+    if (c.inDev) e.dev += 1;
+    if (c.inMain) e.main += 1;
+    e.total += 1;
+  }
+  for (const p of prs) get(p.repo).prs += 1;
+  return [...m.entries()]
+    .map(([repo, e]) => ({ repo, ...e }))
+    .sort((a, b) => b.total - a.total || b.prs - a.prs);
 }

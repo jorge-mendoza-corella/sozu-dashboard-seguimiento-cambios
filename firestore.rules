@@ -29,6 +29,15 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
     }
 
+    // Grupos de contribuidores (agrupación para analítica).
+    // Lectura: cualquier usuario registrado. Escritura: solo el root.
+    match /contributor_groups/{id} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if request.auth != null
+        && request.auth.token.email == 'jorge.mendoza@sozu.com';
+    }
+
     // Proyectos y repositorios monitoreados.
     // Lectura: cualquier usuario registrado. Escritura: solo superusers (admins).
     match /projects/{id} {
