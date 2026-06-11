@@ -29,7 +29,6 @@ import { exportAnalyticsPdf } from "@/lib/exportAnalyticsPdf";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Tooltip, Legend, Filler);
 
-const TOP_ENTITIES = 8;
 const COLOR_DEV = "#0ea5e9"; // sky
 const COLOR_MAIN = "#6366f1"; // indigo
 const COLOR_PRS = "#f59e0b"; // amber
@@ -199,7 +198,7 @@ export function ContributorsAnalytics() {
   }
 
   const { daily, byEntity, byRepo, devT, mainT, prsT, totalT, peak, activeDays } = view;
-  const topEntities = byEntity.slice(0, TOP_ENTITIES);
+  const topEntities = byEntity; // todas las entidades; la altura del chart escala
   const leader = byEntity[0];
   const leaderRepo = byRepo[0];
   const filterLabel = [
@@ -481,7 +480,7 @@ export function ContributorsAnalytics() {
               )
             }
           >
-            <div className="h-80">
+            <div style={{ height: Math.max(320, topEntities.length * 64) }}>
               <Bar ref={authorsRef} data={entityData} options={entityOpts} />
             </div>
           </SectionCard>

@@ -525,7 +525,15 @@ export function ContributorsPage() {
       )}
 
       {showGroups && (
-        <GroupsModal logins={contributors.map((c) => c.login)} onClose={() => setShowGroups(false)} />
+        <GroupsModal
+          logins={[...new Set([
+            ...contributors.map((c) => c.login),
+            // autores vistos en la actividad de 30 días (incluye commits sin cuenta GitHub vinculada,
+            // p.ej. "Yorch Agente"), para poder agruparlos también
+            ...(activity?.authors.map((a) => a.login) ?? []),
+          ])].sort((a, b) => a.localeCompare(b))}
+          onClose={() => setShowGroups(false)}
+        />
       )}
     </div>
   );
