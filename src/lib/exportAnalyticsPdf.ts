@@ -144,15 +144,17 @@ export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
   }
 
   // --- Tablas ---
+  const withAvg = (n: number) => `${n.toLocaleString()} (${(n / windowDays).toFixed(1)}/día)`;
+
   if (byEntity.length) {
     autoTable(doc, {
       startY: y + 4,
-      head: [["Contribuidor / Grupo", "Dev", "Main", "PRs"]],
+      head: [["Contribuidor / Grupo", "Dev (prom/día)", "Main (prom/día)", "PRs (prom/día)"]],
       body: byEntity.map((e) => [
         `${e.label.replace("👥 ", "")}${e.isGroup ? " (grupo)" : ""}`,
-        e.dev.toLocaleString(),
-        e.main.toLocaleString(),
-        e.prs.toLocaleString(),
+        withAvg(e.dev),
+        withAvg(e.main),
+        withAvg(e.prs),
       ]),
       theme: "striped",
       headStyles: { fillColor: INDIGO },
@@ -170,8 +172,8 @@ export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
     }
     autoTable(doc, {
       startY: y,
-      head: [["Repositorio", "Dev", "Main", "PRs"]],
-      body: byRepo.map((r) => [r.repo, r.dev.toLocaleString(), r.main.toLocaleString(), r.prs.toLocaleString()]),
+      head: [["Repositorio", "Dev (prom/día)", "Main (prom/día)", "PRs (prom/día)"]],
+      body: byRepo.map((r) => [r.repo, withAvg(r.dev), withAvg(r.main), withAvg(r.prs)]),
       theme: "striped",
       headStyles: { fillColor: INDIGO },
       styles: { fontSize: 9, cellPadding: 4 },
@@ -188,13 +190,13 @@ export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
     }
     autoTable(doc, {
       startY: y,
-      head: [["Grupo", "Miembros", "Dev", "Main", "PRs", "En analítica"]],
+      head: [["Grupo", "Miembros", "Dev (prom/día)", "Main (prom/día)", "PRs (prom/día)", "En analítica"]],
       body: groupsDetail.map((g) => [
         g.name,
         g.members.join(", "),
-        g.dev.toLocaleString(),
-        g.main.toLocaleString(),
-        g.prs.toLocaleString(),
+        withAvg(g.dev),
+        withAvg(g.main),
+        withAvg(g.prs),
         g.visible ? "Sí" : "No",
       ]),
       theme: "striped",

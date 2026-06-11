@@ -280,12 +280,21 @@ export function ContributorsAnalytics() {
     ...(showMain ? [{ label: "Main", data: topEntities.map((e) => e.main), backgroundColor: COLOR_MAIN, borderRadius: 4, maxBarThickness: 14 }] : []),
     ...(showPrs ? [{ label: "PRs", data: topEntities.map((e) => e.prs), backgroundColor: COLOR_PRS, borderRadius: 4, maxBarThickness: 14 }] : []),
   ];
+  // Tooltip con total + promedio diario (ventana de 30 días)
+  const avgTooltipLabel = (item: { dataset: { label?: string }; parsed: { x?: number | null; y?: number | null } }, horizontal: boolean) => {
+    const v = (horizontal ? item.parsed.x : item.parsed.y) ?? 0;
+    return ` ${item.dataset.label}: ${v} · ${(v / data.windowDays).toFixed(1)}/día`;
+  };
+
   const entityData = { labels: topEntities.map((e) => e.label), datasets: entityDatasets };
   const entityOpts: ChartOptions<"bar"> = {
     indexAxis: "y",
     responsive: true,
     maintainAspectRatio: false,
-    plugins: { legend: legendOpts, tooltip: { ...baseTooltip } },
+    plugins: {
+      legend: legendOpts,
+      tooltip: { ...baseTooltip, callbacks: { label: (item) => avgTooltipLabel(item, true) } },
+    },
     scales: {
       x: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } }, grid: { color: "rgba(148,163,184,0.15)" } },
       y: { grid: { display: false }, ticks: { font: { size: 11 } } },
@@ -302,7 +311,10 @@ export function ContributorsAnalytics() {
   const repoOpts: ChartOptions<"bar"> = {
     responsive: true,
     maintainAspectRatio: false,
-    plugins: { legend: legendOpts, tooltip: { ...baseTooltip } },
+    plugins: {
+      legend: legendOpts,
+      tooltip: { ...baseTooltip, callbacks: { label: (item) => avgTooltipLabel(item, false) } },
+    },
     scales: {
       x: { grid: { display: false }, ticks: { font: { size: 10 } } },
       y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } }, grid: { color: "rgba(148,163,184,0.15)" } },
@@ -456,9 +468,13 @@ export function ContributorsAnalytics() {
                 <>
                   <strong className="text-foreground">{leader.label.replace("👥 ", "")}</strong>
                   {leader.isGroup ? " (grupo)" : ""} lidera con{" "}
-                  <strong className="text-foreground">{leader.dev.toLocaleString()}</strong> commits en dev,{" "}
-                  <strong className="text-foreground">{leader.main.toLocaleString()}</strong> en main y{" "}
-                  <strong className="text-foreground">{leader.prs.toLocaleString()}</strong> PRs.
+                  <strong className="text-foreground">{leader.dev.toLocaleString()}</strong> commits en dev (
+                  {(leader.dev / data.windowDays).toFixed(1)}/día),{" "}
+                  <strong className="text-foreground">{leader.main.toLocaleString()}</strong> en main (
+                  {(leader.main / data.windowDays).toFixed(1)}/día) y{" "}
+                  <strong className="text-foreground">{leader.prs.toLocaleString()}</strong> PRs (
+                  {(leader.prs / data.windowDays).toFixed(1)}/día). Promedios sobre {data.windowDays} días;
+                  pasa el cursor por las barras para ver el promedio de cada quien.
                 </>
               ) : (
                 "Sin actividad."
@@ -477,9 +493,12 @@ export function ContributorsAnalytics() {
               leaderRepo ? (
                 <>
                   <strong className="text-foreground">{leaderRepo.repo}</strong> concentra{" "}
-                  <strong className="text-foreground">{leaderRepo.dev.toLocaleString()}</strong> commits en dev,{" "}
-                  <strong className="text-foreground">{leaderRepo.main.toLocaleString()}</strong> en main y{" "}
-                  <strong className="text-foreground">{leaderRepo.prs.toLocaleString()}</strong> PRs.
+                  <strong className="text-foreground">{leaderRepo.dev.toLocaleString()}</strong> commits en dev (
+                  {(leaderRepo.dev / data.windowDays).toFixed(1)}/día),{" "}
+                  <strong className="text-foreground">{leaderRepo.main.toLocaleString()}</strong> en main (
+                  {(leaderRepo.main / data.windowDays).toFixed(1)}/día) y{" "}
+                  <strong className="text-foreground">{leaderRepo.prs.toLocaleString()}</strong> PRs (
+                  {(leaderRepo.prs / data.windowDays).toFixed(1)}/día). Promedios sobre {data.windowDays} días.
                 </>
               ) : (
                 "Sin actividad."
