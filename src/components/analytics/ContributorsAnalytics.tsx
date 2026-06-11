@@ -118,7 +118,8 @@ const legendOpts = {
 export function ContributorsAnalytics() {
   const { data: repos = [] } = useRepos();
   const repoRefs = useMemo(() => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })), [repos]);
-  const { data, isLoading, error } = useCommitActivity(repoRefs, 30);
+  const [windowDays, setWindowDays] = useState(30);
+  const { data, isLoading, error } = useCommitActivity(repoRefs, windowDays);
   const { data: groups = [] } = useContributorGroups();
   const { data: hidden = new Set<string>() } = useHiddenContributors();
 
@@ -399,6 +400,16 @@ export function ContributorsAnalytics() {
               {data.repos.map((r) => (
                 <option key={r} value={r}>{r}</option>
               ))}
+            </SelectNative>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+              <CalendarDays className="h-3.5 w-3.5" /> Ventana
+            </label>
+            <SelectNative className="w-32" value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))}>
+              <option value={30}>30 días</option>
+              <option value={60}>60 días</option>
+              <option value={90}>90 días</option>
             </SelectNative>
           </div>
           <div className="flex flex-col gap-1">
