@@ -42,7 +42,7 @@ export function useAnthropicCosts(windowDays: number) {
         updatedAt: cache.updatedAt,
       };
     },
-    staleTime: 30 * 60 * 1000,
+    staleTime: 10 * 60 * 1000, // 10 min; sync runs every 15 min
     retry: false,
   });
 }
