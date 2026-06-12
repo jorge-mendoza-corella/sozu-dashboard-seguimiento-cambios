@@ -3,6 +3,7 @@ import {
   Loader2, CalendarDays, Trophy, FolderGit2, TrendingUp, FileDown, Users as UsersIcon,
   GitBranch, GitCommit, GitPullRequest,
 } from "lucide-react";
+import { useAnthropicCosts } from "@/hooks/useAnthropicCosts";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -122,6 +123,7 @@ export function ContributorsAnalytics() {
   const { data, isLoading, error } = useCommitActivity(repoRefs, windowDays);
   const { data: groups = [] } = useContributorGroups();
   const { data: hidden = new Set<string>() } = useHiddenContributors();
+  const { data: costsData } = useAnthropicCosts(windowDays);
 
   const [entityKey, setEntityKey] = useState<string>(ALL);
   const [repo, setRepo] = useState<string>(ALL);
@@ -349,6 +351,7 @@ export function ContributorsAnalytics() {
         byEntity,
         byRepo,
         groupsDetail,
+        costsData: costsData ?? null,
         images: {
           daily: dailyRef.current?.toBase64Image(),
           authors: authorsRef.current?.toBase64Image(),
