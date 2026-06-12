@@ -94,15 +94,20 @@ function MappingModal({
   const [existing, setExisting] = useState<Record<string, string>>(initialMappings);
   const [saving, setSaving] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const handleSave = async (accountId: string, email: string | undefined) => {
     const login = (drafts[accountId] ?? "").trim();
     if (!login) return;
     setSaving(accountId);
+    setSaveError(null);
     try {
       await setMapping(accountId, login, email, updatedBy);
       setExisting((prev) => ({ ...prev, [accountId]: login }));
       onSaved();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSaveError(`Error al guardar: ${msg}`);
     } finally {
       setSaving(null);
     }
@@ -110,11 +115,15 @@ function MappingModal({
 
   const handleDelete = async (accountId: string) => {
     setDeleting(accountId);
+    setSaveError(null);
     try {
       await deleteMapping(accountId);
       setExisting((prev) => { const n = { ...prev }; delete n[accountId]; return n; });
       setDrafts((prev) => { const n = { ...prev }; delete n[accountId]; return n; });
       onSaved();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSaveError(`Error al eliminar: ${msg}`);
     } finally {
       setDeleting(null);
     }
@@ -140,6 +149,12 @@ function MappingModal({
               <X className="h-4 w-4" />
             </Button>
           </div>
+
+          {saveError && (
+            <div className="mb-3 rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-xs text-destructive">
+              {saveError}
+            </div>
+          )}
 
           {orgUsers.length === 0 ? (
             <div className="flex items-center gap-2 text-muted-foreground text-sm">
