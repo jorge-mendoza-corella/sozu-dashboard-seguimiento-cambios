@@ -19,5 +19,8 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Show authenticated service account
+        run: gcloud auth list --format="value(account)" | head -1
+
       - name: Sync Anthropic costs to Firestore
         run: python3 scripts/sync-anthropic-costs.py
