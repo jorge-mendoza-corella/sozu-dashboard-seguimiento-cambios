@@ -53,6 +53,9 @@ jobs:
 
           echo "VITE_GITHUB_DOCS_TOKEN=${{ secrets.DASHBOARD_GITHUB_DOCS_TOKEN }}" >> $GITHUB_ENV
 
+          VITE_ANTHROPIC_ADMIN_KEY=$(gcloud secrets versions access latest --secret=DASHBOARD_ANTHROPIC_ADMIN_KEY --project=sozu-admin-dev)
+          echo "VITE_ANTHROPIC_ADMIN_KEY=$VITE_ANTHROPIC_ADMIN_KEY" >> $GITHUB_ENV
+
       - name: Install dependencies
         run: npm ci
 
