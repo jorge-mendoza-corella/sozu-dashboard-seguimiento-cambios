@@ -16,8 +16,8 @@ import { SelectNative } from "@/components/ui/select-native";
 import { useAuth } from "@/hooks/useAuth";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { useAnthropicCosts } from "@/hooks/useAnthropicCosts";
-import { hasAdminKey, fetchOrgUsers, type AnthropicOrgUser, type ContributorCostEntry } from "@/lib/anthropicAdmin";
-import { getMappings, setMapping, deleteMapping } from "@/lib/firestoreAnthropicMapping";
+import { type AnthropicOrgUser, type ContributorCostEntry } from "@/lib/anthropicAdmin";
+import { setMapping, deleteMapping } from "@/lib/firestoreAnthropicMapping";
 import { useQueryClient } from "@tanstack/react-query";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Tooltip, Legend, Filler);
@@ -77,34 +77,23 @@ const baseTooltip = {
 
 function MappingModal({
   unmapped,
+  orgUsers,
+  initialMappings,
   onClose,
   updatedBy,
   onSaved,
 }: {
   unmapped: ContributorCostEntry[];
+  orgUsers: AnthropicOrgUser[];
+  initialMappings: Record<string, string>;
   onClose: () => void;
   updatedBy: string;
   onSaved: () => void;
 }) {
-  const [orgUsers, setOrgUsers] = useState<AnthropicOrgUser[] | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [existing, setExisting] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>(initialMappings);
+  const [existing, setExisting] = useState<Record<string, string>>(initialMappings);
   const [saving, setSaving] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [loadErr, setLoadErr] = useState("");
-
-  // Load org users + existing mappings on mount
-  useState(() => {
-    Promise.all([fetchOrgUsers(), getMappings()])
-      .then(([users, mappings]) => {
-        setOrgUsers(users);
-        const ex: Record<string, string> = {};
-        for (const m of mappings) ex[m.accountId] = m.githubLogin;
-        setExisting(ex);
-        setDrafts({ ...ex });
-      })
-      .catch((e) => setLoadErr(e instanceof Error ? e.message : "Error al cargar"));
-  });
 
   const handleSave = async (accountId: string, email: string | undefined) => {
     const login = (drafts[accountId] ?? "").trim();
@@ -152,11 +141,9 @@ function MappingModal({
             </Button>
           </div>
 
-          {loadErr && <p className="text-xs text-destructive mb-3">{loadErr}</p>}
-
-          {orgUsers === null && !loadErr ? (
+          {orgUsers.length === 0 ? (
             <div className="flex items-center gap-2 text-muted-foreground text-sm">
-              <Loader2 className="h-4 w-4 animate-spin" /> Cargando usuarios de Anthropic…
+              <Loader2 className="h-4 w-4 animate-spin" /> Sin usuarios de Anthropic en caché todavía…
             </div>
           ) : (
             <div className="space-y-3">
@@ -267,50 +254,38 @@ export function CostsAnalytics() {
 
   const { data, isLoading, error } = useAnthropicCosts(windowDays);
 
-  // ---- No admin key -------------------------------------------------------
-
-  if (!hasAdminKey()) {
-    return (
-      <Card className="border-amber-300 bg-amber-50/40 dark:bg-amber-950/10">
-        <CardContent className="p-6">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-            <div className="space-y-3">
-              <div>
-                <p className="font-semibold text-amber-800 dark:text-amber-300">Admin key de Anthropic no configurada</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Para ver costos de Claude por contribuidor necesitas una Admin API key.
-                </p>
-              </div>
-              <ol className="text-sm space-y-1.5 text-muted-foreground list-decimal list-inside">
-                <li>Ir a <code className="bg-muted rounded px-1 text-xs">console.anthropic.com/settings/admin-keys</code></li>
-                <li>Click "Create Admin Key" (necesitas rol admin/owner en la org)</li>
-                <li>Copiar la clave (formato <code className="bg-muted rounded px-1 text-xs">sk-ant-admin01-…</code>)</li>
-                <li>Agregar al <code className="bg-muted rounded px-1 text-xs">.env</code> del repo: <code className="bg-muted rounded px-1 text-xs">VITE_ANTHROPIC_ADMIN_KEY=sk-ant-admin01-…</code></li>
-                <li>Hacer push y esperar el deploy</li>
-              </ol>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
   // ---- Loading / error ----------------------------------------------------
 
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center text-muted-foreground">
-        <Loader2 className="mr-2 h-6 w-6 animate-spin" /> Cargando costos de Anthropic…
+        <Loader2 className="mr-2 h-6 w-6 animate-spin" /> Cargando costos de Firestore…
       </div>
     );
   }
 
   if (error || !data) {
+    const msg = error instanceof Error ? error.message : "Error al cargar costos";
+    const isNoData = msg.includes("Sin datos");
     return (
-      <Card className="border-destructive">
-        <CardContent className="p-4 text-sm text-destructive">
-          {error instanceof Error ? error.message : "Error al cargar costos"}
+      <Card className={isNoData ? "border-amber-300 bg-amber-50/40 dark:bg-amber-950/10" : "border-destructive"}>
+        <CardContent className="p-5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className={`h-5 w-5 shrink-0 mt-0.5 ${isNoData ? "text-amber-500" : "text-destructive"}`} />
+            <div>
+              <p className={`font-semibold text-sm ${isNoData ? "text-amber-800 dark:text-amber-300" : "text-destructive"}`}>
+                {isNoData ? "Sync pendiente" : "Error"}
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">{msg}</p>
+              {isNoData && (
+                <ol className="mt-3 text-sm space-y-1 text-muted-foreground list-decimal list-inside">
+                  <li>Crear secret <code className="bg-muted rounded px-1 text-xs">DASHBOARD_ANTHROPIC_ADMIN_KEY</code> en GCP Secret Manager</li>
+                  <li>En GitHub → Actions → <em>Sync Anthropic Costs → Firestore</em> → Run workflow</li>
+                  <li>Volver aquí en ~30 segundos</li>
+                </ol>
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
     );
@@ -665,6 +640,12 @@ export function CostsAnalytics() {
       {showMappingModal && (
         <MappingModal
           unmapped={data.unmapped}
+          orgUsers={data.orgUsers}
+          initialMappings={Object.fromEntries(
+            [...data.byContributor, ...data.unmapped]
+              .filter((e) => e.accountId && data.byContributor.includes(e))
+              .map((e) => [e.accountId!, e.githubLogin])
+          )}
           onClose={() => setShowMappingModal(false)}
           updatedBy={appUser?.email ?? ""}
           onSaved={() => qc.invalidateQueries({ queryKey: ["anthropic-costs"] })}

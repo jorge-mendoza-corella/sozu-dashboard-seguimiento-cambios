@@ -17,7 +17,7 @@ import { useRepos } from "@/hooks/useProjectsRepos";
 import { useCommitActivity } from "@/hooks/useCommitActivity";
 import { useContributorGroups } from "@/hooks/useContributorGroups";
 import { useAnthropicCosts } from "@/hooks/useAnthropicCosts";
-import { hasAdminKey, type ContributorCostEntry } from "@/lib/anthropicAdmin";
+import type { ContributorCostEntry } from "@/lib/anthropicAdmin";
 import { BAR_COLORS } from "@/lib/colors";
 
 const TEL_REGEX = /^\d{10}$/;
@@ -183,7 +183,7 @@ function DetailModal({
           </div>
 
           {/* Costos Claude (últimos 30 días) */}
-          {hasAdminKey() && (
+          {costEntry !== undefined && (
             <div className="mt-6 border-t pt-4">
               <p className="text-sm font-medium flex items-center gap-2 mb-2">
                 <span className="text-emerald-600">$</span> Costos Claude · últimos 30 días
@@ -309,8 +309,7 @@ export function ContributorsPage() {
 
   // Costo del contribuidor seleccionado (últimos 30 días)
   const selectedCostEntry = useMemo<ContributorCostEntry | null | undefined>(() => {
-    if (!hasAdminKey()) return undefined; // no key → no mostrar sección
-    if (costsLoading || !costsData) return null; // cargando
+    if (costsLoading || !costsData) return null; // cargando o sin datos
     const allEntries = [...costsData.byContributor, ...costsData.unmapped];
     return allEntries.find((e) => e.githubLogin === selected?.login) ?? null;
   }, [costsData, costsLoading, selected]);
