@@ -70,11 +70,12 @@ def fetch_org_users(key):
 
 def fetch_usage_buckets(key, days=90):
     print(f"  Fetching {days}-day usage buckets...")
-    since = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
+    since = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
+    # limit <= 31 is required by the API when bucket_width=1d; pagination handles the rest
     path = (
         "/organizations/usage_report/messages"
         f"?starting_at={urllib.parse.quote(since)}"
-        "&bucket_width=1d&limit=100"
+        "&bucket_width=1d&limit=31"
         "&group_by[]=account_id&group_by[]=model"
     )
     buckets = fetch_all_pages(path, key)
@@ -118,7 +119,7 @@ def main():
     org_users = fetch_org_users(key)
     buckets = fetch_usage_buckets(key, days=90)
 
-    updated_at = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    updated_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     buckets_json = json.dumps(buckets)
     org_users_json = json.dumps(org_users)
