@@ -11,9 +11,10 @@ export interface CostsCache {
   updatedAt: string;
 }
 
-export function useAnthropicCosts(windowDays: number) {
+export function useAnthropicCosts(windowDays: number, enabled = true) {
   return useQuery({
     queryKey: ["anthropic-costs", windowDays],
+    enabled,
     queryFn: async () => {
       const [cacheSnap, mappings] = await Promise.all([
         getDoc(doc(db, "anthropic_costs_cache", "latest")),

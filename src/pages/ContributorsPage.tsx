@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
+import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { fetchContributors, type Contributor } from "@/lib/github";
 import { getAllContributorPhones, saveContributorPhone } from "@/lib/firestoreContributors";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -260,6 +261,9 @@ function DetailModal({
 }
 
 export function ContributorsPage() {
+  const { appUser } = useAuth();
+  const isSuperAdmin = appUser?.email === SUPERUSER_EMAIL;
+
   const [contributors, setContributors] = useState<Contributor[]>([]);
   const [phones, setPhones] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -279,7 +283,7 @@ export function ContributorsPage() {
   const repoRefs = useMemo(() => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })), [repos]);
   const { data: activity } = useCommitActivity(repoRefs, 30);
   const { data: groups = [] } = useContributorGroups();
-  const { data: costsData, isLoading: costsLoading } = useAnthropicCosts(30);
+  const { data: costsData, isLoading: costsLoading } = useAnthropicCosts(30, isSuperAdmin);
 
   // Métricas 30d (dev/main/PRs por repo) del contribuidor seleccionado.
   const metrics30 = useMemo<RepoMetrics30[] | null>(() => {
@@ -372,7 +376,7 @@ export function ContributorsPage() {
         <TabsList>
           <TabsTrigger value="lista">Contribuidores</TabsTrigger>
           <TabsTrigger value="analitica">Analítica ejecutiva</TabsTrigger>
-          <TabsTrigger value="costos">Costos Claude</TabsTrigger>
+          {isSuperAdmin && <TabsTrigger value="costos">Costos Claude</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="lista">
@@ -577,9 +581,11 @@ export function ContributorsPage() {
           <ContributorsAnalytics />
         </TabsContent>
 
-        <TabsContent value="costos">
-          <CostsAnalytics />
-        </TabsContent>
+        {isSuperAdmin && (
+          <TabsContent value="costos">
+            <CostsAnalytics />
+          </TabsContent>
+        )}
       </Tabs>
 
       {selected && (
