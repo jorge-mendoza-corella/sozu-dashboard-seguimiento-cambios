@@ -4,12 +4,14 @@ import { RepoCard, RepoCardSkeleton } from "@/components/RepoCard";
 import { cn } from "@/lib/utils";
 import type { RepoStatus } from "@/lib/github";
 import type { MonitoredRepo } from "@/lib/firestoreProjects";
+import type { CicdPermissions } from "@/lib/firestoreUsers";
 
 interface Props {
   repos: MonitoredRepo[]; // ya ordenados, de un solo proyecto
   statusByKey: Map<string, RepoStatus>;
   isLoading: boolean;
   isViewer: boolean;
+  perms: CicdPermissions;
   canReorder: boolean;
   onRefetch: () => void;
   onReorder: (ids: string[]) => void;
@@ -17,7 +19,7 @@ interface Props {
 
 const keyOf = (r: MonitoredRepo) => `${r.owner}/${r.repo}`;
 
-export function RepoGrid({ repos, statusByKey, isLoading, isViewer, canReorder, onRefetch, onReorder }: Props) {
+export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, onRefetch, onReorder }: Props) {
   const [items, setItems] = useState<MonitoredRepo[]>(repos);
   const dragFrom = useRef<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -74,7 +76,7 @@ export function RepoGrid({ repos, statusByKey, isLoading, isViewer, canReorder, 
                 <GripVertical className="h-4 w-4" />
               </div>
             )}
-            <RepoCard status={status} onRefetch={onRefetch} readOnly={isViewer} />
+            <RepoCard status={status} onRefetch={onRefetch} readOnly={isViewer} perms={perms} />
           </div>
         );
       })}

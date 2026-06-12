@@ -7,12 +7,35 @@ export const SUPERUSER_EMAIL = "jorge.mendoza@sozu.com";
 
 export type UserRole = "superuser" | "viewer";
 
+/** Permisos granulares de acciones CI/CD por usuario. */
+export interface CicdPermissions {
+  createPR: boolean; // generar (y cerrar) PRs
+  approve: boolean; // aprobar / solicitar cambios / comentar reviews
+  mergeDev: boolean; // hacer merge de PRs hacia dev
+  mergeMain: boolean; // hacer merge de PRs hacia main (PRD)
+}
+
+export const NO_PERMISSIONS: CicdPermissions = { createPR: false, approve: false, mergeDev: false, mergeMain: false };
+export const ALL_PERMISSIONS: CicdPermissions = { createPR: true, approve: true, mergeDev: true, mergeMain: true };
+
 export interface AppUser {
   email: string;
   role: UserRole;
   addedBy: string;
   createdAt: unknown;
   projectIds?: string[]; // proyectos a los que tiene acceso (vacío/undefined = legacy: todos)
+  permissions?: CicdPermissions; // undefined = legacy: admins todo, viewers nada
+}
+
+/**
+ * Permisos efectivos: el root siempre tiene todo; usuarios sin campo `permissions`
+ * conservan el comportamiento previo (Administrador = todo, Viewer = nada).
+ */
+export function resolvePermissions(user: AppUser | null): CicdPermissions {
+  if (!user) return NO_PERMISSIONS;
+  if (user.email === SUPERUSER_EMAIL) return ALL_PERMISSIONS;
+  if (user.permissions) return { ...NO_PERMISSIONS, ...user.permissions };
+  return user.role === "superuser" ? ALL_PERMISSIONS : NO_PERMISSIONS;
 }
 
 export async function getUserByEmail(email: string): Promise<AppUser | null> {
@@ -30,14 +53,22 @@ export async function addUser(
   addedBy: string,
   role: UserRole = "viewer",
   projectIds: string[] = [],
+  permissions: CicdPermissions = NO_PERMISSIONS,
 ) {
   await setDoc(doc(db, "users", email), {
     email,
     role,
     addedBy,
     projectIds,
+    permissions,
     createdAt: serverTimestamp(),
   });
+}
+
+/** Actualiza los permisos CI/CD de un usuario. */
+export async function setUserPermissions(email: string, permissions: CicdPermissions) {
+  if (email === SUPERUSER_EMAIL) throw new Error("El superusuario raíz siempre tiene todos los permisos");
+  await setDoc(doc(db, "users", email), { permissions }, { merge: true });
 }
 
 export async function removeUser(email: string) {

@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
-import { UserPlus, Trash2, Shield, Eye, Loader2, FolderGit2, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  UserPlus, Trash2, Shield, Eye, Loader2, FolderGit2, ChevronDown, ChevronUp,
+  GitPullRequest, UserCheck, GitMerge, Rocket,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,10 +15,55 @@ import {
   removeUser,
   setUserRole,
   setUserProjects,
+  setUserPermissions,
+  resolvePermissions,
+  NO_PERMISSIONS,
   SUPERUSER_EMAIL,
   type AppUser,
   type UserRole,
+  type CicdPermissions,
 } from "@/lib/firestoreUsers";
+
+const PERMISSION_DEFS: { key: keyof CicdPermissions; label: string; icon: React.ReactNode }[] = [
+  { key: "createPR", label: "Generar PRs", icon: <GitPullRequest className="h-3 w-3" /> },
+  { key: "approve", label: "Aprobar", icon: <UserCheck className="h-3 w-3" /> },
+  { key: "mergeDev", label: "Merge a dev", icon: <GitMerge className="h-3 w-3" /> },
+  { key: "mergeMain", label: "Merge a main", icon: <Rocket className="h-3 w-3" /> },
+];
+
+function PermissionChips({
+  value,
+  disabled,
+  onToggle,
+}: {
+  value: CicdPermissions;
+  disabled?: boolean;
+  onToggle: (key: keyof CicdPermissions) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {PERMISSION_DEFS.map((d) => {
+        const on = value[d.key];
+        return (
+          <button
+            key={d.key}
+            type="button"
+            disabled={disabled}
+            onClick={() => onToggle(d.key)}
+            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:opacity-50 ${
+              on
+                ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:border-emerald-700/60 dark:bg-emerald-950/30 dark:text-emerald-300"
+                : "border-border text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            {d.icon}
+            {d.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function UsersPage() {
   const { appUser } = useAuth();
@@ -24,6 +72,7 @@ export function UsersPage() {
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState<UserRole>("viewer");
   const [newProjects, setNewProjects] = useState<Set<string>>(new Set());
+  const [newPerms, setNewPerms] = useState<CicdPermissions>({ ...NO_PERMISSIONS });
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -49,11 +98,12 @@ export function UsersPage() {
     setLoading(true);
     setError("");
     try {
-      await addUser(newEmail.trim().toLowerCase(), appUser!.email, newRole, [...newProjects]);
+      await addUser(newEmail.trim().toLowerCase(), appUser!.email, newRole, [...newProjects], newPerms);
       await refresh();
       setNewEmail("");
       setNewRole("viewer");
       setNewProjects(new Set());
+      setNewPerms({ ...NO_PERMISSIONS });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error al agregar");
     } finally {
@@ -88,6 +138,21 @@ export function UsersPage() {
       await refresh();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error al actualizar proyectos");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleTogglePermission = async (u: AppUser, key: keyof CicdPermissions) => {
+    const current = resolvePermissions(u);
+    const next = { ...current, [key]: !current[key] };
+    setBusy(u.email);
+    setError("");
+    try {
+      await setUserPermissions(u.email, next);
+      await refresh();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error al actualizar permisos");
     } finally {
       setBusy(null);
     }
@@ -179,11 +244,16 @@ export function UsersPage() {
             )}
           </div>
 
-          {newRole === "superuser" && (
-            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-              Un Administrador puede operar CI/CD (crear/aprobar/mergear PRs). La gestión de accesos, proyectos y repos queda reservada solo a ti (jorge.mendoza@sozu.com).
+          {/* Permisos CI/CD del nuevo usuario */}
+          <div className="mt-3">
+            <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+              <Shield className="h-3.5 w-3.5" /> Permisos CI/CD (acciones que podrá hacer)
             </p>
-          )}
+            <PermissionChips
+              value={newPerms}
+              onToggle={(key) => setNewPerms((prev) => ({ ...prev, [key]: !prev[key] }))}
+            />
+          </div>
           {error && <p className="text-xs text-destructive mt-2">{error}</p>}
         </CardContent>
       </Card>
@@ -217,10 +287,10 @@ export function UsersPage() {
                     <button
                       onClick={() => setExpanded(isOpen ? null : u.email)}
                       className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-                      title="Proyectos con acceso"
+                      title="Proyectos y permisos"
                     >
                       <FolderGit2 className="h-3.5 w-3.5" />
-                      {userProjects.length || projects.length} proyectos
+                      {userProjects.length || projects.length} proyectos · permisos
                       {isOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                     </button>
                   )}
@@ -288,6 +358,21 @@ export function UsersPage() {
                     {u.projectIds === undefined && (
                       <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
                         Este usuario aún no tiene proyectos asignados (acceso a todos por compatibilidad). Marca al menos uno para restringirlo.
+                      </p>
+                    )}
+
+                    {/* Permisos CI/CD */}
+                    <p className="mb-2 mt-4 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                      <Shield className="h-3.5 w-3.5" /> Permisos CI/CD
+                    </p>
+                    <PermissionChips
+                      value={resolvePermissions(u)}
+                      disabled={busy === u.email}
+                      onToggle={(key) => handleTogglePermission(u, key)}
+                    />
+                    {u.permissions === undefined && (
+                      <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
+                        Sin permisos explícitos: por compatibilidad, {u.role === "superuser" ? "Administrador = todo permitido" : "Viewer = nada permitido"}. Al tocar un chip se fijan explícitos.
                       </p>
                     )}
                   </div>

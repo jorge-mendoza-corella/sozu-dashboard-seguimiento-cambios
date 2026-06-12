@@ -8,7 +8,7 @@ import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
 import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, type RepoRef, type RepoStatus } from "@/lib/github";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
-import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { SUPERUSER_EMAIL, resolvePermissions } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -37,6 +37,7 @@ export function DashboardPage() {
   const { appUser } = useAuth();
   const isViewer = appUser?.role === "viewer";
   const isRoot = appUser?.email === SUPERUSER_EMAIL; // solo jorge gestiona proyectos/repos
+  const perms = resolvePermissions(appUser); // permisos CI/CD granulares del usuario
   const qc = useQueryClient();
 
   const { data: allProjects = [], isLoading: loadingProjects } = useProjects();
@@ -269,6 +270,7 @@ export function DashboardPage() {
                         statusByKey={statusByKey}
                         isLoading={isLoading}
                         isViewer={isViewer}
+                        perms={perms}
                         canReorder={isRoot}
                         onRefetch={() => refetch()}
                         onReorder={handleReorder}

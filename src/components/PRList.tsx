@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { PullRequest } from "@/lib/github";
 import { submitReview, mergePR, mergeWithBypass, closePR } from "@/lib/github";
+import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 
 type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
@@ -18,11 +19,11 @@ interface Props {
   owner: string;
   repo: string;
   onRefetch?: () => void;
-  /** Viewer: sin aprobar/solicitar cambios/merge. */
-  readOnly?: boolean;
+  /** Permisos granulares: crear/cerrar PRs, aprobar, merge a dev/main. */
+  perms?: CicdPermissions;
 }
 
-export function PRList({ prs, owner, repo, onRefetch, readOnly = false }: Props) {
+export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS }: Props) {
   const [openPanel, setOpenPanel] = useState<{ prNumber: number; mode: PanelMode } | null>(null);
   const [activeEvent, setActiveEvent] = useState<ReviewEvent | null>(null);
   const [comment, setComment] = useState("");
@@ -143,8 +144,10 @@ export function PRList({ prs, owner, repo, onRefetch, readOnly = false }: Props)
 
         // main: merge solo si aprobado | non-main: merge solo si aún no aprobado
         // mergedPRs oculta el botón de inmediato tras confirmar el merge
-        const canMerge = !readOnly && !mergedPRs.has(pr.number) && (isToMain ? isApproved : !isApproved);
-        const canClose = !readOnly && !mergedPRs.has(pr.number);
+        // Permiso por rama destino: main requiere mergeMain; el resto, mergeDev.
+        const hasMergePerm = isToMain ? perms.mergeMain : perms.mergeDev;
+        const canMerge = hasMergePerm && !mergedPRs.has(pr.number) && (isToMain ? isApproved : !isApproved);
+        const canClose = perms.createPR && !mergedPRs.has(pr.number);
 
         const isPanelOpen  = openPanel?.prNumber === pr.number;
         const isReviewOpen = isPanelOpen && openPanel?.mode === "review";
@@ -264,7 +267,7 @@ export function PRList({ prs, owner, repo, onRefetch, readOnly = false }: Props)
                       <CheckCircle2 className="h-2.5 w-2.5" />
                       Aprobado
                     </span>
-                  ) : readOnly ? (
+                  ) : !perms.approve ? (
                     <span
                       className={cn(
                         "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border",

@@ -13,6 +13,7 @@ import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
 import { createPR, hasFailingDeploy } from "@/lib/github";
+import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
 
 function sortBranches(branches: BranchInfo[]): BranchInfo[] {
   return [
@@ -34,11 +35,13 @@ function getOverallState(status: RepoStatus): "ok" | "devPending" | "pending" | 
 interface Props {
   status: RepoStatus;
   onRefetch?: () => void;
-  /** Viewer: solo main/dev, sin ocultas, sin crear/aprobar/merge. */
+  /** Viewer: solo main/dev y sin ramas ocultables (restricción visual). */
   readOnly?: boolean;
+  /** Permisos granulares de acciones (crear PR, aprobar, merge dev/main). */
+  perms?: CicdPermissions;
 }
 
-export function RepoCard({ status, onRefetch, readOnly = false }: Props) {
+export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS }: Props) {
   const [newPR, setNewPR] = useState<{ head: string; title: string; base: string; body: string } | null>(null);
   const [newPRLoading, setNewPRLoading] = useState(false);
   const [newPRResult, setNewPRResult] = useState<{ ok: boolean; msg: string; url?: string } | null>(null);
@@ -270,7 +273,7 @@ export function RepoCard({ status, onRefetch, readOnly = false }: Props) {
           <div className="space-y-0">
             {visibleBranches.map((b) => {
               const isDevBranch = b.name === "dev";
-              const showCreatePR = !readOnly && (isDevBranch
+              const showCreatePR = perms.createPR && (isDevBranch
                 ? devAheadOfMain > 0 && !hasDevToMainPR && !isDeployingToDev
                 : !branchesWithPR.has(b.name) && b.name !== "main");
               return (
@@ -280,7 +283,7 @@ export function RepoCard({ status, onRefetch, readOnly = false }: Props) {
                   hasPR={branchesWithPR.has(b.name)}
                   onHide={readOnly || isProtectedBranch(b.name) ? undefined : () => hideBranch(b.name)}
                   onCreatePR={showCreatePR ? () => openCreatePR(b.name) : undefined}
-                  alwaysShowCreatePR={isDevBranch && !readOnly}
+                  alwaysShowCreatePR={isDevBranch && perms.createPR}
                 />
               );
             })}
@@ -390,7 +393,7 @@ export function RepoCard({ status, onRefetch, readOnly = false }: Props) {
           <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             <GitPullRequest className="h-3.5 w-3.5" /> PRs abiertos ({status.openPRs.length})
           </h4>
-          <PRList prs={status.openPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} readOnly={readOnly} />
+          <PRList prs={status.openPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} perms={perms} />
         </div>
 
         {/* Últimos deploys */}
