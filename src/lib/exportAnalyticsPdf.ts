@@ -36,7 +36,7 @@ const fmtDay = (date: string) => {
 const INDIGO: [number, number, number] = [99, 102, 241];
 const SLATE: [number, number, number] = [100, 116, 139];
 
-const fmtUsdPdf = (n: number) => n >= 1 ? `$${n.toFixed(2)}` : n >= 0.001 ? `$${n.toFixed(3)}` : "<$0.001";
+const fmtUsdPdf = (n: number) => n >= 1 ? `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : n >= 0.001 ? `$${n.toFixed(3)}` : "<$0.001";
 const fmtTokensPdf = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}K` : String(n);
 const shortModelPdf = (m: string) => {
