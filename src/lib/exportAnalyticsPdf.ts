@@ -39,15 +39,14 @@ const SLATE: [number, number, number] = [100, 116, 139];
 const fmtUsdPdf = (n: number) => n >= 1 ? `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : n >= 0.001 ? `$${n.toFixed(3)}` : "<$0.001";
 const fmtTokensPdf = (n: number) =>
   n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}K` : String(n);
-const shortModelPdf = (m: string) => {
-  const l = m.toLowerCase();
-  if (l.includes("opus-4")) return "Opus 4";
-  if (l.includes("opus-3")) return "Opus 3";
-  if (l.includes("sonnet-4")) return "Sonnet 4";
-  if (l.includes("sonnet-3")) return "Sonnet 3";
-  if (l.includes("haiku-4")) return "Haiku 4";
-  if (l.includes("haiku-3")) return "Haiku 3";
-  return m.replace("claude-", "").slice(0, 20);
+const shortModelPdf = (model: string) => {
+  const lower = model.toLowerCase().replace(/-\d{8}$/, "");
+  const m = lower.match(/claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d+))?/);
+  if (m) {
+    const family = m[1].charAt(0).toUpperCase() + m[1].slice(1);
+    return m[3] ? `${family} ${m[2]}.${m[3]}` : `${family} ${m[2]}`;
+  }
+  return model.replace(/^claude-/, "").slice(0, 20);
 };
 
 /** Genera y descarga un PDF con el reporte ejecutivo de contribuidores. */

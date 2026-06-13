@@ -53,14 +53,13 @@ function modelColor(model: string): string {
 }
 
 function shortModel(model: string): string {
-  const lower = model.toLowerCase();
-  if (lower.includes("opus-4"))    return "Opus 4";
-  if (lower.includes("opus-3"))    return "Opus 3";
-  if (lower.includes("sonnet-4"))  return "Sonnet 4";
-  if (lower.includes("sonnet-3"))  return "Sonnet 3";
-  if (lower.includes("haiku-4"))   return "Haiku 4";
-  if (lower.includes("haiku-3"))   return "Haiku 3";
-  return model.replace("claude-", "").slice(0, 20);
+  const lower = model.toLowerCase().replace(/-\d{8}$/, ""); // strip YYYYMMDD date suffix
+  const m = lower.match(/claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d+))?/);
+  if (m) {
+    const family = m[1].charAt(0).toUpperCase() + m[1].slice(1);
+    return m[3] ? `${family} ${m[2]}.${m[3]}` : `${family} ${m[2]}`;
+  }
+  return model.replace(/^claude-/, "").slice(0, 20);
 }
 
 const ALL = "__all__";
