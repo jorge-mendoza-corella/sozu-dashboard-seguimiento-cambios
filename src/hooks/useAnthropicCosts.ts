@@ -41,6 +41,7 @@ export function useAnthropicCosts(windowDays: number, enabled = true) {
         ...processCosts(filtered, orgUsers, mappings, windowDays),
         orgUsers,
         updatedAt: cache.updatedAt,
+        rawMappings: Object.fromEntries(mappings.map((m) => [m.accountId, m.githubLogin])),
       };
     },
     staleTime: 10 * 60 * 1000, // 10 min; sync runs every 15 min

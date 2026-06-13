@@ -656,11 +656,7 @@ export function CostsAnalytics() {
         <MappingModal
           unmapped={data.unmapped}
           orgUsers={data.orgUsers}
-          initialMappings={Object.fromEntries(
-            [...data.byContributor, ...data.unmapped]
-              .filter((e) => e.accountId && data.byContributor.includes(e))
-              .map((e) => [e.accountId!, e.githubLogin])
-          )}
+          initialMappings={data.rawMappings ?? {}}
           onClose={() => setShowMappingModal(false)}
           updatedBy={appUser?.email ?? ""}
           onSaved={() => qc.invalidateQueries({ queryKey: ["anthropic-costs"] })}
