@@ -54,8 +54,14 @@ export function useAnthropicCosts(windowDays: number, enabled = true) {
         .toISOString()
         .slice(0, 10);
       const filtered = raw.allBuckets.filter((b) => b.starting_at.slice(0, 10) >= sinceStr);
+      // __workbench__ = null account_id (direct API / Console usage) — not a real user,
+      // inject as always-mapped so it never appears in the "needs mapping" warning.
+      const mappings: Mapping[] = [
+        ...raw.mappings,
+        { accountId: "__workbench__", githubLogin: "(genérico)", email: "" },
+      ];
       return {
-        ...processCosts(filtered, raw.orgUsers, raw.mappings, windowDays),
+        ...processCosts(filtered, raw.orgUsers, mappings, windowDays),
         orgUsers: raw.orgUsers,
         updatedAt: raw.updatedAt,
         rawMappings: raw.rawMappings,
