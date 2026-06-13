@@ -313,9 +313,10 @@ export function ContributorsPage() {
 
   // Costo del contribuidor seleccionado (últimos 30 días)
   const selectedCostEntry = useMemo<ContributorCostEntry | null | undefined>(() => {
-    if (costsLoading || !costsData) return null; // cargando o sin datos
+    if (costsLoading && !costsData) return null; // primera carga → spinner
+    if (!costsData) return undefined;            // sin datos → ocultar sección
     const allEntries = [...costsData.byContributor, ...costsData.unmapped];
-    return allEntries.find((e) => e.githubLogin === selected?.login) ?? null;
+    return allEntries.find((e) => e.githubLogin === selected?.login) ?? undefined; // undefined = sin uso → ocultar
   }, [costsData, costsLoading, selected]);
 
   // login -> grupos a los que pertenece (para chips en las cards)
