@@ -7,18 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
-import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { fetchContributors, type Contributor } from "@/lib/github";
 import { getAllContributorPhones, saveContributorPhone } from "@/lib/firestoreContributors";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ContributorsAnalytics } from "@/components/analytics/ContributorsAnalytics";
-import { CostsAnalytics, fmtUsd, fmtTokens, shortModel, modelColor } from "@/components/analytics/CostsAnalytics";
 import { GroupsModal } from "@/components/contributors/GroupsModal";
 import { useRepos } from "@/hooks/useProjectsRepos";
 import { useCommitActivity } from "@/hooks/useCommitActivity";
 import { useContributorGroups } from "@/hooks/useContributorGroups";
-import { useAnthropicCosts } from "@/hooks/useAnthropicCosts";
-import type { ContributorCostEntry } from "@/lib/anthropicAdmin";
 import { BAR_COLORS } from "@/lib/colors";
 
 const TEL_REGEX = /^\d{10}$/;
@@ -34,14 +30,12 @@ function DetailModal({
   contributor,
   telefonoActual,
   metrics30,
-  costEntry,
   onClose,
   onSaved,
 }: {
   contributor: Contributor;
   telefonoActual?: string;
   metrics30: RepoMetrics30[] | null; // null = aún cargando
-  costEntry?: ContributorCostEntry | null;
   onClose: () => void;
   onSaved: (login: string, telefono: string) => void;
 }) {
@@ -183,56 +177,6 @@ function DetailModal({
             )}
           </div>
 
-          {/* Costos Claude (últimos 30 días) */}
-          {costEntry !== undefined && (
-            <div className="mt-6 border-t pt-4">
-              <p className="text-sm font-medium flex items-center gap-2 mb-2">
-                <span className="text-emerald-600">$</span> Costos Claude · últimos 30 días
-              </p>
-              {costEntry === null ? (
-                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Cargando costos…
-                </p>
-              ) : !costEntry ? (
-                <p className="text-xs text-muted-foreground">Sin datos de costo en los últimos 30 días.</p>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-4 text-sm">
-                    <span className="font-bold text-emerald-600">{fmtUsd(costEntry.totalUsd)}</span>
-                    <span className="text-xs text-muted-foreground">{fmtUsd(costEntry.totalUsd / 30)}/día</span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b text-left text-muted-foreground">
-                          <th className="pb-1.5 pr-3 font-medium">Modelo</th>
-                          <th className="pb-1.5 px-2 text-right font-medium">Input</th>
-                          <th className="pb-1.5 px-2 text-right font-medium">Output</th>
-                          <th className="pb-1.5 pl-2 text-right font-medium">Costo</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {costEntry.byModel.map((m) => (
-                          <tr key={m.model} className="border-b last:border-0">
-                            <td className="py-1.5 pr-3">
-                              <span className="inline-flex items-center gap-1.5">
-                                <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: modelColor(m.model) }} />
-                                {shortModel(m.model)}
-                              </span>
-                            </td>
-                            <td className="py-1.5 px-2 text-right font-mono text-muted-foreground">{fmtTokens(m.inputTokens)}</td>
-                            <td className="py-1.5 px-2 text-right font-mono text-muted-foreground">{fmtTokens(m.outputTokens)}</td>
-                            <td className="py-1.5 pl-2 text-right font-mono font-semibold">{fmtUsd(m.usd)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Teléfono WhatsApp */}
           <div className="mt-6 border-t pt-4">
             <label className="flex items-center gap-2 text-sm font-medium">
@@ -261,9 +205,6 @@ function DetailModal({
 }
 
 export function ContributorsPage() {
-  const { appUser } = useAuth();
-  const isSuperAdmin = appUser?.email === SUPERUSER_EMAIL;
-
   const [contributors, setContributors] = useState<Contributor[]>([]);
   const [phones, setPhones] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -283,7 +224,6 @@ export function ContributorsPage() {
   const repoRefs = useMemo(() => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })), [repos]);
   const { data: activity } = useCommitActivity(repoRefs, 30);
   const { data: groups = [] } = useContributorGroups();
-  const { data: costsData, isLoading: costsLoading } = useAnthropicCosts(30, isSuperAdmin);
 
   // Métricas 30d (dev/main/PRs por repo) del contribuidor seleccionado.
   const metrics30 = useMemo<RepoMetrics30[] | null>(() => {
@@ -310,14 +250,6 @@ export function ContributorsPage() {
     }
     return [...map.values()].sort((a, b) => b.dev + b.main + b.prs - (a.dev + a.main + a.prs));
   }, [activity, selected]);
-
-  // Costo del contribuidor seleccionado (últimos 30 días)
-  const selectedCostEntry = useMemo<ContributorCostEntry | null | undefined>(() => {
-    if (costsLoading && !costsData) return null; // primera carga → spinner
-    if (!costsData) return undefined;            // sin datos → ocultar sección
-    const allEntries = [...costsData.byContributor, ...costsData.unmapped];
-    return allEntries.find((e) => e.githubLogin === selected?.login) ?? undefined; // undefined = sin uso → ocultar
-  }, [costsData, costsLoading, selected]);
 
   // login -> grupos a los que pertenece (para chips en las cards)
   const groupsByLogin = useMemo(() => {
@@ -377,7 +309,6 @@ export function ContributorsPage() {
         <TabsList>
           <TabsTrigger value="lista">Contribuidores</TabsTrigger>
           <TabsTrigger value="analitica">Analítica ejecutiva</TabsTrigger>
-          {isSuperAdmin && <TabsTrigger value="costos">Costos Claude</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="lista">
@@ -582,11 +513,6 @@ export function ContributorsPage() {
           <ContributorsAnalytics />
         </TabsContent>
 
-        {isSuperAdmin && (
-          <TabsContent value="costos">
-            <CostsAnalytics />
-          </TabsContent>
-        )}
       </Tabs>
 
       {selected && (
@@ -594,7 +520,6 @@ export function ContributorsPage() {
           contributor={selected}
           telefonoActual={phones[selected.login]}
           metrics30={metrics30}
-          costEntry={selectedCostEntry}
           onClose={() => setSelected(null)}
           onSaved={handleSaved}
         />

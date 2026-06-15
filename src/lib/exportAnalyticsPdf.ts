@@ -2,8 +2,6 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { DailyMetrics, RepoMetrics } from "@/lib/github";
 import type { EntityMetrics } from "@/components/analytics/ContributorsAnalytics";
-import type { CostsData } from "@/lib/anthropicAdmin";
-
 export interface GroupDetail {
   name: string;
   members: string[];
@@ -22,7 +20,6 @@ interface ExportInput {
   byEntity: EntityMetrics[];
   byRepo: RepoMetrics[];
   groupsDetail: GroupDetail[];
-  costsData?: CostsData | null;
   images: { daily?: string; authors?: string; repos?: string };
 }
 
@@ -36,22 +33,9 @@ const fmtDay = (date: string) => {
 const INDIGO: [number, number, number] = [99, 102, 241];
 const SLATE: [number, number, number] = [100, 116, 139];
 
-const fmtUsdPdf = (n: number) => n >= 1 ? `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : n >= 0.001 ? `$${n.toFixed(3)}` : "<$0.001";
-const fmtTokensPdf = (n: number) =>
-  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}K` : String(n);
-const shortModelPdf = (model: string) => {
-  const lower = model.toLowerCase().replace(/-\d{8}$/, "");
-  const m = lower.match(/claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d+))?/);
-  if (m) {
-    const family = m[1].charAt(0).toUpperCase() + m[1].slice(1);
-    return m[3] ? `${family} ${m[2]}.${m[3]}` : `${family} ${m[2]}`;
-  }
-  return model.replace(/^claude-/, "").slice(0, 20);
-};
-
 /** Genera y descarga un PDF con el reporte ejecutivo de contribuidores. */
 export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
-  const { windowDays, filterLabel, kpis, leader, leaderRepo, byEntity, byRepo, groupsDetail, costsData, images } = input;
+  const { windowDays, filterLabel, kpis, leader, leaderRepo, byEntity, byRepo, groupsDetail, images } = input;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 40;
@@ -218,102 +202,6 @@ export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
       headStyles: { fillColor: INDIGO },
       styles: { fontSize: 8.5, cellPadding: 4 },
       columnStyles: { 1: { cellWidth: 170 } },
-      margin: { left: margin, right: margin },
-    });
-  }
-
-  // --- Costos Claude ---
-  if (costsData && (costsData.byContributor.length > 0 || costsData.unmapped.length > 0)) {
-    doc.addPage();
-    let cy = margin;
-
-    doc.setFillColor(...INDIGO);
-    doc.rect(0, 0, pageW, 50, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text("Costos de Claude AI", margin, 30);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.text(`Últimos ${costsData.windowDays} días — datos de Anthropic API`, margin, 42);
-    cy = 70;
-
-    // Summary
-    const topModel = costsData.byModel[0];
-    const topSpender = costsData.byContributor[0];
-    const avgPerDay = costsData.totalUsd / costsData.windowDays;
-    const summaryCards = [
-      { label: "Total gastado", value: fmtUsdPdf(costsData.totalUsd) },
-      { label: "Promedio diario", value: fmtUsdPdf(avgPerDay) },
-      { label: "Top spender", value: topSpender ? `${topSpender.githubLogin} (${fmtUsdPdf(topSpender.totalUsd)})` : "—" },
-      { label: "Modelo mayor gasto", value: topModel ? `${shortModelPdf(topModel.model)} (${fmtUsdPdf(topModel.usd)})` : "—" },
-    ];
-    const cCardW = (contentW - 12 * 3) / 4;
-    summaryCards.forEach((k, i) => {
-      const x = margin + i * (cCardW + 12);
-      doc.setFillColor(241, 245, 249);
-      doc.roundedRect(x, cy, cCardW, 44, 4, 4, "F");
-      doc.setTextColor(...INDIGO);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text(k.value, x + 8, cy + 18, { maxWidth: cCardW - 10 });
-      doc.setTextColor(...SLATE);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.text(k.label.toUpperCase(), x + 8, cy + 34);
-    });
-    cy += 60;
-
-    // Por modelo
-    doc.setTextColor(30, 41, 59);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text("Desglose por modelo", margin, cy);
-    cy += 6;
-    autoTable(doc, {
-      startY: cy,
-      head: [["Modelo", "Input tokens", "Output tokens", "Cache read", "Costo USD"]],
-      body: costsData.byModel.map((m) => [
-        shortModelPdf(m.model),
-        fmtTokensPdf(m.inputTokens),
-        fmtTokensPdf(m.outputTokens),
-        fmtTokensPdf(m.cacheReadTokens),
-        fmtUsdPdf(m.usd),
-      ]),
-      theme: "striped",
-      headStyles: { fillColor: INDIGO },
-      styles: { fontSize: 9, cellPadding: 4 },
-      margin: { left: margin, right: margin },
-    });
-    // @ts-expect-error lastAutoTable added at runtime
-    cy = doc.lastAutoTable.finalY + 16;
-
-    // Por contribuidor
-    if (cy > 650) { doc.addPage(); cy = margin; }
-    doc.setTextColor(30, 41, 59);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text("Costo por contribuidor", margin, cy);
-    cy += 6;
-    const allEntries = [...costsData.byContributor, ...costsData.unmapped];
-    autoTable(doc, {
-      startY: cy,
-      head: [["Contribuidor", "Email", "Top modelo", "Input", "Output", "$/día", "Total USD"]],
-      body: allEntries.map((e) => {
-        const topM = e.byModel[0];
-        return [
-          e.githubLogin,
-          e.email || "—",
-          topM ? shortModelPdf(topM.model) : "—",
-          fmtTokensPdf(e.byModel.reduce((s, m) => s + m.inputTokens, 0)),
-          fmtTokensPdf(e.byModel.reduce((s, m) => s + m.outputTokens, 0)),
-          fmtUsdPdf(e.totalUsd / costsData.windowDays),
-          fmtUsdPdf(e.totalUsd),
-        ];
-      }),
-      theme: "striped",
-      headStyles: { fillColor: INDIGO },
-      styles: { fontSize: 8.5, cellPadding: 4 },
       margin: { left: margin, right: margin },
     });
   }
