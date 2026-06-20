@@ -2,12 +2,12 @@ import { useState, useRef, useEffect } from "react";
 import {
   GitPullRequest, GitMerge, Rocket, ArrowRight,
   Clock, CheckCircle, CheckCircle2, XCircle, MessageCircle, Loader2, GitMerge as MergeIcon,
-  User, UserCheck, AlertTriangle,
+  User, UserCheck, AlertTriangle, GitCommit, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { PullRequest } from "@/lib/github";
-import { submitReview, mergePR, mergeWithBypass, closePR } from "@/lib/github";
+import type { PullRequest, PRWithCommits } from "@/lib/github";
+import { submitReview, mergePR, mergeWithBypass, closePR, getMergedDevPRsForRelease } from "@/lib/github";
 import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 
@@ -31,6 +31,20 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS }: 
   const [result, setResult] = useState<{ prNumber: number; ok: boolean; msg: string } | null>(null);
   const [mergedPRs, setMergedPRs] = useState<Set<number>>(new Set());
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // PR chain: PRs de dev incluidos en el PR a main
+  const [prChain, setPrChain] = useState<{ prNumber: number; data: PRWithCommits[] | null; loading: boolean } | null>(null);
+  const [expandedPRs, setExpandedPRs] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (!openPanel || openPanel.mode !== "review") { setPrChain(null); return; }
+    const pr = prs.find((p) => p.number === openPanel.prNumber);
+    if (!pr || pr.base !== "main") { setPrChain(null); return; }
+    setPrChain({ prNumber: pr.number, data: null, loading: true });
+    getMergedDevPRsForRelease(owner, repo, pr.number)
+      .then((data) => setPrChain({ prNumber: pr.number, data, loading: false }))
+      .catch(() => setPrChain({ prNumber: pr.number, data: [], loading: false }));
+  }, [openPanel, owner, repo, prs]);
 
   useEffect(() => {
     const handleOutside = (e: MouseEvent) => {
@@ -337,7 +351,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS }: 
             {isReviewOpen && (
               <div
                 ref={panelRef}
-                className="absolute right-0 top-full mt-1 z-50 w-72 rounded-lg border bg-background shadow-xl p-3"
+                className={cn("absolute right-0 top-full mt-1 z-50 rounded-lg border bg-background shadow-xl p-3", isToMain ? "w-80" : "w-72")}
               >
                 <div className="flex items-center gap-2 mb-2">
                   {hasPendingReview && <Clock className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
@@ -431,6 +445,82 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS }: 
                         Comentar
                       </button>
                     </div>
+
+                    {/* PR chain: PRs de dev incluidos en este release */}
+                    {isToMain && prChain?.prNumber === pr.number && (
+                      <div className="mt-3 pt-3 border-t border-border/60">
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1">
+                          <GitMerge className="h-3 w-3" />
+                          PRs en este release
+                        </p>
+
+                        {prChain.loading ? (
+                          <div className="flex items-center gap-2 text-[11px] text-muted-foreground py-1">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Cargando cambios...
+                          </div>
+                        ) : prChain.data && prChain.data.length > 0 ? (
+                          <div className="space-y-1.5 max-h-60 overflow-y-auto pr-0.5">
+                            {prChain.data.map((devPR) => {
+                              const isExpanded = expandedPRs.has(devPR.number);
+                              return (
+                                <div key={devPR.number} className="rounded border border-border/60 bg-muted/30 overflow-hidden">
+                                  <button
+                                    onClick={() => setExpandedPRs((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(devPR.number)) next.delete(devPR.number);
+                                      else next.add(devPR.number);
+                                      return next;
+                                    })}
+                                    className="w-full flex items-start gap-1.5 px-2 py-1.5 text-left hover:bg-muted/60 transition-colors"
+                                  >
+                                    {isExpanded
+                                      ? <ChevronDown className="h-3 w-3 mt-0.5 text-muted-foreground shrink-0" />
+                                      : <ChevronRight className="h-3 w-3 mt-0.5 text-muted-foreground shrink-0" />}
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        <a
+                                          href={devPR.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="text-[11px] font-semibold text-foreground hover:underline truncate"
+                                        >
+                                          #{devPR.number}
+                                        </a>
+                                        <span className="text-[11px] text-foreground truncate">{devPR.title}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1 mt-0.5">
+                                        <User className="h-2.5 w-2.5 text-muted-foreground" />
+                                        <span className="text-[10px] text-muted-foreground font-mono">{devPR.author}</span>
+                                        <span className="text-[10px] text-muted-foreground">·</span>
+                                        <GitCommit className="h-2.5 w-2.5 text-muted-foreground" />
+                                        <span className="text-[10px] text-muted-foreground">{devPR.commits.length} commit{devPR.commits.length !== 1 ? "s" : ""}</span>
+                                      </div>
+                                    </div>
+                                  </button>
+
+                                  {isExpanded && (
+                                    <div className="border-t border-border/40 bg-muted/20 px-2 py-1.5 space-y-1">
+                                      {devPR.commits.map((c) => (
+                                        <div key={c.sha} className="flex items-start gap-1.5">
+                                          <span className="font-mono text-[10px] text-violet-600 dark:text-violet-400 shrink-0 mt-0.5">{c.sha}</span>
+                                          <span className="text-[10px] text-foreground/80 leading-snug break-words">{c.message}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-muted-foreground italic">
+                            No se detectaron PRs de dev (commits directos o squash).
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </>
                 )}
               </div>

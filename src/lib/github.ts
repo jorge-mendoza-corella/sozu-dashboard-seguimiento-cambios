@@ -345,6 +345,58 @@ export async function createPR(
   return { number: data.number, url: data.html_url };
 }
 
+export interface PRWithCommits {
+  number: number;
+  title: string;
+  author: string;
+  url: string;
+  mergedAt: string;
+  commits: Array<{ sha: string; message: string; author: string }>;
+}
+
+/** Dado un PR dev→main, devuelve los PRs de dev incluidos con sus commits. */
+export async function getMergedDevPRsForRelease(
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<PRWithCommits[]> {
+  const allCommits = await octokit.paginate(octokit.pulls.listCommits, {
+    owner, repo, pull_number: prNumber, per_page: 100,
+  });
+
+  const devPRNums = new Set<number>();
+  for (const c of allCommits) {
+    const m = c.commit.message.match(/^Merge pull request #(\d+)/);
+    if (m) devPRNums.add(Number(m[1]));
+  }
+
+  if (devPRNums.size === 0) return [];
+
+  const results: PRWithCommits[] = [];
+  await Promise.all([...devPRNums].map(async (num) => {
+    try {
+      const [{ data: pr }, { data: commits }] = await Promise.all([
+        octokit.pulls.get({ owner, repo, pull_number: num }),
+        octokit.pulls.listCommits({ owner, repo, pull_number: num, per_page: 30 }),
+      ]);
+      results.push({
+        number: pr.number,
+        title: pr.title,
+        author: pr.user?.login ?? "unknown",
+        url: pr.html_url,
+        mergedAt: pr.merged_at ?? "",
+        commits: commits.map((c) => ({
+          sha: c.sha.slice(0, 7),
+          message: c.commit.message.split("\n")[0],
+          author: c.author?.login ?? c.commit.author?.name ?? "unknown",
+        })),
+      });
+    } catch { /* skip */ }
+  }));
+
+  return results.sort((a, b) => a.mergedAt.localeCompare(b.mergedAt));
+}
+
 export async function submitReview(
   owner: string,
   repo: string,

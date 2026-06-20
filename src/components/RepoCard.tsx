@@ -15,6 +15,20 @@ import type { BranchInfo, RepoStatus } from "@/lib/github";
 import { createPR, hasFailingDeploy } from "@/lib/github";
 import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
 
+const AUTHOR_OVERRIDE_REPOS = new Set([
+  "sozu-supabase-migrations",
+  "sozu-edge-functions",
+  "sozu-n8n-workflows",
+  "server-stp",
+]);
+
+const AUTHOR_OPTIONS = [
+  { label: "Ramón",  login: "joseramonescobar",  color: "bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-700/60" },
+  { label: "Tomas",  login: "tomaspeterson-prog", color: "bg-purple-100 text-purple-700 border-purple-300 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-700/60" },
+  { label: "Eddy",   login: "Eddys912",           color: "bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-700/60" },
+  { label: "Abel",   login: "abelsalazar-cmd",    color: "bg-green-100 text-green-700 border-green-300 hover:bg-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700/60" },
+];
+
 function sortBranches(branches: BranchInfo[]): BranchInfo[] {
   return [
     ...branches.filter((b) => b.name === "main"),
@@ -42,7 +56,7 @@ interface Props {
 }
 
 export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS }: Props) {
-  const [newPR, setNewPR] = useState<{ head: string; title: string; base: string; body: string } | null>(null);
+  const [newPR, setNewPR] = useState<{ head: string; title: string; base: string; body: string; authorOverride?: string; authorStep?: boolean } | null>(null);
   const [newPRLoading, setNewPRLoading] = useState(false);
   const [newPRResult, setNewPRResult] = useState<{ ok: boolean; msg: string; url?: string } | null>(null);
   // Optimistic: ramas donde ya se creó un PR pero el refetch aún no llegó
@@ -59,7 +73,8 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
 
   const openCreatePR = (branchName: string) => {
     const defaultBase = branchName === "dev" ? "main" : "dev";
-    setNewPR({ head: branchName, title: branchName, base: defaultBase, body: "" });
+    const needsAuthor = AUTHOR_OVERRIDE_REPOS.has(status.repo);
+    setNewPR({ head: branchName, title: branchName, base: defaultBase, body: "", authorStep: needsAuthor });
     setNewPRResult(null);
   };
 
@@ -73,7 +88,15 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
     if (!newPR || !newPR.title.trim()) return;
     setNewPRLoading(true);
     try {
-      const { number, url } = await createPR(status.owner, status.repo, newPR.title.trim(), newPR.head, newPR.base, newPR.body.trim());
+      let body = newPR.body.trim();
+      if (newPR.authorOverride) {
+        const found = AUTHOR_OPTIONS.find((a) => a.login === newPR.authorOverride);
+        const label = found?.label ?? newPR.authorOverride;
+        body = body
+          ? `${body}\n\n> 👤 Cambios de: @${newPR.authorOverride} (${label})\n<!-- pr_author: ${newPR.authorOverride} -->`
+          : `> 👤 Cambios de: @${newPR.authorOverride} (${label})\n<!-- pr_author: ${newPR.authorOverride} -->`;
+      }
+      const { number, url } = await createPR(status.owner, status.repo, newPR.title.trim(), newPR.head, newPR.base, body);
       setNewPRResult({ ok: true, msg: `PR #${number} creado`, url });
       setOptimisticPRHeads((prev) => new Set([...prev, newPR.head]));
       setTimeout(() => { closeCreatePR(); onRefetch?.(); }, 2500);
@@ -338,8 +361,49 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                     </a>
                   )}
                 </div>
-              ) : (
+              ) : newPR.authorStep ? (
+                /* Paso 1: selección de autor */
                 <div className="space-y-2">
+                  <p className="text-[11px] text-muted-foreground font-medium">¿De quién son estos cambios?</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {AUTHOR_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.login}
+                        onClick={() => setNewPR((p) => p ? { ...p, authorOverride: opt.login, authorStep: false } : null)}
+                        className={cn(
+                          "flex items-center justify-center gap-1.5 text-xs font-semibold py-2 rounded border transition-colors",
+                          opt.color,
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setNewPR((p) => p ? { ...p, authorStep: false } : null)}
+                    className="w-full text-[11px] text-muted-foreground hover:text-foreground py-1 rounded hover:bg-muted transition-colors"
+                  >
+                    Mío (Jorge) — sin override
+                  </button>
+                </div>
+              ) : (
+                /* Paso 2: formulario */
+                <div className="space-y-2">
+                  {newPR.authorOverride && (
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-700/40">
+                      <span className="text-[10px] text-muted-foreground">Autor:</span>
+                      <span className="text-[11px] font-semibold font-mono text-violet-700 dark:text-violet-300">
+                        {AUTHOR_OPTIONS.find((a) => a.login === newPR.authorOverride)?.label ?? newPR.authorOverride}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-mono">(@{newPR.authorOverride})</span>
+                      <button
+                        onClick={() => setNewPR((p) => p ? { ...p, authorStep: true } : null)}
+                        className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
+                      >
+                        cambiar
+                      </button>
+                    </div>
+                  )}
                   <input
                     type="text"
                     value={newPR.title}
