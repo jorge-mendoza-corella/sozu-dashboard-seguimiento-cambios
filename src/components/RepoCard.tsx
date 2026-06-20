@@ -468,7 +468,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           <div className="flex flex-wrap gap-1.5">
             {status.latestRuns.length === 0
               ? <p className="text-xs text-muted-foreground">Sin deploys recientes</p>
-              : status.latestRuns.map((r, i) => <WorkflowBadge key={i} run={r} />)}
+              : status.latestRuns.map((r, i) => <WorkflowBadge key={i} run={r} owner={status.owner} repo={status.repo} />)}
           </div>
         </div>
       </CardContent>

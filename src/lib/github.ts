@@ -115,6 +115,7 @@ export interface WorkflowRun {
   createdAt: string;
   url: string;
   headBranch: string | null;
+  headSha?: string;
 }
 
 export interface RepoStatus {
@@ -265,6 +266,7 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
         createdAt: r.created_at,
         url: r.html_url,
         headBranch: r.head_branch ?? null,
+        headSha: r.head_sha,
       }));
 
     return { owner, repo, label, branches, openPRs, latestRuns };
@@ -395,6 +397,44 @@ export async function getMergedDevPRsForRelease(
   }));
 
   return results.sort((a, b) => a.mergedAt.localeCompare(b.mergedAt));
+}
+
+/** Dado el headSha de un deploy, devuelve los PRs y commits incluidos. */
+export async function getDeployPRChain(
+  owner: string,
+  repo: string,
+  headSha: string,
+  headBranch: string | null,
+): Promise<PRWithCommits[]> {
+  // Obtener PR asociado al commit
+  const { data: prs } = await octokit.repos.listPullRequestsAssociatedWithCommit({
+    owner, repo, commit_sha: headSha,
+  });
+
+  const pr = prs[0];
+  if (!pr) return [];
+
+  // Si el deploy es de main, obtener la cadena de PRs de dev
+  if (headBranch === "main") {
+    return getMergedDevPRsForRelease(owner, repo, pr.number);
+  }
+
+  // Si es dev: devolver el PR con sus commits directamente
+  const { data: commits } = await octokit.pulls.listCommits({
+    owner, repo, pull_number: pr.number, per_page: 30,
+  });
+  return [{
+    number: pr.number,
+    title: pr.title,
+    author: pr.user?.login ?? "unknown",
+    url: pr.html_url,
+    mergedAt: pr.merged_at ?? "",
+    commits: commits.map((c) => ({
+      sha: c.sha.slice(0, 7),
+      message: c.commit.message.split("\n")[0],
+      author: c.author?.login ?? c.commit.author?.name ?? "unknown",
+    })),
+  }];
 }
 
 export async function submitReview(
