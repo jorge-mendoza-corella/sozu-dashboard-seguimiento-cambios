@@ -381,10 +381,11 @@ export async function getMergedDevPRsForRelease(
         octokit.pulls.get({ owner, repo, pull_number: num }),
         octokit.pulls.listCommits({ owner, repo, pull_number: num, per_page: 30 }),
       ]);
+      const bodyAuthor = (pr.body ?? "").match(/<!-- pr_author: ([\w.-]+) -->/)?.[1];
       results.push({
         number: pr.number,
         title: pr.title,
-        author: pr.user?.login ?? "unknown",
+        author: bodyAuthor ?? pr.user?.login ?? "unknown",
         url: pr.html_url,
         mergedAt: pr.merged_at ?? "",
         commits: commits.map((c) => ({
@@ -423,10 +424,11 @@ export async function getDeployPRChain(
   const { data: commits } = await octokit.pulls.listCommits({
     owner, repo, pull_number: pr.number, per_page: 30,
   });
+  const bodyAuthor = (pr.body ?? "").match(/<!-- pr_author: ([\w.-]+) -->/)?.[1];
   return [{
     number: pr.number,
     title: pr.title,
-    author: pr.user?.login ?? "unknown",
+    author: bodyAuthor ?? pr.user?.login ?? "unknown",
     url: pr.html_url,
     mergedAt: pr.merged_at ?? "",
     commits: commits.map((c) => ({
