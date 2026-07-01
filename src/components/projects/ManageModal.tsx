@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { X, Loader2, Trash2, Plus, FolderGit2, Pencil, Check } from "lucide-react";
+import { X, Loader2, Trash2, Plus, FolderGit2, Pencil, Check, Smartphone } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
+import { cn } from "@/lib/utils";
 import {
-  addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel,
+  addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel, setProjectIsApp,
 } from "@/lib/firestoreProjects";
 import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
 import { useAuth } from "@/hooks/useAuth";
@@ -61,6 +62,7 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
             {projects.map((p) => {
               const count = repos.filter((r) => r.projectId === p.id).length;
               const isEditing = editing?.id === p.id;
+              const isApp = p.isApp ?? false;
               return (
                 <div key={p.id} className="flex items-center gap-2 rounded-md border px-3 py-2">
                   <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
@@ -81,6 +83,26 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                     <span className="flex-1 text-sm font-medium">{p.name}</span>
                   )}
                   <span className="text-xs text-muted-foreground">{count} repo{count === 1 ? "" : "s"}</span>
+                  {/* Toggle APP */}
+                  <button
+                    type="button"
+                    title={isApp ? "Es App — click para desactivar" : "No es App — click para activar"}
+                    disabled={busy === `app-${p.id}`}
+                    onClick={() => run(`app-${p.id}`, () => setProjectIsApp(p.id, !isApp), refreshProjects)}
+                    className={cn(
+                      "flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold transition-colors disabled:opacity-50",
+                      isApp
+                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80",
+                    )}
+                  >
+                    {busy === `app-${p.id}` ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Smartphone className="h-3 w-3" />
+                    )}
+                    APP
+                  </button>
                   {isEditing ? (
                     <Button
                       size="icon"

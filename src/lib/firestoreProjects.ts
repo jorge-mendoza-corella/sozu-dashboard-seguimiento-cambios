@@ -16,6 +16,7 @@ export interface Project {
   createdBy: string;
   createdAt: unknown;
   seeded?: boolean; // ya se sembraron los repos por defecto (no volver a auto-agregar)
+  isApp?: boolean;  // marca el proyecto como una app móvil/app
 }
 
 export interface MonitoredRepo {
@@ -55,12 +56,17 @@ export async function addProject(name: string, addedBy: string): Promise<string>
     order: existing.length,
     createdBy: addedBy,
     createdAt: serverTimestamp(),
+    isApp: false,
   });
   return ref.id;
 }
 
 export async function renameProject(id: string, name: string) {
   await updateDoc(doc(db, "projects", id), { name: name.trim() });
+}
+
+export async function setProjectIsApp(id: string, isApp: boolean) {
+  await updateDoc(doc(db, "projects", id), { isApp });
 }
 
 export async function removeProject(id: string) {

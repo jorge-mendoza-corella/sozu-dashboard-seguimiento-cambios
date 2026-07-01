@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  RefreshCw, Clock, GitBranch, AlertCircle, GitPullRequest, ArrowUpCircle, Rocket, Plus, Settings, FolderGit2, Loader2,
+  RefreshCw, Clock, GitBranch, AlertCircle, GitPullRequest, ArrowUpCircle, Rocket, Plus, Settings, FolderGit2, Loader2, Smartphone,
 } from "lucide-react";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
@@ -238,6 +238,11 @@ export function DashboardPage() {
                     <span className="relative z-10 flex items-center gap-1.5">
                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
                       {p.name}
+                      {(p.isApp ?? false) && (
+                        <span className="inline-flex items-center gap-0.5 rounded bg-blue-100 px-1 py-0.5 text-[9px] font-bold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                          <Smartphone className="h-2.5 w-2.5" />APP
+                        </span>
+                      )}
                       <span className="text-[10px] text-muted-foreground">({count})</span>
                     </span>
                   </TabsTrigger>
