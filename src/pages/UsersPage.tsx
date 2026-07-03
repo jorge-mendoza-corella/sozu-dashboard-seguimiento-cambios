@@ -180,7 +180,7 @@ export function UsersPage() {
   }
 
   return (
-    <div className="p-6 max-w-2xl">
+    <div className="p-4 sm:p-6 max-w-2xl">
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Gestión de Accesos</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
@@ -272,7 +272,7 @@ export function UsersPage() {
             const isOpen = expanded === u.email;
             return (
               <div key={u.email} className="border-b last:border-0">
-                <div className="flex items-center gap-3 px-6 py-3">
+                <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-6">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">
                       {u.email}
@@ -283,54 +283,56 @@ export function UsersPage() {
                     </p>
                   </div>
 
-                  {!isRoot && (
-                    <button
-                      onClick={() => setExpanded(isOpen ? null : u.email)}
-                      className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-                      title="Proyectos y permisos"
-                    >
-                      <FolderGit2 className="h-3.5 w-3.5" />
-                      {userProjects.length || projects.length} proyectos · permisos
-                      {isOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {!isRoot && (
+                      <button
+                        onClick={() => setExpanded(isOpen ? null : u.email)}
+                        className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                        title="Proyectos y permisos"
+                      >
+                        <FolderGit2 className="h-3.5 w-3.5" />
+                        {userProjects.length || projects.length} proyectos · permisos
+                        {isOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                      </button>
+                    )}
 
-                  {editable ? (
-                    <SelectNative
-                      className="w-36"
-                      value={u.role}
-                      disabled={busy === u.email}
-                      onChange={(e) => handleRole(u.email, e.target.value as UserRole)}
-                    >
-                      <option value="viewer">Viewer</option>
-                      <option value="superuser">Administrador</option>
-                    </SelectNative>
-                  ) : (
-                    <Badge variant={u.role === "superuser" ? "default" : "secondary"} className="shrink-0">
-                      {u.role === "superuser" ? (
-                        <><Shield className="h-3 w-3 mr-1" />Administrador</>
-                      ) : (
-                        <><Eye className="h-3 w-3 mr-1" />Viewer</>
-                      )}
-                    </Badge>
-                  )}
+                    {editable ? (
+                      <SelectNative
+                        className="w-36"
+                        value={u.role}
+                        disabled={busy === u.email}
+                        onChange={(e) => handleRole(u.email, e.target.value as UserRole)}
+                      >
+                        <option value="viewer">Viewer</option>
+                        <option value="superuser">Administrador</option>
+                      </SelectNative>
+                    ) : (
+                      <Badge variant={u.role === "superuser" ? "default" : "secondary"} className="shrink-0">
+                        {u.role === "superuser" ? (
+                          <><Shield className="h-3 w-3 mr-1" />Administrador</>
+                        ) : (
+                          <><Eye className="h-3 w-3 mr-1" />Viewer</>
+                        )}
+                      </Badge>
+                    )}
 
-                  {editable && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
-                      disabled={busy === u.email}
-                      onClick={() => handleRemove(u.email)}
-                    >
-                      {busy === u.email ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                    </Button>
-                  )}
+                    {editable && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        disabled={busy === u.email}
+                        onClick={() => handleRemove(u.email)}
+                      >
+                        {busy === u.email ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Editor de proyectos */}
                 {isOpen && !isRoot && (
-                  <div className="bg-muted/30 px-6 py-3">
+                  <div className="bg-muted/30 px-4 py-3 sm:px-6">
                     <p className="mb-2 text-xs text-muted-foreground">
                       Marca los proyectos a los que <span className="font-medium">{u.email}</span> tiene acceso (mínimo 1).
                     </p>
