@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Smartphone, Play, Loader2, ExternalLink, XCircle, Download, AlertCircle,
-  GitBranch, Upload, Clock, CheckCircle2, Rocket,
+  GitBranch, Upload, Clock, CheckCircle2, Rocket, Cloud,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,32 @@ function duration(b: CodemagicBuild): string | null {
 
 const isSuccess = (b: CodemagicBuild) => buildStatusInfo(b.status).tone === "success";
 const isRunning = (b: CodemagicBuild) => buildStatusInfo(b.status).isRunning;
+
+// ---------------------------------------------------------------------------
+// Plataforma de un build: por prefijo del workflow, o por sus artefactos
+// (builds viejos disparados desde la UI de Codemagic no traen workflow id
+// legible).
+// ---------------------------------------------------------------------------
+type Plat = "android" | "ios" | "web" | "otro";
+
+function platformOfBuild(b: CodemagicBuild): Plat {
+  const wf = b.workflowId ?? "";
+  if (wf.startsWith("android")) return "android";
+  if (wf.startsWith("ios")) return "ios";
+  if (wf.startsWith("web")) return "web";
+  const arts = b.artefacts ?? [];
+  if (arts.some((a) => /\.(apk|aab)$/i.test(a.name))) return "android";
+  if (arts.some((a) => /\.ipa$/i.test(a.name))) return "ios";
+  if (arts.some((a) => /\.zip$/i.test(a.name))) return "web";
+  return "otro";
+}
+
+const PLAT_META: Record<Plat, { label: string; cls: string }> = {
+  android: { label: "Android", cls: "bg-lime-50 text-lime-700 border-lime-200 dark:bg-lime-950/30 dark:text-lime-300 dark:border-lime-900/50" },
+  ios: { label: "iOS", cls: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/30 dark:text-sky-300 dark:border-sky-900/50" },
+  web: { label: "Web", cls: "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/30 dark:text-violet-300 dark:border-violet-900/50" },
+  otro: { label: "—", cls: "bg-muted text-muted-foreground border-border" },
+};
 
 /** Fila de una plataforma: construir artefacto y, si ya existe, enviarlo a la store. */
 function PlatformRow({
@@ -173,6 +199,36 @@ export function AppBuildsPanel({ appId, perms }: { appId: string; perms: CicdPer
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [showAll, setShowAll] = useState(false);
+  // Filtros del historial
+  const [platFilter, setPlatFilter] = useState<"all" | Plat>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  // Marcadores: último build exitoso, y lo último enviado a cada canal/store.
+  const markers = useMemo(() => {
+    const m = new Map<string, string[]>();
+    const add = (id: string | undefined, tag: string) => {
+      if (id) m.set(id, [...(m.get(id) ?? []), tag]);
+    };
+    for (const p of PLATFORMS) {
+      add(builds.find((b) => b.workflowId === p.buildWorkflowId && isSuccess(b))?._id, `último build ${p.label}`);
+      add(builds.find((b) => b.workflowId === p.publishWorkflowId && isSuccess(b))?._id, `en ${p.storeLabel}`);
+      add(builds.find((b) => b.workflowId === p.promoteWorkflowId && isSuccess(b))?._id, `en ${p.promoteLabel}`);
+    }
+    return m;
+  }, [builds]);
+
+  const filteredBuilds = useMemo(() => {
+    return builds.filter((b) => {
+      if (platFilter !== "all" && platformOfBuild(b) !== platFilter) return false;
+      const when = b.startedAt ?? b.createdAt;
+      if (!when) return true;
+      const d = when.slice(0, 10); // YYYY-MM-DD
+      if (dateFrom && d < dateFrom) return false;
+      if (dateTo && d > dateTo) return false;
+      return true;
+    });
+  }, [builds, platFilter, dateFrom, dateTo]);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["codemagic-builds", appId] });
 
@@ -206,7 +262,7 @@ export function AppBuildsPanel({ appId, perms }: { appId: string; perms: CicdPer
   };
 
   const anyError = appsError || buildsError;
-  const visibleBuilds = showAll ? builds : builds.slice(0, 5);
+  const visibleBuilds = showAll ? filteredBuilds : filteredBuilds.slice(0, 5);
 
   return (
     <Card>
@@ -271,37 +327,92 @@ export function AppBuildsPanel({ appId, perms }: { appId: string; perms: CicdPer
         </div>
 
         {/* Historial */}
-        <h4 className="mb-1.5 mt-4 text-xs font-semibold text-muted-foreground">
-          Historial de builds
-        </h4>
+        <div className="mb-1.5 mt-4 flex flex-wrap items-center gap-2">
+          <h4 className="text-xs font-semibold text-muted-foreground">Historial de builds</h4>
+          <span className="flex-1" />
+          <SelectNative
+            className="h-7 w-28 text-xs"
+            value={platFilter}
+            onChange={(e) => setPlatFilter(e.target.value as "all" | Plat)}
+            title="Filtrar por plataforma"
+          >
+            <option value="all">Todas</option>
+            <option value="android">Android</option>
+            <option value="ios">iOS</option>
+            <option value="web">Web</option>
+          </SelectNative>
+          <input
+            type="date"
+            className="h-7 rounded-md border bg-background px-2 text-xs text-muted-foreground"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            title="Desde"
+          />
+          <span className="text-[10px] text-muted-foreground">a</span>
+          <input
+            type="date"
+            className="h-7 rounded-md border bg-background px-2 text-xs text-muted-foreground"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            title="Hasta"
+          />
+          {(platFilter !== "all" || dateFrom || dateTo) && (
+            <button
+              type="button"
+              className="text-[10px] text-muted-foreground underline hover:text-foreground"
+              onClick={() => { setPlatFilter("all"); setDateFrom(""); setDateTo(""); }}
+            >
+              limpiar
+            </button>
+          )}
+        </div>
         {loadingBuilds ? (
           <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Cargando builds…
           </div>
-        ) : builds.length === 0 ? (
-          <p className="py-2 text-xs text-muted-foreground">Sin builds todavía.</p>
+        ) : filteredBuilds.length === 0 ? (
+          <p className="py-2 text-xs text-muted-foreground">
+            {builds.length === 0 ? "Sin builds todavía." : "Sin builds con esos filtros."}
+          </p>
         ) : (
           <div className="space-y-1.5">
             {visibleBuilds.map((b) => {
               const info = buildStatusInfo(b.status);
-              const wfName = WORKFLOW_LABELS[b.workflowId] ?? app?.workflows?.[b.workflowId]?.name ?? b.workflowId;
+              const plat = platformOfBuild(b);
+              const wfName = WORKFLOW_LABELS[b.workflowId] ?? app?.workflows?.[b.workflowId]?.name ?? "";
               const dur = duration(b);
               const when = b.startedAt ?? b.createdAt;
+              const tags = markers.get(b._id) ?? [];
+              const isIosCloud = plat === "ios" && info.tone === "success" &&
+                (b.workflowId === "ios-publish" || b.workflowId === "ios-appstore");
               return (
                 <div key={b._id} className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs">
                   <span className={cn("shrink-0 rounded-full border px-2 py-0.5 font-medium", TONE_CLASSES[info.tone])}>
                     {info.label}
                   </span>
-                  <span className="font-medium">{wfName}</span>
+                  <span className={cn("shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold", PLAT_META[plat].cls)}>
+                    {PLAT_META[plat].label}
+                  </span>
+                  {wfName && <span className="font-medium">{wfName}</span>}
                   <span className="flex items-center gap-1 text-muted-foreground">
                     <GitBranch className="h-3 w-3" />{b.branch}
                   </span>
                   {when && <span className="text-muted-foreground">{formatBuildDate(when)}</span>}
                   {dur && <span className="text-muted-foreground">· {dur}</span>}
+                  {tags.map((t) => (
+                    <span
+                      key={t}
+                      className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300"
+                    >
+                      ★ {t}
+                    </span>
+                  ))}
                   <span className="flex-1" />
-                  {info.tone === "success" &&
+                  {/* Android/Web: instaladores descargables. iOS: el .ipa firmado para
+                      App Store no se puede instalar directo — se distribuye por TestFlight. */}
+                  {info.tone === "success" && plat !== "ios" &&
                     (b.artefacts ?? [])
-                      .filter((a) => /\.(apk|aab|ipa)$/i.test(a.name))
+                      .filter((a) => /\.(apk|aab|zip)$/i.test(a.name))
                       .map((a) => (
                         <a
                           key={a.url}
@@ -315,6 +426,18 @@ export function AppBuildsPanel({ appId, perms }: { appId: string; perms: CicdPer
                           {a.name.split(".").pop()?.toUpperCase()}
                         </a>
                       ))}
+                  {isIosCloud && (
+                    <a
+                      href="https://appstoreconnect.apple.com/apps"
+                      target="_blank"
+                      rel="noreferrer"
+                      title="El build vive en la nube de Apple: instálalo desde la app TestFlight o revisa App Store Connect"
+                      className="flex items-center gap-1 rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-sky-700 hover:bg-sky-100 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-300"
+                    >
+                      <Cloud className="h-3 w-3" />
+                      {b.workflowId === "ios-appstore" ? "App Store Connect" : "TestFlight"}
+                    </a>
+                  )}
                   <a
                     href={buildUrl(appId, b._id)}
                     target="_blank"
@@ -337,13 +460,13 @@ export function AppBuildsPanel({ appId, perms }: { appId: string; perms: CicdPer
                 </div>
               );
             })}
-            {builds.length > 5 && (
+            {filteredBuilds.length > 5 && (
               <button
                 type="button"
                 onClick={() => setShowAll((v) => !v)}
                 className="w-full rounded-md border border-dashed px-3 py-1.5 text-center text-xs text-muted-foreground hover:bg-muted"
               >
-                {showAll ? "Ver menos" : `Ver más (${builds.length - 5} builds anteriores)`}
+                {showAll ? "Ver menos" : `Ver más (${filteredBuilds.length - 5} builds anteriores)`}
               </button>
             )}
           </div>
