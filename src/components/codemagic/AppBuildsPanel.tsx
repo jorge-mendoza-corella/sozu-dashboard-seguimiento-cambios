@@ -398,6 +398,8 @@ export function AppBuildsPanel({ appId, perms }: { appId: string; perms: CicdPer
               const tags = markers.get(b._id) ?? [];
               const isIosCloud = plat === "ios" && info.tone === "success" &&
                 (b.workflowId === "ios-publish" || b.workflowId === "ios-appstore");
+              const isAndroidCloud = plat === "android" && info.tone === "success" &&
+                (b.workflowId === "android-publish" || b.workflowId === "android-production");
               return (
                 <div key={b._id} className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs">
                   <span className={cn("shrink-0 rounded-full border px-2 py-0.5 font-medium", TONE_CLASSES[info.tone])}>
@@ -449,6 +451,18 @@ export function AppBuildsPanel({ appId, perms }: { appId: string; perms: CicdPer
                     >
                       <Cloud className="h-3 w-3" />
                       {b.workflowId === "ios-appstore" ? "App Store Connect" : "TestFlight"}
+                    </a>
+                  )}
+                  {isAndroidCloud && (
+                    <a
+                      href="https://play.google.com/console"
+                      target="_blank"
+                      rel="noreferrer"
+                      title="El build está en Google Play. Link de invitación para testers: Play Console → Testing → Internal testing → Testers → Copy link"
+                      className="flex items-center gap-1 rounded border border-lime-200 bg-lime-50 px-1.5 py-0.5 text-lime-700 hover:bg-lime-100 dark:border-lime-900/50 dark:bg-lime-950/30 dark:text-lime-300"
+                    >
+                      <Cloud className="h-3 w-3" />
+                      {b.workflowId === "android-production" ? "Play Store" : "Play interno"}
                     </a>
                   )}
                   <a
