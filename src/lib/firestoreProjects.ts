@@ -19,6 +19,8 @@ export interface Project {
   isApp?: boolean;  // marca el proyecto como una app móvil/app
   codemagicAppId?: string; // app de Codemagic vinculada (builds desde el dashboard)
   testerEmails?: string[]; // correos con acceso a builds de prueba (TestFlight / Play interno)
+  playInternalUrl?: string; // link de invitación del track interno (Play Console → Testers → Copy link)
+  testflightPublicUrl?: string; // link público de TestFlight (App Store Connect → grupo externo → Public link)
 }
 
 export interface MonitoredRepo {
@@ -81,6 +83,19 @@ export async function setProjectCodemagicApp(id: string, appId: string | null) {
 /** Lista de correos de testers con acceso a los builds de prueba de la app. */
 export async function setProjectTesters(id: string, emails: string[]) {
   await updateDoc(doc(db, "projects", id), { testerEmails: emails });
+}
+
+/** Links de invitación de los canales de prueba (se setean una sola vez por app). */
+export async function setProjectTestLinks(
+  id: string,
+  links: { playInternalUrl?: string; testflightPublicUrl?: string },
+) {
+  const patch: Record<string, unknown> = {};
+  if (links.playInternalUrl !== undefined)
+    patch.playInternalUrl = links.playInternalUrl || deleteField();
+  if (links.testflightPublicUrl !== undefined)
+    patch.testflightPublicUrl = links.testflightPublicUrl || deleteField();
+  await updateDoc(doc(db, "projects", id), patch);
 }
 
 export async function removeProject(id: string) {

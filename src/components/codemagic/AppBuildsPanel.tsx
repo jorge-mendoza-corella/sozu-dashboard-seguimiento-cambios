@@ -15,7 +15,7 @@ import {
 } from "@/lib/codemagic";
 import { cn } from "@/lib/utils";
 import type { CicdPermissions } from "@/lib/firestoreUsers";
-import { setProjectTesters, type Project } from "@/lib/firestoreProjects";
+import { setProjectTesters, setProjectTestLinks, type Project } from "@/lib/firestoreProjects";
 
 const TONE_CLASSES: Record<string, string> = {
   running: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-900/50 animate-pulse",
@@ -250,6 +250,25 @@ export function AppBuildsPanel({ appId, perms, project }: {
     setTimeout(() => setCopied(false), 1500);
   };
 
+  // Links de invitación (fijos por app; se configuran una sola vez).
+  const editTestLink = (kind: "playInternalUrl" | "testflightPublicUrl") => {
+    if (!project) return;
+    const label = kind === "playInternalUrl"
+      ? "link de invitación del track interno de Play\n(Play Console → Testing → Internal testing → Testers → Copy link)"
+      : "link público de TestFlight\n(App Store Connect → TestFlight → grupo externo → Public link)";
+    const current = project[kind] ?? "";
+    const url = window.prompt(`Pega el ${label}\n\nVacío = quitar el link:`, current);
+    if (url === null) return;
+    const trimmed = url.trim();
+    if (trimmed && !/^https:\/\//.test(trimmed)) {
+      alert("El link debe empezar con https://");
+      return;
+    }
+    setProjectTestLinks(project.id, { [kind]: trimmed })
+      .then(() => qc.invalidateQueries({ queryKey: ["projects"] }))
+      .catch((e) => setError(e instanceof Error ? e.message : "Error al guardar el link"));
+  };
+
   // Marcadores (3 por plataforma): último build construido, lo último en el
   // canal de pruebas (TestFlight/Play interno) y lo último en la store.
   // El rol se decide por workflowId; builds lanzados desde la UI de Codemagic
@@ -403,9 +422,38 @@ export function AppBuildsPanel({ appId, perms, project }: {
                 </button>
               )}
               <span className="flex-1" />
-              <span className="text-[10px] text-muted-foreground">
-                iOS: TestFlight · Android: Play interno
-              </span>
+              {/* Links de invitación fijos por app */}
+              {(["playInternalUrl", "testflightPublicUrl"] as const).map((kind) => {
+                const url = project[kind];
+                const label = kind === "playInternalUrl" ? "Play interno" : "TestFlight público";
+                return (
+                  <span key={kind} className="flex items-center gap-1">
+                    {url ? (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                        title={url}
+                      >
+                        <Cloud className="h-3 w-3" /> {label}
+                      </a>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground/70">{label}: sin link</span>
+                    )}
+                    {perms.buildApp && (
+                      <button
+                        type="button"
+                        onClick={() => editTestLink(kind)}
+                        className="text-[10px] text-muted-foreground underline hover:text-foreground"
+                        title={`Configurar link de ${label} (una sola vez por app)`}
+                      >
+                        {url ? "editar" : "configurar"}
+                      </button>
+                    )}
+                  </span>
+                );
+              })}
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {testers.map((email) => (
@@ -559,7 +607,11 @@ export function AppBuildsPanel({ appId, perms, project }: {
                       ))}
                   {isIosCloud && (
                     <a
-                      href="https://appstoreconnect.apple.com/apps"
+                      href={
+                        b.workflowId === "ios-publish" && project?.testflightPublicUrl
+                          ? project.testflightPublicUrl
+                          : "https://appstoreconnect.apple.com/apps"
+                      }
                       target="_blank"
                       rel="noreferrer"
                       title="El build vive en la nube de Apple: instálalo desde la app TestFlight o revisa App Store Connect"
@@ -571,7 +623,11 @@ export function AppBuildsPanel({ appId, perms, project }: {
                   )}
                   {isAndroidCloud && (
                     <a
-                      href="https://play.google.com/console"
+                      href={
+                        b.workflowId === "android-publish" && project?.playInternalUrl
+                          ? project.playInternalUrl
+                          : "https://play.google.com/console"
+                      }
                       target="_blank"
                       rel="noreferrer"
                       title="El build está en Google Play. Link de invitación para testers: Play Console → Testing → Internal testing → Testers → Copy link"
