@@ -37,18 +37,33 @@ export interface PlatformDef {
   buildWorkflowId: string;
   publishWorkflowId: string;
   storeLabel: string;
+  /** Paso final: promover a la store pública (exige comentario de release). */
+  promoteWorkflowId: string;
+  promoteLabel: string;
 }
 
 export const PLATFORMS: PlatformDef[] = [
-  { key: "android", label: "Android", buildWorkflowId: "android-release", publishWorkflowId: "android-publish", storeLabel: "Play Store" },
-  { key: "ios", label: "iOS", buildWorkflowId: "ios-release", publishWorkflowId: "ios-publish", storeLabel: "TestFlight" },
+  {
+    key: "android", label: "Android",
+    buildWorkflowId: "android-release",
+    publishWorkflowId: "android-publish", storeLabel: "Play interno",
+    promoteWorkflowId: "android-production", promoteLabel: "Play Store",
+  },
+  {
+    key: "ios", label: "iOS",
+    buildWorkflowId: "ios-release",
+    publishWorkflowId: "ios-publish", storeLabel: "TestFlight",
+    promoteWorkflowId: "ios-appstore", promoteLabel: "App Store",
+  },
 ];
 
 export const WORKFLOW_LABELS: Record<string, string> = {
   "android-release": "Android build",
   "ios-release": "iOS build",
-  "android-publish": "Android → Play Store",
+  "android-publish": "Android → Play interno",
   "ios-publish": "iOS → TestFlight",
+  "android-production": "Android → Play Store",
+  "ios-appstore": "iOS → App Store",
   "web-release": "Web build",
 };
 
@@ -116,10 +131,20 @@ export function formatBuildDate(iso?: string): string {
 }
 
 /** Dispara un workflow. La publicación a stores la hace el propio workflow. */
-export async function startBuild(appId: string, workflowId: string, branch: string): Promise<string> {
+export async function startBuild(
+  appId: string,
+  workflowId: string,
+  branch: string,
+  envVars?: Record<string, string>,
+): Promise<string> {
   const data = await request<{ buildId: string }>("/builds", {
     method: "POST",
-    body: JSON.stringify({ appId, workflowId, branch }),
+    body: JSON.stringify({
+      appId,
+      workflowId,
+      branch,
+      ...(envVars ? { environment: { variables: envVars } } : {}),
+    }),
   });
   return data.buildId;
 }

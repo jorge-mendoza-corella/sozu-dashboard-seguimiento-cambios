@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Smartphone, Play, Loader2, ExternalLink, XCircle, Download, AlertCircle,
-  GitBranch, Upload, Clock, CheckCircle2,
+  GitBranch, Upload, Clock, CheckCircle2, Rocket,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,11 +44,12 @@ function PlatformRow({
   deployActive: boolean;
   perms: CicdPermissions;
   busy: string | null;
-  onStart: (workflowId: string, label: string) => void;
+  onStart: (workflowId: string, label: string, envVars?: Record<string, string>) => void;
 }) {
   const forBranch = (wf: string) => builds.filter((b) => b.workflowId === wf && b.branch === branch);
   const buildRuns = forBranch(platform.buildWorkflowId);
   const publishRuns = forBranch(platform.publishWorkflowId);
+  const promoteRuns = forBranch(platform.promoteWorkflowId);
 
   const sameShaBuilt = !!headSha && buildRuns.some(
     (b) => buildCommitSha(b) === headSha && (isSuccess(b) || isRunning(b)),
@@ -56,10 +57,14 @@ function PlatformRow({
   const buildInProgress = buildRuns.some(isRunning);
   const lastGoodBuild = buildRuns.find(isSuccess);
   const canPublish = !!lastGoodBuild && (!headSha || buildCommitSha(lastGoodBuild) === headSha);
-  const sameShaPublished = !!headSha && publishRuns.some(
-    (b) => buildCommitSha(b) === headSha && (isSuccess(b) || isRunning(b)),
+  const publishedCurrent = publishRuns.some(
+    (b) => isSuccess(b) && (!headSha || buildCommitSha(b) === headSha),
   );
   const publishInProgress = publishRuns.some(isRunning);
+  const promotedCurrent = promoteRuns.some(
+    (b) => (isSuccess(b) || isRunning(b)) && (!headSha || buildCommitSha(b) === headSha),
+  );
+  const promoteInProgress = promoteRuns.some(isRunning);
 
   const buildDisabledReason =
     deployActive ? "Espera: hay un deploy web en curso" :
@@ -68,11 +73,28 @@ function PlatformRow({
 
   const publishDisabledReason =
     publishInProgress ? "Publicación en curso" :
-    sameShaPublished ? "Este código ya fue enviado a la store" :
     !canPublish ? `Primero construye el artefacto ${platform.label} del código actual` : null;
+
+  const promoteDisabledReason =
+    promoteInProgress ? "Envío a la store en curso" :
+    promotedCurrent ? "Este código ya fue enviado a la store" : null;
 
   const buildKey = `${platform.key}-build`;
   const publishKey = `${platform.key}-publish`;
+  const promoteKey = `${platform.key}-promote`;
+
+  // Paso final: pedir comentario OBLIGATORIO de lo que se actualiza.
+  const handlePromote = () => {
+    const notes = window.prompt(
+      `¿Qué se actualiza en esta versión?\n\nComentario obligatorio para enviar a ${platform.promoteLabel}:`,
+    );
+    if (notes === null) return; // canceló
+    if (!notes.trim()) {
+      alert("El comentario de la actualización es obligatorio.");
+      return;
+    }
+    onStart(platform.promoteWorkflowId, promoteKey, { RELEASE_NOTES: notes.trim() });
+  };
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2.5">
@@ -101,15 +123,29 @@ function PlatformRow({
             {busy === buildKey ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Play className="h-3.5 w-3.5 mr-1.5" />}
             Construir
           </Button>
-          <Button
-            size="sm"
-            title={publishDisabledReason ?? `Construir y enviar a ${platform.storeLabel}`}
-            disabled={!!publishDisabledReason || busy === publishKey}
-            onClick={() => onStart(platform.publishWorkflowId, publishKey)}
-          >
-            {busy === publishKey ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
-            {platform.storeLabel}
-          </Button>
+          {!publishedCurrent ? (
+            <Button
+              size="sm"
+              title={publishDisabledReason ?? `Construir y enviar a ${platform.storeLabel}`}
+              disabled={!!publishDisabledReason || busy === publishKey}
+              onClick={() => onStart(platform.publishWorkflowId, publishKey)}
+            >
+              {busy === publishKey ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+              {platform.storeLabel}
+            </Button>
+          ) : (
+            // Ya pasó por la store de pruebas: paso final hacia la store pública.
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              title={promoteDisabledReason ?? `Enviar a ${platform.promoteLabel} (pide comentario de la versión)`}
+              disabled={!!promoteDisabledReason || busy === promoteKey}
+              onClick={handlePromote}
+            >
+              {busy === promoteKey ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Rocket className="h-3.5 w-3.5 mr-1.5" />}
+              {platform.promoteLabel}
+            </Button>
+          )}
         </>
       )}
       {buildDisabledReason && (
@@ -140,13 +176,13 @@ export function AppBuildsPanel({ appId, perms }: { appId: string; perms: CicdPer
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["codemagic-builds", appId] });
 
-  const handleStart = async (workflowId: string, key: string) => {
+  const handleStart = async (workflowId: string, key: string, envVars?: Record<string, string>) => {
     const label = WORKFLOW_LABELS[workflowId] ?? workflowId;
     if (!confirm(`¿Iniciar "${label}" en la rama ${effectiveBranch}?`)) return;
     setBusy(key);
     setError("");
     try {
-      await startBuild(appId, workflowId, effectiveBranch);
+      await startBuild(appId, workflowId, effectiveBranch, envVars);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al iniciar el build");
