@@ -18,6 +18,7 @@ export interface Project {
   seeded?: boolean; // ya se sembraron los repos por defecto (no volver a auto-agregar)
   isApp?: boolean;  // marca el proyecto como una app móvil/app
   codemagicAppId?: string; // app de Codemagic vinculada (builds desde el dashboard)
+  testerEmails?: string[]; // correos con acceso a builds de prueba (TestFlight / Play interno)
 }
 
 export interface MonitoredRepo {
@@ -75,6 +76,11 @@ export async function setProjectCodemagicApp(id: string, appId: string | null) {
   await updateDoc(doc(db, "projects", id), {
     codemagicAppId: appId ?? deleteField(),
   });
+}
+
+/** Lista de correos de testers con acceso a los builds de prueba de la app. */
+export async function setProjectTesters(id: string, emails: string[]) {
+  await updateDoc(doc(db, "projects", id), { testerEmails: emails });
 }
 
 export async function removeProject(id: string) {

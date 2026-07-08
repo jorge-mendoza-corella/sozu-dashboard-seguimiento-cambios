@@ -293,7 +293,7 @@ export function DashboardPage() {
                   )}
 
                   {view === "deploy" && showDeployTab ? (
-                    <AppBuildsPanel appId={p.codemagicAppId!} perms={perms} />
+                    <AppBuildsPanel appId={p.codemagicAppId!} perms={perms} project={p} />
                   ) : projectRepos.length === 0 ? (
                     <div className="flex h-40 flex-col items-center justify-center gap-3 text-muted-foreground">
                       <p>Este proyecto no tiene repositorios.</p>

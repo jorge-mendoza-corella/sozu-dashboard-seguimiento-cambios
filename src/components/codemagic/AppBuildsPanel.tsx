@@ -15,6 +15,7 @@ import {
 } from "@/lib/codemagic";
 import { cn } from "@/lib/utils";
 import type { CicdPermissions } from "@/lib/firestoreUsers";
+import { setProjectTesters, type Project } from "@/lib/firestoreProjects";
 
 const TONE_CLASSES: Record<string, string> = {
   running: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-900/50 animate-pulse",
@@ -181,7 +182,11 @@ function PlatformRow({
   );
 }
 
-export function AppBuildsPanel({ appId, perms }: { appId: string; perms: CicdPermissions }) {
+export function AppBuildsPanel({ appId, perms, project }: {
+  appId: string;
+  perms: CicdPermissions;
+  project?: Project;
+}) {
   const qc = useQueryClient();
   const { data: apps = [], isLoading: loadingApps, error: appsError } = useCodemagicApps();
   const { data: builds = [], isLoading: loadingBuilds, error: buildsError } = useCodemagicBuilds(appId);
@@ -203,6 +208,47 @@ export function AppBuildsPanel({ appId, perms }: { appId: string; perms: CicdPer
   const [platFilter, setPlatFilter] = useState<"all" | Plat>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+
+  // Testers: correos con acceso a los builds de prueba (fuente de verdad en
+  // Firestore; copiar/pegar en Play Console / TestFlight al darlos de alta).
+  const testers = project?.testerEmails ?? [];
+  const [newTester, setNewTester] = useState("");
+  const [savingTesters, setSavingTesters] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const saveTesters = async (emails: string[]) => {
+    if (!project) return;
+    setSavingTesters(true);
+    setError("");
+    try {
+      await setProjectTesters(project.id, emails);
+      await qc.invalidateQueries({ queryKey: ["projects"] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al guardar testers");
+    } finally {
+      setSavingTesters(false);
+    }
+  };
+
+  const addTester = () => {
+    const email = newTester.trim().toLowerCase();
+    if (!email) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError("Correo inválido");
+      return;
+    }
+    if (testers.includes(email)) {
+      setNewTester("");
+      return;
+    }
+    saveTesters([...testers, email]).then(() => setNewTester(""));
+  };
+
+  const copyTesters = async () => {
+    await navigator.clipboard.writeText(testers.join(", "));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   // Marcadores (3 por plataforma): último build construido, lo último en el
   // canal de pruebas (TestFlight/Play interno) y lo último en la store.
@@ -338,6 +384,76 @@ export function AppBuildsPanel({ appId, perms }: { appId: string; perms: CicdPer
             />
           ))}
         </div>
+
+        {/* Testers con acceso a builds de prueba */}
+        {project && (
+          <div className="mt-4">
+            <div className="mb-1.5 flex flex-wrap items-center gap-2">
+              <h4 className="text-xs font-semibold text-muted-foreground">
+                Testers con acceso ({testers.length})
+              </h4>
+              {testers.length > 0 && (
+                <button
+                  type="button"
+                  onClick={copyTesters}
+                  className="text-[10px] text-muted-foreground underline hover:text-foreground"
+                  title="Copia la lista para pegarla en Play Console (Internal testing → Testers) o App Store Connect (TestFlight → grupo)"
+                >
+                  {copied ? "¡copiado!" : "copiar lista"}
+                </button>
+              )}
+              <span className="flex-1" />
+              <span className="text-[10px] text-muted-foreground">
+                iOS: TestFlight · Android: Play interno
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {testers.map((email) => (
+                <span
+                  key={email}
+                  className="flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5 text-[11px]"
+                >
+                  {email}
+                  {perms.buildApp && (
+                    <button
+                      type="button"
+                      disabled={savingTesters}
+                      onClick={() => saveTesters(testers.filter((t) => t !== email))}
+                      className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                      title="Quitar acceso"
+                    >
+                      <XCircle className="h-3 w-3" />
+                    </button>
+                  )}
+                </span>
+              ))}
+              {testers.length === 0 && (
+                <span className="text-[11px] text-muted-foreground">Sin testers registrados.</span>
+              )}
+              {perms.buildApp && (
+                <span className="flex items-center gap-1">
+                  <input
+                    type="email"
+                    className="h-6 w-52 rounded-md border bg-background px-2 text-[11px]"
+                    placeholder="correo@ejemplo.com"
+                    value={newTester}
+                    disabled={savingTesters}
+                    onChange={(e) => setNewTester(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && addTester()}
+                  />
+                  <button
+                    type="button"
+                    disabled={savingTesters || !newTester.trim()}
+                    onClick={addTester}
+                    className="flex h-6 items-center rounded-md border px-2 text-[11px] text-muted-foreground hover:bg-muted disabled:opacity-50"
+                  >
+                    {savingTesters ? <Loader2 className="h-3 w-3 animate-spin" /> : "Agregar"}
+                  </button>
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Historial */}
         <div className="mb-1.5 mt-4 flex flex-wrap items-center gap-2">
