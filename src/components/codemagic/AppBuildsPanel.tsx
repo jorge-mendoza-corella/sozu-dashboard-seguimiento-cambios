@@ -204,17 +204,30 @@ export function AppBuildsPanel({ appId, perms }: { appId: string; perms: CicdPer
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  // Marcadores: último build exitoso, y lo último enviado a cada canal/store.
+  // Marcadores (3 por plataforma): último build construido, lo último en el
+  // canal de pruebas (TestFlight/Play interno) y lo último en la store.
+  // El rol se decide por workflowId; builds lanzados desde la UI de Codemagic
+  // traen un id interno → cuentan como "build" y la plataforma sale de sus
+  // artefactos (platformOfBuild).
   const markers = useMemo(() => {
     const m = new Map<string, string[]>();
     const add = (id: string | undefined, tag: string) => {
       if (id) m.set(id, [...(m.get(id) ?? []), tag]);
     };
+    const isPublishOrPromote = (b: CodemagicBuild) =>
+      PLATFORMS.some((p) => b.workflowId === p.publishWorkflowId || b.workflowId === p.promoteWorkflowId);
     for (const p of PLATFORMS) {
-      add(builds.find((b) => b.workflowId === p.buildWorkflowId && isSuccess(b))?._id, `último build ${p.label}`);
+      add(
+        builds.find((b) => platformOfBuild(b) === p.key && !isPublishOrPromote(b) && isSuccess(b))?._id,
+        `último build ${p.label}`,
+      );
       add(builds.find((b) => b.workflowId === p.publishWorkflowId && isSuccess(b))?._id, `en ${p.storeLabel}`);
       add(builds.find((b) => b.workflowId === p.promoteWorkflowId && isSuccess(b))?._id, `en ${p.promoteLabel}`);
     }
+    add(
+      builds.find((b) => platformOfBuild(b) === "web" && isSuccess(b))?._id,
+      "último build Web",
+    );
     return m;
   }, [builds]);
 
