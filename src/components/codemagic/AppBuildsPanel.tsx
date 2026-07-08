@@ -10,7 +10,7 @@ import { SelectNative } from "@/components/ui/select-native";
 import { useCodemagicApps, useCodemagicBuilds, useBranchHead, useActiveDeploy } from "@/hooks/useCodemagic";
 import {
   startBuild, cancelBuild, buildStatusInfo, buildUrl, buildCommitSha, appRepo,
-  formatBuildDate, PLATFORMS, WORKFLOW_LABELS,
+  formatBuildDate, PLATFORMS, WORKFLOW_LABELS, SYNC_TESTERS_WORKFLOW,
   type CodemagicBuild, type PlatformDef,
 } from "@/lib/codemagic";
 import { cn } from "@/lib/utils";
@@ -216,6 +216,8 @@ export function AppBuildsPanel({ appId, perms, project }: {
   const [savingTesters, setSavingTesters] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const [syncState, setSyncState] = useState<"idle" | "syncing" | "error">("idle");
+
   const saveTesters = async (emails: string[]) => {
     if (!project) return;
     setSavingTesters(true);
@@ -223,6 +225,18 @@ export function AppBuildsPanel({ appId, perms, project }: {
     try {
       await setProjectTesters(project.id, emails);
       await qc.invalidateQueries({ queryKey: ["projects"] });
+      // Sincronización automática a TestFlight (iOS). Google Play no tiene
+      // API para correos individuales — ese alta es manual.
+      setSyncState("syncing");
+      try {
+        await startBuild(appId, SYNC_TESTERS_WORKFLOW, "main", {
+          TESTER_EMAILS: emails.join(","),
+        });
+        setSyncState("idle");
+        refresh();
+      } catch {
+        setSyncState("error");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al guardar testers");
     } finally {
@@ -478,6 +492,16 @@ export function AppBuildsPanel({ appId, perms, project }: {
               {testers.length === 0 && (
                 <span className="text-[11px] text-muted-foreground">Sin testers registrados.</span>
               )}
+              {syncState === "syncing" && (
+                <span className="flex items-center gap-1 text-[11px] text-blue-600 dark:text-blue-400">
+                  <Loader2 className="h-3 w-3 animate-spin" /> sincronizando a TestFlight…
+                </span>
+              )}
+              {syncState === "error" && (
+                <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                  ⚠ no se pudo disparar la sincronización a TestFlight (¿workflow sync-testflight-testers en main?)
+                </span>
+              )}
               {perms.buildApp && (
                 <span className="flex items-center gap-1">
                   <input
@@ -499,6 +523,23 @@ export function AppBuildsPanel({ appId, perms, project }: {
                   </button>
                 </span>
               )}
+            </div>
+            {/* Notas de sincronización — qué es automático y qué es manual */}
+            <div className="mt-2 space-y-1 rounded-md border border-amber-200/70 bg-amber-50/60 px-3 py-2 text-[11px] leading-relaxed dark:border-amber-900/40 dark:bg-amber-950/20">
+              <p className="text-emerald-700 dark:text-emerald-400">
+                ✅ <span className="font-semibold">iOS:</span> al agregar o quitar correos, la lista se
+                sincroniza sola con TestFlight (grupo "SOZU Testers") — los nuevos reciben la invitación por correo.
+              </p>
+              <p className="text-amber-700 dark:text-amber-300">
+                ⚠️ <span className="font-semibold">Android (Google Play):</span> Google no tiene API para esto —
+                usa <span className="font-semibold">"copiar lista"</span> y pégala manualmente en Play Console →
+                Testing → Internal testing → Testers, cada vez que cambie.
+              </p>
+              <p className="text-amber-700 dark:text-amber-300">
+                ⚠️ <span className="font-semibold">Links de invitación:</span> ambos se configuran manualmente
+                <span className="font-semibold"> una sola vez por app</span> (botón "configurar" aquí arriba) —
+                Google/Apple no permiten leerlos por API.
+              </p>
             </div>
           </div>
         )}

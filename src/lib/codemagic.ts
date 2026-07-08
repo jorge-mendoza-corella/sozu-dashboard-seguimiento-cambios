@@ -65,7 +65,11 @@ export const WORKFLOW_LABELS: Record<string, string> = {
   "android-production": "Android → Play Store",
   "ios-appstore": "iOS → App Store",
   "web-release": "Web build",
+  "sync-testflight-testers": "Sync testers → TestFlight",
 };
+
+/** Workflow que sincroniza la lista de testers del dashboard a TestFlight. */
+export const SYNC_TESTERS_WORKFLOW = "sync-testflight-testers";
 
 export interface CodemagicArtefact {
   name: string;
