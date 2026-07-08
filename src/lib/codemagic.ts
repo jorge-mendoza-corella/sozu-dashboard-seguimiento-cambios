@@ -17,7 +17,40 @@ export interface CodemagicApp {
   workflowIds: string[];
   workflows: Record<string, { name: string }>;
   branches: string[];
+  repository?: { htmlUrl?: string; defaultBranch?: string };
 }
+
+/** owner/repo de GitHub de la app (para consultar HEAD de rama y deploys). */
+export function appRepo(app?: CodemagicApp): { owner: string; repo: string } | null {
+  const m = app?.repository?.htmlUrl?.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/);
+  return m ? { owner: m[1], repo: m[2] } : null;
+}
+
+// ---------------------------------------------------------------------------
+// Convención de workflows por plataforma (ids = claves en codemagic.yaml):
+//   <plataforma>-release  → solo construye el artefacto
+//   <plataforma>-publish  → construye Y publica en la store
+// ---------------------------------------------------------------------------
+export interface PlatformDef {
+  key: "android" | "ios";
+  label: string;
+  buildWorkflowId: string;
+  publishWorkflowId: string;
+  storeLabel: string;
+}
+
+export const PLATFORMS: PlatformDef[] = [
+  { key: "android", label: "Android", buildWorkflowId: "android-release", publishWorkflowId: "android-publish", storeLabel: "Play Store" },
+  { key: "ios", label: "iOS", buildWorkflowId: "ios-release", publishWorkflowId: "ios-publish", storeLabel: "TestFlight" },
+];
+
+export const WORKFLOW_LABELS: Record<string, string> = {
+  "android-release": "Android build",
+  "ios-release": "iOS build",
+  "android-publish": "Android → Play Store",
+  "ios-publish": "iOS → TestFlight",
+  "web-release": "Web build",
+};
 
 export interface CodemagicArtefact {
   name: string;
@@ -39,7 +72,12 @@ export interface CodemagicBuild {
   message?: string; // mensaje del commit
   version?: string;
   index?: number; // número de build
+  commit?: { hash?: string; sha?: string; commitMessage?: string };
 }
+
+/** Hash del commit construido en el build (la API varía el nombre del campo). */
+export const buildCommitSha = (b: CodemagicBuild): string | null =>
+  b.commit?.hash ?? b.commit?.sha ?? null;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
@@ -64,9 +102,17 @@ export async function getCodemagicApps(): Promise<CodemagicApp[]> {
 }
 
 /** Builds recientes de una app (más nuevos primero). */
-export async function getRecentBuilds(appId: string, limit = 10): Promise<CodemagicBuild[]> {
+export async function getRecentBuilds(appId: string, limit = 25): Promise<CodemagicBuild[]> {
   const data = await request<{ builds: CodemagicBuild[] }>(`/builds?appId=${appId}`);
   return (data.builds ?? []).slice(0, limit);
+}
+
+/** Fecha y hora local legible, p.ej. "08 jul, 11:14". */
+export function formatBuildDate(iso?: string): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString("es-MX", {
+    day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+  });
 }
 
 /** Dispara un workflow. La publicación a stores la hace el propio workflow. */

@@ -128,6 +128,29 @@ export interface RepoStatus {
   error?: string;
 }
 
+/** SHA del HEAD de una rama (null si la rama/repo no existe o no hay acceso). */
+export async function getBranchHeadSha(owner: string, repo: string, branch: string): Promise<string | null> {
+  try {
+    const { data } = await octokit.repos.getBranch({ owner, repo, branch });
+    return data.commit.sha;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True si el repo tiene algún workflow de deploy corriendo o en cola.
+ * Se usa para bloquear builds de app hasta que termine el deploy web.
+ */
+export async function hasActiveDeployRun(owner: string, repo: string): Promise<boolean> {
+  const [inProgress, queued] = await Promise.all([
+    octokit.actions.listWorkflowRunsForRepo({ owner, repo, status: "in_progress", per_page: 20 }),
+    octokit.actions.listWorkflowRunsForRepo({ owner, repo, status: "queued", per_page: 20 }),
+  ]);
+  return [...inProgress.data.workflow_runs, ...queued.data.workflow_runs]
+    .some((r) => /deploy/i.test(r.name ?? ""));
+}
+
 /**
  * True si el deploy MÁS RECIENTE de alguna rama falló. Un deploy exitoso
  * posterior en la misma rama limpia el fallo previo, así que no se reporta

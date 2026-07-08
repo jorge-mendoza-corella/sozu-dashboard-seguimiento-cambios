@@ -15,8 +15,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AddRepoModal } from "@/components/projects/AddRepoModal";
 import { ManageModal } from "@/components/projects/ManageModal";
 import { RepoGrid } from "@/components/projects/RepoGrid";
-import { AppBuildsPanel } from "@/components/codemagic/AppBuildsPanel";
-import { isCodemagicConfigured } from "@/lib/codemagic";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { cn } from "@/lib/utils";
 
@@ -256,9 +254,6 @@ export function DashboardPage() {
               const projectRepos = reposByProject.get(p.id) ?? [];
               return (
                 <TabsContent key={p.id} value={p.id}>
-                  {p.isApp && p.codemagicAppId && isCodemagicConfigured && (
-                    <AppBuildsPanel appId={p.codemagicAppId} perms={perms} />
-                  )}
                   {projectRepos.length === 0 ? (
                     <div className="flex h-40 flex-col items-center justify-center gap-3 text-muted-foreground">
                       <p>Este proyecto no tiene repositorios.</p>
