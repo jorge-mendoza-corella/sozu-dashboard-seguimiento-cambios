@@ -7,7 +7,6 @@ import { LoginPage } from "@/pages/LoginPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { UsersPage } from "@/pages/UsersPage";
 import { ContributorsPage } from "@/pages/ContributorsPage";
-import { DeployAppsPage } from "@/pages/DeployAppsPage";
 
 const queryClient = new QueryClient();
 
@@ -33,7 +32,6 @@ function AppRoutes() {
     <AppLayout>
       <Routes>
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/deploy-apps" element={<DeployAppsPage />} />
         <Route path="/contributors" element={isRoot ? <ContributorsPage /> : <Navigate to="/" replace />} />
         <Route path="/users" element={isRoot ? <UsersPage /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -3,6 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   RefreshCw, Clock, GitBranch, AlertCircle, GitPullRequest, ArrowUpCircle, Rocket, Plus, Settings, FolderGit2, Loader2, Smartphone,
 } from "lucide-react";
+import { AppBuildsPanel } from "@/components/codemagic/AppBuildsPanel";
+import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
 import { useAuth } from "@/hooks/useAuth";
@@ -62,6 +64,8 @@ export function DashboardPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [showManage, setShowManage] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  // Vista interna del tab de proyecto: repos (default) o deploy de la app.
+  const [projectView, setProjectView] = useState<"repos" | "deploy">("repos");
 
   // Seed/repair inicial: solo el root y aún ningún proyecto marcado como sembrado.
   // Crea "SOZU" con los repos por defecto o completa los que falten (una vez).
@@ -219,7 +223,13 @@ export function DashboardPage() {
             )}
           </div>
         ) : (
-          <Tabs value={activeProject} onValueChange={setActiveProject}>
+          <Tabs
+            value={activeProject}
+            onValueChange={(v) => {
+              setActiveProject(v);
+              setProjectView("repos"); // al cambiar de proyecto, volver a la vista de repos
+            }}
+          >
             <TabsList className="flex-wrap h-auto">
               {projects.map((p) => {
                 const count = reposByProject.get(p.id)?.length ?? 0;
@@ -252,9 +262,39 @@ export function DashboardPage() {
 
             {projects.map((p) => {
               const projectRepos = reposByProject.get(p.id) ?? [];
+              // Sub-pestaña "Deploy App": solo proyectos APP vinculados a Codemagic
+              // y usuarios con el permiso buildApp.
+              const showDeployTab = !!p.isApp && !!p.codemagicAppId && isCodemagicConfigured && perms.buildApp;
+              const view = showDeployTab ? projectView : "repos";
               return (
                 <TabsContent key={p.id} value={p.id}>
-                  {projectRepos.length === 0 ? (
+                  {showDeployTab && (
+                    <div className="mb-4 flex gap-1 border-b">
+                      {([
+                        { key: "repos", label: "Repositorios", icon: GitBranch },
+                        { key: "deploy", label: "Deploy App", icon: Smartphone },
+                      ] as const).map(({ key, label, icon: Icon }) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setProjectView(key)}
+                          className={cn(
+                            "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors -mb-px",
+                            view === key
+                              ? "border-primary text-primary"
+                              : "border-transparent text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          <Icon className="h-4 w-4" />
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {view === "deploy" && showDeployTab ? (
+                    <AppBuildsPanel appId={p.codemagicAppId!} perms={perms} />
+                  ) : projectRepos.length === 0 ? (
                     <div className="flex h-40 flex-col items-center justify-center gap-3 text-muted-foreground">
                       <p>Este proyecto no tiene repositorios.</p>
                       {isRoot && (
