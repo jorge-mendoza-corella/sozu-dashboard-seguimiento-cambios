@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
 import { cn } from "@/lib/utils";
 import {
-  addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel, setProjectIsApp,
+  addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel, setProjectIsApp, setProjectCodemagicApp,
 } from "@/lib/firestoreProjects";
 import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
+import { useCodemagicApps } from "@/hooks/useCodemagic";
+import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useAuth } from "@/hooks/useAuth";
 
 export function ManageModal({ onClose }: { onClose: () => void }) {
@@ -16,6 +18,7 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const { data: projects = [] } = useProjects();
   const { data: repos = [] } = useRepos();
+  const { data: cmApps = [] } = useCodemagicApps();
 
   const [newProject, setNewProject] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -64,7 +67,8 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
               const isEditing = editing?.id === p.id;
               const isApp = p.isApp ?? false;
               return (
-                <div key={p.id} className="flex items-center gap-2 rounded-md border px-3 py-2">
+                <div key={p.id} className="rounded-md border px-3 py-2">
+                <div className="flex items-center gap-2">
                   <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
                   {isEditing ? (
                     <input
@@ -132,6 +136,27 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                   >
                     {busy === `del-${p.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                   </Button>
+                </div>
+                {/* Vincular app de Codemagic (solo proyectos APP) */}
+                {isApp && isCodemagicConfigured && (
+                  <div className="mt-2 flex items-center gap-2 pl-5">
+                    <span className="text-[11px] text-muted-foreground">App Codemagic:</span>
+                    <SelectNative
+                      className="h-7 w-56 text-xs"
+                      value={p.codemagicAppId ?? ""}
+                      disabled={busy === `cm-${p.id}`}
+                      onChange={(e) =>
+                        run(`cm-${p.id}`, () => setProjectCodemagicApp(p.id, e.target.value || null), refreshProjects)
+                      }
+                    >
+                      <option value="">— sin vincular —</option>
+                      {cmApps.map((a) => (
+                        <option key={a._id} value={a._id}>{a.appName}</option>
+                      ))}
+                    </SelectNative>
+                    {busy === `cm-${p.id}` && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                  </div>
+                )}
                 </div>
               );
             })}

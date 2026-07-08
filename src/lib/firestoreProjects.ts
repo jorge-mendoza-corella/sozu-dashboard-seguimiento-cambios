@@ -1,6 +1,6 @@
 import { db } from "./firebase";
 import {
-  doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs, serverTimestamp, query, where, writeBatch,
+  doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs, serverTimestamp, query, where, writeBatch, deleteField,
 } from "firebase/firestore";
 import { REPOS } from "./github";
 
@@ -17,6 +17,7 @@ export interface Project {
   createdAt: unknown;
   seeded?: boolean; // ya se sembraron los repos por defecto (no volver a auto-agregar)
   isApp?: boolean;  // marca el proyecto como una app móvil/app
+  codemagicAppId?: string; // app de Codemagic vinculada (builds desde el dashboard)
 }
 
 export interface MonitoredRepo {
@@ -67,6 +68,13 @@ export async function renameProject(id: string, name: string) {
 
 export async function setProjectIsApp(id: string, isApp: boolean) {
   await updateDoc(doc(db, "projects", id), { isApp });
+}
+
+/** Vincula (o desvincula con null) la app de Codemagic del proyecto. */
+export async function setProjectCodemagicApp(id: string, appId: string | null) {
+  await updateDoc(doc(db, "projects", id), {
+    codemagicAppId: appId ?? deleteField(),
+  });
 }
 
 export async function removeProject(id: string) {

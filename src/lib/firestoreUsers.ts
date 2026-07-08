@@ -13,10 +13,11 @@ export interface CicdPermissions {
   approve: boolean; // aprobar / solicitar cambios / comentar reviews
   mergeDev: boolean; // hacer merge de PRs hacia dev
   mergeMain: boolean; // hacer merge de PRs hacia main (PRD)
+  buildApp: boolean; // disparar/cancelar builds de apps en Codemagic
 }
 
-export const NO_PERMISSIONS: CicdPermissions = { createPR: false, approve: false, mergeDev: false, mergeMain: false };
-export const ALL_PERMISSIONS: CicdPermissions = { createPR: true, approve: true, mergeDev: true, mergeMain: true };
+export const NO_PERMISSIONS: CicdPermissions = { createPR: false, approve: false, mergeDev: false, mergeMain: false, buildApp: false };
+export const ALL_PERMISSIONS: CicdPermissions = { createPR: true, approve: true, mergeDev: true, mergeMain: true, buildApp: true };
 
 export interface AppUser {
   email: string;

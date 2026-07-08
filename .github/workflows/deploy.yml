@@ -53,6 +53,11 @@ jobs:
 
           echo "VITE_GITHUB_DOCS_TOKEN=${{ secrets.DASHBOARD_GITHUB_DOCS_TOKEN }}" >> $GITHUB_ENV
 
+          # Token de Codemagic (builds de apps desde el dashboard). Si el secret
+          # no existe todavía, no rompe el build: la UI de builds queda oculta.
+          VITE_CODEMAGIC_TOKEN=$(gcloud secrets versions access latest --secret=DASHBOARD_CODEMAGIC_TOKEN --project=sozu-admin-dev 2>/dev/null || true)
+          echo "VITE_CODEMAGIC_TOKEN=$VITE_CODEMAGIC_TOKEN" >> $GITHUB_ENV
+
 
       - name: Install dependencies
         run: npm ci

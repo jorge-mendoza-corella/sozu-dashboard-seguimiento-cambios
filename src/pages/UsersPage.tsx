@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   UserPlus, Trash2, Shield, Eye, Loader2, FolderGit2, ChevronDown, ChevronUp,
-  GitPullRequest, UserCheck, GitMerge, Rocket,
+  GitPullRequest, UserCheck, GitMerge, Rocket, Smartphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +29,7 @@ const PERMISSION_DEFS: { key: keyof CicdPermissions; label: string; icon: React.
   { key: "approve", label: "Aprobar", icon: <UserCheck className="h-3 w-3" /> },
   { key: "mergeDev", label: "Merge a dev", icon: <GitMerge className="h-3 w-3" /> },
   { key: "mergeMain", label: "Merge a main", icon: <Rocket className="h-3 w-3" /> },
+  { key: "buildApp", label: "Builds App", icon: <Smartphone className="h-3 w-3" /> },
 ];
 
 function PermissionChips({
