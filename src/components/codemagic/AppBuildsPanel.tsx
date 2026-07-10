@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Smartphone, Play, Loader2, ExternalLink, XCircle, Download, AlertCircle,
@@ -51,6 +51,135 @@ function platformOfBuild(b: CodemagicBuild): Plat {
   if (arts.some((a) => /\.ipa$/i.test(a.name))) return "ios";
   if (arts.some((a) => /\.zip$/i.test(a.name))) return "web";
   return "otro";
+}
+
+// Fases del build según el status que reporta la API de Codemagic.
+const BUILD_PHASES = [
+  { key: "queued", label: "En cola" },
+  { key: "preparing", label: "Preparando" },
+  { key: "fetching", label: "Clonando" },
+  { key: "building", label: "Construyendo" },
+  { key: "testing", label: "Probando" },
+  { key: "publishing", label: "Publicando" },
+  { key: "finishing", label: "Finalizando" },
+] as const;
+
+/** Card destacada de un build en curso: fases, cronómetro y progreso estimado. */
+function ActiveBuildCard({
+  b, wfName, avgMs, appId, canCancel, busy, onCancel,
+}: {
+  b: CodemagicBuild;
+  wfName: string;
+  avgMs: number | null;
+  appId: string;
+  canCancel: boolean;
+  busy: string | null;
+  onCancel: (id: string) => void;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const startedIso = b.startedAt ?? b.createdAt;
+  const elapsedMs = startedIso ? Math.max(0, now - new Date(startedIso).getTime()) : 0;
+  const mm = Math.floor(elapsedMs / 60000);
+  const ss = String(Math.floor(elapsedMs / 1000) % 60).padStart(2, "0");
+  // Progreso estimado contra el promedio de builds exitosos del mismo workflow.
+  const pct = avgMs ? Math.min(96, Math.round((elapsedMs / avgMs) * 100)) : null;
+
+  const rawIdx = BUILD_PHASES.findIndex((p) => p.key === b.status);
+  const phaseIdx = rawIdx === -1 ? 3 : rawIdx; // status desconocido → "Construyendo"
+  const plat = platformOfBuild(b);
+
+  return (
+    <div className="relative overflow-hidden rounded-lg border border-blue-300/70 bg-gradient-to-br from-blue-50/80 via-background to-background p-3.5 dark:border-blue-800/50 dark:from-blue-950/30">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-blue-500" />
+        </span>
+        <span className="text-sm font-semibold">{wfName}</span>
+        <span className={cn("rounded border px-1.5 py-0.5 text-[10px] font-semibold", PLAT_META[plat].cls)}>
+          {PLAT_META[plat].label}
+        </span>
+        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          <GitBranch className="h-3 w-3" />{b.branch}
+        </span>
+        <span className="flex-1" />
+        <span className="font-mono text-sm font-semibold tabular-nums text-blue-700 dark:text-blue-300">
+          {mm}:{ss}
+        </span>
+        {avgMs && (
+          <span className="text-[10px] text-muted-foreground">
+            / ~{Math.round(avgMs / 60000)}m típico
+          </span>
+        )}
+        <a
+          href={buildUrl(appId, b._id)}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          title="Ver log en vivo en Codemagic"
+        >
+          Log <ExternalLink className="h-3 w-3" />
+        </a>
+        {canCancel && (
+          <button
+            type="button"
+            disabled={busy === b._id}
+            onClick={() => onCancel(b._id)}
+            className="flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-xs text-destructive hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:hover:bg-red-950/30"
+          >
+            {busy === b._id ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />}
+            Cancelar
+          </button>
+        )}
+      </div>
+
+      {/* Stepper de fases */}
+      <div className="mt-3 flex items-center gap-1">
+        {BUILD_PHASES.map((p, i) => (
+          <div key={p.key} className="flex flex-1 flex-col items-center gap-1">
+            <div
+              className={cn(
+                "flex h-5 w-5 items-center justify-center rounded-full border text-[9px] font-bold transition-colors",
+                i < phaseIdx && "border-emerald-400 bg-emerald-100 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
+                i === phaseIdx && "animate-pulse border-blue-500 bg-blue-500 text-white",
+                i > phaseIdx && "border-border bg-muted text-muted-foreground",
+              )}
+            >
+              {i < phaseIdx ? "✓" : i + 1}
+            </div>
+            <span
+              className={cn(
+                "text-center text-[9px] leading-tight",
+                i === phaseIdx ? "font-semibold text-blue-700 dark:text-blue-300" : "text-muted-foreground",
+              )}
+            >
+              {p.label}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Barra de progreso: estimada si hay historial, indeterminada si no */}
+      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-950/60">
+        {pct !== null ? (
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-400 transition-[width] duration-1000"
+            style={{ width: `${pct}%` }}
+          />
+        ) : (
+          <div className="h-full w-1/3 animate-[indeterminate_1.4s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-blue-500 to-blue-400" />
+        )}
+      </div>
+      {pct !== null && (
+        <p className="mt-1 text-right text-[10px] text-muted-foreground">{pct}% estimado</p>
+      )}
+    </div>
+  );
 }
 
 const PLAT_META: Record<Plat, { label: string; cls: string }> = {
@@ -310,8 +439,25 @@ export function AppBuildsPanel({ appId, perms, project }: {
     return m;
   }, [builds]);
 
+  // Builds en curso: se muestran como card destacada, no como fila de historial.
+  const runningBuilds = useMemo(() => builds.filter(isRunning), [builds]);
+
+  // Duración promedio por workflow (builds exitosos) para estimar progreso.
+  const avgDurationByWorkflow = useMemo(() => {
+    const acc = new Map<string, number[]>();
+    for (const b of builds) {
+      if (!isSuccess(b) || !b.startedAt || !b.finishedAt) continue;
+      const ms = new Date(b.finishedAt).getTime() - new Date(b.startedAt).getTime();
+      if (ms > 0) acc.set(b.workflowId, [...(acc.get(b.workflowId) ?? []), ms]);
+    }
+    const m = new Map<string, number>();
+    for (const [wf, arr] of acc) m.set(wf, arr.reduce((a, x) => a + x, 0) / arr.length);
+    return m;
+  }, [builds]);
+
   const filteredBuilds = useMemo(() => {
     return builds.filter((b) => {
+      if (isRunning(b)) return false; // en curso → card destacada arriba
       if (platFilter !== "all" && platformOfBuild(b) !== platFilter) return false;
       const when = b.startedAt ?? b.createdAt;
       if (!when) return true;
@@ -417,6 +563,24 @@ export function AppBuildsPanel({ appId, perms, project }: {
             />
           ))}
         </div>
+
+        {/* Builds en curso: card destacada con fases, cronómetro y progreso */}
+        {runningBuilds.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {runningBuilds.map((b) => (
+              <ActiveBuildCard
+                key={b._id}
+                b={b}
+                wfName={WORKFLOW_LABELS[b.workflowId] ?? app?.workflows?.[b.workflowId]?.name ?? "Build"}
+                avgMs={avgDurationByWorkflow.get(b.workflowId) ?? null}
+                appId={appId}
+                canCancel={perms.buildApp}
+                busy={busy}
+                onCancel={handleCancel}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Testers con acceso a builds de prueba */}
         {project && (

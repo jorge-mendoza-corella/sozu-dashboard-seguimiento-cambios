@@ -119,3 +119,9 @@
   --alert-color-bright: #93c5fd;
   --alert-color-soft: rgb(59 130 246 / 0.4);
 }
+
+/* Barra indeterminada de builds en curso (Deploy Apps) */
+@keyframes indeterminate {
+  0% { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
