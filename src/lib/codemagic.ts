@@ -167,20 +167,20 @@ export async function cancelBuild(buildId: string): Promise<void> {
 export const buildUrl = (appId: string, buildId: string) =>
   `https://codemagic.io/app/${appId}/build/${buildId}`;
 
-const RUNNING_STATUSES = new Set([
-  "queued", "preparing", "fetching", "building", "testing", "publishing", "finishing",
-]);
-
 export interface BuildStatusInfo {
   label: string;
   isRunning: boolean;
   tone: "running" | "success" | "failed" | "neutral";
 }
 
+// Lógica invertida a propósito: cualquier status NO terminal cuenta como
+// "en curso". Codemagic tiene estados intermedios no documentados (p.ej.
+// "initializing" antes de "queued") y una lista blanca de estados running
+// dejaba ventanas donde el build activo no bloqueaba los botones.
 export function buildStatusInfo(status: string): BuildStatusInfo {
-  if (RUNNING_STATUSES.has(status)) return { label: status, isRunning: true, tone: "running" };
   if (status === "finished" || status === "success") return { label: "exitoso", isRunning: false, tone: "success" };
-  if (status === "failed") return { label: "falló", isRunning: false, tone: "failed" };
-  if (status === "canceled" || status === "cancelled") return { label: "cancelado", isRunning: false, tone: "neutral" };
-  return { label: status, isRunning: false, tone: "neutral" };
+  if (status === "failed" || status === "timeout") return { label: "falló", isRunning: false, tone: "failed" };
+  if (status === "canceled" || status === "cancelled" || status === "skipped")
+    return { label: "cancelado", isRunning: false, tone: "neutral" };
+  return { label: status, isRunning: true, tone: "running" };
 }

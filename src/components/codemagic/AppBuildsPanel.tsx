@@ -89,8 +89,11 @@ function ActiveBuildCard({
   // Progreso estimado contra el promedio de builds exitosos del mismo workflow.
   const pct = avgMs ? Math.min(96, Math.round((elapsedMs / avgMs) * 100)) : null;
 
-  const rawIdx = BUILD_PHASES.findIndex((p) => p.key === b.status);
-  const phaseIdx = rawIdx === -1 ? 3 : rawIdx; // status desconocido → "Construyendo"
+  // "initializing" ocurre antes de "queued"; otros estados intermedios
+  // desconocidos se asumen en plena construcción.
+  const statusKey = b.status === "initializing" ? "queued" : b.status;
+  const rawIdx = BUILD_PHASES.findIndex((p) => p.key === statusKey);
+  const phaseIdx = rawIdx === -1 ? 3 : rawIdx;
   const plat = platformOfBuild(b);
 
   // Tema de la card según plataforma: Android verde-lima, iOS azul-cielo,
