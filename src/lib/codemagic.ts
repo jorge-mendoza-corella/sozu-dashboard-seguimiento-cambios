@@ -82,6 +82,8 @@ export interface CodemagicBuild {
   _id: string;
   appId: string;
   workflowId: string;
+  /** Builds de codemagic.yaml traen el id del yaml aquí y workflowId=null. */
+  fileWorkflowId?: string | null;
   branch: string;
   status: string;
   startedAt?: string;
@@ -123,7 +125,12 @@ export async function getCodemagicApps(): Promise<CodemagicApp[]> {
 /** Builds recientes de una app (más nuevos primero). */
 export async function getRecentBuilds(appId: string, limit = 25): Promise<CodemagicBuild[]> {
   const data = await request<{ builds: CodemagicBuild[] }>(`/builds?appId=${appId}`);
-  return (data.builds ?? []).slice(0, limit);
+  // Normalizar: los builds de codemagic.yaml reportan el id del workflow en
+  // fileWorkflowId (workflowId viene null). Todo el resto del código compara
+  // contra workflowId, así que se unifica aquí.
+  return (data.builds ?? [])
+    .slice(0, limit)
+    .map((b) => ({ ...b, workflowId: b.fileWorkflowId ?? b.workflowId }));
 }
 
 /** Fecha y hora local legible, p.ej. "08 jul, 11:14". */
