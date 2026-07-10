@@ -235,7 +235,7 @@ function PlatformRow({
   deployActive: boolean;
   perms: CicdPermissions;
   busy: string | null;
-  pendingWorkflows: Record<string, number>;
+  pendingWorkflows: Record<string, { id: string; t: number }>;
   onRequestStart: (workflowId: string, key: string, opts?: { askNotes?: boolean; label?: string }) => void;
 }) {
   const forBranch = (wf: string) => builds.filter((b) => b.workflowId === wf && b.branch === branch);
@@ -509,20 +509,19 @@ export function AppBuildsPanel({ appId, perms, project }: {
 
   // Builds recién disparados que Codemagic aún no reporta en GET /builds:
   // mantienen el botón bloqueado y muestran card "Iniciando…" de inmediato.
-  const [pendingWorkflows, setPendingWorkflows] = useState<Record<string, number>>({});
+  // Se rastrea por buildId EXACTO (lo devuelve POST /builds) — nada de
+  // heurísticas por fecha que se limpien antes de tiempo.
+  const [pendingWorkflows, setPendingWorkflows] = useState<Record<string, { id: string; t: number }>>({});
 
-  // Limpiar pendientes cuando el build ya aparece en la API (o tras 2 min).
+  // Limpiar un pendiente solo cuando SU build ya aparece en la API (o tras 3 min).
   useEffect(() => {
     setPendingWorkflows((prev) => {
       const entries = Object.entries(prev);
       if (entries.length === 0) return prev;
-      const next: Record<string, number> = {};
-      for (const [wf, t] of entries) {
-        const visible = builds.some(
-          (b) => b.workflowId === wf &&
-            (isRunning(b) || (b.createdAt && new Date(b.createdAt).getTime() >= t - 60_000)),
-        );
-        if (!visible && Date.now() - t < 120_000) next[wf] = t;
+      const next: Record<string, { id: string; t: number }> = {};
+      for (const [wf, p] of entries) {
+        const visible = builds.some((b) => b._id === p.id);
+        if (!visible && Date.now() - p.t < 180_000) next[wf] = p;
       }
       return Object.keys(next).length === entries.length ? prev : next;
     });
@@ -536,9 +535,12 @@ export function AppBuildsPanel({ appId, perms, project }: {
   }, [pendingWorkflows, qc, appId]);
 
   // Modal de confirmación (reemplaza a window.confirm / window.prompt).
-  const [confirmData, setConfirmData] = useState<{
-    workflowId: string; key: string; label: string; askNotes: boolean;
-  } | null>(null);
+  // mode "start" = iniciar workflow · mode "cancel" = cancelar build en curso.
+  const [confirmData, setConfirmData] = useState<
+    | { mode: "start"; workflowId: string; key: string; label: string; askNotes: boolean }
+    | { mode: "cancel"; buildId: string; label: string }
+    | null
+  >(null);
   const [notes, setNotes] = useState("");
   const [notesError, setNotesError] = useState("");
 
@@ -546,6 +548,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
     setNotes("");
     setNotesError("");
     setConfirmData({
+      mode: "start",
       workflowId,
       key,
       label: opts?.label ?? WORKFLOW_LABELS[workflowId] ?? workflowId,
@@ -553,12 +556,16 @@ export function AppBuildsPanel({ appId, perms, project }: {
     });
   };
 
+  const requestCancel = (buildId: string, label: string) => {
+    setConfirmData({ mode: "cancel", buildId, label });
+  };
+
   const doStart = async (workflowId: string, key: string, envVars?: Record<string, string>) => {
     setBusy(key);
     setError("");
     try {
-      await startBuild(appId, workflowId, effectiveBranch, envVars);
-      setPendingWorkflows((p) => ({ ...p, [workflowId]: Date.now() }));
+      const buildId = await startBuild(appId, workflowId, effectiveBranch, envVars);
+      setPendingWorkflows((p) => ({ ...p, [workflowId]: { id: buildId, t: Date.now() } }));
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al iniciar el build");
@@ -567,8 +574,14 @@ export function AppBuildsPanel({ appId, perms, project }: {
     }
   };
 
-  const confirmStart = () => {
+  const confirmModal = () => {
     if (!confirmData) return;
+    if (confirmData.mode === "cancel") {
+      const { buildId } = confirmData;
+      setConfirmData(null);
+      void doCancel(buildId);
+      return;
+    }
     if (confirmData.askNotes && !notes.trim()) {
       setNotesError("El comentario de la actualización es obligatorio.");
       return;
@@ -578,8 +591,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
     void doStart(workflowId, key, askNotes ? { RELEASE_NOTES: notes.trim() } : undefined);
   };
 
-  const handleCancel = async (buildId: string) => {
-    if (!confirm("¿Cancelar este build?")) return;
+  const doCancel = async (buildId: string) => {
     setBusy(buildId);
     setError("");
     try {
@@ -663,7 +675,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
           <div className="mt-3 space-y-2">
             {/* Recién disparados, aún no visibles en la API de Codemagic */}
             {Object.keys(pendingWorkflows)
-              .filter((wf) => !builds.some((b) => b.workflowId === wf && isRunning(b)))
+              .filter((wf) => !builds.some((b) => b._id === pendingWorkflows[wf].id))
               .map((wf) => (
                 <div
                   key={wf}
@@ -681,18 +693,21 @@ export function AppBuildsPanel({ appId, perms, project }: {
                   </div>
                 </div>
               ))}
-            {runningBuilds.map((b) => (
-              <ActiveBuildCard
-                key={b._id}
-                b={b}
-                wfName={WORKFLOW_LABELS[b.workflowId] ?? app?.workflows?.[b.workflowId]?.name ?? "Build"}
-                avgMs={avgDurationByWorkflow.get(b.workflowId) ?? null}
-                appId={appId}
-                canCancel={perms.buildApp}
-                busy={busy}
-                onCancel={handleCancel}
-              />
-            ))}
+            {runningBuilds.map((b) => {
+              const wfName = WORKFLOW_LABELS[b.workflowId] ?? app?.workflows?.[b.workflowId]?.name ?? "Build";
+              return (
+                <ActiveBuildCard
+                  key={b._id}
+                  b={b}
+                  wfName={wfName}
+                  avgMs={avgDurationByWorkflow.get(b.workflowId) ?? null}
+                  appId={appId}
+                  canCancel={perms.buildApp}
+                  busy={busy}
+                  onCancel={(id) => requestCancel(id, wfName)}
+                />
+              );
+            })}
           </div>
         )}
 
@@ -968,7 +983,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
                     <button
                       type="button"
                       disabled={busy === b._id}
-                      onClick={() => handleCancel(b._id)}
+                      onClick={() => requestCancel(b._id, wfName || "build")}
                       className="flex items-center gap-1 text-destructive hover:opacity-80 disabled:opacity-50"
                       title="Cancelar build"
                     >
@@ -1002,60 +1017,89 @@ export function AppBuildsPanel({ appId, perms, project }: {
               className="w-full max-w-md rounded-xl border bg-background p-5 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="flex items-center gap-2 text-base font-bold">
-                {confirmData.askNotes ? (
-                  <Rocket className="h-5 w-5 text-emerald-600" />
-                ) : (
-                  <Play className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                )}
-                {confirmData.label}
-              </h3>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Se ejecutará en la rama{" "}
-                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
-                  {effectiveBranch}
-                </code>{" "}
-                de <span className="font-medium text-foreground">{app?.appName ?? "la app"}</span>.
-              </p>
-              {confirmData.askNotes && (
-                <div className="mt-3">
-                  <label className="text-xs font-medium">
-                    ¿Qué se actualiza en esta versión? <span className="text-destructive">*</span>
-                  </label>
-                  <textarea
-                    autoFocus
-                    rows={3}
-                    className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
-                    placeholder="Ej. Corrección del mapa de cómo llegar y mejoras de rendimiento"
-                    value={notes}
-                    onChange={(e) => {
-                      setNotes(e.target.value);
-                      if (notesError) setNotesError("");
-                    }}
-                  />
-                  {notesError && <p className="mt-1 text-xs text-destructive">{notesError}</p>}
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    Este comentario se envía a la store como notas de la versión.
+              {confirmData.mode === "cancel" ? (
+                <>
+                  <h3 className="flex items-center gap-2 text-base font-bold">
+                    <XCircle className="h-5 w-5 text-destructive" />
+                    Cancelar build
+                  </h3>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Se detendrá el build en curso de{" "}
+                    <span className="font-medium text-foreground">{confirmData.label}</span>.
+                    El progreso se perderá y quedará marcado como cancelado.
                   </p>
-                </div>
-              )}
-              <div className="mt-4 flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => setConfirmData(null)}>
-                  Cancelar
-                </Button>
-                <Button
-                  size="sm"
-                  className={confirmData.askNotes ? "bg-emerald-600 hover:bg-emerald-700 text-white" : undefined}
-                  onClick={confirmStart}
-                >
-                  {confirmData.askNotes ? (
-                    <Rocket className="h-4 w-4 mr-1.5" />
-                  ) : (
-                    <Play className="h-4 w-4 mr-1.5" />
+                  <div className="mt-4 flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setConfirmData(null)}>
+                      Volver
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-red-600 hover:bg-red-700 text-white"
+                      onClick={confirmModal}
+                    >
+                      <XCircle className="h-4 w-4 mr-1.5" />
+                      Cancelar build
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="flex items-center gap-2 text-base font-bold">
+                    {confirmData.askNotes ? (
+                      <Rocket className="h-5 w-5 text-emerald-600" />
+                    ) : (
+                      <Play className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    )}
+                    {confirmData.label}
+                  </h3>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Se ejecutará en la rama{" "}
+                    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
+                      {effectiveBranch}
+                    </code>{" "}
+                    de <span className="font-medium text-foreground">{app?.appName ?? "la app"}</span>.
+                  </p>
+                  {confirmData.askNotes && (
+                    <div className="mt-3">
+                      <label className="text-xs font-medium">
+                        ¿Qué se actualiza en esta versión? <span className="text-destructive">*</span>
+                      </label>
+                      <textarea
+                        autoFocus
+                        rows={3}
+                        className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                        placeholder="Ej. Corrección del mapa de cómo llegar y mejoras de rendimiento"
+                        value={notes}
+                        onChange={(e) => {
+                          setNotes(e.target.value);
+                          if (notesError) setNotesError("");
+                        }}
+                      />
+                      {notesError && <p className="mt-1 text-xs text-destructive">{notesError}</p>}
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Este comentario se envía a la store como notas de la versión.
+                      </p>
+                    </div>
                   )}
-                  Iniciar
-                </Button>
-              </div>
+                  <div className="mt-4 flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setConfirmData(null)}>
+                      Cancelar
+                    </Button>
+                    <Button
+                      size="sm"
+                      className={confirmData.askNotes ? "bg-emerald-600 hover:bg-emerald-700 text-white" : undefined}
+                      onClick={confirmModal}
+                    >
+                      {confirmData.askNotes ? (
+                        <Rocket className="h-4 w-4 mr-1.5" />
+                      ) : (
+                        <Play className="h-4 w-4 mr-1.5" />
+                      )}
+                      Iniciar
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
