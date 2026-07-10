@@ -93,22 +93,57 @@ function ActiveBuildCard({
   const phaseIdx = rawIdx === -1 ? 3 : rawIdx; // status desconocido → "Construyendo"
   const plat = platformOfBuild(b);
 
+  // Tema de la card según plataforma: Android verde-lima, iOS azul-cielo,
+  // Web violeta, desconocida azul.
+  const theme = {
+    android: {
+      card: "border-lime-400/70 from-lime-50/80 dark:border-lime-700/50 dark:from-lime-950/30",
+      dot: "bg-lime-500", ping: "bg-lime-400", timer: "text-lime-700 dark:text-lime-300",
+      bar: "from-lime-500 to-lime-400", track: "bg-lime-100 dark:bg-lime-950/60",
+      step: "border-lime-500 bg-lime-500", stepText: "text-lime-700 dark:text-lime-300",
+    },
+    ios: {
+      card: "border-sky-400/70 from-sky-50/80 dark:border-sky-700/50 dark:from-sky-950/30",
+      dot: "bg-sky-500", ping: "bg-sky-400", timer: "text-sky-700 dark:text-sky-300",
+      bar: "from-sky-500 to-sky-400", track: "bg-sky-100 dark:bg-sky-950/60",
+      step: "border-sky-500 bg-sky-500", stepText: "text-sky-700 dark:text-sky-300",
+    },
+    web: {
+      card: "border-violet-400/70 from-violet-50/80 dark:border-violet-700/50 dark:from-violet-950/30",
+      dot: "bg-violet-500", ping: "bg-violet-400", timer: "text-violet-700 dark:text-violet-300",
+      bar: "from-violet-500 to-violet-400", track: "bg-violet-100 dark:bg-violet-950/60",
+      step: "border-violet-500 bg-violet-500", stepText: "text-violet-700 dark:text-violet-300",
+    },
+    otro: {
+      card: "border-blue-300/70 from-blue-50/80 dark:border-blue-800/50 dark:from-blue-950/30",
+      dot: "bg-blue-500", ping: "bg-blue-400", timer: "text-blue-700 dark:text-blue-300",
+      bar: "from-blue-500 to-blue-400", track: "bg-blue-100 dark:bg-blue-950/60",
+      step: "border-blue-500 bg-blue-500", stepText: "text-blue-700 dark:text-blue-300",
+    },
+  }[plat];
+
   return (
-    <div className="relative overflow-hidden rounded-lg border border-blue-300/70 bg-gradient-to-br from-blue-50/80 via-background to-background p-3.5 dark:border-blue-800/50 dark:from-blue-950/30">
+    <div className={cn(
+      "relative overflow-hidden rounded-lg border bg-gradient-to-br via-background to-background p-3.5",
+      theme.card,
+    )}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="relative flex h-2.5 w-2.5">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
-          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-blue-500" />
+          <span className={cn("absolute inline-flex h-full w-full animate-ping rounded-full opacity-75", theme.ping)} />
+          <span className={cn("relative inline-flex h-2.5 w-2.5 rounded-full", theme.dot)} />
         </span>
+        {plat !== "otro" && (
+          <span className={cn("flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-bold uppercase tracking-wide", PLAT_META[plat].cls)}>
+            <Smartphone className="h-3.5 w-3.5" />
+            {PLAT_META[plat].label}
+          </span>
+        )}
         <span className="text-sm font-semibold">{wfName}</span>
-        <span className={cn("rounded border px-1.5 py-0.5 text-[10px] font-semibold", PLAT_META[plat].cls)}>
-          {PLAT_META[plat].label}
-        </span>
         <span className="flex items-center gap-1 text-xs text-muted-foreground">
           <GitBranch className="h-3 w-3" />{b.branch}
         </span>
         <span className="flex-1" />
-        <span className="font-mono text-sm font-semibold tabular-nums text-blue-700 dark:text-blue-300">
+        <span className={cn("font-mono text-sm font-semibold tabular-nums", theme.timer)}>
           {mm}:{ss}
         </span>
         {avgMs && (
@@ -146,7 +181,7 @@ function ActiveBuildCard({
               className={cn(
                 "flex h-5 w-5 items-center justify-center rounded-full border text-[9px] font-bold transition-colors",
                 i < phaseIdx && "border-emerald-400 bg-emerald-100 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
-                i === phaseIdx && "animate-pulse border-blue-500 bg-blue-500 text-white",
+                i === phaseIdx && cn("animate-pulse text-white", theme.step),
                 i > phaseIdx && "border-border bg-muted text-muted-foreground",
               )}
             >
@@ -155,7 +190,7 @@ function ActiveBuildCard({
             <span
               className={cn(
                 "text-center text-[9px] leading-tight",
-                i === phaseIdx ? "font-semibold text-blue-700 dark:text-blue-300" : "text-muted-foreground",
+                i === phaseIdx ? cn("font-semibold", theme.stepText) : "text-muted-foreground",
               )}
             >
               {p.label}
@@ -165,14 +200,14 @@ function ActiveBuildCard({
       </div>
 
       {/* Barra de progreso: estimada si hay historial, indeterminada si no */}
-      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-950/60">
+      <div className={cn("mt-2.5 h-1.5 overflow-hidden rounded-full", theme.track)}>
         {pct !== null ? (
           <div
-            className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-400 transition-[width] duration-1000"
+            className={cn("h-full rounded-full bg-gradient-to-r transition-[width] duration-1000", theme.bar)}
             style={{ width: `${pct}%` }}
           />
         ) : (
-          <div className="h-full w-1/3 animate-[indeterminate_1.4s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-blue-500 to-blue-400" />
+          <div className={cn("h-full w-1/3 animate-[indeterminate_1.4s_ease-in-out_infinite] rounded-full bg-gradient-to-r", theme.bar)} />
         )}
       </div>
       {pct !== null && (
@@ -276,8 +311,12 @@ function PlatformRow({
             disabled={!!buildDisabledReason || busy === buildKey}
             onClick={() => onStart(platform.buildWorkflowId, buildKey)}
           >
-            {busy === buildKey ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Play className="h-3.5 w-3.5 mr-1.5" />}
-            Construir
+            {buildInProgress || busy === buildKey ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+            ) : (
+              <Play className="h-3.5 w-3.5 mr-1.5" />
+            )}
+            {buildInProgress ? "Construyendo…" : "Construir"}
           </Button>
           {!publishedCurrent ? (
             <Button
@@ -286,8 +325,12 @@ function PlatformRow({
               disabled={!!publishDisabledReason || busy === publishKey}
               onClick={() => onStart(platform.publishWorkflowId, publishKey)}
             >
-              {busy === publishKey ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
-              {platform.storeLabel}
+              {publishInProgress || busy === publishKey ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+              ) : (
+                <Upload className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              {publishInProgress ? "Publicando…" : platform.storeLabel}
             </Button>
           ) : (
             // Ya pasó por la store de pruebas: paso final hacia la store pública.
@@ -298,8 +341,12 @@ function PlatformRow({
               disabled={!!promoteDisabledReason || busy === promoteKey}
               onClick={handlePromote}
             >
-              {busy === promoteKey ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Rocket className="h-3.5 w-3.5 mr-1.5" />}
-              {platform.promoteLabel}
+              {promoteInProgress || busy === promoteKey ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+              ) : (
+                <Rocket className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              {promoteInProgress ? "Enviando…" : platform.promoteLabel}
             </Button>
           )}
         </>
