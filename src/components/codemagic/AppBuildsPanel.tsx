@@ -226,7 +226,7 @@ const PLAT_META: Record<Plat, { label: string; cls: string }> = {
 
 /** Fila de una plataforma: construir artefacto y, si ya existe, enviarlo a la store. */
 function PlatformRow({
-  platform, branch, builds, headSha, deployActive, perms, busy, onStart,
+  platform, branch, builds, headSha, deployActive, perms, busy, pendingWorkflows, onRequestStart,
 }: {
   platform: PlatformDef;
   branch: string;
@@ -235,31 +235,34 @@ function PlatformRow({
   deployActive: boolean;
   perms: CicdPermissions;
   busy: string | null;
-  onStart: (workflowId: string, label: string, envVars?: Record<string, string>) => void;
+  pendingWorkflows: Record<string, number>;
+  onRequestStart: (workflowId: string, key: string, opts?: { askNotes?: boolean; label?: string }) => void;
 }) {
   const forBranch = (wf: string) => builds.filter((b) => b.workflowId === wf && b.branch === branch);
   const buildRuns = forBranch(platform.buildWorkflowId);
   const publishRuns = forBranch(platform.publishWorkflowId);
   const promoteRuns = forBranch(platform.promoteWorkflowId);
+  // "pendiente" = build recién disparado que Codemagic aún no reporta en la API.
+  const isPending = (wf: string) => pendingWorkflows[wf] !== undefined;
 
   const sameShaBuilt = !!headSha && buildRuns.some(
     (b) => buildCommitSha(b) === headSha && (isSuccess(b) || isRunning(b)),
   );
-  const buildInProgress = buildRuns.some(isRunning);
+  const buildInProgress = buildRuns.some(isRunning) || isPending(platform.buildWorkflowId);
   const lastGoodBuild = buildRuns.find(isSuccess);
   const canPublish = !!lastGoodBuild && (!headSha || buildCommitSha(lastGoodBuild) === headSha);
   const publishedCurrent = publishRuns.some(
     (b) => isSuccess(b) && (!headSha || buildCommitSha(b) === headSha),
   );
-  const publishInProgress = publishRuns.some(isRunning);
+  const publishInProgress = publishRuns.some(isRunning) || isPending(platform.publishWorkflowId);
   const promotedCurrent = promoteRuns.some(
     (b) => (isSuccess(b) || isRunning(b)) && (!headSha || buildCommitSha(b) === headSha),
   );
-  const promoteInProgress = promoteRuns.some(isRunning);
+  const promoteInProgress = promoteRuns.some(isRunning) || isPending(platform.promoteWorkflowId);
 
   const buildDisabledReason =
-    deployActive ? "Espera: hay un deploy web en curso" :
     buildInProgress ? "Ya hay un build en curso" :
+    deployActive ? "Espera: hay un deploy web en curso" :
     sameShaBuilt ? "Este código ya fue construido" : null;
 
   const publishDisabledReason =
@@ -273,19 +276,6 @@ function PlatformRow({
   const buildKey = `${platform.key}-build`;
   const publishKey = `${platform.key}-publish`;
   const promoteKey = `${platform.key}-promote`;
-
-  // Paso final: pedir comentario OBLIGATORIO de lo que se actualiza.
-  const handlePromote = () => {
-    const notes = window.prompt(
-      `¿Qué se actualiza en esta versión?\n\nComentario obligatorio para enviar a ${platform.promoteLabel}:`,
-    );
-    if (notes === null) return; // canceló
-    if (!notes.trim()) {
-      alert("El comentario de la actualización es obligatorio.");
-      return;
-    }
-    onStart(platform.promoteWorkflowId, promoteKey, { RELEASE_NOTES: notes.trim() });
-  };
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2.5">
@@ -309,7 +299,7 @@ function PlatformRow({
             variant="outline"
             title={buildDisabledReason ?? `Construir artefacto ${platform.label} (${branch})`}
             disabled={!!buildDisabledReason || busy === buildKey}
-            onClick={() => onStart(platform.buildWorkflowId, buildKey)}
+            onClick={() => onRequestStart(platform.buildWorkflowId, buildKey, { label: `Construir ${platform.label}` })}
           >
             {buildInProgress || busy === buildKey ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
@@ -323,7 +313,7 @@ function PlatformRow({
               size="sm"
               title={publishDisabledReason ?? `Construir y enviar a ${platform.storeLabel}`}
               disabled={!!publishDisabledReason || busy === publishKey}
-              onClick={() => onStart(platform.publishWorkflowId, publishKey)}
+              onClick={() => onRequestStart(platform.publishWorkflowId, publishKey, { label: `Enviar a ${platform.storeLabel}` })}
             >
               {publishInProgress || busy === publishKey ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
@@ -339,7 +329,7 @@ function PlatformRow({
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
               title={promoteDisabledReason ?? `Enviar a ${platform.promoteLabel} (pide comentario de la versión)`}
               disabled={!!promoteDisabledReason || busy === promoteKey}
-              onClick={handlePromote}
+              onClick={() => onRequestStart(platform.promoteWorkflowId, promoteKey, { askNotes: true, label: `Enviar a ${platform.promoteLabel}` })}
             >
               {promoteInProgress || busy === promoteKey ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
@@ -517,19 +507,75 @@ export function AppBuildsPanel({ appId, perms, project }: {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["codemagic-builds", appId] });
 
-  const handleStart = async (workflowId: string, key: string, envVars?: Record<string, string>) => {
-    const label = WORKFLOW_LABELS[workflowId] ?? workflowId;
-    if (!confirm(`¿Iniciar "${label}" en la rama ${effectiveBranch}?`)) return;
+  // Builds recién disparados que Codemagic aún no reporta en GET /builds:
+  // mantienen el botón bloqueado y muestran card "Iniciando…" de inmediato.
+  const [pendingWorkflows, setPendingWorkflows] = useState<Record<string, number>>({});
+
+  // Limpiar pendientes cuando el build ya aparece en la API (o tras 2 min).
+  useEffect(() => {
+    setPendingWorkflows((prev) => {
+      const entries = Object.entries(prev);
+      if (entries.length === 0) return prev;
+      const next: Record<string, number> = {};
+      for (const [wf, t] of entries) {
+        const visible = builds.some(
+          (b) => b.workflowId === wf &&
+            (isRunning(b) || (b.createdAt && new Date(b.createdAt).getTime() >= t - 60_000)),
+        );
+        if (!visible && Date.now() - t < 120_000) next[wf] = t;
+      }
+      return Object.keys(next).length === entries.length ? prev : next;
+    });
+  }, [builds]);
+
+  // Mientras haya pendientes, refrescar seguido para que la card real aparezca pronto.
+  useEffect(() => {
+    if (Object.keys(pendingWorkflows).length === 0) return;
+    const t = setInterval(() => qc.invalidateQueries({ queryKey: ["codemagic-builds", appId] }), 6000);
+    return () => clearInterval(t);
+  }, [pendingWorkflows, qc, appId]);
+
+  // Modal de confirmación (reemplaza a window.confirm / window.prompt).
+  const [confirmData, setConfirmData] = useState<{
+    workflowId: string; key: string; label: string; askNotes: boolean;
+  } | null>(null);
+  const [notes, setNotes] = useState("");
+  const [notesError, setNotesError] = useState("");
+
+  const requestStart = (workflowId: string, key: string, opts?: { askNotes?: boolean; label?: string }) => {
+    setNotes("");
+    setNotesError("");
+    setConfirmData({
+      workflowId,
+      key,
+      label: opts?.label ?? WORKFLOW_LABELS[workflowId] ?? workflowId,
+      askNotes: !!opts?.askNotes,
+    });
+  };
+
+  const doStart = async (workflowId: string, key: string, envVars?: Record<string, string>) => {
     setBusy(key);
     setError("");
     try {
       await startBuild(appId, workflowId, effectiveBranch, envVars);
+      setPendingWorkflows((p) => ({ ...p, [workflowId]: Date.now() }));
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al iniciar el build");
     } finally {
       setBusy(null);
     }
+  };
+
+  const confirmStart = () => {
+    if (!confirmData) return;
+    if (confirmData.askNotes && !notes.trim()) {
+      setNotesError("El comentario de la actualización es obligatorio.");
+      return;
+    }
+    const { workflowId, key, askNotes } = confirmData;
+    setConfirmData(null);
+    void doStart(workflowId, key, askNotes ? { RELEASE_NOTES: notes.trim() } : undefined);
   };
 
   const handleCancel = async (buildId: string) => {
@@ -606,14 +652,35 @@ export function AppBuildsPanel({ appId, perms, project }: {
               deployActive={deployActive}
               perms={perms}
               busy={busy}
-              onStart={handleStart}
+              pendingWorkflows={pendingWorkflows}
+              onRequestStart={requestStart}
             />
           ))}
         </div>
 
         {/* Builds en curso: card destacada con fases, cronómetro y progreso */}
-        {runningBuilds.length > 0 && (
+        {(runningBuilds.length > 0 || Object.keys(pendingWorkflows).length > 0) && (
           <div className="mt-3 space-y-2">
+            {/* Recién disparados, aún no visibles en la API de Codemagic */}
+            {Object.keys(pendingWorkflows)
+              .filter((wf) => !builds.some((b) => b.workflowId === wf && isRunning(b)))
+              .map((wf) => (
+                <div
+                  key={wf}
+                  className="rounded-lg border border-blue-300/70 bg-gradient-to-br from-blue-50/80 via-background to-background p-3.5 dark:border-blue-800/50 dark:from-blue-950/30"
+                >
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                    <span className="text-sm font-semibold">
+                      Iniciando {WORKFLOW_LABELS[wf] ?? wf}…
+                    </span>
+                    <span className="text-xs text-muted-foreground">esperando a Codemagic</span>
+                  </div>
+                  <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-blue-100 dark:bg-blue-950/60">
+                    <div className="h-full w-1/3 animate-[indeterminate_1.4s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-blue-500 to-blue-400" />
+                  </div>
+                </div>
+              ))}
             {runningBuilds.map((b) => (
               <ActiveBuildCard
                 key={b._id}
@@ -924,6 +991,74 @@ export function AppBuildsPanel({ appId, perms, project }: {
         )}
 
         {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+
+        {/* Modal de confirmación de build/publicación */}
+        {confirmData && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"
+            onClick={() => setConfirmData(null)}
+          >
+            <div
+              className="w-full max-w-md rounded-xl border bg-background p-5 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="flex items-center gap-2 text-base font-bold">
+                {confirmData.askNotes ? (
+                  <Rocket className="h-5 w-5 text-emerald-600" />
+                ) : (
+                  <Play className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                )}
+                {confirmData.label}
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Se ejecutará en la rama{" "}
+                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
+                  {effectiveBranch}
+                </code>{" "}
+                de <span className="font-medium text-foreground">{app?.appName ?? "la app"}</span>.
+              </p>
+              {confirmData.askNotes && (
+                <div className="mt-3">
+                  <label className="text-xs font-medium">
+                    ¿Qué se actualiza en esta versión? <span className="text-destructive">*</span>
+                  </label>
+                  <textarea
+                    autoFocus
+                    rows={3}
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    placeholder="Ej. Corrección del mapa de cómo llegar y mejoras de rendimiento"
+                    value={notes}
+                    onChange={(e) => {
+                      setNotes(e.target.value);
+                      if (notesError) setNotesError("");
+                    }}
+                  />
+                  {notesError && <p className="mt-1 text-xs text-destructive">{notesError}</p>}
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Este comentario se envía a la store como notas de la versión.
+                  </p>
+                </div>
+              )}
+              <div className="mt-4 flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setConfirmData(null)}>
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  className={confirmData.askNotes ? "bg-emerald-600 hover:bg-emerald-700 text-white" : undefined}
+                  onClick={confirmStart}
+                >
+                  {confirmData.askNotes ? (
+                    <Rocket className="h-4 w-4 mr-1.5" />
+                  ) : (
+                    <Play className="h-4 w-4 mr-1.5" />
+                  )}
+                  Iniciar
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
