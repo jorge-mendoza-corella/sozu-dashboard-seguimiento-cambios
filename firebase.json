@@ -20,11 +20,11 @@
     "rewrites": [{ "source": "**", "destination": "/index.html" }],
     "headers": [
       {
-        "source": "/index.html",
+        "source": "**",
         "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }]
       },
       {
-        "source": "/**/*.@(js|css|woff|woff2)",
+        "source": "/**/*.@(js|css|woff|woff2|png|svg|jpg|jpeg|webp|ico)",
         "headers": [{ "key": "Cache-Control", "value": "max-age=31536000, immutable" }]
       }
     ]

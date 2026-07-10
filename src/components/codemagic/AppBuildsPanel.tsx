@@ -563,11 +563,19 @@ export function AppBuildsPanel({ appId, perms, project }: {
   const doStart = async (workflowId: string, key: string, envVars?: Record<string, string>) => {
     setBusy(key);
     setError("");
+    // Bloqueo optimista INMEDIATO (id temporal); se sustituye por el buildId
+    // real cuando la API responde, o se revierte si el POST falla.
+    setPendingWorkflows((p) => ({ ...p, [workflowId]: { id: `pending-${Date.now()}`, t: Date.now() } }));
     try {
       const buildId = await startBuild(appId, workflowId, effectiveBranch, envVars);
       setPendingWorkflows((p) => ({ ...p, [workflowId]: { id: buildId, t: Date.now() } }));
       await refresh();
     } catch (e) {
+      setPendingWorkflows((p) => {
+        const next = { ...p };
+        delete next[workflowId];
+        return next;
+      });
       setError(e instanceof Error ? e.message : "Error al iniciar el build");
     } finally {
       setBusy(null);
