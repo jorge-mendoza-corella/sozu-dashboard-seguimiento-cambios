@@ -651,6 +651,9 @@ export function AppBuildsPanel({ appId, perms, project }: {
           >
             Codemagic <ExternalLink className="h-3 w-3" />
           </a>
+          <span className="text-[9px] text-muted-foreground/50" title="Versión del bundle en tu navegador">
+            v{__APP_BUILD__}
+          </span>
         </div>
 
         {anyError && (
