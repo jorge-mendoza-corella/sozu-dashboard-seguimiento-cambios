@@ -35,16 +35,43 @@ export async function validateGithubToken(token: string): Promise<TokenValidatio
   }
 }
 
-/** ¿El token tiene acceso (push) al repo? Para validar aprobadores por proyecto. */
-export async function checkRepoAccess(token: string, owner: string, repo: string): Promise<boolean> {
+export interface RepoAccessCheck {
+  ok: boolean;
+  /** Explicación accionable cuando ok=false. */
+  reason?: string;
+}
+
+/**
+ * ¿El token tiene acceso (push) al repo? Para validar aprobadores por proyecto.
+ * OJO: en repos privados GitHub responde 404 (no 403) cuando la cuenta no es
+ * colaboradora — se traduce a un mensaje accionable.
+ */
+export async function checkRepoAccess(token: string, owner: string, repo: string): Promise<RepoAccessCheck> {
   try {
     const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
     });
-    if (!res.ok) return false;
+    if (res.status === 404) {
+      return {
+        ok: false,
+        reason: "su cuenta NO es colaboradora del repo — invítala en GitHub: repo → Settings → Collaborators → Add people, con rol Write",
+      };
+    }
+    if (res.status === 401) {
+      return { ok: false, reason: "su API key es inválida o expiró — pídele actualizarla" };
+    }
+    if (!res.ok) {
+      return { ok: false, reason: `GitHub respondió ${res.status}` };
+    }
     const data = await res.json();
-    return !!data.permissions?.push;
+    if (!data.permissions?.push) {
+      return {
+        ok: false,
+        reason: "tiene acceso de SOLO LECTURA — súbele el rol a Write en GitHub: repo → Settings → Collaborators",
+      };
+    }
+    return { ok: true };
   } catch {
-    return false;
+    return { ok: false, reason: "no se pudo contactar a GitHub" };
   }
 }

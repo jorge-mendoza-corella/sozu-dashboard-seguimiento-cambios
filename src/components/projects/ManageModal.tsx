@@ -54,15 +54,14 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
       throw new Error("Ese usuario no tiene API key de GitHub registrada.");
     }
     const projRepos = repos.filter((r) => r.projectId === projectId);
-    const sinAcceso: string[] = [];
+    const problemas: string[] = [];
     for (const r of projRepos) {
-      if (!(await checkRepoAccess(user.githubToken, r.owner, r.repo))) {
-        sinAcceso.push(`${r.owner}/${r.repo}`);
-      }
+      const check = await checkRepoAccess(user.githubToken, r.owner, r.repo);
+      if (!check.ok) problemas.push(`${r.owner}/${r.repo}: ${check.reason}`);
     }
-    if (sinAcceso.length > 0) {
+    if (problemas.length > 0) {
       throw new Error(
-        `@${user.githubLogin} no tiene acceso (push) en GitHub a: ${sinAcceso.join(", ")}. Dale acceso y reintenta.`,
+        `No se puede asignar a @${user.githubLogin} como aprobador. ` + problemas.join(" · "),
       );
     }
     await setProjectApprover(projectId, email);
