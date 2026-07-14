@@ -6,12 +6,15 @@ import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
 import { cn } from "@/lib/utils";
 import {
-  addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel, setProjectIsApp, setProjectCodemagicApp,
+  addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel, setProjectIsApp, setProjectCodemagicApp, setProjectApprover,
 } from "@/lib/firestoreProjects";
 import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
 import { useCodemagicApps } from "@/hooks/useCodemagic";
 import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useAuth } from "@/hooks/useAuth";
+import { useQuery } from "@tanstack/react-query";
+import { getAllUsers, SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { checkRepoAccess } from "@/lib/githubAuth";
 
 export function ManageModal({ onClose }: { onClose: () => void }) {
   const { appUser } = useAuth();
@@ -19,6 +22,13 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
   const { data: projects = [] } = useProjects();
   const { data: repos = [] } = useRepos();
   const { data: cmApps = [] } = useCodemagicApps();
+  // Candidatos a aprobador: usuarios con API key de GitHub registrada.
+  const { data: allUsers = [] } = useQuery({
+    queryKey: ["users-all"],
+    queryFn: getAllUsers,
+    staleTime: 60 * 1000,
+  });
+  const approverCandidates = allUsers.filter((u) => !!u.githubToken && !!u.githubLogin);
 
   const [newProject, setNewProject] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -32,6 +42,31 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
       qc.invalidateQueries({ queryKey: ["repos"] }),
       qc.invalidateQueries({ queryKey: ["github-status"] }),
     ]);
+
+  /** Asigna el aprobador validando que su cuenta de GitHub tenga acceso push a los repos del proyecto. */
+  const setApproverValidated = async (projectId: string, email: string) => {
+    if (!email) {
+      await setProjectApprover(projectId, null);
+      return;
+    }
+    const user = allUsers.find((u) => u.email === email);
+    if (!user?.githubToken || !user.githubLogin) {
+      throw new Error("Ese usuario no tiene API key de GitHub registrada.");
+    }
+    const projRepos = repos.filter((r) => r.projectId === projectId);
+    const sinAcceso: string[] = [];
+    for (const r of projRepos) {
+      if (!(await checkRepoAccess(user.githubToken, r.owner, r.repo))) {
+        sinAcceso.push(`${r.owner}/${r.repo}`);
+      }
+    }
+    if (sinAcceso.length > 0) {
+      throw new Error(
+        `@${user.githubLogin} no tiene acceso (push) en GitHub a: ${sinAcceso.join(", ")}. Dale acceso y reintenta.`,
+      );
+    }
+    await setProjectApprover(projectId, email);
+  };
 
   const run = async (key: string, fn: () => Promise<unknown>, after: () => Promise<unknown> | void) => {
     setBusy(key);
@@ -137,6 +172,31 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                     {busy === `del-${p.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                   </Button>
                 </div>
+                {/* Aprobador default de PRs del proyecto (usa SU token de GitHub) */}
+                <div className="mt-2 flex flex-wrap items-center gap-2 pl-5">
+                  <span className="text-[11px] text-muted-foreground">Aprobador PRs:</span>
+                  <SelectNative
+                    className="h-7 w-64 text-xs"
+                    value={p.approverEmail ?? ""}
+                    disabled={busy === `ap-${p.id}`}
+                    onChange={(e) =>
+                      run(`ap-${p.id}`, () => setApproverValidated(p.id, e.target.value), refreshProjects)
+                    }
+                  >
+                    <option value="">— sin aprobador (tokens default) —</option>
+                    {approverCandidates.map((u) => (
+                      <option key={u.email} value={u.email}>
+                        {u.email} (@{u.githubLogin}){u.email === SUPERUSER_EMAIL ? " · root" : ""}
+                      </option>
+                    ))}
+                  </SelectNative>
+                  {busy === `ap-${p.id}` && (
+                    <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> validando accesos en GitHub…
+                    </span>
+                  )}
+                </div>
+
                 {/* Vincular app de Codemagic (solo proyectos APP) */}
                 {isApp && isCodemagicConfigured && (
                   <div className="mt-2 flex items-center gap-2 pl-5">

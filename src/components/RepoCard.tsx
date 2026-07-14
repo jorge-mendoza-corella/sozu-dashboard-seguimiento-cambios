@@ -12,7 +12,7 @@ import { BranchRow } from "./BranchRow";
 import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
-import { createPR, hasFailingDeploy } from "@/lib/github";
+import { createPR, hasFailingDeploy, type ApproverAuth } from "@/lib/github";
 import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
 
 const AUTHOR_OVERRIDE_REPOS = new Set([
@@ -53,9 +53,11 @@ interface Props {
   readOnly?: boolean;
   /** Permisos granulares de acciones (crear PR, aprobar, merge dev/main). */
   perms?: CicdPermissions;
+  /** Aprobador configurado del proyecto (token+login de GitHub). */
+  approver?: ApproverAuth | null;
 }
 
-export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS }: Props) {
+export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null }: Props) {
   const [newPR, setNewPR] = useState<{ head: string; title: string; base: string; body: string; authorOverride?: string; authorStep?: boolean } | null>(null);
   const [newPRLoading, setNewPRLoading] = useState(false);
   const [newPRResult, setNewPRResult] = useState<{ ok: boolean; msg: string; url?: string } | null>(null);
@@ -96,7 +98,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           ? `${body}\n\n> 👤 Cambios de: @${newPR.authorOverride} (${label})\n<!-- pr_author: ${newPR.authorOverride} -->`
           : `> 👤 Cambios de: @${newPR.authorOverride} (${label})\n<!-- pr_author: ${newPR.authorOverride} -->`;
       }
-      const { number, url } = await createPR(status.owner, status.repo, newPR.title.trim(), newPR.head, newPR.base, body);
+      const { number, url } = await createPR(status.owner, status.repo, newPR.title.trim(), newPR.head, newPR.base, body, approver?.login);
       setNewPRResult({ ok: true, msg: `PR #${number} creado`, url });
       setOptimisticPRHeads((prev) => new Set([...prev, newPR.head]));
       setTimeout(() => { closeCreatePR(); onRefetch?.(); }, 2500);
@@ -457,7 +459,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             <GitPullRequest className="h-3.5 w-3.5" /> PRs abiertos ({status.openPRs.length})
           </h4>
-          <PRList prs={status.openPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} perms={perms} />
+          <PRList prs={status.openPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} perms={perms} approver={approver} />
         </div>
 
         {/* Últimos deploys */}

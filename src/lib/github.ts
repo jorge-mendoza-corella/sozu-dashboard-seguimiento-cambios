@@ -6,6 +6,32 @@ const reviewerOctokit = import.meta.env.VITE_GITHUB_REVIEWER_TOKEN
   ? new Octokit({ auth: import.meta.env.VITE_GITHUB_REVIEWER_TOKEN })
   : null;
 
+// ---------------------------------------------------------------------------
+// Token de sesión: cada usuario del dashboard opera con SU PAT (guardado en
+// Firestore users/{email}.githubToken). Las ACCIONES (crear PR, merge, cerrar)
+// salen a nombre de su cuenta real de GitHub. Las lecturas siguen usando el
+// token de env (compartido) para no fragmentar el rate limit por usuario.
+// Fallback: sin token de sesión (root/legacy) se usa el token de env.
+// ---------------------------------------------------------------------------
+let sessionOctokit: Octokit | null = null;
+let sessionLogin: string | null = null;
+
+export function setSessionGithubAuth(token: string | null, login: string | null) {
+  sessionOctokit = token ? new Octokit({ auth: token }) : null;
+  sessionLogin = login;
+}
+
+export const getSessionLogin = () => sessionLogin;
+
+/** Octokit con el que se ejecutan las acciones del usuario actual. */
+const actor = () => sessionOctokit ?? octokit;
+
+/** Credenciales del aprobador configurado para un proyecto. */
+export interface ApproverAuth {
+  token: string;
+  login: string;
+}
+
 /** Repos por defecto — usados solo para sembrar el proyecto inicial "SOZU". */
 export const REPOS = [
   { owner: "jorgeIMendoza", repo: "sozu-admin", label: "sozu-admin" },
@@ -299,9 +325,9 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
   }
 }
 
-/** Cierra un PR sin hacer merge. */
+/** Cierra un PR sin hacer merge (como el usuario de la sesión). */
 export async function closePR(owner: string, repo: string, pullNumber: number): Promise<void> {
-  await octokit.pulls.update({ owner, repo, pull_number: pullNumber, state: "closed" });
+  await actor().pulls.update({ owner, repo, pull_number: pullNumber, state: "closed" });
 }
 
 export async function mergePR(
@@ -310,7 +336,7 @@ export async function mergePR(
   pullNumber: number,
   mergeMethod: "merge" | "squash" | "rebase" = "merge",
 ): Promise<void> {
-  await octokit.pulls.merge({
+  await actor().pulls.merge({
     owner,
     repo,
     pull_number: pullNumber,
@@ -319,26 +345,33 @@ export async function mergePR(
 }
 
 // Para ramas no-producción: aprueba y hace merge (bypass de branch protection).
-// prAuthor determina qué token aprueba: siempre el token distinto al autor del PR.
+// La aprobación la firma el APROBADOR configurado del proyecto; si el autor
+// del PR es el propio aprobador (no puede aprobarse a sí mismo), o no hay
+// aprobador configurado, se cae a los tokens legacy de env.
 export async function mergeWithBypass(
   owner: string,
   repo: string,
   pullNumber: number,
   prAuthor: string,
+  approver?: ApproverAuth,
 ): Promise<void> {
-  if (!reviewerOctokit) {
-    throw new Error("Token de revisor no configurado. Agrega VITE_GITHUB_REVIEWER_TOKEN al .env");
-  }
+  let approverOctokit: Octokit | null = null;
 
-  // Saber el login del reviewer para no aprobar su propio PR
-  const { data: reviewerUser } = await reviewerOctokit.users.getAuthenticated();
-  const approverOctokit = prAuthor === reviewerUser.login ? octokit : reviewerOctokit;
+  if (approver && approver.login !== prAuthor) {
+    approverOctokit = new Octokit({ auth: approver.token });
+  } else if (reviewerOctokit) {
+    const { data: reviewerUser } = await reviewerOctokit.users.getAuthenticated();
+    approverOctokit = prAuthor === reviewerUser.login ? octokit : reviewerOctokit;
+  }
+  if (!approverOctokit) {
+    throw new Error("Sin aprobador disponible: configura el aprobador del proyecto (con API key) o VITE_GITHUB_REVIEWER_TOKEN.");
+  }
 
   await approverOctokit.pulls.createReview({
     owner, repo, pull_number: pullNumber, event: "APPROVE", body: "",
   });
 
-  await octokit.pulls.merge({
+  await actor().pulls.merge({
     owner, repo, pull_number: pullNumber, merge_method: "merge",
   });
 }
@@ -350,21 +383,23 @@ export async function createPR(
   head: string,
   base: string,
   body: string = "",
+  reviewerLogin?: string,
 ): Promise<{ number: number; url: string }> {
-  const { data } = await octokit.pulls.create({ owner, repo, title, head, base, body });
+  const { data } = await actor().pulls.create({ owner, repo, title, head, base, body });
 
-  if (reviewerOctokit) {
-    try {
-      const { data: reviewerUser } = await reviewerOctokit.users.getAuthenticated();
-      await octokit.pulls.requestReviewers({
-        owner,
-        repo,
-        pull_number: data.number,
-        reviewers: [reviewerUser.login],
-      });
-    } catch {
-      // Si falla asignar reviewer no bloqueamos la creación del PR
+  // Asignar como reviewer al aprobador del proyecto (o al legacy de env).
+  try {
+    let login = reviewerLogin ?? null;
+    if (!login && reviewerOctokit) {
+      login = (await reviewerOctokit.users.getAuthenticated()).data.login;
     }
+    if (login && login !== getSessionLogin()) {
+      await actor().pulls.requestReviewers({
+        owner, repo, pull_number: data.number, reviewers: [login],
+      });
+    }
+  } catch {
+    // Si falla asignar reviewer no bloqueamos la creación del PR
   }
 
   return { number: data.number, url: data.html_url };
@@ -468,11 +503,14 @@ export async function submitReview(
   pullNumber: number,
   event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
   body: string = "",
+  approver?: ApproverAuth,
 ): Promise<void> {
-  if (!reviewerOctokit) {
-    throw new Error("Token de revisor no configurado. Agrega VITE_GITHUB_REVIEWER_TOKEN al .env");
+  // La review la firma el aprobador del proyecto; sin él, el token legacy.
+  const reviewer = approver ? new Octokit({ auth: approver.token }) : reviewerOctokit;
+  if (!reviewer) {
+    throw new Error("Sin aprobador disponible: configura el aprobador del proyecto (con API key) o VITE_GITHUB_REVIEWER_TOKEN.");
   }
-  await reviewerOctokit.pulls.createReview({
+  await reviewer.pulls.createReview({
     owner,
     repo,
     pull_number: pullNumber,

@@ -15,6 +15,13 @@ service cloud.firestore {
         && request.auth.token.email == 'jorge.mendoza@sozu.com'
         && email != 'jorge.mendoza@sozu.com';
 
+      // Cada usuario puede registrar/actualizar SU propia API key de GitHub
+      // (gate de entrada) — solo esos campos, nada más.
+      allow update: if request.auth != null
+        && request.auth.token.email == email
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['githubToken', 'githubLogin', 'githubTokenUpdatedAt']);
+
       // Bootstrap: jorge.mendoza@sozu.com puede crear su propio documento si no existe
       allow create: if request.auth != null
         && request.auth.token.email == 'jorge.mendoza@sozu.com'

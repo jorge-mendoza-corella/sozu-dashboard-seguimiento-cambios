@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import {
   UserPlus, Trash2, Shield, Eye, Loader2, FolderGit2, ChevronDown, ChevronUp,
-  GitPullRequest, UserCheck, GitMerge, Rocket, Smartphone,
+  GitPullRequest, UserCheck, GitMerge, Rocket, Smartphone, KeyRound, ExternalLink,
 } from "lucide-react";
+import { validateGithubToken } from "@/lib/githubAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import {
   setUserRole,
   setUserProjects,
   setUserPermissions,
+  setUserGithubToken,
   resolvePermissions,
   NO_PERMISSIONS,
   SUPERUSER_EMAIL,
@@ -74,6 +76,9 @@ export function UsersPage() {
   const [newRole, setNewRole] = useState<UserRole>("viewer");
   const [newProjects, setNewProjects] = useState<Set<string>>(new Set());
   const [newPerms, setNewPerms] = useState<CicdPermissions>({ ...NO_PERMISSIONS });
+  const [newToken, setNewToken] = useState("");
+  // Edición de la API key de un usuario existente (solo root)
+  const [tokenEdit, setTokenEdit] = useState<{ email: string; value: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -95,20 +100,51 @@ export function UsersPage() {
     });
 
   const handleAdd = async () => {
-    if (!newEmail.trim() || newProjects.size === 0) return;
+    if (!newEmail.trim() || newProjects.size === 0 || !newToken.trim()) return;
     setLoading(true);
     setError("");
     try {
-      await addUser(newEmail.trim().toLowerCase(), appUser!.email, newRole, [...newProjects], newPerms);
+      // API key obligatoria: se valida contra GitHub antes de crear al usuario.
+      const v = await validateGithubToken(newToken.trim());
+      if (!v.ok || !v.login) {
+        setError(v.error ?? "API key de GitHub inválida.");
+        return;
+      }
+      await addUser(
+        newEmail.trim().toLowerCase(), appUser!.email, newRole, [...newProjects], newPerms,
+        newToken.trim(), v.login,
+      );
       await refresh();
       setNewEmail("");
       setNewRole("viewer");
       setNewProjects(new Set());
       setNewPerms({ ...NO_PERMISSIONS });
+      setNewToken("");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error al agregar");
     } finally {
       setLoading(false);
+    }
+  };
+
+  /** Root actualiza/registra la API key de cualquier usuario (se valida antes). */
+  const handleSaveToken = async () => {
+    if (!tokenEdit || !tokenEdit.value.trim()) return;
+    setBusy(tokenEdit.email);
+    setError("");
+    try {
+      const v = await validateGithubToken(tokenEdit.value.trim());
+      if (!v.ok || !v.login) {
+        setError(v.error ?? "API key inválida.");
+        return;
+      }
+      await setUserGithubToken(tokenEdit.email, tokenEdit.value.trim(), v.login);
+      await refresh();
+      setTokenEdit(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error al guardar la API key");
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -209,9 +245,39 @@ export function UsersPage() {
               <option value="viewer">Viewer</option>
               <option value="superuser">Administrador</option>
             </SelectNative>
-            <Button onClick={handleAdd} disabled={loading || !newEmail.trim() || newProjects.size === 0} size="sm">
+            <Button
+              onClick={handleAdd}
+              disabled={loading || !newEmail.trim() || newProjects.size === 0 || !newToken.trim()}
+              size="sm"
+            >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Agregar"}
             </Button>
+          </div>
+
+          {/* API key de GitHub (obligatoria) */}
+          <div className="mt-3">
+            <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+              <KeyRound className="h-3.5 w-3.5" /> API key de GitHub (obligatoria) — sus PRs/merges saldrán a nombre de su cuenta
+            </p>
+            <input
+              type="password"
+              className="w-full max-w-md rounded-md border bg-background px-3 py-2 font-mono text-sm"
+              placeholder="ghp_…"
+              value={newToken}
+              onChange={(e) => setNewToken(e.target.value)}
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Se obtiene en{" "}
+              <a
+                href="https://github.com/settings/tokens/new?scopes=repo&description=SOZU%20Tracker"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-0.5 font-medium text-primary underline"
+              >
+                github.com/settings/tokens/new <ExternalLink className="h-3 w-3" />
+              </a>{" "}
+              (token classic con scope <code className="rounded bg-muted px-1">repo</code>). Se valida contra GitHub al agregar.
+            </p>
           </div>
 
           {/* Proyectos del nuevo usuario */}
@@ -275,9 +341,14 @@ export function UsersPage() {
               <div key={u.email} className="border-b last:border-0">
                 <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-6">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
+                    <p className="flex items-center gap-1.5 text-sm font-medium truncate">
                       {u.email}
-                      {isSelf && <span className="ml-1 text-xs text-muted-foreground">(tú)</span>}
+                      {isSelf && <span className="text-xs text-muted-foreground">(tú)</span>}
+                      {!isRoot && !u.githubToken && (
+                        <span title="Sin API key de GitHub — verá el bloqueo al entrar">
+                          <KeyRound className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                        </span>
+                      )}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {isRoot ? "Superusuario raíz · todos los proyectos" : `Invitado por ${u.addedBy}`}
@@ -377,6 +448,53 @@ export function UsersPage() {
                       <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
                         Sin permisos explícitos: por compatibilidad, {u.role === "superuser" ? "Administrador = todo permitido" : "Viewer = nada permitido"}. Al tocar un chip se fijan explícitos.
                       </p>
+                    )}
+
+                    {/* API key de GitHub (el root la puede registrar/actualizar) */}
+                    <p className="mb-2 mt-4 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                      <KeyRound className="h-3.5 w-3.5" /> API key de GitHub
+                    </p>
+                    {tokenEdit?.email === u.email ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="password"
+                          autoFocus
+                          className="w-64 rounded-md border bg-background px-2 py-1.5 font-mono text-xs"
+                          placeholder="ghp_…"
+                          value={tokenEdit.value}
+                          onChange={(e) => setTokenEdit({ email: u.email, value: e.target.value })}
+                          onKeyDown={(e) => e.key === "Enter" && handleSaveToken()}
+                        />
+                        <Button size="sm" variant="outline" disabled={busy === u.email || !tokenEdit.value.trim()} onClick={handleSaveToken}>
+                          {busy === u.email ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Validar y guardar"}
+                        </Button>
+                        <button
+                          type="button"
+                          className="text-xs text-muted-foreground underline"
+                          onClick={() => setTokenEdit(null)}
+                        >
+                          cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        {u.githubToken ? (
+                          <span className="flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/30 dark:text-emerald-300">
+                            ✓ configurada — @{u.githubLogin}
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 font-medium text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300">
+                            ✗ sin configurar — verá el bloqueo al entrar
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          className="text-muted-foreground underline hover:text-foreground"
+                          onClick={() => setTokenEdit({ email: u.email, value: "" })}
+                        >
+                          {u.githubToken ? "actualizar" : "registrar"}
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}

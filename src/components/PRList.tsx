@@ -7,7 +7,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { PullRequest, PRWithCommits } from "@/lib/github";
-import { submitReview, mergePR, mergeWithBypass, closePR, getMergedDevPRsForRelease } from "@/lib/github";
+import { submitReview, mergePR, mergeWithBypass, closePR, getMergedDevPRsForRelease, type ApproverAuth } from "@/lib/github";
 import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 
@@ -21,9 +21,11 @@ interface Props {
   onRefetch?: () => void;
   /** Permisos granulares: crear/cerrar PRs, aprobar, merge a dev/main. */
   perms?: CicdPermissions;
+  /** Aprobador configurado del proyecto (firma reviews con SU token). */
+  approver?: ApproverAuth | null;
 }
 
-export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS }: Props) {
+export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, approver = null }: Props) {
   const [openPanel, setOpenPanel] = useState<{ prNumber: number; mode: PanelMode } | null>(null);
   const [activeEvent, setActiveEvent] = useState<ReviewEvent | null>(null);
   const [comment, setComment] = useState("");
@@ -78,7 +80,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS }: 
     if ((event === "REQUEST_CHANGES" || event === "COMMENT") && !comment.trim()) return;
     setLoading(true);
     try {
-      await submitReview(owner, repo, pr.number, event, comment.trim());
+      await submitReview(owner, repo, pr.number, event, comment.trim(), approver ?? undefined);
       setResult({
         prNumber: pr.number,
         ok: true,
@@ -122,7 +124,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS }: 
       if (pr.base === "main") {
         await mergePR(owner, repo, pr.number, "merge");
       } else {
-        await mergeWithBypass(owner, repo, pr.number, pr.author);
+        await mergeWithBypass(owner, repo, pr.number, pr.author, approver ?? undefined);
       }
       setMergedPRs((prev) => new Set([...prev, pr.number]));
       setResult({ prNumber: pr.number, ok: true, msg: `Merge completado · ${pr.head} → ${pr.base}` });

@@ -26,6 +26,9 @@ export interface AppUser {
   createdAt: unknown;
   projectIds?: string[]; // proyectos a los que tiene acceso (vacío/undefined = legacy: todos)
   permissions?: CicdPermissions; // undefined = legacy: admins todo, viewers nada
+  githubToken?: string; // PAT personal de GitHub (obligatorio para operar; root exento)
+  githubLogin?: string; // login de GitHub derivado del token (GET /user)
+  githubTokenUpdatedAt?: unknown;
 }
 
 /**
@@ -55,6 +58,8 @@ export async function addUser(
   role: UserRole = "viewer",
   projectIds: string[] = [],
   permissions: CicdPermissions = NO_PERMISSIONS,
+  githubToken?: string,
+  githubLogin?: string,
 ) {
   await setDoc(doc(db, "users", email), {
     email,
@@ -62,8 +67,23 @@ export async function addUser(
     addedBy,
     projectIds,
     permissions,
+    ...(githubToken && githubLogin
+      ? { githubToken, githubLogin, githubTokenUpdatedAt: serverTimestamp() }
+      : {}),
     createdAt: serverTimestamp(),
   });
+}
+
+/**
+ * Guarda el PAT de GitHub del usuario (y su login derivado). Lo puede hacer
+ * el propio usuario (gate de entrada) o el root desde Gestión de Accesos.
+ */
+export async function setUserGithubToken(email: string, token: string, login: string) {
+  await setDoc(
+    doc(db, "users", email),
+    { githubToken: token, githubLogin: login, githubTokenUpdatedAt: serverTimestamp() },
+    { merge: true },
+  );
 }
 
 /** Actualiza los permisos CI/CD de un usuario. */

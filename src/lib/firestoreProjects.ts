@@ -21,6 +21,7 @@ export interface Project {
   testerEmails?: string[]; // correos con acceso a builds de prueba (TestFlight / Play interno)
   playInternalUrl?: string; // link de invitación del track interno (Play Console → Testers → Copy link)
   testflightPublicUrl?: string; // link público de TestFlight (App Store Connect → grupo externo → Public link)
+  approverEmail?: string; // usuario del dashboard que aprueba los PRs del proyecto (usa SU token de GitHub)
 }
 
 export interface MonitoredRepo {
@@ -77,6 +78,13 @@ export async function setProjectIsApp(id: string, isApp: boolean) {
 export async function setProjectCodemagicApp(id: string, appId: string | null) {
   await updateDoc(doc(db, "projects", id), {
     codemagicAppId: appId ?? deleteField(),
+  });
+}
+
+/** Define el aprobador default de PRs del proyecto (null = quitar). */
+export async function setProjectApprover(id: string, email: string | null) {
+  await updateDoc(doc(db, "projects", id), {
+    approverEmail: email ?? deleteField(),
   });
 }
 

@@ -8,9 +8,10 @@ import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
 import { useAuth } from "@/hooks/useAuth";
-import { hasFailingDeploy, type RepoRef, type RepoStatus } from "@/lib/github";
+import { hasFailingDeploy, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
-import { SUPERUSER_EMAIL, resolvePermissions } from "@/lib/firestoreUsers";
+import { SUPERUSER_EMAIL, resolvePermissions, getAllUsers } from "@/lib/firestoreUsers";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -44,6 +45,24 @@ export function DashboardPage() {
 
   const { data: allProjects = [], isLoading: loadingProjects } = useProjects();
   const { data: repos = [], isLoading: loadingRepos } = useRepos();
+
+  // Aprobadores por proyecto: el token del usuario configurado como aprobador
+  // firma las reviews. Solo los admins pueden leer la colección users (rules);
+  // para viewers el catch deja el mapa vacío y se usa el fallback legacy.
+  const { data: allUsers = [] } = useQuery({
+    queryKey: ["users-all"],
+    queryFn: () => getAllUsers().catch(() => []),
+    staleTime: 60 * 1000,
+  });
+  const approverByProject = useMemo(() => {
+    const m = new Map<string, ApproverAuth>();
+    for (const p of allProjects) {
+      if (!p.approverEmail) continue;
+      const u = allUsers.find((x) => x.email === p.approverEmail);
+      if (u?.githubToken && u.githubLogin) m.set(p.id, { token: u.githubToken, login: u.githubLogin });
+    }
+    return m;
+  }, [allProjects, allUsers]);
 
   // Proyectos visibles según el acceso del usuario (root ve todos; legacy sin
   // projectIds = todos por compatibilidad).
@@ -317,6 +336,7 @@ export function DashboardPage() {
                         isViewer={isViewer}
                         perms={perms}
                         canReorder={isRoot}
+                        approver={approverByProject.get(p.id) ?? null}
                         onRefetch={() => refetch()}
                         onReorder={handleReorder}
                       />
