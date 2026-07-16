@@ -55,9 +55,17 @@ interface Props {
   perms?: CicdPermissions;
   /** Aprobador configurado del proyecto (token+login de GitHub). */
   approver?: ApproverAuth | null;
+  /** Login de GitHub del usuario logueado — para el permiso "ver cambios de otros". */
+  selfLogin?: string | null;
 }
 
-export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null }: Props) {
+export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, selfLogin = null }: Props) {
+  // Sin el permiso viewOthers el usuario solo ve SUS ramas y PRs
+  // (main/dev siempre visibles: son estado compartido del repo).
+  const canViewOthers = perms.viewOthers || !selfLogin;
+  const scopedPRs = canViewOthers
+    ? status.openPRs
+    : status.openPRs.filter((pr) => pr.author === selfLogin);
   const [newPR, setNewPR] = useState<{ head: string; title: string; base: string; body: string; authorOverride?: string; authorStep?: boolean } | null>(null);
   const [newPRLoading, setNewPRLoading] = useState(false);
   const [newPRResult, setNewPRResult] = useState<{ ok: boolean; msg: string; url?: string } | null>(null);
@@ -66,12 +74,12 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
 
   // Limpia optimisticPRHeads cuando el refetch ya trajo el PR real
   useEffect(() => {
-    const realHeads = new Set(status.openPRs.map((pr) => pr.head));
+    const realHeads = new Set(scopedPRs.map((pr) => pr.head));
     setOptimisticPRHeads((prev) => {
       const next = new Set([...prev].filter((h) => !realHeads.has(h)));
       return next.size === prev.size ? prev : next;
     });
-  }, [status.openPRs]);
+  }, [scopedPRs]);
 
   const openCreatePR = (branchName: string) => {
     const defaultBase = branchName === "dev" ? "main" : "dev";
@@ -135,23 +143,26 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
     });
   };
 
-  const sorted = sortBranches(status.branches);
   // main y dev siempre visibles (en el orden de sortBranches), sin importar
   // lo guardado en localStorage. Solo las demás ramas pueden ocultarse.
   const isProtectedBranch = (name: string) => name === "main" || name === "dev";
+  const scopedBranches = canViewOthers
+    ? status.branches
+    : status.branches.filter((b) => isProtectedBranch(b.name) || b.lastCommitAuthor === selfLogin);
+  const sorted = sortBranches(scopedBranches);
   // Viewer: solo main y dev, sin ramas ocultables.
   const visibleBranches = readOnly
     ? sorted.filter((b) => isProtectedBranch(b.name))
     : sorted.filter((b) => isProtectedBranch(b.name) || !hiddenBranches.has(b.name));
   const hiddenList = readOnly ? [] : sorted.filter((b) => !isProtectedBranch(b.name) && hiddenBranches.has(b.name));
 
-  const branchesWithPR = new Set([...status.openPRs.map((pr) => pr.head), ...optimisticPRHeads]);
-  const hasDevToMainPR = status.openPRs.some((pr) => pr.head === "dev" && pr.base === "main") || optimisticPRHeads.has("dev");
+  const branchesWithPR = new Set([...scopedPRs.map((pr) => pr.head), ...optimisticPRHeads]);
+  const hasDevToMainPR = scopedPRs.some((pr) => pr.head === "dev" && pr.base === "main") || optimisticPRHeads.has("dev");
   const devBranch = status.branches.find((b) => b.name === "dev");
   const devAheadOfMain = devBranch?.aheadOfMain ?? 0;
 
   const state = getOverallState(status);
-  const hasPRs = status.openPRs.length > 0;
+  const hasPRs = scopedPRs.length > 0;
 
   const isDeployingToMain = status.latestRuns.some(
     (r) => (r.status === "in_progress" || r.status === "queued") && r.headBranch === "main"
@@ -457,9 +468,9 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
         {/* PRs abiertos */}
         <div>
           <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-            <GitPullRequest className="h-3.5 w-3.5" /> PRs abiertos ({status.openPRs.length})
+            <GitPullRequest className="h-3.5 w-3.5" /> PRs abiertos ({scopedPRs.length})
           </h4>
-          <PRList prs={status.openPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} perms={perms} approver={approver} />
+          <PRList prs={scopedPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} perms={perms} approver={approver} />
         </div>
 
         {/* Últimos deploys */}

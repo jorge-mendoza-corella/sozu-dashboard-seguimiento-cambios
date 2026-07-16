@@ -265,11 +265,17 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
           b.name !== "dev" && b.name !== "main" ? getAheadBy(owner, repo, "dev", b.name) : Promise.resolve(0),
         ]);
         const commit = b.commit;
+        // Autor (login) del último commit — necesario para el permiso
+        // "ver cambios de otros" (filtrar ramas ajenas).
+        const author = await octokit.repos
+          .getCommit({ owner, repo, ref: commit.sha })
+          .then((r) => r.data.author?.login ?? r.data.commit.author?.name ?? "")
+          .catch(() => "");
         return {
           name: b.name,
           lastCommitSha: commit.sha.slice(0, 7),
           lastCommitMessage: "",
-          lastCommitAuthor: "",
+          lastCommitAuthor: author,
           lastCommitDate: "",
           aheadOfMain: aheadMain,
           aheadOfDev: aheadDev,

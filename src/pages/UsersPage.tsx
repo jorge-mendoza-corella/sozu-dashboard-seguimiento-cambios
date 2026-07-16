@@ -32,6 +32,7 @@ const PERMISSION_DEFS: { key: keyof CicdPermissions; label: string; icon: React.
   { key: "mergeDev", label: "Merge a dev", icon: <GitMerge className="h-3 w-3" /> },
   { key: "mergeMain", label: "Merge a main", icon: <Rocket className="h-3 w-3" /> },
   { key: "buildApp", label: "Builds App", icon: <Smartphone className="h-3 w-3" /> },
+  { key: "viewOthers", label: "Ver cambios de otros", icon: <Eye className="h-3 w-3" /> },
 ];
 
 function PermissionChips({

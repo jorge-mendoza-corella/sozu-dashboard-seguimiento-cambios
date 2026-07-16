@@ -47,6 +47,12 @@ export function AppLayout({ children }: Props) {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-3">
+            <span
+              className="hidden font-mono text-[10px] text-muted-foreground/60 md:block"
+              title="Versión desplegada (se genera en cada deploy)"
+            >
+              v{__APP_BUILD__}
+            </span>
             <span className="text-xs text-muted-foreground hidden sm:block">{appUser?.email}</span>
             <Button variant="ghost" size="icon" onClick={logout} title="Cerrar sesión">
               <LogOut className="h-4 w-4" />

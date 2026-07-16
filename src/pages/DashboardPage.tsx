@@ -352,6 +352,7 @@ export function DashboardPage() {
                         perms={perms}
                         canReorder={isRoot}
                         approver={approverByProject.get(p.id) ?? null}
+                        selfLogin={isRoot ? null : appUser?.githubLogin ?? null}
                         onRefetch={() => refetch()}
                         onReorder={handleReorder}
                       />
