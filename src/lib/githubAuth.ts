@@ -35,6 +35,18 @@ export async function validateGithubToken(token: string): Promise<TokenValidatio
   }
 }
 
+/** ¿La cuenta del token puede VER el repo? (lectura basta — gate de visibilidad). */
+export async function canReadRepo(token: string, owner: string, repo: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export interface RepoAccessCheck {
   ok: boolean;
   /** Explicación accionable cuando ok=false. */

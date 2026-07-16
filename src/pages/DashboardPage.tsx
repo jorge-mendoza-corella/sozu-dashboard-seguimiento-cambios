@@ -6,7 +6,7 @@ import {
 import { AppBuildsPanel } from "@/components/codemagic/AppBuildsPanel";
 import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
-import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
+import { useProjects, useRepos, useAccessibleRepoIds } from "@/hooks/useProjectsRepos";
 import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
@@ -44,7 +44,22 @@ export function DashboardPage() {
   const qc = useQueryClient();
 
   const { data: allProjects = [], isLoading: loadingProjects } = useProjects();
-  const { data: repos = [], isLoading: loadingRepos } = useRepos();
+  const { data: allRepos = [], isLoading: loadingRepos } = useRepos();
+
+  // Visibilidad por repo según la cuenta de GitHub del usuario (su API key):
+  // si su cuenta no puede ver un repo en GitHub, tampoco lo ve aquí.
+  // Root/legacy (sin token de sesión) ve todos.
+  const { data: accessibleIds, isLoading: loadingAccess } = useAccessibleRepoIds(
+    allRepos,
+    appUser?.email === SUPERUSER_EMAIL ? null : appUser?.githubToken ?? null,
+    appUser?.githubLogin ?? null,
+  );
+  const repos = useMemo(() => {
+    if (appUser?.email === SUPERUSER_EMAIL || !appUser?.githubToken) return allRepos;
+    if (!accessibleIds) return []; // aún verificando accesos: no mostrar de más
+    const ok = new Set(accessibleIds);
+    return allRepos.filter((r) => ok.has(r.id));
+  }, [allRepos, accessibleIds, appUser?.email, appUser?.githubToken]);
 
   // Aprobadores por proyecto: el token del usuario configurado como aprobador
   // firma las reviews. Solo los admins pueden leer la colección users (rules);
@@ -157,7 +172,7 @@ export function DashboardPage() {
   );
   const summary = data ? computeSummary(activeStatus) : null;
 
-  const busy = loadingProjects || loadingRepos || seeding;
+  const busy = loadingProjects || loadingRepos || loadingAccess || seeding;
 
   return (
     <div className="flex flex-col gap-0">
