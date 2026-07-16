@@ -84,6 +84,8 @@ jobs:
 
       - name: Notificar deploy listo (WhatsApp)
         if: success()
+        # Si n8n no responde, no tumbar el status del deploy (ya quedó publicado).
+        continue-on-error: true
         env:
           ENVIRONMENT: DEV
           N8N_WEBHOOK: https://automatizacion-n8n.fbqqbe.easypanel.host/webhook/manda_notificacion
