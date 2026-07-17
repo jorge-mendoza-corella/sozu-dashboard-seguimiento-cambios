@@ -161,7 +161,16 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
   const devBranch = status.branches.find((b) => b.name === "dev");
   const devAheadOfMain = devBranch?.aheadOfMain ?? 0;
 
-  const state = getOverallState(status);
+  // Estado con los datos que el usuario puede ver; si lo pendiente es de
+  // OTROS (PRs ajenos o dev movido por otro), se etiqueta explícitamente.
+  let state: ReturnType<typeof getOverallState> | "pendingOthers" =
+    getOverallState({ ...status, openPRs: scopedPRs });
+  if (!canViewOthers && !status.error) {
+    const othersPRs = status.openPRs.length > scopedPRs.length;
+    const devByOther =
+      state === "devPending" && !!devBranch?.lastCommitAuthor && devBranch.lastCommitAuthor !== selfLogin;
+    if ((state === "ok" && othersPRs) || devByOther) state = "pendingOthers";
+  }
   const hasPRs = scopedPRs.length > 0;
 
   const isDeployingToMain = status.latestRuns.some(
@@ -178,6 +187,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
     ok:         { icon: CheckCircle2,   color: "text-green-600",        label: "Todo en orden",          badge: "success"     as const },
     devPending: { icon: ArrowUpCircle,  color: "text-blue-600",         label: "Dev por pasar a PRD",    badge: "info"        as const },
     pending:    { icon: GitPullRequest, color: "text-amber-600",        label: "Cambios pendientes",     badge: "warning"     as const },
+    pendingOthers: { icon: GitPullRequest, color: "text-slate-500",      label: "Cambios pendientes de otro usuario", badge: "secondary" as const },
     failing:    { icon: AlertCircle,    color: "text-red-600",          label: "CI fallando",            badge: "destructive" as const },
     error:      { icon: AlertCircle,    color: "text-muted-foreground", label: "Error al cargar",        badge: "outline"     as const },
   }[state];
@@ -192,6 +202,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           ok:         "from-emerald-500 to-emerald-400",
           devPending: "from-blue-500 to-blue-400",
           pending:    "from-amber-500 to-amber-400",
+          pendingOthers: "from-slate-400 to-slate-300",
           failing:    "from-red-500 to-red-400",
           error:      "from-slate-400 to-slate-300",
         }[state];
@@ -481,7 +492,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           <div className="flex flex-wrap gap-1.5">
             {status.latestRuns.length === 0
               ? <p className="text-xs text-muted-foreground">Sin deploys recientes</p>
-              : status.latestRuns.map((r, i) => <WorkflowBadge key={i} run={r} owner={status.owner} repo={status.repo} />)}
+              : status.latestRuns.map((r, i) => <WorkflowBadge key={i} run={r} owner={status.owner} repo={status.repo} selfLogin={canViewOthers ? null : selfLogin} />)}
           </div>
         </div>
       </CardContent>

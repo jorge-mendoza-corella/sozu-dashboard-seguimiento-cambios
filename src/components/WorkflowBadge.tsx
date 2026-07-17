@@ -10,6 +10,9 @@ interface Props {
   run: WorkflowRun;
   owner: string;
   repo: string;
+  /** Con valor: el usuario NO tiene permiso "ver cambios de otros" — los PRs
+   *  ajenos del deploy se muestran sin título ni commits. */
+  selfLogin?: string | null;
 }
 
 function getBranchTier(branch: string | null): "main" | "dev" | "other" {
@@ -19,7 +22,7 @@ function getBranchTier(branch: string | null): "main" | "dev" | "other" {
   return "other";
 }
 
-export function WorkflowBadge({ run, owner, repo }: Props) {
+export function WorkflowBadge({ run, owner, repo, selfLogin = null }: Props) {
   const isSuccess = run.conclusion === "success";
   const isFailure = run.conclusion === "failure" || run.conclusion === "cancelled";
   const isPending = run.status === "in_progress" || run.status === "queued";
@@ -154,6 +157,18 @@ export function WorkflowBadge({ run, owner, repo }: Props) {
           <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {prs.map((pr) => {
               const expanded = expandedPRs.has(pr.number);
+              // Sin permiso "ver cambios de otros": los PRs ajenos se listan
+              // sin título, autor ni commits (solo constancia de que existen).
+              if (selfLogin && pr.author !== selfLogin) {
+                return (
+                  <li key={pr.number} className="px-3 py-2">
+                    <div className="flex items-center gap-1.5 text-xs text-zinc-400 italic">
+                      <span className="font-medium not-italic">#{pr.number}</span>
+                      cambios de otro usuario
+                    </div>
+                  </li>
+                );
+              }
               return (
                 <li key={pr.number} className="px-3 py-2">
                   <button
