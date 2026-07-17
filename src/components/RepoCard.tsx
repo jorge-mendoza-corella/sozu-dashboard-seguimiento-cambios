@@ -12,7 +12,7 @@ import { BranchRow } from "./BranchRow";
 import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
-import { createPR, hasFailingDeploy, getBranchCommitAuthors, type ApproverAuth } from "@/lib/github";
+import { createPR, hasFailingDeploy, getBranchCommitAuthors, getPendingReleasePRs, type ApproverAuth, type PRWithCommits } from "@/lib/github";
 import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
 
 // Fallback legacy cuando el proyecto no tiene notifyAuthors configurados.
@@ -66,7 +66,10 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
     detectedAuthors?: string[] | null;
     /** Autores extra elegidos a mano (multiseleccion). */
     selectedAuthors: string[];
+    /** dev->main: PRs a dev que este release incluye (null = cargando). */
+    releasePRs?: PRWithCommits[] | null;
   } | null>(null);
+  const [expandedReleasePRs, setExpandedReleasePRs] = useState<Set<number>>(new Set());
   const [newPRLoading, setNewPRLoading] = useState(false);
   const [newPRResult, setNewPRResult] = useState<{ ok: boolean; msg: string; url?: string } | null>(null);
   // Optimistic: ramas donde ya se creó un PR pero el refetch aún no llegó
@@ -96,6 +99,22 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
       // Detectar autores reales de los commits del PR (head vs base).
       getBranchCommitAuthors(status.owner, status.repo, defaultBase, branchName).then((logins) => {
         setNewPR((p) => (p && p.head === branchName ? { ...p, detectedAuthors: logins } : p));
+      });
+    }
+    if (branchName === "dev") {
+      // dev->main: cargar el contenido del release (PRs a dev + commits) y
+      // prellenar la descripcion con una entrada por PR incluido, usando la
+      // descripcion (obligatoria) de cada uno — la notificacion de deploy la usa.
+      setNewPR((p) => (p && p.head === branchName ? { ...p, releasePRs: null } : p));
+      setExpandedReleasePRs(new Set());
+      getPendingReleasePRs(status.owner, status.repo).then((prs) => {
+        setNewPR((p) => {
+          if (!p || p.head !== branchName) return p;
+          const prefill = prs
+            .map((pr) => `- PR #${pr.number} ${pr.title} (@${pr.author}): ${pr.description || "(sin descripcion)"}`)
+            .join("\n");
+          return { ...p, releasePRs: prs, body: p.body || prefill };
+        });
       });
     }
   };
@@ -508,11 +527,75 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                       ))}
                     </select>
                   </div>
+                  {/* dev→main: qué contiene este release (PRs a dev + commits) */}
+                  {newPR.head === "dev" && newPR.base === "main" && (
+                    <div className="rounded border bg-muted/30 px-2 py-1.5">
+                      <p className="mb-1 text-[10px] font-semibold text-muted-foreground">
+                        Este PR a main incluye:
+                      </p>
+                      {newPR.releasePRs == null ? (
+                        <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" /> cargando contenido del release…
+                        </p>
+                      ) : newPR.releasePRs.length === 0 ? (
+                        <p className="text-[11px] text-muted-foreground italic">Sin PRs nuevos respecto a main.</p>
+                      ) : (
+                        <ul className="max-h-36 space-y-1 overflow-y-auto">
+                          {newPR.releasePRs.map((pr) => {
+                            const isOther = !canViewOthers && pr.author !== selfLogin;
+                            if (isOther) {
+                              return (
+                                <li key={pr.number} className="text-[11px] italic text-muted-foreground">
+                                  <span className="font-medium not-italic">#{pr.number}</span> — cambios de otro usuario
+                                </li>
+                              );
+                            }
+                            const open = expandedReleasePRs.has(pr.number);
+                            return (
+                              <li key={pr.number} className="text-[11px]">
+                                <button
+                                  type="button"
+                                  className="flex w-full items-start gap-1 text-left"
+                                  onClick={() =>
+                                    setExpandedReleasePRs((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(pr.number)) next.delete(pr.number); else next.add(pr.number);
+                                      return next;
+                                    })
+                                  }
+                                >
+                                  {open ? <ChevronUp className="mt-0.5 h-3 w-3 shrink-0" /> : <ChevronDown className="mt-0.5 h-3 w-3 shrink-0" />}
+                                  <span className="min-w-0 flex-1">
+                                    <span className="font-medium text-violet-700 dark:text-violet-300">#{pr.number}</span>{" "}
+                                    <span className="text-foreground">{pr.title}</span>{" "}
+                                    <span className="text-[10px] text-muted-foreground">@{pr.author} · {pr.commits.length} commit{pr.commits.length === 1 ? "" : "s"}</span>
+                                  </span>
+                                </button>
+                                {open && (
+                                  <ul className="ml-4 mt-0.5 space-y-0.5">
+                                    {pr.commits.map((c) => (
+                                      <li key={c.sha} className="flex items-start gap-1 text-[10px] text-muted-foreground">
+                                        <span className="font-mono shrink-0">{c.sha}</span>
+                                        <span className="truncate">{c.message}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                   <textarea
                     value={newPR.body}
                     onChange={(e) => setNewPR((p) => p ? { ...p, body: e.target.value } : null)}
                     placeholder="Descripción (obligatoria): qué cambia y por qué"
-                    className="w-full text-xs rounded border bg-background px-2 py-1.5 resize-none h-14 focus:outline-none focus:ring-1 focus:ring-violet-400 placeholder:text-muted-foreground"
+                    className={cn(
+                      "w-full text-xs rounded border bg-background px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-violet-400 placeholder:text-muted-foreground",
+                      newPR.head === "dev" && newPR.base === "main" ? "h-28" : "h-14",
+                    )}
                   />
                   <div className="flex gap-2">
                     <button

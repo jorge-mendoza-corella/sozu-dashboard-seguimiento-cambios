@@ -453,6 +453,58 @@ export interface PRWithCommits {
   url: string;
   mergedAt: string;
   commits: Array<{ sha: string; message: string; author: string }>;
+  /** Descripción del PR sin marcadores internos (<!-- pr_author -->, menciones). */
+  description?: string;
+}
+
+/** Limpia el body de un PR: fuera marcadores y líneas de mención de autores. */
+export function cleanPRDescription(body: string | null | undefined): string {
+  return (body ?? "")
+    .split("\n")
+    .filter((l) => !l.trim().startsWith("<!--") && !l.trim().startsWith("> 👤") && !l.includes("Generated with [Claude Code]"))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * Contenido del PRÓXIMO release dev→main (antes de crear el PR): los PRs
+ * mergeados a dev que main aún no tiene, con sus commits y descripciones.
+ */
+export async function getPendingReleasePRs(owner: string, repo: string): Promise<PRWithCommits[]> {
+  const { data } = await octokit.repos.compareCommits({ owner, repo, base: "main", head: "dev" });
+  const nums = new Set<number>();
+  for (const c of data.commits) {
+    const m = c.commit.message.match(/^Merge pull request #(\d+)/);
+    if (m) nums.add(Number(m[1]));
+  }
+  if (nums.size === 0) return [];
+
+  const results: PRWithCommits[] = [];
+  await Promise.all([...nums].map(async (num) => {
+    try {
+      const [{ data: pr }, { data: commits }] = await Promise.all([
+        octokit.pulls.get({ owner, repo, pull_number: num }),
+        octokit.pulls.listCommits({ owner, repo, pull_number: num, per_page: 30 }),
+      ]);
+      const bodyAuthor = (pr.body ?? "").match(/<!-- pr_author: ([\w.-]+) -->/)?.[1];
+      results.push({
+        number: pr.number,
+        title: pr.title,
+        author: bodyAuthor ?? pr.user?.login ?? "unknown",
+        url: pr.html_url,
+        mergedAt: pr.merged_at ?? "",
+        description: cleanPRDescription(pr.body),
+        commits: commits.map((c) => ({
+          sha: c.sha.slice(0, 7),
+          message: c.commit.message.split("\n")[0],
+          author: c.author?.login ?? c.commit.author?.name ?? "unknown",
+        })),
+      });
+    } catch { /* skip */ }
+  }));
+
+  return results.sort((a, b) => a.mergedAt.localeCompare(b.mergedAt));
 }
 
 /** Dado un PR dev→main, devuelve los PRs de dev incluidos con sus commits. */
