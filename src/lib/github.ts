@@ -154,6 +154,22 @@ export interface RepoStatus {
   error?: string;
 }
 
+// Caché sha → login del autor: el SHA es inmutable, así que los refetch
+// periódicos no repiten llamadas para ramas que no se movieron.
+const commitAuthorCache = new Map<string, string>();
+
+async function getCommitAuthorCached(owner: string, repo: string, sha: string): Promise<string> {
+  const hit = commitAuthorCache.get(sha);
+  if (hit !== undefined) return hit;
+  const author = await octokit.repos
+    .getCommit({ owner, repo, ref: sha })
+    .then((r) => r.data.author?.login ?? r.data.commit.author?.name ?? "")
+    .catch(() => "");
+  commitAuthorCache.set(sha, author);
+  if (commitAuthorCache.size > 500) commitAuthorCache.clear(); // tope simple
+  return author;
+}
+
 /**
  * Logins de GitHub que autoraron los commits de head vs base — para
  * notificar automáticamente a los verdaderos autores del PR.
@@ -256,7 +272,9 @@ async function getPRReviewDecision(
 
 async function getAheadBy(owner: string, repo: string, base: string, head: string): Promise<number> {
   try {
-    const { data } = await octokit.repos.compareCommits({ owner, repo, base, head });
+    // per_page 1: solo interesa ahead_by; sin esto GitHub arma y manda hasta
+    // 250 commits con archivos por comparación — payload y latencia enormes.
+    const { data } = await octokit.repos.compareCommits({ owner, repo, base, head, per_page: 1 });
     return data.ahead_by;
   } catch {
     return 0;
@@ -301,11 +319,12 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
         ]);
         const commit = b.commit;
         // Autor (login) del último commit — necesario para el permiso
-        // "ver cambios de otros" (filtrar ramas ajenas).
-        const author = await octokit.repos
-          .getCommit({ owner, repo, ref: commit.sha })
-          .then((r) => r.data.author?.login ?? r.data.commit.author?.name ?? "")
-          .catch(() => "");
+        // "ver cambios de otros" (filtrar ramas ajenas). Solo aplica a ramas
+        // feature (main/dev siempre son visibles) y se cachea por SHA para
+        // que los refetch de cada 2 min no repitan llamadas.
+        const author = b.name === "main" || b.name === "dev"
+          ? ""
+          : await getCommitAuthorCached(owner, repo, commit.sha);
         return {
           name: b.name,
           lastCommitSha: commit.sha.slice(0, 7),
