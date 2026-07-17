@@ -57,7 +57,8 @@ export function ResumenPage() {
     () => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })),
     [repos],
   );
-  const { data: statuses, isLoading, isFetching, refetch } = useGitHubStatus(repoRefs);
+  const { data: statuses, isFetching, error: statusError, refetch } = useGitHubStatus(repoRefs);
+  const waitingData = statuses === undefined;
 
   const statusByKey = useMemo(() => {
     const m = new Map<string, RepoStatus>();
@@ -112,6 +113,11 @@ export function ResumenPage() {
         </Button>
       </div>
 
+      {statusError != null && (
+        <p className="mb-3 text-xs text-destructive">
+          Error al consultar GitHub: {(statusError as Error).message}
+        </p>
+      )}
       {busy ? (
         <div className="flex h-48 items-center justify-center text-muted-foreground">
           <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Cargando proyectos…
@@ -158,7 +164,7 @@ export function ResumenPage() {
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </div>
 
-                  {!mt || isLoading ? (
+                  {!mt || waitingData ? (
                     <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" /> calculando…
                     </div>
@@ -207,7 +213,7 @@ export function ResumenPage() {
                     </div>
                   )}
 
-                  {mt && !isLoading && (
+                  {mt && !waitingData && (
                     <p className={cn(
                       "mt-3 rounded-md px-2 py-1 text-center text-[11px] font-medium",
                       mt.fallando > 0

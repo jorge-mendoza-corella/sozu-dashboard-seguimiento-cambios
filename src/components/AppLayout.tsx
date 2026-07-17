@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 
 // `show(role, isRoot)` decide la visibilidad de cada item en el nav.
 const NAV_ITEMS = [
-  { to: "/", label: "CI/CD", icon: GitBranch, show: () => true },
   { to: "/resumen", label: "Resumen", icon: LayoutDashboard, show: () => true },
+  { to: "/", label: "CI/CD", icon: GitBranch, show: () => true },
   { to: "/contributors", label: "Contribuidores", icon: GitCommit, show: (_r: string | undefined, root: boolean) => root },
   { to: "/users", label: "Usuarios", icon: Users, show: (_r: string | undefined, root: boolean) => root },
 ];
