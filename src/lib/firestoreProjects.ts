@@ -22,6 +22,7 @@ export interface Project {
   playInternalUrl?: string; // link de invitación del track interno (Play Console → Testers → Copy link)
   testflightPublicUrl?: string; // link público de TestFlight (App Store Connect → grupo externo → Public link)
   approverEmail?: string; // usuario del dashboard que aprueba los PRs del proyecto (usa SU token de GitHub)
+  notifyAuthors?: string[]; // logins de GitHub seleccionables como autor extra al crear PR (por proyecto)
 }
 
 export interface MonitoredRepo {
@@ -79,6 +80,11 @@ export async function setProjectCodemagicApp(id: string, appId: string | null) {
   await updateDoc(doc(db, "projects", id), {
     codemagicAppId: appId ?? deleteField(),
   });
+}
+
+/** Logins de GitHub que aparecen como seleccionables al crear PR en el proyecto. */
+export async function setProjectNotifyAuthors(id: string, logins: string[]) {
+  await updateDoc(doc(db, "projects", id), { notifyAuthors: logins });
 }
 
 /** Define el aprobador default de PRs del proyecto (null = quitar). */

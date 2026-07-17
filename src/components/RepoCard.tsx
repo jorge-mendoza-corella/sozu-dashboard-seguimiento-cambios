@@ -12,21 +12,12 @@ import { BranchRow } from "./BranchRow";
 import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
-import { createPR, hasFailingDeploy, type ApproverAuth } from "@/lib/github";
+import { createPR, hasFailingDeploy, getBranchCommitAuthors, type ApproverAuth } from "@/lib/github";
 import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
 
-const AUTHOR_OVERRIDE_REPOS = new Set([
-  "sozu-supabase-migrations",
-  "sozu-edge-functions",
-  "sozu-n8n-workflows",
-  "server-stp",
-]);
-
-const AUTHOR_OPTIONS = [
-  { label: "Ramón",  login: "joseramonescobar",  color: "bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-700/60" },
-  { label: "Tomas",  login: "tomaspeterson-prog", color: "bg-purple-100 text-purple-700 border-purple-300 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-700/60" },
-  { label: "Eddy",   login: "Eddys912",           color: "bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-700/60" },
-  { label: "Abel",   login: "abelsalazar-cmd",    color: "bg-green-100 text-green-700 border-green-300 hover:bg-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700/60" },
+// Fallback legacy cuando el proyecto no tiene notifyAuthors configurados.
+const DEFAULT_AUTHOR_LOGINS = [
+  "joseramonescobar", "tomaspeterson-prog", "Eddys912", "abelsalazar-cmd",
 ];
 
 function sortBranches(branches: BranchInfo[]): BranchInfo[] {
@@ -57,16 +48,25 @@ interface Props {
   approver?: ApproverAuth | null;
   /** Login de GitHub del usuario logueado — para el permiso "ver cambios de otros". */
   selfLogin?: string | null;
+  /** Logins seleccionables como autor extra al crear PR (configurados por proyecto). */
+  notifyAuthors?: string[];
 }
 
-export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, selfLogin = null }: Props) {
+export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, selfLogin = null, notifyAuthors = [] }: Props) {
   // Sin el permiso viewOthers el usuario solo ve SUS ramas y PRs
   // (main/dev siempre visibles: son estado compartido del repo).
   const canViewOthers = perms.viewOthers || !selfLogin;
   const scopedPRs = canViewOthers
     ? status.openPRs
     : status.openPRs.filter((pr) => pr.author === selfLogin);
-  const [newPR, setNewPR] = useState<{ head: string; title: string; base: string; body: string; authorOverride?: string; authorStep?: boolean } | null>(null);
+  const [newPR, setNewPR] = useState<{
+    head: string; title: string; base: string; body: string;
+    authorStep?: boolean;
+    /** Autores detectados de los commits (null = detectando). Se notifican SIEMPRE. */
+    detectedAuthors?: string[] | null;
+    /** Autores extra elegidos a mano (multiseleccion). */
+    selectedAuthors: string[];
+  } | null>(null);
   const [newPRLoading, setNewPRLoading] = useState(false);
   const [newPRResult, setNewPRResult] = useState<{ ok: boolean; msg: string; url?: string } | null>(null);
   // Optimistic: ramas donde ya se creó un PR pero el refetch aún no llegó
@@ -83,9 +83,21 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
 
   const openCreatePR = (branchName: string) => {
     const defaultBase = branchName === "dev" ? "main" : "dev";
-    const needsAuthor = AUTHOR_OVERRIDE_REPOS.has(status.repo);
-    setNewPR({ head: branchName, title: branchName, base: defaultBase, body: "", authorStep: needsAuthor });
+    // Todos los repos excepto sozu-admin llevan marcacion de autores.
+    const needsAuthor = status.repo !== "sozu-admin";
+    setNewPR({
+      head: branchName, title: branchName, base: defaultBase, body: "",
+      authorStep: needsAuthor,
+      detectedAuthors: needsAuthor ? null : [],
+      selectedAuthors: [],
+    });
     setNewPRResult(null);
+    if (needsAuthor) {
+      // Detectar autores reales de los commits del PR (head vs base).
+      getBranchCommitAuthors(status.owner, status.repo, defaultBase, branchName).then((logins) => {
+        setNewPR((p) => (p && p.head === branchName ? { ...p, detectedAuthors: logins } : p));
+      });
+    }
   };
 
   const closeCreatePR = () => {
@@ -99,12 +111,13 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
     setNewPRLoading(true);
     try {
       let body = newPR.body.trim();
-      if (newPR.authorOverride) {
-        const found = AUTHOR_OPTIONS.find((a) => a.login === newPR.authorOverride);
-        const label = found?.label ?? newPR.authorOverride;
-        body = body
-          ? `${body}\n\n> 👤 Cambios de: @${newPR.authorOverride} (${label})\n<!-- pr_author: ${newPR.authorOverride} -->`
-          : `> 👤 Cambios de: @${newPR.authorOverride} (${label})\n<!-- pr_author: ${newPR.authorOverride} -->`;
+      // Autores del PR: detectados por commits + agregados a mano (sin duplicar).
+      // Una línea <!-- pr_author --> por autor: los workflows notifican a todos.
+      const authors = [...new Set([...(newPR.detectedAuthors ?? []), ...newPR.selectedAuthors])];
+      if (authors.length > 0) {
+        const mention = `> 👤 Cambios de: ${authors.map((a) => `@${a}`).join(", ")}`;
+        const markers = authors.map((a) => `<!-- pr_author: ${a} -->`).join("\n");
+        body = body ? `${body}\n\n${mention}\n${markers}` : `${mention}\n${markers}`;
       }
       const { number, url } = await createPR(status.owner, status.repo, newPR.title.trim(), newPR.head, newPR.base, body, approver?.login);
       setNewPRResult({ ok: true, msg: `PR #${number} creado`, url });
@@ -386,48 +399,96 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                   )}
                 </div>
               ) : newPR.authorStep ? (
-                /* Paso 1: selección de autor */
+                /* Paso 1: autores del PR (detectados por commits + extras multiselección) */
                 <div className="space-y-2">
-                  <p className="text-[11px] text-muted-foreground font-medium">¿De quién son estos cambios?</p>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {AUTHOR_OPTIONS.map((opt) => (
-                      <button
-                        key={opt.login}
-                        onClick={() => setNewPR((p) => p ? { ...p, authorOverride: opt.login, authorStep: false } : null)}
-                        className={cn(
-                          "flex items-center justify-center gap-1.5 text-xs font-semibold py-2 rounded border transition-colors",
-                          opt.color,
-                        )}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
+                  <p className="text-[11px] text-muted-foreground font-medium">
+                    Se notificará automáticamente a los autores de los commits:
+                  </p>
+                  {newPR.detectedAuthors == null ? (
+                    <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> detectando autores…
+                    </p>
+                  ) : newPR.detectedAuthors.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground italic">Sin autores detectados en los commits.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {(newPR.detectedAuthors ?? []).map((login) => (
+                        <span
+                          key={login}
+                          className="flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:border-emerald-700/60 dark:bg-emerald-950/30 dark:text-emerald-300"
+                        >
+                          ✓ @{login}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {(() => {
+                    const options = (notifyAuthors.length > 0 ? notifyAuthors : DEFAULT_AUTHOR_LOGINS)
+                      .filter((l) => !(newPR.detectedAuthors ?? []).includes(l));
+                    if (options.length === 0) return null;
+                    return (
+                      <>
+                        <p className="text-[11px] text-muted-foreground font-medium">
+                          ¿Notificar a alguien más? (opcional, multiselección)
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {options.map((login) => {
+                            const on = newPR.selectedAuthors.includes(login);
+                            return (
+                              <button
+                                key={login}
+                                onClick={() =>
+                                  setNewPR((p) => p ? {
+                                    ...p,
+                                    selectedAuthors: on
+                                      ? p.selectedAuthors.filter((x) => x !== login)
+                                      : [...p.selectedAuthors, login],
+                                  } : null)
+                                }
+                                className={cn(
+                                  "rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors",
+                                  on
+                                    ? "border-violet-400 bg-violet-100 text-violet-700 dark:border-violet-700/60 dark:bg-violet-900/40 dark:text-violet-300"
+                                    : "border-border text-muted-foreground hover:bg-muted",
+                                )}
+                              >
+                                @{login}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    );
+                  })()}
                   <button
                     onClick={() => setNewPR((p) => p ? { ...p, authorStep: false } : null)}
-                    className="w-full text-[11px] text-muted-foreground hover:text-foreground py-1 rounded hover:bg-muted transition-colors"
+                    disabled={newPR.detectedAuthors == null}
+                    className="w-full text-[11px] font-medium text-violet-700 dark:text-violet-300 py-1.5 rounded border border-violet-200 dark:border-violet-700/40 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors disabled:opacity-50"
                   >
-                    Mío (Jorge) — sin override
+                    Continuar
                   </button>
                 </div>
               ) : (
                 /* Paso 2: formulario */
                 <div className="space-y-2">
-                  {newPR.authorOverride && (
-                    <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-700/40">
-                      <span className="text-[10px] text-muted-foreground">Autor:</span>
-                      <span className="text-[11px] font-semibold font-mono text-violet-700 dark:text-violet-300">
-                        {AUTHOR_OPTIONS.find((a) => a.login === newPR.authorOverride)?.label ?? newPR.authorOverride}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground font-mono">(@{newPR.authorOverride})</span>
-                      <button
-                        onClick={() => setNewPR((p) => p ? { ...p, authorStep: true } : null)}
-                        className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
-                      >
-                        cambiar
-                      </button>
-                    </div>
-                  )}
+                  {(() => {
+                    const authors = [...new Set([...(newPR.detectedAuthors ?? []), ...newPR.selectedAuthors])];
+                    if (authors.length === 0) return null;
+                    return (
+                      <div className="flex flex-wrap items-center gap-1.5 px-2 py-1 rounded bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-700/40">
+                        <span className="text-[10px] text-muted-foreground">Se notificará a:</span>
+                        <span className="text-[11px] font-semibold font-mono text-violet-700 dark:text-violet-300">
+                          {authors.map((a) => `@${a}`).join(", ")}
+                        </span>
+                        <button
+                          onClick={() => setNewPR((p) => p ? { ...p, authorStep: true } : null)}
+                          className="ml-auto text-[10px] text-muted-foreground hover:text-foreground underline"
+                        >
+                          cambiar
+                        </button>
+                      </div>
+                    );
+                  })()}
                   <input
                     type="text"
                     value={newPR.title}

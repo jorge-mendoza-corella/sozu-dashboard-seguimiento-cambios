@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
 import { cn } from "@/lib/utils";
 import {
-  addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel, setProjectIsApp, setProjectCodemagicApp, setProjectApprover,
+  addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel, setProjectIsApp, setProjectCodemagicApp, setProjectApprover, setProjectNotifyAuthors,
 } from "@/lib/firestoreProjects";
+import { listRepoContributors } from "@/lib/github";
 import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
 import { useCodemagicApps } from "@/hooks/useCodemagic";
 import { isCodemagicConfigured } from "@/lib/codemagic";
@@ -29,6 +30,27 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
     staleTime: 60 * 1000,
   });
   const approverCandidates = allUsers.filter((u) => !!u.githubToken && !!u.githubLogin);
+
+  // Configuración de "autores notificables" por proyecto: candidatos = todos
+  // los contribuidores históricos de los repos del proyecto.
+  const [authorsOpenFor, setAuthorsOpenFor] = useState<string | null>(null);
+  const { data: contributorOptions = [], isLoading: loadingContribs } = useQuery({
+    queryKey: ["project-contributors", authorsOpenFor],
+    enabled: !!authorsOpenFor,
+    staleTime: 10 * 60 * 1000,
+    queryFn: async () => {
+      const projRepos = repos.filter((r) => r.projectId === authorsOpenFor);
+      const lists = await Promise.all(projRepos.map((r) => listRepoContributors(r.owner, r.repo)));
+      return [...new Set(lists.flat())].sort((a, b) => a.localeCompare(b));
+    },
+  });
+
+  const toggleNotifyAuthor = (projectId: string, current: string[], login: string) => {
+    const next = current.includes(login)
+      ? current.filter((l) => l !== login)
+      : [...current, login];
+    return run(`na-${projectId}`, () => setProjectNotifyAuthors(projectId, next), refreshProjects);
+  };
 
   const [newProject, setNewProject] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -193,6 +215,60 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                     <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                       <Loader2 className="h-3 w-3 animate-spin" /> validando accesos en GitHub…
                     </span>
+                  )}
+                </div>
+
+                {/* Autores notificables al crear PR (multiselección desde contribuidores) */}
+                <div className="mt-2 pl-5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] text-muted-foreground">
+                      Autores seleccionables en PRs: {(p.notifyAuthors ?? []).length || "—"}
+                    </span>
+                    <button
+                      type="button"
+                      className="text-[11px] text-muted-foreground underline hover:text-foreground"
+                      onClick={() => setAuthorsOpenFor(authorsOpenFor === p.id ? null : p.id)}
+                    >
+                      {authorsOpenFor === p.id ? "cerrar" : "configurar"}
+                    </button>
+                  </div>
+                  {authorsOpenFor === p.id && (
+                    <div className="mt-1.5 rounded-md border bg-muted/30 p-2">
+                      <p className="mb-1.5 text-[10px] text-muted-foreground">
+                        Marca los contribuidores que aparecerán para seleccionar al crear un PR en este proyecto
+                        (los autores de los commits se notifican solos, no necesitan estar aquí).
+                      </p>
+                      {loadingContribs ? (
+                        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" /> cargando contribuidores…
+                        </span>
+                      ) : contributorOptions.length === 0 ? (
+                        <span className="text-[11px] text-muted-foreground">Sin contribuidores encontrados.</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {contributorOptions.map((login) => {
+                            const current = p.notifyAuthors ?? [];
+                            const on = current.includes(login);
+                            return (
+                              <button
+                                key={login}
+                                type="button"
+                                disabled={busy === `na-${p.id}`}
+                                onClick={() => toggleNotifyAuthor(p.id, current, login)}
+                                className={cn(
+                                  "rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-50",
+                                  on
+                                    ? "border-violet-400 bg-violet-100 text-violet-700 dark:border-violet-700/60 dark:bg-violet-900/40 dark:text-violet-300"
+                                    : "border-border text-muted-foreground hover:bg-muted",
+                                )}
+                              >
+                                @{login}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 

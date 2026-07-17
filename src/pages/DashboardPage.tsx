@@ -353,6 +353,7 @@ export function DashboardPage() {
                         canReorder={isRoot}
                         approver={approverByProject.get(p.id) ?? null}
                         selfLogin={isRoot ? null : appUser?.githubLogin ?? null}
+                        notifyAuthors={p.notifyAuthors ?? []}
                         onRefetch={() => refetch()}
                         onReorder={handleReorder}
                       />

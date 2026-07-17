@@ -15,13 +15,14 @@ interface Props {
   canReorder: boolean;
   approver?: ApproverAuth | null;
   selfLogin?: string | null;
+  notifyAuthors?: string[];
   onRefetch: () => void;
   onReorder: (ids: string[]) => void;
 }
 
 const keyOf = (r: MonitoredRepo) => `${r.owner}/${r.repo}`;
 
-export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, approver = null, selfLogin = null, onRefetch, onReorder }: Props) {
+export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, approver = null, selfLogin = null, notifyAuthors = [], onRefetch, onReorder }: Props) {
   const [items, setItems] = useState<MonitoredRepo[]>(repos);
   const dragFrom = useRef<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -78,7 +79,7 @@ export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canRe
                 <GripVertical className="h-4 w-4" />
               </div>
             )}
-            <RepoCard status={status} onRefetch={onRefetch} readOnly={isViewer} perms={perms} approver={approver} selfLogin={selfLogin} />
+            <RepoCard status={status} onRefetch={onRefetch} readOnly={isViewer} perms={perms} approver={approver} selfLogin={selfLogin} notifyAuthors={notifyAuthors} />
           </div>
         );
       })}

@@ -154,6 +154,41 @@ export interface RepoStatus {
   error?: string;
 }
 
+/**
+ * Logins de GitHub que autoraron los commits de head vs base — para
+ * notificar automáticamente a los verdaderos autores del PR.
+ */
+export async function getBranchCommitAuthors(
+  owner: string,
+  repo: string,
+  base: string,
+  head: string,
+): Promise<string[]> {
+  try {
+    const { data } = await octokit.repos.compareCommits({ owner, repo, base, head });
+    const logins = new Set<string>();
+    for (const c of data.commits) {
+      const l = c.author?.login;
+      if (l && !l.includes("[bot]")) logins.add(l);
+    }
+    return [...logins];
+  } catch {
+    return [];
+  }
+}
+
+/** Contribuidores históricos del repo (para configurar notificables por proyecto). */
+export async function listRepoContributors(owner: string, repo: string): Promise<string[]> {
+  try {
+    const { data } = await octokit.repos.listContributors({ owner, repo, per_page: 60 });
+    return data
+      .map((c) => c.login)
+      .filter((l): l is string => !!l && !l.includes("[bot]"));
+  } catch {
+    return [];
+  }
+}
+
 /** SHA del HEAD de una rama (null si la rama/repo no existe o no hay acceso). */
 export async function getBranchHeadSha(owner: string, repo: string, branch: string): Promise<string | null> {
   try {
