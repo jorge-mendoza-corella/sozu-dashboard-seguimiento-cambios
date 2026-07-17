@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { getProjects, getRepos, type MonitoredRepo } from "@/lib/firestoreProjects";
-import { canReadRepo } from "@/lib/githubAuth";
+import { checkRepoAccess } from "@/lib/githubAuth";
 
 export function useProjects() {
   return useQuery({ queryKey: ["projects"], queryFn: getProjects, staleTime: 60 * 1000 });
@@ -11,9 +11,9 @@ export function useRepos() {
 }
 
 /**
- * Ids de repos que la cuenta de GitHub del usuario puede VER (según su API
- * key). El gate de visibilidad real es GitHub: si su cuenta no es
- * colaboradora de un repo privado, ese repo no aparece en el dashboard.
+ * Ids de repos donde la cuenta de GitHub del usuario es COLABORADORA con
+ * permiso de escritura (push). Leer no basta: la mayoría de los repos son
+ * públicos y cualquiera los lee — el criterio es ser colaborador real.
  * token null (root/legacy) = ve todos.
  */
 export function useAccessibleRepoIds(
@@ -29,7 +29,7 @@ export function useAccessibleRepoIds(
     queryFn: async (): Promise<string[]> => {
       if (!token) return repos.map((r) => r.id);
       const checks = await Promise.all(
-        repos.map(async (r) => ((await canReadRepo(token, r.owner, r.repo)) ? r.id : null)),
+        repos.map(async (r) => ((await checkRepoAccess(token, r.owner, r.repo)).ok ? r.id : null)),
       );
       return checks.filter((id): id is string => id !== null);
     },
