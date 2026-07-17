@@ -107,7 +107,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
   };
 
   const handleCreatePR = async () => {
-    if (!newPR || !newPR.title.trim()) return;
+    if (!newPR || !newPR.title.trim() || !newPR.body.trim()) return;
     setNewPRLoading(true);
     try {
       let body = newPR.body.trim();
@@ -511,13 +511,13 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                   <textarea
                     value={newPR.body}
                     onChange={(e) => setNewPR((p) => p ? { ...p, body: e.target.value } : null)}
-                    placeholder="Descripción (opcional)"
+                    placeholder="Descripción (obligatoria): qué cambia y por qué"
                     className="w-full text-xs rounded border bg-background px-2 py-1.5 resize-none h-14 focus:outline-none focus:ring-1 focus:ring-violet-400 placeholder:text-muted-foreground"
                   />
                   <div className="flex gap-2">
                     <button
                       onClick={handleCreatePR}
-                      disabled={newPRLoading || !newPR.title.trim()}
+                      disabled={newPRLoading || !newPR.title.trim() || !newPR.body.trim()}
                       className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors"
                     >
                       {newPRLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitPullRequest className="h-3 w-3" />}
