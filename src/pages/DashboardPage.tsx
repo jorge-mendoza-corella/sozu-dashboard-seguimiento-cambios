@@ -129,12 +129,14 @@ export function DashboardPage() {
     }
   }, [projects, searchParams, setSearchParams]);
 
-  // Tab activo por defecto = primer proyecto visible
+  // Tab activo por defecto = primer proyecto visible.
+  // Si hay deep-link (?project=) pendiente, ese efecto manda — no pisarlo.
   useEffect(() => {
+    if (searchParams.get("project")) return;
     if (projects.length && !projects.some((p) => p.id === activeProject)) {
       setActiveProject(projects[0].id);
     }
-  }, [projects, activeProject]);
+  }, [projects, activeProject, searchParams]);
 
   // Repos por proyecto (preserva el orden manual de getRepos) + índice de estado.
   const reposByProject = useMemo(() => {
@@ -276,7 +278,7 @@ export function DashboardPage() {
               setProjectView("repos"); // al cambiar de proyecto, volver a la vista de repos
             }}
           >
-            <TabsList className="flex-wrap h-auto">
+            <TabsList className="mt-3 h-auto flex-wrap overflow-visible">
               {projects.map((p) => {
                 const count = reposByProject.get(p.id)?.length ?? 0;
                 const alert = projectAlert.get(p.id) ?? null;
@@ -289,8 +291,16 @@ export function DashboardPage() {
                     key={p.id}
                     value={p.id}
                     title={alertTitle || undefined}
-                    className={cn("gap-1.5", alert && `tab-alert tab-alert-${alert}`)}
+                    className={cn(
+                      "group relative gap-1.5 overflow-visible",
+                      "data-[state=active]:font-bold data-[state=active]:text-primary",
+                      alert && `tab-alert tab-alert-${alert}`,
+                    )}
                   >
+                    {/* Flecha sobre el proyecto activo para ubicarlo de un vistazo */}
+                    <span className="pointer-events-none absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] leading-none text-primary opacity-0 transition-opacity group-data-[state=active]:opacity-100">
+                      ▼
+                    </span>
                     <span className="relative z-10 flex items-center gap-1.5">
                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
                       {p.name}
