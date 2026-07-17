@@ -311,31 +311,65 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
       ...rawBranches.filter((b) => b.name !== "main" && b.name !== "dev"),
     ];
 
-    const branches: BranchInfo[] = await Promise.all(
-      sortedRaw.slice(0, 10).map(async (b) => {
-        const [aheadMain, aheadDev] = await Promise.all([
-          b.name !== "main" ? getAheadBy(owner, repo, "main", b.name) : Promise.resolve(0),
-          b.name !== "dev" && b.name !== "main" ? getAheadBy(owner, repo, "dev", b.name) : Promise.resolve(0),
-        ]);
-        const commit = b.commit;
-        // Autor (login) del último commit — necesario para el permiso
-        // "ver cambios de otros" (filtrar ramas ajenas). Solo aplica a ramas
-        // feature (main/dev siempre son visibles) y se cachea por SHA para
-        // que los refetch de cada 2 min no repitan llamadas.
-        const author = b.name === "main" || b.name === "dev"
-          ? ""
-          : await getCommitAuthorCached(owner, repo, commit.sha);
+    // Una sola consulta GraphQL por repo para TODAS las ramas: autor del
+    // último commit + aheadBy vs main/dev. Antes eran ~3 llamadas REST por
+    // rama (30 por repo) y GitHub encolaba el aluvión — esto era la causa
+    // principal de la lentitud del dashboard.
+    const top = sortedRaw.slice(0, 10);
+    let branches: BranchInfo[];
+    try {
+      const parts = top.map((b, i) => {
+        const ref = JSON.stringify(`refs/heads/${b.name}`);
+        const head = JSON.stringify(b.name);
+        let q = `b${i}: ref(qualifiedName: ${ref}) { target { ... on Commit { author { user { login } name } } } }`;
+        if (b.name !== "main") {
+          q += `\nm${i}: ref(qualifiedName: "refs/heads/main") { compare(headRef: ${head}) { aheadBy } }`;
+        }
+        if (b.name !== "main" && b.name !== "dev") {
+          q += `\nd${i}: ref(qualifiedName: "refs/heads/dev") { compare(headRef: ${head}) { aheadBy } }`;
+        }
+        return q;
+      });
+      const gql = `query { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) { ${parts.join("\n")} } }`;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data: any = await octokit.graphql(gql);
+      branches = top.map((b, i) => {
+        const node = data.repository?.[`b${i}`]?.target?.author;
         return {
           name: b.name,
-          lastCommitSha: commit.sha.slice(0, 7),
+          lastCommitSha: b.commit.sha.slice(0, 7),
           lastCommitMessage: "",
-          lastCommitAuthor: author,
+          lastCommitAuthor: b.name === "main" || b.name === "dev"
+            ? ""
+            : (node?.user?.login ?? node?.name ?? ""),
           lastCommitDate: "",
-          aheadOfMain: aheadMain,
-          aheadOfDev: aheadDev,
+          aheadOfMain: data.repository?.[`m${i}`]?.compare?.aheadBy ?? 0,
+          aheadOfDev: data.repository?.[`d${i}`]?.compare?.aheadBy ?? 0,
         };
-      })
-    );
+      });
+    } catch {
+      // Fallback REST (lento) si GraphQL falla por lo que sea.
+      branches = await Promise.all(
+        top.map(async (b) => {
+          const [aheadMain, aheadDev] = await Promise.all([
+            b.name !== "main" ? getAheadBy(owner, repo, "main", b.name) : Promise.resolve(0),
+            b.name !== "dev" && b.name !== "main" ? getAheadBy(owner, repo, "dev", b.name) : Promise.resolve(0),
+          ]);
+          const author = b.name === "main" || b.name === "dev"
+            ? ""
+            : await getCommitAuthorCached(owner, repo, b.commit.sha);
+          return {
+            name: b.name,
+            lastCommitSha: b.commit.sha.slice(0, 7),
+            lastCommitMessage: "",
+            lastCommitAuthor: author,
+            lastCommitDate: "",
+            aheadOfMain: aheadMain,
+            aheadOfDev: aheadDev,
+          };
+        })
+      );
+    }
 
     const openPRs: PullRequest[] = await Promise.all(
       prsResp.data.map(async (pr) => {
