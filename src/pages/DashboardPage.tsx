@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   RefreshCw, Clock, GitBranch, AlertCircle, GitPullRequest, ArrowUpCircle, Rocket, Plus, Settings, FolderGit2, Loader2, Smartphone,
@@ -116,6 +117,17 @@ export function DashboardPage() {
       )
       .finally(() => setSeeding(false));
   }, [isRoot, loadingProjects, loadingRepos, allProjects, seeding, appUser, qc]);
+
+  // Deep-link desde Resumen: /?project=<id> abre ese proyecto en CI/CD.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const pid = searchParams.get("project");
+    if (pid && projects.some((p) => p.id === pid)) {
+      setActiveProject(pid);
+      setProjectView("repos");
+      setSearchParams({}, { replace: true });
+    }
+  }, [projects, searchParams, setSearchParams]);
 
   // Tab activo por defecto = primer proyecto visible
   useEffect(() => {

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Activity, GitBranch, Users, GitCommit, LogOut } from "lucide-react";
+import { Activity, GitBranch, Users, GitCommit, LogOut, LayoutDashboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 // `show(role, isRoot)` decide la visibilidad de cada item en el nav.
 const NAV_ITEMS = [
   { to: "/", label: "CI/CD", icon: GitBranch, show: () => true },
+  { to: "/resumen", label: "Resumen", icon: LayoutDashboard, show: () => true },
   { to: "/contributors", label: "Contribuidores", icon: GitCommit, show: (_r: string | undefined, root: boolean) => root },
   { to: "/users", label: "Usuarios", icon: Users, show: (_r: string | undefined, root: boolean) => root },
 ];
