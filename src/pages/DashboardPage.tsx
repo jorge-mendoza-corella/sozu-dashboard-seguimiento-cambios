@@ -287,20 +287,23 @@ export function DashboardPage() {
                   alert === "pending" ? "PRs abiertos" :
                   alert === "devPending" ? "Dev por pasar a PRD" : "";
                 return (
+                  <div key={p.id} className="relative">
+                    {/* Flecha sobre el proyecto activo — fuera del trigger para
+                        que el overflow del efecto tab-alert no la recorte */}
+                    {activeProject === p.id && (
+                      <span className="pointer-events-none absolute -top-3 left-1/2 z-20 -translate-x-1/2 text-[10px] leading-none text-primary">
+                        ▼
+                      </span>
+                    )}
                   <TabsTrigger
-                    key={p.id}
                     value={p.id}
                     title={alertTitle || undefined}
                     className={cn(
-                      "group relative gap-1.5 overflow-visible",
+                      "gap-1.5",
                       "data-[state=active]:font-bold data-[state=active]:text-primary",
                       alert && `tab-alert tab-alert-${alert}`,
                     )}
                   >
-                    {/* Flecha sobre el proyecto activo para ubicarlo de un vistazo */}
-                    <span className="pointer-events-none absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] leading-none text-primary opacity-0 transition-opacity group-data-[state=active]:opacity-100">
-                      ▼
-                    </span>
                     <span className="relative z-10 flex items-center gap-1.5">
                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
                       {p.name}
@@ -312,6 +315,7 @@ export function DashboardPage() {
                       <span className="text-[10px] text-muted-foreground">({count})</span>
                     </span>
                   </TabsTrigger>
+                  </div>
                 );
               })}
             </TabsList>
