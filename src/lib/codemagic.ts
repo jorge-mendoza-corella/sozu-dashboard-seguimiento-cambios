@@ -167,6 +167,51 @@ export async function cancelBuild(buildId: string): Promise<void> {
 export const buildUrl = (appId: string, buildId: string) =>
   `https://codemagic.io/app/${appId}/build/${buildId}`;
 
+// ---------------------------------------------------------------------------
+// Variables de entorno de la app en Codemagic (para subir el keystore Android
+// desde el dashboard como variables SEGURAS — cifradas, solo el build las lee).
+// ---------------------------------------------------------------------------
+interface CodemagicVariable {
+  id: string;
+  key: string;
+  group: string;
+}
+
+async function listAppVariables(appId: string): Promise<CodemagicVariable[]> {
+  return request<CodemagicVariable[]>(`/apps/${appId}/variables`);
+}
+
+async function upsertSecureVariable(appId: string, group: string, key: string, value: string) {
+  // La API no tiene update por key: borrar la existente y crearla de nuevo.
+  const existing = (await listAppVariables(appId)).find((v) => v.key === key && v.group === group);
+  if (existing) {
+    await request(`/apps/${appId}/variables/${existing.id}`, { method: "DELETE" }).catch(() => {});
+  }
+  await request(`/apps/${appId}/variables`, {
+    method: "POST",
+    body: JSON.stringify({ key, value, group, secure: true }),
+  });
+}
+
+export const ANDROID_SIGNING_GROUP = "android_signing_custom";
+
+/**
+ * Sube el keystore de Android (.jks en base64) y sus credenciales como
+ * variables seguras del grupo android_signing_custom. Los workflows lo
+ * reconstruyen a archivo antes de firmar.
+ */
+export async function uploadAndroidKeystore(appId: string, params: {
+  fileBase64: string;
+  storePassword: string;
+  keyAlias: string;
+  keyPassword: string;
+}): Promise<void> {
+  await upsertSecureVariable(appId, ANDROID_SIGNING_GROUP, "ANDROID_KEYSTORE_B64", params.fileBase64);
+  await upsertSecureVariable(appId, ANDROID_SIGNING_GROUP, "ANDROID_KEYSTORE_PASSWORD", params.storePassword);
+  await upsertSecureVariable(appId, ANDROID_SIGNING_GROUP, "ANDROID_KEY_ALIAS", params.keyAlias);
+  await upsertSecureVariable(appId, ANDROID_SIGNING_GROUP, "ANDROID_KEY_PASSWORD", params.keyPassword);
+}
+
 export interface BuildStatusInfo {
   label: string;
   isRunning: boolean;

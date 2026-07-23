@@ -10,12 +10,16 @@ import { SelectNative } from "@/components/ui/select-native";
 import { useCodemagicApps, useCodemagicBuilds, useBranchHead, useActiveDeploy } from "@/hooks/useCodemagic";
 import {
   startBuild, cancelBuild, buildStatusInfo, buildUrl, buildCommitSha, appRepo,
-  formatBuildDate, PLATFORMS, WORKFLOW_LABELS, SYNC_TESTERS_WORKFLOW,
+  formatBuildDate, uploadAndroidKeystore, PLATFORMS, WORKFLOW_LABELS, SYNC_TESTERS_WORKFLOW,
   type CodemagicBuild, type PlatformDef,
 } from "@/lib/codemagic";
+import { useAuth } from "@/hooks/useAuth";
+import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { setProjectKeystoreUploaded } from "@/lib/firestoreProjects";
 import { cn } from "@/lib/utils";
 import type { CicdPermissions } from "@/lib/firestoreUsers";
 import { setProjectTesters, setProjectTestLinks, type Project } from "@/lib/firestoreProjects";
+import { formatDistanceToNow } from "@/lib/timeUtils";
 
 const TONE_CLASSES: Record<string, string> = {
   running: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-900/50 animate-pulse",
@@ -433,6 +437,47 @@ export function AppBuildsPanel({ appId, perms, project }: {
     setTimeout(() => setCopied(false), 1500);
   };
 
+  // Subida del keystore Android (solo root): se guarda como variables
+  // seguras en Codemagic (grupo android_signing_custom) — cifradas, solo
+  // los builds las leen. Nunca pasa por Firestore ni queda legible.
+  const { appUser } = useAuth();
+  const isRoot = appUser?.email === SUPERUSER_EMAIL;
+  const [ksOpen, setKsOpen] = useState(false);
+  const [ksBusy, setKsBusy] = useState(false);
+  const [ksError, setKsError] = useState("");
+  const [ksForm, setKsForm] = useState({ storePassword: "", keyAlias: "", keyPassword: "" });
+  const [ksFile, setKsFile] = useState<File | null>(null);
+
+  const handleUploadKeystore = async () => {
+    if (!ksFile || !ksForm.storePassword || !ksForm.keyAlias || !ksForm.keyPassword) return;
+    setKsBusy(true);
+    setKsError("");
+    try {
+      const buf = await ksFile.arrayBuffer();
+      let bin = "";
+      const bytes = new Uint8Array(buf);
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      const b64 = btoa(bin);
+      await uploadAndroidKeystore(appId, {
+        fileBase64: b64,
+        storePassword: ksForm.storePassword,
+        keyAlias: ksForm.keyAlias,
+        keyPassword: ksForm.keyPassword,
+      });
+      if (project) {
+        await setProjectKeystoreUploaded(project.id);
+        await qc.invalidateQueries({ queryKey: ["projects"] });
+      }
+      setKsOpen(false);
+      setKsForm({ storePassword: "", keyAlias: "", keyPassword: "" });
+      setKsFile(null);
+    } catch (e) {
+      setKsError(e instanceof Error ? e.message : "Error al subir el keystore");
+    } finally {
+      setKsBusy(false);
+    }
+  };
+
   // Links de invitación (fijos por app; se configuran una sola vez).
   const editTestLink = (kind: "playInternalUrl" | "testflightPublicUrl") => {
     if (!project) return;
@@ -775,6 +820,25 @@ export function AppBuildsPanel({ appId, perms, project }: {
                   </span>
                 );
               })}
+              {/* Keystore Android (solo root): se guarda cifrado en Codemagic */}
+              {isRoot && (
+                <span className="flex items-center gap-1">
+                  <span className="text-[10px] text-muted-foreground/70">
+                    Keystore Android:{" "}
+                    {project?.androidKeystoreUploadedAt
+                      ? `subido hace ${formatDistanceToNow(project.androidKeystoreUploadedAt)}`
+                      : "sin subir"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setKsError(""); setKsOpen(true); }}
+                    className="text-[10px] text-muted-foreground underline hover:text-foreground"
+                    title="Subir/actualizar el .jks — se guarda como variables cifradas en Codemagic"
+                  >
+                    {project?.androidKeystoreUploadedAt ? "actualizar" : "subir"}
+                  </button>
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {testers.map((email) => (
@@ -1020,6 +1084,82 @@ export function AppBuildsPanel({ appId, perms, project }: {
         )}
 
         {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+
+        {/* Modal de subida del keystore Android (solo root) */}
+        {ksOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"
+            onClick={() => !ksBusy && setKsOpen(false)}
+          >
+            <div
+              className="w-full max-w-md rounded-xl border bg-background p-5 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="flex items-center gap-2 text-base font-bold">
+                <Upload className="h-5 w-5 text-primary" />
+                Keystore Android (.jks)
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Se guarda como <span className="font-medium text-foreground">variables cifradas en Codemagic</span>{" "}
+                (grupo android_signing_custom) — nunca queda legible ni pasa por Firestore.
+                Los builds lo reconstruyen para firmar el release.
+              </p>
+              <div className="mt-3 space-y-2.5">
+                <div>
+                  <label className="text-xs font-medium">Archivo .jks / .keystore <span className="text-destructive">*</span></label>
+                  <input
+                    type="file"
+                    accept=".jks,.keystore"
+                    className="mt-1 w-full text-xs"
+                    onChange={(e) => setKsFile(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium">Keystore password <span className="text-destructive">*</span></label>
+                  <input
+                    type="password"
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 font-mono text-sm"
+                    value={ksForm.storePassword}
+                    onChange={(e) => setKsForm((f) => ({ ...f, storePassword: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium">Key alias <span className="text-destructive">*</span></label>
+                  <input
+                    type="text"
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 font-mono text-sm"
+                    placeholder="sozu"
+                    value={ksForm.keyAlias}
+                    onChange={(e) => setKsForm((f) => ({ ...f, keyAlias: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium">Key password <span className="text-destructive">*</span></label>
+                  <input
+                    type="password"
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 font-mono text-sm"
+                    value={ksForm.keyPassword}
+                    onChange={(e) => setKsForm((f) => ({ ...f, keyPassword: e.target.value }))}
+                  />
+                </div>
+                {ksError && <p className="text-xs text-destructive">{ksError}</p>}
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <Button variant="outline" size="sm" disabled={ksBusy} onClick={() => setKsOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={ksBusy || !ksFile || !ksForm.storePassword || !ksForm.keyAlias || !ksForm.keyPassword}
+                  onClick={handleUploadKeystore}
+                >
+                  {ksBusy ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Upload className="h-4 w-4 mr-1.5" />}
+                  Subir cifrado
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Modal de confirmación de build/publicación */}
         {confirmData && (
