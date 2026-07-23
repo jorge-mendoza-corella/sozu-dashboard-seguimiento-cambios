@@ -5,6 +5,7 @@ import {
   RefreshCw, Clock, GitBranch, AlertCircle, GitPullRequest, ArrowUpCircle, Rocket, Plus, Settings, FolderGit2, Loader2, Smartphone,
 } from "lucide-react";
 import { AppBuildsPanel } from "@/components/codemagic/AppBuildsPanel";
+import { ActiveBuildChips } from "@/components/codemagic/ActiveBuildChips";
 import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { useProjects, useRepos, useAccessibleRepoIds } from "@/hooks/useProjectsRepos";
@@ -347,6 +348,9 @@ export function DashboardPage() {
                         >
                           <Icon className="h-4 w-4" />
                           {label}
+                          {key === "deploy" && p.codemagicAppId && (
+                            <ActiveBuildChips appId={p.codemagicAppId} compact />
+                          )}
                         </button>
                       ))}
                     </div>

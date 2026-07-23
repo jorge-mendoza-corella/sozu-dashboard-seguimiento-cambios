@@ -12,6 +12,7 @@ import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { hasFailingDeploy, type RepoRef, type RepoStatus } from "@/lib/github";
 import { SUPERUSER_EMAIL, resolvePermissions } from "@/lib/firestoreUsers";
 import { cn } from "@/lib/utils";
+import { ActiveBuildChips } from "@/components/codemagic/ActiveBuildChips";
 
 interface ProjectMetrics {
   repos: number;
@@ -210,6 +211,13 @@ export function ResumenPage() {
                         </span>
                         <span className="text-xs text-muted-foreground">deployando</span>
                       </div>
+                    </div>
+                  )}
+
+                  {/* Actividad de Codemagic en curso (apps): plataforma + etapa */}
+                  {p.isApp && p.codemagicAppId && (
+                    <div className="mt-3 flex flex-wrap gap-1.5 empty:hidden">
+                      <ActiveBuildChips appId={p.codemagicAppId} />
                     </div>
                   )}
 
