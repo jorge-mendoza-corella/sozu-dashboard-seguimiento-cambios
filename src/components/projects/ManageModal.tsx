@@ -18,7 +18,7 @@ import { getAllUsers, SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { checkRepoAccess } from "@/lib/githubAuth";
 import {
   getGoogleFirebaseToken, listFirebaseProjects, listProjectPackages,
-  type FirebaseProjectInfo, type FirebaseAppPackage,
+  type FirebaseAppPackage,
 } from "@/lib/firebaseMgmt";
 
 export function ManageModal({ onClose }: { onClose: () => void }) {
@@ -67,47 +67,49 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
     return run(`pkg-${projectId}`, () => setProjectAndroidPackage(projectId, v || null), refreshProjects);
   };
 
-  // Picker de packages desde Firebase: la cuenta Google del usuario lista
-  // sus proyectos Firebase (scope readonly on-demand) y las apps registradas.
-  const [fbPickerFor, setFbPickerFor] = useState<string | null>(null); // projectId del dashboard
-  const [fbProjects, setFbProjects] = useState<FirebaseProjectInfo[] | null>(null);
-  const [fbSelected, setFbSelected] = useState<string>("");
-  const [fbPackages, setFbPackages] = useState<FirebaseAppPackage[] | null>(null);
-  const [fbBusy, setFbBusy] = useState(false);
+  // Packages Android de TODOS los proyectos Firebase accesibles con la
+  // cuenta Google del usuario — llenan el selector de Package. Se cargan al
+  // primer click en el selector (gesto de usuario: el popup de OAuth solo
+  // sale la primera vez; el token queda cacheado ~1 h).
+  const [fbOptions, setFbOptions] = useState<
+    Array<{ packageName: string; projectId: string; projectName: string }> | null
+  >(null);
+  const [fbLoading, setFbLoading] = useState(false);
 
-  const openFbPicker = async (dashProjectId: string) => {
-    setFbPickerFor(dashProjectId);
-    setFbPackages(null);
-    setFbSelected("");
-    setFbBusy(true);
+  const ensureFbOptions = async () => {
+    if (fbOptions !== null || fbLoading) return;
+    setFbLoading(true);
     setError("");
     try {
       const token = await getGoogleFirebaseToken();
       const projs = await listFirebaseProjects(token);
-      setFbProjects(projs);
-      if (projs.length === 0) setError("Tu cuenta Google no tiene acceso a ningún proyecto de Firebase.");
+      const lists = await Promise.all(
+        projs.map(async (fp) => {
+          const pkgs = await listProjectPackages(token, fp.projectId).catch(() => [] as FirebaseAppPackage[]);
+          return pkgs
+            .filter((a) => a.platform === "android")
+            .map((a) => ({ packageName: a.packageName, projectId: fp.projectId, projectName: fp.displayName }));
+        }),
+      );
+      const flat = lists.flat();
+      // dedup por package+proyecto
+      const seen = new Set<string>();
+      setFbOptions(flat.filter((o) => {
+        const k = `${o.packageName}|${o.projectId}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      }).sort((a, b) => a.packageName.localeCompare(b.packageName)));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudieron leer los proyectos de Firebase");
-      setFbPickerFor(null);
+      setError(e instanceof Error ? e.message : "No se pudieron leer las apps de Firebase");
+      setFbOptions([]);
     } finally {
-      setFbBusy(false);
+      setFbLoading(false);
     }
   };
 
-  const pickFbProject = async (firebaseProjectId: string) => {
-    setFbSelected(firebaseProjectId);
-    setFbPackages(null);
-    if (!firebaseProjectId) return;
-    setFbBusy(true);
-    try {
-      const token = await getGoogleFirebaseToken();
-      setFbPackages(await listProjectPackages(token, firebaseProjectId));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudieron leer las apps del proyecto");
-    } finally {
-      setFbBusy(false);
-    }
-  };
+  // Edición manual del package (fallback cuando no está en Firebase).
+  const [manualPkgFor, setManualPkgFor] = useState<string | null>(null);
 
   const [newProject, setNewProject] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -350,88 +352,53 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                   </div>
                 )}
 
-                {/* Package Android (applicationId) — se inyecta al build de Codemagic */}
+                {/* Package Android (applicationId) — selector llenado desde Firebase */}
                 {isApp && (
                   <div className="mt-2 flex flex-wrap items-center gap-2 pl-5">
-                    <span className="text-[11px] text-muted-foreground">Package Android (applicationId):</span>
-                    <input
-                      key={p.androidPackage ?? "none"}
-                      type="text"
-                      spellCheck={false}
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      className="h-7 w-64 rounded border bg-background px-2 font-mono text-xs"
-                      placeholder="com.sozu.clientes_app"
-                      defaultValue={p.androidPackage ?? ""}
-                      disabled={busy === `pkg-${p.id}`}
-                      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                      onBlur={(e) => savePackage(p.id, e.target.value)}
-                    />
-                    {busy === `pkg-${p.id}` && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                    <span className="text-[11px] text-muted-foreground">Package Android:</span>
+                    {manualPkgFor === p.id ? (
+                      <input
+                        key={p.androidPackage ?? "none"}
+                        type="text"
+                        autoFocus
+                        spellCheck={false}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        className="h-7 w-64 rounded border bg-background px-2 font-mono text-xs"
+                        placeholder="com.sozu.clientes_app"
+                        defaultValue={p.androidPackage ?? ""}
+                        disabled={busy === `pkg-${p.id}`}
+                        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                        onBlur={(e) => { savePackage(p.id, e.target.value); setManualPkgFor(null); }}
+                      />
+                    ) : (
+                      <SelectNative
+                        className="h-7 w-72 font-mono text-xs"
+                        value={p.androidPackage ?? ""}
+                        disabled={busy === `pkg-${p.id}`}
+                        onMouseDown={() => void ensureFbOptions()}
+                        onFocus={() => void ensureFbOptions()}
+                        onChange={(e) => { if (e.target.value) savePackage(p.id, e.target.value); }}
+                      >
+                        <option value="">{fbLoading ? "cargando apps de Firebase…" : "— selecciona —"}</option>
+                        {p.androidPackage && !(fbOptions ?? []).some((o) => o.packageName === p.androidPackage) && (
+                          <option value={p.androidPackage}>{p.androidPackage} (actual)</option>
+                        )}
+                        {(fbOptions ?? []).map((o) => (
+                          <option key={`${o.packageName}|${o.projectId}`} value={o.packageName}>
+                            {o.packageName} — {o.projectName}
+                          </option>
+                        ))}
+                      </SelectNative>
+                    )}
+                    {(busy === `pkg-${p.id}` || fbLoading) && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                     <button
                       type="button"
-                      className="text-[11px] text-muted-foreground underline hover:text-foreground"
-                      title="Lee los packages de las apps registradas en tus proyectos de Firebase (con tu cuenta Google)"
-                      onClick={() => (fbPickerFor === p.id ? setFbPickerFor(null) : openFbPicker(p.id))}
+                      className="text-[10px] text-muted-foreground underline hover:text-foreground"
+                      onClick={() => setManualPkgFor(manualPkgFor === p.id ? null : p.id)}
                     >
-                      {fbPickerFor === p.id ? "cerrar" : "leer de Firebase"}
+                      {manualPkgFor === p.id ? "usar selector" : "escribir a mano"}
                     </button>
-                  </div>
-                )}
-                {isApp && fbPickerFor === p.id && (
-                  <div className="mt-1.5 ml-5 rounded-md border bg-muted/30 p-2">
-                    {fbBusy && !fbProjects ? (
-                      <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                        <Loader2 className="h-3 w-3 animate-spin" /> conectando con tu cuenta Google…
-                      </span>
-                    ) : (
-                      <>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] text-muted-foreground">Proyecto Firebase:</span>
-                          <SelectNative
-                            className="h-7 w-64 text-xs"
-                            value={fbSelected}
-                            disabled={fbBusy}
-                            onChange={(e) => pickFbProject(e.target.value)}
-                          >
-                            <option value="">— elige —</option>
-                            {(fbProjects ?? []).map((fp) => (
-                              <option key={fp.projectId} value={fp.projectId}>
-                                {fp.displayName} ({fp.projectId})
-                              </option>
-                            ))}
-                          </SelectNative>
-                          {fbBusy && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-                        </div>
-                        {fbPackages && (
-                          <div className="mt-1.5 flex flex-wrap gap-1.5">
-                            {fbPackages.length === 0 ? (
-                              <span className="text-[11px] text-muted-foreground">Sin apps registradas en ese proyecto.</span>
-                            ) : (
-                              fbPackages.map((a) => (
-                                <button
-                                  key={`${a.platform}-${a.packageName}`}
-                                  type="button"
-                                  className={cn(
-                                    "rounded-full border px-2 py-0.5 font-mono text-[11px] transition-colors",
-                                    p.androidPackage === a.packageName
-                                      ? "border-violet-400 bg-violet-100 text-violet-700 dark:border-violet-700/60 dark:bg-violet-900/40 dark:text-violet-300"
-                                      : "border-border text-muted-foreground hover:bg-muted",
-                                  )}
-                                  title={`${a.platform === "android" ? "Android" : "iOS"}${a.displayName ? ` · ${a.displayName}` : ""}`}
-                                  onClick={() => {
-                                    savePackage(p.id, a.packageName);
-                                    setFbPickerFor(null);
-                                  }}
-                                >
-                                  {a.platform === "android" ? "🤖" : ""} {a.packageName}
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        )}
-                      </>
-                    )}
                   </div>
                 )}
                 </div>
