@@ -16,6 +16,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { getAllUsers, SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { checkRepoAccess } from "@/lib/githubAuth";
+import {
+  getGoogleFirebaseToken, listFirebaseProjects, listProjectPackages,
+  type FirebaseProjectInfo, type FirebaseAppPackage,
+} from "@/lib/firebaseMgmt";
 
 export function ManageModal({ onClose }: { onClose: () => void }) {
   const { appUser } = useAuth();
@@ -61,6 +65,48 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
       return;
     }
     return run(`pkg-${projectId}`, () => setProjectAndroidPackage(projectId, v || null), refreshProjects);
+  };
+
+  // Picker de packages desde Firebase: la cuenta Google del usuario lista
+  // sus proyectos Firebase (scope readonly on-demand) y las apps registradas.
+  const [fbPickerFor, setFbPickerFor] = useState<string | null>(null); // projectId del dashboard
+  const [fbProjects, setFbProjects] = useState<FirebaseProjectInfo[] | null>(null);
+  const [fbSelected, setFbSelected] = useState<string>("");
+  const [fbPackages, setFbPackages] = useState<FirebaseAppPackage[] | null>(null);
+  const [fbBusy, setFbBusy] = useState(false);
+
+  const openFbPicker = async (dashProjectId: string) => {
+    setFbPickerFor(dashProjectId);
+    setFbPackages(null);
+    setFbSelected("");
+    setFbBusy(true);
+    setError("");
+    try {
+      const token = await getGoogleFirebaseToken();
+      const projs = await listFirebaseProjects(token);
+      setFbProjects(projs);
+      if (projs.length === 0) setError("Tu cuenta Google no tiene acceso a ningún proyecto de Firebase.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudieron leer los proyectos de Firebase");
+      setFbPickerFor(null);
+    } finally {
+      setFbBusy(false);
+    }
+  };
+
+  const pickFbProject = async (firebaseProjectId: string) => {
+    setFbSelected(firebaseProjectId);
+    setFbPackages(null);
+    if (!firebaseProjectId) return;
+    setFbBusy(true);
+    try {
+      const token = await getGoogleFirebaseToken();
+      setFbPackages(await listProjectPackages(token, firebaseProjectId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudieron leer las apps del proyecto");
+    } finally {
+      setFbBusy(false);
+    }
   };
 
   const [newProject, setNewProject] = useState("");
@@ -309,6 +355,7 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                   <div className="mt-2 flex flex-wrap items-center gap-2 pl-5">
                     <span className="text-[11px] text-muted-foreground">Package Android (applicationId):</span>
                     <input
+                      key={p.androidPackage ?? "none"}
                       type="text"
                       spellCheck={false}
                       autoCapitalize="none"
@@ -321,6 +368,70 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                       onBlur={(e) => savePackage(p.id, e.target.value)}
                     />
                     {busy === `pkg-${p.id}` && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                    <button
+                      type="button"
+                      className="text-[11px] text-muted-foreground underline hover:text-foreground"
+                      title="Lee los packages de las apps registradas en tus proyectos de Firebase (con tu cuenta Google)"
+                      onClick={() => (fbPickerFor === p.id ? setFbPickerFor(null) : openFbPicker(p.id))}
+                    >
+                      {fbPickerFor === p.id ? "cerrar" : "leer de Firebase"}
+                    </button>
+                  </div>
+                )}
+                {isApp && fbPickerFor === p.id && (
+                  <div className="mt-1.5 ml-5 rounded-md border bg-muted/30 p-2">
+                    {fbBusy && !fbProjects ? (
+                      <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" /> conectando con tu cuenta Google…
+                      </span>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground">Proyecto Firebase:</span>
+                          <SelectNative
+                            className="h-7 w-64 text-xs"
+                            value={fbSelected}
+                            disabled={fbBusy}
+                            onChange={(e) => pickFbProject(e.target.value)}
+                          >
+                            <option value="">— elige —</option>
+                            {(fbProjects ?? []).map((fp) => (
+                              <option key={fp.projectId} value={fp.projectId}>
+                                {fp.displayName} ({fp.projectId})
+                              </option>
+                            ))}
+                          </SelectNative>
+                          {fbBusy && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                        </div>
+                        {fbPackages && (
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            {fbPackages.length === 0 ? (
+                              <span className="text-[11px] text-muted-foreground">Sin apps registradas en ese proyecto.</span>
+                            ) : (
+                              fbPackages.map((a) => (
+                                <button
+                                  key={`${a.platform}-${a.packageName}`}
+                                  type="button"
+                                  className={cn(
+                                    "rounded-full border px-2 py-0.5 font-mono text-[11px] transition-colors",
+                                    p.androidPackage === a.packageName
+                                      ? "border-violet-400 bg-violet-100 text-violet-700 dark:border-violet-700/60 dark:bg-violet-900/40 dark:text-violet-300"
+                                      : "border-border text-muted-foreground hover:bg-muted",
+                                  )}
+                                  title={`${a.platform === "android" ? "Android" : "iOS"}${a.displayName ? ` · ${a.displayName}` : ""}`}
+                                  onClick={() => {
+                                    savePackage(p.id, a.packageName);
+                                    setFbPickerFor(null);
+                                  }}
+                                >
+                                  {a.platform === "android" ? "🤖" : ""} {a.packageName}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
                 </div>
