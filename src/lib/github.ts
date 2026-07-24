@@ -142,6 +142,8 @@ export interface WorkflowRun {
   url: string;
   headBranch: string | null;
   headSha?: string;
+  /** Login de quien disparó el run (el que hizo el push/merge). */
+  actor?: string | null;
 }
 
 export interface RepoStatus {
@@ -202,6 +204,44 @@ export async function listRepoContributors(owner: string, repo: string): Promise
       .filter((l): l is string => !!l && !l.includes("[bot]"));
   } catch {
     return [];
+  }
+}
+
+export interface DeployMeta {
+  /** Autores reales del PR (marcadores pr_author) o creador. */
+  authors: string[];
+  /** Quién(es) aprobaron el PR del deploy. */
+  approvedBy: string[];
+  /** Quién hizo el merge que disparó el deploy. */
+  mergedBy: string | null;
+  prNumber: number | null;
+}
+
+/**
+ * Metadatos de un deploy a partir de su commit: PR asociado, autores,
+ * aprobadores y quién mergeó. Se consulta perezosamente (hover del tooltip).
+ */
+export async function getDeployMeta(owner: string, repo: string, headSha: string): Promise<DeployMeta> {
+  const empty: DeployMeta = { authors: [], approvedBy: [], mergedBy: null, prNumber: null };
+  try {
+    const { data: prs } = await octokit.repos.listPullRequestsAssociatedWithCommit({
+      owner, repo, commit_sha: headSha,
+    });
+    const pr = prs[0];
+    if (!pr) return empty;
+    const [detail, reviews] = await Promise.all([
+      octokit.pulls.get({ owner, repo, pull_number: pr.number }),
+      octokit.pulls.listReviews({ owner, repo, pull_number: pr.number, per_page: 50 }),
+    ]);
+    const bodyAuthors = [...(detail.data.body ?? "").matchAll(/<!-- pr_author: ([\w.-]+) -->/g)].map((m) => m[1]);
+    return {
+      authors: bodyAuthors.length > 0 ? [...new Set(bodyAuthors)] : [detail.data.user?.login ?? "?"],
+      approvedBy: [...new Set(reviews.data.filter((r) => r.state === "APPROVED").map((r) => r.user?.login ?? "?"))],
+      mergedBy: detail.data.merged_by?.login ?? null,
+      prNumber: pr.number,
+    };
+  } catch {
+    return empty;
   }
 }
 
@@ -410,6 +450,7 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
         url: r.html_url,
         headBranch: r.head_branch ?? null,
         headSha: r.head_sha,
+        actor: r.triggering_actor?.login ?? r.actor?.login ?? null,
       }));
 
     return { owner, repo, label, branches, openPRs, latestRuns };

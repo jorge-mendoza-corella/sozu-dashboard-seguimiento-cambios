@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { BranchRow } from "./BranchRow";
 import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
+import { DeployMetaTooltip } from "./DeployMetaTooltip";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
 import { createPR, hasFailingDeploy, getBranchCommitAuthors, getPendingReleasePRs, type ApproverAuth, type PRWithCommits } from "@/lib/github";
 import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
@@ -327,12 +328,22 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                 → PRD
               </Badge>
             )}
-            {isDeployingToDev && (
-              <Badge variant="info" className="text-[10px] gap-1">
-                <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                → DEV
-              </Badge>
-            )}
+            {isDeployingToDev && (() => {
+              const activeRun = status.latestRuns.find(
+                (r) => (r.status === "in_progress" || r.status === "queued") && r.headBranch === "dev",
+              );
+              const chip = (
+                <Badge variant="info" className="text-[10px] gap-1">
+                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                  → DEV
+                </Badge>
+              );
+              return activeRun ? (
+                <DeployMetaTooltip owner={status.owner} repo={status.repo} run={activeRun}>
+                  {chip}
+                </DeployMetaTooltip>
+              ) : chip;
+            })()}
             {!isDeployingToMain && !isDeployingToDev && isCIRunning && (
               <Badge variant="info" className="text-[10px]">CI corriendo</Badge>
             )}
@@ -636,7 +647,11 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           <div className="flex flex-wrap gap-1.5">
             {status.latestRuns.length === 0
               ? <p className="text-xs text-muted-foreground">Sin deploys recientes</p>
-              : status.latestRuns.map((r, i) => <WorkflowBadge key={i} run={r} owner={status.owner} repo={status.repo} selfLogin={canViewOthers ? null : selfLogin} />)}
+              : status.latestRuns.map((r, i) => (
+                  <DeployMetaTooltip key={i} owner={status.owner} repo={status.repo} run={r}>
+                    <WorkflowBadge run={r} owner={status.owner} repo={status.repo} selfLogin={canViewOthers ? null : selfLogin} />
+                  </DeployMetaTooltip>
+                ))}
           </div>
         </div>
       </CardContent>
