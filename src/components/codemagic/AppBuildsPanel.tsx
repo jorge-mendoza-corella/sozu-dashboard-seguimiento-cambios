@@ -615,7 +615,11 @@ export function AppBuildsPanel({ appId, perms, project }: {
     // real cuando la API responde, o se revierte si el POST falla.
     setPendingWorkflows((p) => ({ ...p, [workflowId]: { id: `pending-${Date.now()}`, t: Date.now() } }));
     try {
-      const buildId = await startBuild(appId, workflowId, effectiveBranch, envVars);
+      // Package Android configurado en el dashboard → env var del build/promote.
+      // Se pasa solo si tiene valor; el gradle/codemagic.yaml tienen fallback.
+      const pkg = project?.androidPackage?.trim();
+      const mergedEnv = pkg ? { ANDROID_PACKAGE_NAME: pkg, ...envVars } : envVars;
+      const buildId = await startBuild(appId, workflowId, effectiveBranch, mergedEnv);
       setPendingWorkflows((p) => ({ ...p, [workflowId]: { id: buildId, t: Date.now() } }));
       await refresh();
     } catch (e) {
@@ -672,6 +676,14 @@ export function AppBuildsPanel({ appId, perms, project }: {
             <Smartphone className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             {app?.appName ?? "App"}
             <span className="text-[10px] font-normal text-muted-foreground">via Codemagic</span>
+            {project?.androidPackage && (
+              <span
+                className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-normal text-muted-foreground"
+                title="Package Android (applicationId) que recibe el build"
+              >
+                {project.androidPackage}
+              </span>
+            )}
           </h3>
           {deployActive && (
             <span className="flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">

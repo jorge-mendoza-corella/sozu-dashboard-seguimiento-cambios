@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
 import { cn } from "@/lib/utils";
 import {
-  addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel, setProjectIsApp, setProjectCodemagicApp, setProjectApprover, setProjectNotifyAuthors,
+  addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel, setProjectIsApp, setProjectCodemagicApp, setProjectApprover, setProjectNotifyAuthors, setProjectAndroidPackage,
 } from "@/lib/firestoreProjects";
 import { listRepoContributors } from "@/lib/github";
 import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
@@ -50,6 +50,17 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
       ? current.filter((l) => l !== login)
       : [...current, login];
     return run(`na-${projectId}`, () => setProjectNotifyAuthors(projectId, next), refreshProjects);
+  };
+
+  // Package Android (applicationId) por proyecto. Formato tipo com.empresa.app:
+  // letras/números/_ separados por puntos, sin espacios. Vacío = quitar campo.
+  const savePackage = (projectId: string, value: string) => {
+    const v = value.trim();
+    if (v && !/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$/.test(v)) {
+      setError("Package Android inválido. Usa formato com.empresa.app (letras, números, _ y puntos, sin espacios).");
+      return;
+    }
+    return run(`pkg-${projectId}`, () => setProjectAndroidPackage(projectId, v || null), refreshProjects);
   };
 
   const [newProject, setNewProject] = useState("");
@@ -290,6 +301,26 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                       ))}
                     </SelectNative>
                     {busy === `cm-${p.id}` && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                  </div>
+                )}
+
+                {/* Package Android (applicationId) — se inyecta al build de Codemagic */}
+                {isApp && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 pl-5">
+                    <span className="text-[11px] text-muted-foreground">Package Android (applicationId):</span>
+                    <input
+                      type="text"
+                      spellCheck={false}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      className="h-7 w-64 rounded border bg-background px-2 font-mono text-xs"
+                      placeholder="com.sozu.clientes_app"
+                      defaultValue={p.androidPackage ?? ""}
+                      disabled={busy === `pkg-${p.id}`}
+                      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                      onBlur={(e) => savePackage(p.id, e.target.value)}
+                    />
+                    {busy === `pkg-${p.id}` && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                   </div>
                 )}
                 </div>
