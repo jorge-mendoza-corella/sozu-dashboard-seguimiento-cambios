@@ -24,6 +24,7 @@ export interface Project {
   approverEmail?: string; // usuario del dashboard que aprueba los PRs del proyecto (usa SU token de GitHub)
   notifyAuthors?: string[]; // logins de GitHub seleccionables como autor extra al crear PR (por proyecto)
   androidKeystoreUploadedAt?: string; // ISO — última subida del keystore Android vía dashboard
+  androidPackage?: string; // applicationId de Android (ej. com.sozu.clientes_app); se inyecta al build de Codemagic
 }
 
 export interface MonitoredRepo {
@@ -80,6 +81,16 @@ export async function setProjectIsApp(id: string, isApp: boolean) {
 export async function setProjectCodemagicApp(id: string, appId: string | null) {
   await updateDoc(doc(db, "projects", id), {
     codemagicAppId: appId ?? deleteField(),
+  });
+}
+
+/**
+ * Package de Android (applicationId) de la app. Se inyecta como variable de
+ * entorno ANDROID_PACKAGE_NAME al disparar el build en Codemagic. null = quitar.
+ */
+export async function setProjectAndroidPackage(id: string, pkg: string | null) {
+  await updateDoc(doc(db, "projects", id), {
+    androidPackage: pkg ?? deleteField(),
   });
 }
 
