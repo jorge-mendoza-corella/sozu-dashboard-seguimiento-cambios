@@ -320,9 +320,14 @@ function PlatformRow({
   const storeSentCurrent = storeRuns.some(
     (b) => (isSuccess(b) || isRunning(b)) && !!headSha && buildCommitSha(b) === headSha,
   );
+  // Aunque el workflow directo reconstruye por su cuenta, no se habilita hasta
+  // que el código actual tenga un artefacto exitoso: publicar a la tienda algo
+  // que nunca compiló aquí sería mandar a revisión a ciegas.
   const storeDisabledReason =
     storeInProgress ? "Envío a la tienda en curso" :
+    buildInProgress ? "Espera a que termine la construcción" :
     deployActive ? "Espera: hay un deploy web en curso" :
+    !canPublish ? `Primero construye el artefacto ${platform.label} del código actual` :
     storeSentCurrent ? "Este código ya se envió a la tienda" : null;
 
   return (
