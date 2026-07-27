@@ -74,6 +74,15 @@ export function PlayTracksCard({ project, canRefresh }: { project: Project; canR
         </h4>
         <span className="font-mono text-[10px] text-muted-foreground">{pkg}</span>
         <span className="flex-1" />
+        <a
+          href="https://play.google.com/console"
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-0.5 text-[10px] text-muted-foreground underline hover:text-foreground"
+          title="Play Console — ahí vive el detalle de la revisión (Google no lo expone por API)"
+        >
+          Play Console <ExternalLink className="h-2.5 w-2.5" />
+        </a>
         {data?.updatedAt && (
           <span className="text-[10px] text-muted-foreground">
             actualizado {formatDistanceToNow(data.updatedAt)}
@@ -92,6 +101,11 @@ export function PlayTracksCard({ project, canRefresh }: { project: Project; canR
           </button>
         )}
       </div>
+
+      <p className="mb-1.5 text-[10px] text-muted-foreground">
+        Qué versión está en cada canal de Play. Google no expone por API el "en revisión" de un
+        envío: mientras revisan, el release aparece aquí como borrador o en despliegue.
+      </p>
 
       {msg && <p className="mb-1.5 text-[11px] text-amber-600 dark:text-amber-400">{msg}</p>}
 

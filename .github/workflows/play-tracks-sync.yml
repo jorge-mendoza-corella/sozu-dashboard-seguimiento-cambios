@@ -1,8 +1,9 @@
-name: Sync tracks de Google Play
+name: Sync estado de tiendas (Play / App Store)
 
-# Vuelca a Firestore el estado de los tracks (interno / cerrada / abierta /
-# producción) de cada app con Package Android configurado, para verlos en el
-# dashboard sin entrar a Play Console.
+# Vuelca a Firestore el estado de publicación de cada app para verlo en el
+# dashboard sin entrar a las consolas:
+#   · Google Play — tracks (interno / cerrada / abierta / producción)
+#   · App Store Connect — estado de revisión de la versión y builds
 on:
   schedule:
     - cron: "*/30 * * * *" # cada 30 min
@@ -39,9 +40,21 @@ jobs:
         run: |
           # Token de la cuenta de Firebase (escribe Firestore por REST).
           FIRESTORE_TOKEN="$(gcloud auth print-access-token)"
-          # Service account con acceso a Play Console. Si el secret aún no
-          # existe, el script termina sin error (no rompe la programación).
-          PLAY_SA_JSON="$(gcloud secrets versions access latest \
-            --secret=DASHBOARD_PLAY_SERVICE_ACCOUNT --project=sozu-admin-dev 2>/dev/null || true)"
-          export FIRESTORE_TOKEN PLAY_SA_JSON
+          export FIRESTORE_TOKEN
+
+          secret() {
+            # Devuelve vacío si el secret no existe: cada script se salta solo.
+            gcloud secrets versions access latest --secret="$1" --project=sozu-admin-dev 2>/dev/null || true
+          }
+
+          # --- Google Play ---
+          PLAY_SA_JSON="$(secret DASHBOARD_PLAY_SERVICE_ACCOUNT)"
+          export PLAY_SA_JSON
           python ci/play_tracks_sync.py
+
+          # --- App Store Connect ---
+          ASC_KEY_ID="$(secret DASHBOARD_ASC_KEY_ID)"
+          ASC_ISSUER_ID="$(secret DASHBOARD_ASC_ISSUER_ID)"
+          ASC_PRIVATE_KEY="$(secret DASHBOARD_ASC_PRIVATE_KEY)"
+          export ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY
+          python ci/appstore_status_sync.py

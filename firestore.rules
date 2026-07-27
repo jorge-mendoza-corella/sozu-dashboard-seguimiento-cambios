@@ -44,6 +44,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Estado de revisión en App Store Connect por bundle id. Mismo origen.
+    match /appStoreStatus/{bundleId} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if false;
+    }
+
     // Grupos de contribuidores (agrupación para analítica).
     // Lectura: cualquier usuario registrado. Escritura: solo el root.
     match /contributor_groups/{id} {

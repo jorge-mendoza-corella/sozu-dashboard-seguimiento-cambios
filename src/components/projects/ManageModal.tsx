@@ -7,6 +7,7 @@ import { SelectNative } from "@/components/ui/select-native";
 import { cn } from "@/lib/utils";
 import {
   addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel, setProjectIsApp, setProjectCodemagicApp, setProjectApprover, setProjectNotifyAuthors, setProjectAndroidPackage,
+  setProjectIosBundleId,
 } from "@/lib/firestoreProjects";
 import { listRepoContributors } from "@/lib/github";
 import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
@@ -65,6 +66,17 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
       return;
     }
     return run(`pkg-${projectId}`, () => setProjectAndroidPackage(projectId, v || null), refreshProjects);
+  };
+
+  // Bundle id de iOS: mismo formato de puntos. Con él se lee el estado de
+  // revisión de la app en App Store Connect. Vacío = quitar campo.
+  const saveBundleId = (projectId: string, value: string) => {
+    const v = value.trim();
+    if (v && !/^[a-zA-Z][a-zA-Z0-9_-]*(\.[a-zA-Z0-9_-]+)+$/.test(v)) {
+      setError("Bundle ID iOS inválido. Usa formato com.empresa.App (letras, números, -, _ y puntos, sin espacios).");
+      return;
+    }
+    return run(`bid-${projectId}`, () => setProjectIosBundleId(projectId, v || null), refreshProjects);
   };
 
   // Packages Android de TODOS los proyectos Firebase accesibles con la
@@ -399,6 +411,28 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                     >
                       {manualPkgFor === p.id ? "usar selector" : "escribir a mano"}
                     </button>
+                  </div>
+                )}
+
+                {/* Bundle ID de iOS — habilita el estado de revisión de App Store */}
+                {isApp && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 pl-5">
+                    <span className="text-[11px] text-muted-foreground">Bundle ID iOS:</span>
+                    <input
+                      key={p.iosBundleId ?? "none"}
+                      type="text"
+                      spellCheck={false}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      className="h-7 w-72 rounded border bg-background px-2 font-mono text-xs"
+                      placeholder="com.sozu.sozuClienteApp"
+                      defaultValue={p.iosBundleId ?? ""}
+                      disabled={busy === `bid-${p.id}`}
+                      title="Bundle identifier de la app en App Store Connect. Con él se muestra el estado de la revisión."
+                      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                      onBlur={(e) => saveBundleId(p.id, e.target.value)}
+                    />
+                    {busy === `bid-${p.id}` && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                   </div>
                 )}
                 </div>

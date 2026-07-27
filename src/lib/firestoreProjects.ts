@@ -27,6 +27,7 @@ export interface Project {
   notifyAuthors?: string[]; // logins de GitHub seleccionables como autor extra al crear PR (por proyecto)
   androidKeystoreUploadedAt?: string; // ISO — última subida del keystore Android vía dashboard
   androidPackage?: string; // applicationId de Android (ej. com.sozu.clientes_app); se inyecta al build de Codemagic
+  iosBundleId?: string; // bundle id de iOS (ej. com.sozu.sozuClienteApp); para leer el estado en App Store Connect
   // "simple" (default): construir y publicar directo en la tienda, en un clic.
   // "avanzado": flujo por etapas (Play interno / TestFlight → tienda) + testers.
   deployMode?: "simple" | "avanzado";
@@ -96,6 +97,13 @@ export async function setProjectCodemagicApp(id: string, appId: string | null) {
 export async function setProjectAndroidPackage(id: string, pkg: string | null) {
   await updateDoc(doc(db, "projects", id), {
     androidPackage: pkg ?? deleteField(),
+  });
+}
+
+/** Bundle id de iOS: con él se consulta el estado de revisión en App Store Connect. */
+export async function setProjectIosBundleId(id: string, bundleId: string | null) {
+  await updateDoc(doc(db, "projects", id), {
+    iosBundleId: bundleId ?? deleteField(),
   });
 }
 

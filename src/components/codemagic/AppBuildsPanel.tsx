@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import type { CicdPermissions } from "@/lib/firestoreUsers";
 import { setProjectTesters, setProjectTestLinks, type Project } from "@/lib/firestoreProjects";
 import { PlayTracksCard } from "./PlayTracksCard";
+import { AppStoreStatusCard } from "./AppStoreStatusCard";
 import { triggerPlayTracksSync } from "@/lib/playTracks";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 
@@ -890,8 +891,9 @@ export function AppBuildsPanel({ appId, perms, project }: {
           </div>
         )}
 
-        {/* Estado de los tracks de Google Play (lo alimenta el workflow programado) */}
+        {/* Estado en las tiendas (lo alimenta el workflow programado) */}
         {project?.androidPackage && <PlayTracksCard project={project} canRefresh={perms.buildApp} />}
+        {project?.iosBundleId && <AppStoreStatusCard project={project} />}
 
         {/* Testers y canales de prueba: solo en modo avanzado */}
         {project && !simple && (
