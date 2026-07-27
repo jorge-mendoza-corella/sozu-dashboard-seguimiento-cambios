@@ -82,7 +82,20 @@ export function DeployMetaTooltip({ owner, repo, run, children }: {
                   <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" />
                   <span>
                     <span className="text-muted-foreground">Aprobó:</span>{" "}
-                    <span className="font-mono">{cached.approvedBy.length ? cached.approvedBy.map((a) => `@${a}`).join(", ") : "—"}</span>
+                    {cached.approvedBy.length === 0 ? (
+                      <span className="font-mono">—</span>
+                    ) : (
+                      cached.approvedBy.map((a, i) => (
+                        <span key={a.login} className="font-mono">
+                          {i > 0 && ", "}@{a.login}
+                          {a.auto && (
+                            <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 font-sans text-[9px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                              auto/bypass
+                            </span>
+                          )}
+                        </span>
+                      ))
+                    )}
                   </span>
                 </p>
                 <p className="flex items-start gap-1.5">

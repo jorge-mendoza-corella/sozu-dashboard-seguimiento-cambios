@@ -210,8 +210,8 @@ export async function listRepoContributors(owner: string, repo: string): Promise
 export interface DeployMeta {
   /** Autores reales del PR (marcadores pr_author) o creador. */
   authors: string[];
-  /** Quién(es) aprobaron el PR del deploy. */
-  approvedBy: string[];
+  /** Quién(es) aprobaron el PR y si fue bypass automático del dashboard. */
+  approvedBy: Array<{ login: string; auto: boolean }>;
   /** Quién hizo el merge que disparó el deploy. */
   mergedBy: string | null;
   prNumber: number | null;
@@ -234,9 +234,25 @@ export async function getDeployMeta(owner: string, repo: string, headSha: string
       octokit.pulls.listReviews({ owner, repo, pull_number: pr.number, per_page: 50 }),
     ]);
     const bodyAuthors = [...(detail.data.body ?? "").matchAll(/<!-- pr_author: ([\w.-]+) -->/g)].map((m) => m[1]);
+    // Bypass = review marcada por el dashboard, o (heurística para reviews
+    // viejas sin marca) approve casi simultáneo al merge en PRs que no van a main.
+    const mergedAtMs = detail.data.merged_at ? new Date(detail.data.merged_at).getTime() : null;
+    const isMainPR = detail.data.base.ref === "main";
+    const seen = new Set<string>();
+    const approvedBy = reviews.data
+      .filter((r) => r.state === "APPROVED")
+      .map((r) => {
+        const submitted = r.submitted_at ? new Date(r.submitted_at).getTime() : null;
+        const nearMerge = mergedAtMs !== null && submitted !== null && Math.abs(mergedAtMs - submitted) < 90_000;
+        return {
+          login: r.user?.login ?? "?",
+          auto: (r.body ?? "").toLowerCase().includes("bypass") || (!isMainPR && nearMerge),
+        };
+      })
+      .filter((a) => (seen.has(a.login) ? false : (seen.add(a.login), true)));
     return {
       authors: bodyAuthors.length > 0 ? [...new Set(bodyAuthors)] : [detail.data.user?.login ?? "?"],
-      approvedBy: [...new Set(reviews.data.filter((r) => r.state === "APPROVED").map((r) => r.user?.login ?? "?"))],
+      approvedBy,
       mergedBy: detail.data.merged_by?.login ?? null,
       prNumber: pr.number,
     };
@@ -503,7 +519,8 @@ export async function mergeWithBypass(
   }
 
   await approverOctokit.pulls.createReview({
-    owner, repo, pull_number: pullNumber, event: "APPROVE", body: "",
+    owner, repo, pull_number: pullNumber, event: "APPROVE",
+    body: "Auto-aprobado por el dashboard (bypass a ramas no productivas).",
   });
 
   await actor().pulls.merge({

@@ -39,6 +39,30 @@ const isSuccess = (b: CodemagicBuild) => buildStatusInfo(b.status).tone === "suc
 const isRunning = (b: CodemagicBuild) => buildStatusInfo(b.status).isRunning;
 
 // ---------------------------------------------------------------------------
+// Tracks de prueba con link de invitación configurable. Google/Apple NO
+// exponen estos links por API — se copian una sola vez desde la consola.
+// ---------------------------------------------------------------------------
+type TestLinkKind = "playInternalUrl" | "playClosedUrl" | "playOpenUrl" | "testflightPublicUrl";
+const TEST_LINKS: Record<TestLinkKind, { label: string; help: string }> = {
+  playInternalUrl: {
+    label: "Play interno",
+    help: "link de invitación del track interno de Play\n(Play Console → Testing → Internal testing → Testers → Copy link)",
+  },
+  playClosedUrl: {
+    label: "Play cerrada",
+    help: "link de invitación de la prueba cerrada (Alpha)\n(Play Console → Testing → Closed testing → tu track → Testers → Copy link)",
+  },
+  playOpenUrl: {
+    label: "Play abierta",
+    help: "link de la prueba abierta (Beta pública)\n(Play Console → Testing → Open testing → Testers → Copy link)",
+  },
+  testflightPublicUrl: {
+    label: "TestFlight público",
+    help: "link público de TestFlight\n(App Store Connect → TestFlight → grupo externo → Public link)",
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Plataforma de un build: por prefijo del workflow, o por sus artefactos
 // (builds viejos disparados desde la UI de Codemagic no traen workflow id
 // legible).
@@ -479,11 +503,10 @@ export function AppBuildsPanel({ appId, perms, project }: {
   };
 
   // Links de invitación (fijos por app; se configuran una sola vez).
-  const editTestLink = (kind: "playInternalUrl" | "testflightPublicUrl") => {
+  // Google/Apple no exponen estos links por API → se pegan una vez desde la consola.
+  const editTestLink = (kind: TestLinkKind) => {
     if (!project) return;
-    const label = kind === "playInternalUrl"
-      ? "link de invitación del track interno de Play\n(Play Console → Testing → Internal testing → Testers → Copy link)"
-      : "link público de TestFlight\n(App Store Connect → TestFlight → grupo externo → Public link)";
+    const label = TEST_LINKS[kind].help;
     const current = project[kind] ?? "";
     const url = window.prompt(`Pega el ${label}\n\nVacío = quitar el link:`, current);
     if (url === null) return;
@@ -800,10 +823,10 @@ export function AppBuildsPanel({ appId, perms, project }: {
                 </button>
               )}
               <span className="flex-1" />
-              {/* Links de invitación fijos por app */}
-              {(["playInternalUrl", "testflightPublicUrl"] as const).map((kind) => {
+              {/* Links de invitación fijos por app (tracks de Play + TestFlight) */}
+              {(Object.keys(TEST_LINKS) as TestLinkKind[]).map((kind) => {
                 const url = project[kind];
-                const label = kind === "playInternalUrl" ? "Play interno" : "TestFlight público";
+                const label = TEST_LINKS[kind].label;
                 return (
                   <span key={kind} className="flex items-center gap-1">
                     {url ? (
