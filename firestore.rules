@@ -36,6 +36,14 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
     }
 
+    // Estado de los tracks de Google Play por package. Solo lo escribe el
+    // workflow programado (service account, que ignora estas reglas).
+    match /playTracks/{package} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if false;
+    }
+
     // Grupos de contribuidores (agrupación para analítica).
     // Lectura: cualquier usuario registrado. Escritura: solo el root.
     match /contributor_groups/{id} {

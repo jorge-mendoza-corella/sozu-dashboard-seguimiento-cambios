@@ -1,0 +1,47 @@
+name: Sync tracks de Google Play
+
+# Vuelca a Firestore el estado de los tracks (interno / cerrada / abierta /
+# producción) de cada app con Package Android configurado, para verlos en el
+# dashboard sin entrar a Play Console.
+on:
+  schedule:
+    - cron: "*/30 * * * *" # cada 30 min
+  workflow_dispatch: # botón "actualizar" del dashboard
+
+concurrency:
+  group: play-tracks-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_GCP_DEV }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install --quiet "pyjwt[crypto]" requests
+
+      - name: Sync
+        env:
+          GCP_PROJECT: sozu-admin-dev
+        run: |
+          # Token de la cuenta de Firebase (escribe Firestore por REST).
+          FIRESTORE_TOKEN="$(gcloud auth print-access-token)"
+          # Service account con acceso a Play Console. Si el secret aún no
+          # existe, el script termina sin error (no rompe la programación).
+          PLAY_SA_JSON="$(gcloud secrets versions access latest \
+            --secret=DASHBOARD_PLAY_SERVICE_ACCOUNT --project=sozu-admin-dev 2>/dev/null || true)"
+          export FIRESTORE_TOKEN PLAY_SA_JSON
+          python ci/play_tracks_sync.py

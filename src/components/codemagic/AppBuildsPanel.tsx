@@ -19,6 +19,8 @@ import { setProjectKeystoreUploaded } from "@/lib/firestoreProjects";
 import { cn } from "@/lib/utils";
 import type { CicdPermissions } from "@/lib/firestoreUsers";
 import { setProjectTesters, setProjectTestLinks, type Project } from "@/lib/firestoreProjects";
+import { PlayTracksCard } from "./PlayTracksCard";
+import { triggerPlayTracksSync } from "@/lib/playTracks";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 
 const TONE_CLASSES: Record<string, string> = {
@@ -390,6 +392,22 @@ export function AppBuildsPanel({ appId, perms, project }: {
 
   const app = useMemo(() => apps.find((a) => a._id === appId), [apps, appId]);
   const repo = useMemo(() => appRepo(app), [app]);
+
+  // Al terminar bien una publicación a Play, pedir de inmediato el refresco de
+  // tracks (el cron tardaría hasta 30 min en reflejar la nueva versión).
+  useEffect(() => {
+    if (!project?.androidPackage) return;
+    const done = builds.find(
+      (b) =>
+        (b.workflowId === "android-publish" || b.workflowId === "android-production") &&
+        buildStatusInfo(b.status).tone === "success",
+    );
+    if (!done) return;
+    const key = `play-sync:${done._id}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+    triggerPlayTracksSync().catch(() => sessionStorage.removeItem(key));
+  }, [builds, project?.androidPackage]);
 
   const branches = app?.branches ?? [];
   const [branch, setBranch] = useState("");
@@ -804,6 +822,9 @@ export function AppBuildsPanel({ appId, perms, project }: {
             })}
           </div>
         )}
+
+        {/* Estado de los tracks de Google Play (lo alimenta el workflow programado) */}
+        {project?.androidPackage && <PlayTracksCard project={project} canRefresh={perms.buildApp} />}
 
         {/* Testers con acceso a builds de prueba */}
         {project && (
