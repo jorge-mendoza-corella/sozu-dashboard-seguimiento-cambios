@@ -27,6 +27,9 @@ export interface Project {
   notifyAuthors?: string[]; // logins de GitHub seleccionables como autor extra al crear PR (por proyecto)
   androidKeystoreUploadedAt?: string; // ISO — última subida del keystore Android vía dashboard
   androidPackage?: string; // applicationId de Android (ej. com.sozu.clientes_app); se inyecta al build de Codemagic
+  // "simple" (default): construir y publicar directo en la tienda, en un clic.
+  // "avanzado": flujo por etapas (Play interno / TestFlight → tienda) + testers.
+  deployMode?: "simple" | "avanzado";
 }
 
 export interface MonitoredRepo {
@@ -94,6 +97,11 @@ export async function setProjectAndroidPackage(id: string, pkg: string | null) {
   await updateDoc(doc(db, "projects", id), {
     androidPackage: pkg ?? deleteField(),
   });
+}
+
+/** Alterna entre el flujo de un clic ("simple") y el flujo por etapas ("avanzado"). */
+export async function setProjectDeployMode(id: string, mode: "simple" | "avanzado") {
+  await updateDoc(doc(db, "projects", id), { deployMode: mode });
 }
 
 /** Marca cuándo se subió el keystore Android desde el dashboard (solo informativo). */

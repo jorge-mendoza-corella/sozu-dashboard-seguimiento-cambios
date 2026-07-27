@@ -40,6 +40,8 @@ export interface PlatformDef {
   /** Paso final: promover a la store pública (exige comentario de release). */
   promoteWorkflowId: string;
   promoteLabel: string;
+  /** Modo simple: construye y publica directo en la tienda, en un solo paso. */
+  storeDirectWorkflowId: string;
 }
 
 export const PLATFORMS: PlatformDef[] = [
@@ -48,12 +50,14 @@ export const PLATFORMS: PlatformDef[] = [
     buildWorkflowId: "android-release",
     publishWorkflowId: "android-publish", storeLabel: "Play interno",
     promoteWorkflowId: "android-production", promoteLabel: "Play Store",
+    storeDirectWorkflowId: "android-store",
   },
   {
     key: "ios", label: "iOS",
     buildWorkflowId: "ios-release",
     publishWorkflowId: "ios-publish", storeLabel: "TestFlight",
     promoteWorkflowId: "ios-appstore", promoteLabel: "App Store",
+    storeDirectWorkflowId: "ios-store",
   },
 ];
 
@@ -64,6 +68,8 @@ export const WORKFLOW_LABELS: Record<string, string> = {
   "ios-publish": "iOS → TestFlight",
   "android-production": "Android → Play Store",
   "ios-appstore": "iOS → App Store",
+  "android-store": "Android → Play Store (directo)",
+  "ios-store": "iOS → App Store (directo)",
   "web-release": "Web build",
   "sync-testflight-testers": "Sync testers → TestFlight",
 };

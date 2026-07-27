@@ -15,7 +15,7 @@ import {
 } from "@/lib/codemagic";
 import { useAuth } from "@/hooks/useAuth";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
-import { setProjectKeystoreUploaded } from "@/lib/firestoreProjects";
+import { setProjectKeystoreUploaded, setProjectDeployMode } from "@/lib/firestoreProjects";
 import { cn } from "@/lib/utils";
 import type { CicdPermissions } from "@/lib/firestoreUsers";
 import { setProjectTesters, setProjectTestLinks, type Project } from "@/lib/firestoreProjects";
@@ -259,7 +259,7 @@ const PLAT_META: Record<Plat, { label: string; cls: string }> = {
 
 /** Fila de una plataforma: construir artefacto y, si ya existe, enviarlo a la store. */
 function PlatformRow({
-  platform, branch, builds, headSha, deployActive, perms, busy, pendingWorkflows, onRequestStart,
+  platform, branch, builds, headSha, deployActive, perms, busy, pendingWorkflows, onRequestStart, simple,
 }: {
   platform: PlatformDef;
   branch: string;
@@ -270,6 +270,8 @@ function PlatformRow({
   busy: string | null;
   pendingWorkflows: Record<string, { id: string; t: number }>;
   onRequestStart: (workflowId: string, key: string, opts?: { askNotes?: boolean; label?: string }) => void;
+  /** Modo simple: Construir + un solo botón que publica directo en la tienda. */
+  simple: boolean;
 }) {
   const forBranch = (wf: string) => builds.filter((b) => b.workflowId === wf && b.branch === branch);
   const buildRuns = forBranch(platform.buildWorkflowId);
@@ -310,6 +312,19 @@ function PlatformRow({
   const publishKey = `${platform.key}-publish`;
   const promoteKey = `${platform.key}-promote`;
 
+  // Modo simple: un workflow que construye y publica directo en la tienda
+  // (sin Play interno / TestFlight de por medio).
+  const storeKey = `${platform.key}-store`;
+  const storeRuns = forBranch(platform.storeDirectWorkflowId);
+  const storeInProgress = storeRuns.some(isRunning) || isPending(platform.storeDirectWorkflowId);
+  const storeSentCurrent = storeRuns.some(
+    (b) => (isSuccess(b) || isRunning(b)) && !!headSha && buildCommitSha(b) === headSha,
+  );
+  const storeDisabledReason =
+    storeInProgress ? "Envío a la tienda en curso" :
+    deployActive ? "Espera: hay un deploy web en curso" :
+    storeSentCurrent ? "Este código ya se envió a la tienda" : null;
+
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2.5">
       <span className="flex w-20 items-center gap-1.5 text-sm font-semibold">
@@ -341,7 +356,25 @@ function PlatformRow({
             )}
             {buildInProgress ? "Construyendo…" : "Construir"}
           </Button>
-          {!publishedCurrent ? (
+          {simple ? (
+            // Un solo clic: construye y publica en la tienda pública.
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              title={storeDisabledReason ?? `Publicar directo en ${platform.promoteLabel} (pide comentario de la versión)`}
+              disabled={!!storeDisabledReason || busy === storeKey}
+              onClick={() => onRequestStart(platform.storeDirectWorkflowId, storeKey, {
+                askNotes: true, label: `Publicar en ${platform.promoteLabel}`,
+              })}
+            >
+              {storeInProgress || busy === storeKey ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+              ) : (
+                <Rocket className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              {storeInProgress ? "Publicando…" : platform.promoteLabel}
+            </Button>
+          ) : !publishedCurrent ? (
             <Button
               size="sm"
               title={publishDisabledReason ?? `Construir y enviar a ${platform.storeLabel}`}
@@ -374,8 +407,10 @@ function PlatformRow({
           )}
         </>
       )}
-      {buildDisabledReason && (
-        <span className="w-full text-[10px] text-muted-foreground sm:w-auto">{buildDisabledReason}</span>
+      {(buildDisabledReason || (simple && storeDisabledReason)) && (
+        <span className="w-full text-[10px] text-muted-foreground sm:w-auto">
+          {buildDisabledReason ?? storeDisabledReason}
+        </span>
       )}
     </div>
   );
@@ -419,6 +454,9 @@ export function AppBuildsPanel({ appId, perms, project }: {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [showAll, setShowAll] = useState(false);
+  // Modo simple (default): Construir + publicar directo a la tienda. El modo
+  // avanzado reexpone el flujo por etapas (Play interno / TestFlight y testers).
+  const simple = (project?.deployMode ?? "simple") === "simple";
   // Filtros del historial
   const [platFilter, setPlatFilter] = useState<"all" | Plat>("all");
   const [dateFrom, setDateFrom] = useState("");
@@ -549,7 +587,10 @@ export function AppBuildsPanel({ appId, perms, project }: {
       if (id) m.set(id, [...(m.get(id) ?? []), tag]);
     };
     const isPublishOrPromote = (b: CodemagicBuild) =>
-      PLATFORMS.some((p) => b.workflowId === p.publishWorkflowId || b.workflowId === p.promoteWorkflowId);
+      PLATFORMS.some((p) =>
+        b.workflowId === p.publishWorkflowId ||
+        b.workflowId === p.promoteWorkflowId ||
+        b.workflowId === p.storeDirectWorkflowId);
     for (const p of PLATFORMS) {
       add(
         builds.find((b) => platformOfBuild(b) === p.key && !isPublishOrPromote(b) && isSuccess(b))?._id,
@@ -557,6 +598,8 @@ export function AppBuildsPanel({ appId, perms, project }: {
       );
       add(builds.find((b) => b.workflowId === p.publishWorkflowId && isSuccess(b))?._id, `en ${p.storeLabel}`);
       add(builds.find((b) => b.workflowId === p.promoteWorkflowId && isSuccess(b))?._id, `en ${p.promoteLabel}`);
+      // Publicación directa (modo simple): también marca la tienda pública.
+      add(builds.find((b) => b.workflowId === p.storeDirectWorkflowId && isSuccess(b))?._id, `en ${p.promoteLabel}`);
     }
     add(
       builds.find((b) => platformOfBuild(b) === "web" && isSuccess(b))?._id,
@@ -732,6 +775,24 @@ export function AppBuildsPanel({ appId, perms, project }: {
             </span>
           )}
           <span className="flex-1" />
+          {project && perms.buildApp && (
+            <button
+              type="button"
+              onClick={() => {
+                setProjectDeployMode(project.id, simple ? "avanzado" : "simple")
+                  .then(() => qc.invalidateQueries({ queryKey: ["projects"] }))
+                  .catch((e) => setError(e instanceof Error ? e.message : "Error al cambiar el modo"));
+              }}
+              className="rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted"
+              title={
+                simple
+                  ? "Modo simple: construir y publicar directo en la tienda. Clic para mostrar el flujo por etapas (Play interno / TestFlight y testers)."
+                  : "Modo avanzado: flujo por etapas con canales de prueba. Clic para volver al flujo de un solo paso."
+              }
+            >
+              modo: <span className="font-semibold">{simple ? "simple" : "avanzado"}</span>
+            </button>
+          )}
           <SelectNative
             className="h-7 w-32 text-xs"
             value={effectiveBranch}
@@ -778,6 +839,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
               busy={busy}
               pendingWorkflows={pendingWorkflows}
               onRequestStart={requestStart}
+              simple={simple}
             />
           ))}
         </div>
@@ -826,8 +888,8 @@ export function AppBuildsPanel({ appId, perms, project }: {
         {/* Estado de los tracks de Google Play (lo alimenta el workflow programado) */}
         {project?.androidPackage && <PlayTracksCard project={project} canRefresh={perms.buildApp} />}
 
-        {/* Testers con acceso a builds de prueba */}
-        {project && (
+        {/* Testers y canales de prueba: solo en modo avanzado */}
+        {project && !simple && (
           <div className="mt-4">
             <div className="mb-1.5 flex flex-wrap items-center gap-2">
               <h4 className="text-xs font-semibold text-muted-foreground">
@@ -1029,9 +1091,9 @@ export function AppBuildsPanel({ appId, perms, project }: {
               const when = b.startedAt ?? b.createdAt;
               const tags = markers.get(b._id) ?? [];
               const isIosCloud = plat === "ios" && info.tone === "success" &&
-                (b.workflowId === "ios-publish" || b.workflowId === "ios-appstore");
+                (b.workflowId === "ios-publish" || b.workflowId === "ios-appstore" || b.workflowId === "ios-store");
               const isAndroidCloud = plat === "android" && info.tone === "success" &&
-                (b.workflowId === "android-publish" || b.workflowId === "android-production");
+                (b.workflowId === "android-publish" || b.workflowId === "android-production" || b.workflowId === "android-store");
               return (
                 <div key={b._id} className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs">
                   <span className={cn("shrink-0 rounded-full border px-2 py-0.5 font-medium", TONE_CLASSES[info.tone])}>
