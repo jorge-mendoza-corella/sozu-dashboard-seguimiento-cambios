@@ -177,7 +177,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
           <div key={pr.number} className="relative">
             <div
               className={cn(
-                "flex items-start gap-2 p-2 rounded-md transition-colors",
+                "flex flex-wrap items-start gap-2 p-2 rounded-md transition-colors",
                 hasConflict
                   ? "bg-orange-50 dark:bg-orange-950/30 border border-orange-400 dark:border-orange-600/60"
                   : isToMain
@@ -196,7 +196,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                 href={pr.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-start gap-2 flex-1 min-w-0 no-underline group"
+                className="flex items-start gap-2 flex-1 basis-full sm:basis-40 min-w-0 no-underline group"
               >
                 {isToMain ? (
                   <Rocket className="h-3.5 w-3.5 mt-0.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -254,7 +254,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
               </a>
 
               {/* Badges — fuera del enlace */}
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="ml-auto flex w-full flex-wrap items-center justify-end gap-1 sm:w-auto">
                 {hasConflict && (
                   <a
                     href={pr.url}
