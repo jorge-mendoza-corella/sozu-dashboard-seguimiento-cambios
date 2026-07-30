@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Activity, GitBranch, Users, GitCommit, LogOut, LayoutDashboard } from "lucide-react";
+import { Activity, GitBranch, Users, GitCommit, LogOut, LayoutDashboard, HardHat, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
@@ -46,6 +46,18 @@ export function AppLayout({ children }: Props) {
                 {label}
               </Link>
             ))}
+            {/* Sitio de avance de obra (aplicación aparte, se abre en otra pestaña) */}
+            <a
+              href="https://avances.sozu.com"
+              target="_blank"
+              rel="noreferrer"
+              className="ml-1 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground no-underline transition-colors hover:bg-muted hover:text-foreground"
+              title="Avance de obra — avances.sozu.com"
+            >
+              <HardHat className="h-4 w-4" />
+              Avances
+              <ExternalLink className="h-3 w-3 opacity-60" />
+            </a>
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <span
