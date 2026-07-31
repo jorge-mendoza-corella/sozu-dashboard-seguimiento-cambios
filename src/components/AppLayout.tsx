@@ -4,12 +4,17 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
+import { useQuery } from "@tanstack/react-query";
+import { getHostingChannels, pendingDraft } from "@/lib/hostingChannels";
 
-// Sitio de avance de obra. El canal draft es un preview de Firebase Hosting:
-// su URL cambia cada vez que se crea un canal nuevo, así que al recrearlo hay
-// que actualizar esta constante. Solo el root ve el badge de draft.
+// Sitio de avance de obra. El badge DRAFT (solo root) aparece únicamente
+// cuando el canal de preview tiene contenido que todavía no se publica: eso lo
+// determina el workflow programado comparando el release del canal contra el
+// que está en vivo. La URL del canal también viene de ahí, porque cambia cada
+// vez que se recrea; la constante es solo el respaldo si el sync aún no corrió.
 const AVANCES_URL = "https://avances.sozu.com";
-const AVANCES_DRAFT_URL = "https://sozu-avances--draft-u1wqsh7o.web.app";
+const AVANCES_SITE = "sozu-avances";
+const AVANCES_DRAFT_FALLBACK = "https://sozu-avances--draft-u1wqsh7o.web.app";
 
 // `show(role, isRoot)` decide la visibilidad de cada item en el nav.
 const NAV_ITEMS = [
@@ -26,6 +31,19 @@ export function AppLayout({ children }: Props) {
   const { pathname } = useLocation();
   const isRoot = appUser?.email === SUPERUSER_EMAIL;
   const navItems = NAV_ITEMS.filter((i) => i.show(appUser?.role, isRoot));
+
+  // Draft del sitio de avances: solo interesa al root.
+  const { data: hosting } = useQuery({
+    queryKey: ["hosting-channels", AVANCES_SITE],
+    queryFn: () => getHostingChannels(AVANCES_SITE),
+    enabled: isRoot,
+    refetchInterval: 5 * 60_000,
+  });
+  const draft = pendingDraft(hosting);
+  // Sin datos del sync todavía (o sin permisos para leer Hosting): se muestra
+  // el canal conocido para no perder el acceso. Con datos, manda el sync.
+  const showDraft = isRoot && (hosting == null || !!hosting.error ? true : !!draft);
+  const draftUrl = draft?.url ?? AVANCES_DRAFT_FALLBACK;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -65,9 +83,9 @@ export function AppLayout({ children }: Props) {
                 Avances
                 <ExternalLink className="h-3 w-3 opacity-60" />
               </a>
-              {isRoot && (
+              {showDraft && (
                 <a
-                  href={AVANCES_DRAFT_URL}
+                  href={draftUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="-ml-1.5 rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-amber-700 no-underline transition-colors hover:bg-amber-200 dark:border-amber-700/60 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60"
