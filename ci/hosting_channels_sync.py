@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -126,26 +127,55 @@ def page_hash(url: str) -> tuple[str | None, str | None]:
         r = requests.get(url, timeout=30, headers={"Cache-Control": "no-cache"})
     except requests.RequestException as e:
         return None, f"no se pudo leer {url}: {e}"
+    if r.status_code == 404:
+        # Ruta que existe en el draft pero todavía no en producción.
+        return "404", None
     if r.status_code != 200:
         return None, f"{url} respondió {r.status_code}"
     return hashlib.sha256(r.content).hexdigest(), None
 
 
+# Rutas de cada reporte publicado dentro del índice: /r/YYYY-MM-DD/
+REPORT_PATH = re.compile(r'href="(/r/\d{4}-\d{2}-\d{2}/)"')
+
+
 def compare_by_content(site: str, live_url: str, draft_url: str) -> tuple[dict | None, str | None]:
-    """Respaldo sin permisos: el draft ya está publicado si sirve lo mismo que producción."""
-    live, err1 = page_hash(live_url)
-    draft, err2 = page_hash(draft_url)
-    if err1 or err2:
-        return None, err1 or err2
+    """Respaldo sin permisos: el draft ya está publicado si sirve lo mismo que producción.
+
+    No basta comparar la portada: cuando el draft reemplaza el reporte del día
+    en curso, el índice queda idéntico y solo cambia la página de esa fecha. Se
+    comparan la portada y cada reporte que el draft lista.
+    """
+    try:
+        r = requests.get(draft_url, timeout=30, headers={"Cache-Control": "no-cache"})
+    except requests.RequestException as e:
+        return None, f"no se pudo leer {draft_url}: {e}"
+    if r.status_code != 200:
+        return None, f"{draft_url} respondió {r.status_code}"
+
+    paths = ["/"] + sorted(set(REPORT_PATH.findall(r.text)), reverse=True)[:6]
+    diffs: list[str] = []
+    draft_digest: list[str] = []
+    for path in paths:
+        hd, e1 = page_hash(draft_url.rstrip("/") + path)
+        hl, e2 = page_hash(live_url.rstrip("/") + path)
+        if e1 or e2:
+            return None, e1 or e2
+        draft_digest.append(f"{path}:{hd[:12]}")
+        if hd != hl:
+            diffs.append(path)
+
     return {
         "site": site,
-        "liveVersion": live,
+        "liveVersion": None,
         "source": "contenido",
+        "comparedPaths": paths,
+        "diffPaths": diffs,
         "channels": [{
             "id": "draft",
             "url": draft_url,
-            "version": draft,
-            "published": draft == live,
+            "version": hashlib.sha256("|".join(draft_digest).encode()).hexdigest(),
+            "published": not diffs,
         }],
     }, None
 
@@ -195,7 +225,12 @@ def main() -> None:
         else:
             pend = [c["id"] for c in payload["channels"] if not c["published"]]
             via = payload.get("source", "hosting api")
-            print(f"✓ {site} (via {via}): {len(payload['channels'])} canal(es); sin publicar: {pend or 'ninguno'}")
+            detalle = ""
+            if payload.get("diffPaths"):
+                detalle = f" · difieren: {', '.join(payload['diffPaths'])}"
+            elif payload.get("comparedPaths"):
+                detalle = f" · {len(payload['comparedPaths'])} ruta(s) comparadas, todas iguales"
+            print(f"✓ {site} (via {via}): {len(payload['channels'])} canal(es); sin publicar: {pend or 'ninguno'}{detalle}")
 
 
 if __name__ == "__main__":
