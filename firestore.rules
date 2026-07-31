@@ -38,7 +38,7 @@ service cloud.firestore {
 
     // Estado de los tracks de Google Play por package. Solo lo escribe el
     // workflow programado (service account, que ignora estas reglas).
-    match /playTracks/{package} {
+    match /playTracks/{pkg} {
       allow read: if request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
       allow write: if false;
@@ -60,7 +60,7 @@ service cloud.firestore {
 
     // Ajustes sueltos del dashboard (p. ej. la URL del draft de avances).
     // Los lee cualquier usuario registrado; solo el root los cambia.
-    match /settings/{key} {
+    match /settings/{docId} {
       allow read: if request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
       allow write: if request.auth != null
