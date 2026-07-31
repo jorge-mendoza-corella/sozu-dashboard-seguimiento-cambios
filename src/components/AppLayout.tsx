@@ -5,6 +5,12 @@ import { useAuth } from "@/hooks/useAuth";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
 
+// Sitio de avance de obra. El canal draft es un preview de Firebase Hosting:
+// su URL cambia cada vez que se crea un canal nuevo, así que al recrearlo hay
+// que actualizar esta constante. Solo el root ve el badge de draft.
+const AVANCES_URL = "https://avances.sozu.com";
+const AVANCES_DRAFT_URL = "https://sozu-avances--draft-u1wqsh7o.web.app";
+
 // `show(role, isRoot)` decide la visibilidad de cada item en el nav.
 const NAV_ITEMS = [
   { to: "/resumen", label: "Resumen", icon: LayoutDashboard, show: () => true },
@@ -47,17 +53,30 @@ export function AppLayout({ children }: Props) {
               </Link>
             ))}
             {/* Sitio de avance de obra (aplicación aparte, se abre en otra pestaña) */}
-            <a
-              href="https://avances.sozu.com"
-              target="_blank"
-              rel="noreferrer"
-              className="ml-1 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground no-underline transition-colors hover:bg-muted hover:text-foreground"
-              title="Avance de obra — avances.sozu.com"
-            >
-              <HardHat className="h-4 w-4" />
-              Avances
-              <ExternalLink className="h-3 w-3 opacity-60" />
-            </a>
+            <span className="ml-1 flex items-center">
+              <a
+                href={AVANCES_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground no-underline transition-colors hover:bg-muted hover:text-foreground"
+                title="Avance de obra (versión publicada) — avances.sozu.com"
+              >
+                <HardHat className="h-4 w-4" />
+                Avances
+                <ExternalLink className="h-3 w-3 opacity-60" />
+              </a>
+              {isRoot && (
+                <a
+                  href={AVANCES_DRAFT_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="-ml-1.5 rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-amber-700 no-underline transition-colors hover:bg-amber-200 dark:border-amber-700/60 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60"
+                  title="Versión borrador del reporte de avances (canal draft, solo tú la ves)"
+                >
+                  DRAFT
+                </a>
+              )}
+            </span>
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <span
