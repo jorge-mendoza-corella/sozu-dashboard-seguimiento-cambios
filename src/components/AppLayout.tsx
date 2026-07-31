@@ -147,7 +147,12 @@ export function AppLayout({ children }: Props) {
                   rel="noreferrer"
                   className="-ml-1.5 rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-amber-700 no-underline transition-colors hover:bg-amber-200 dark:border-amber-700/60 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60"
                   onContextMenu={(e) => { e.preventDefault(); void pedirDraftUrl(); }}
-                  title="Versión borrador del reporte de avances (canal draft, solo tú la ves).&#10;Clic derecho para cambiar la URL del canal."
+                  title={
+                    (draft?.title
+                      ? `Borrador pendiente de aprobar: ${draft.title}`
+                      : "Versión borrador del reporte de avances (solo tú la ves)") +
+                    "\nClic derecho para cambiar la URL del canal."
+                  }
                 >
                   DRAFT
                 </a>

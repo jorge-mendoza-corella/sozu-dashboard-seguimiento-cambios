@@ -64,6 +64,10 @@ jobs:
           # --- Canales de Firebase Hosting (drafts pendientes de publicar) ---
           # HOSTING_COMPARE es el respaldo cuando la cuenta de servicio no tiene
           # permiso sobre el sitio: compara el HTML del draft contra el de producción.
+          # Token del endpoint /api/estado del sitio de avances (fuente oficial
+          # del "hay borrador pendiente"). Sin él se usa solo la comparación.
+          AVANCES_ESTADO_TOKEN="$(secret DASHBOARD_AVANCES_ESTADO_TOKEN)"
+          export AVANCES_ESTADO_TOKEN
           HOSTING_SITES=sozu-avances \
           HOSTING_COMPARE="sozu-avances|https://avances.sozu.com|https://sozu-avances--draft-u1wqsh7o.web.app" \
             python ci/hosting_channels_sync.py

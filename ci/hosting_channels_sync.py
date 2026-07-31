@@ -180,6 +180,64 @@ def compare_by_content(site: str, live_url: str, draft_url: str) -> tuple[dict |
     }, None
 
 
+def fetch_estado(api_base: str, token: str) -> tuple[dict | None, str | None]:
+    """Modo resumen de /api/estado: la fuente oficial del sitio de avances."""
+    try:
+        r = requests.get(
+            f"{api_base.rstrip('/')}/api/estado",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+    except requests.RequestException as e:
+        return None, f"no se pudo leer /api/estado: {e}"
+    if r.status_code == 401:
+        return None, "/api/estado rechazó el token (401). Revisa DASHBOARD_AVANCES_ESTADO_TOKEN."
+    if r.status_code == 503:
+        return None, "/api/estado responde 503: falta configurar ESTADO_TOKEN en el sitio de avances."
+    if r.status_code != 200:
+        return None, f"/api/estado respondió {r.status_code}"
+    return r.json(), None
+
+
+def merge_estado(payload: dict, estado: dict) -> dict:
+    """Combina el veredicto del endpoint con la comparación de contenido.
+
+    El propio endpoint documenta su límite: mide la publicación por la
+    existencia de /r/<fecha>/, así que un reporte regenerado el mismo día que
+    ya se aprobó le sale como publicado. La comparación de contenido cubre ese
+    hueco, y `pendiente_aprobacion` cubre el caso contrario (borrador de una
+    fecha que todavía no existe en producción).
+    """
+    ch = payload["channels"][0]
+    pendiente_api = estado.get("pendiente_aprobacion")
+    hay_cambios = not ch["published"]
+
+    if pendiente_api is True:
+        ch["published"] = False
+    elif pendiente_api is False and hay_cambios:
+        # El endpoint no lo ve, el contenido sí: gana el contenido.
+        ch["published"] = False
+    # pendiente_api None → se queda con lo que dijo la comparación.
+
+    if estado.get("url_draft_indice"):
+        ch["url"] = estado["url_draft_indice"]
+    ch["title"] = estado.get("titulo")
+    ch["date"] = estado.get("fecha")
+    if estado.get("expira"):
+        ch["expireTime"] = estado["expira"]
+    if estado.get("vencido") is True:
+        ch["published"] = True  # vencido = no hay nada que aprobar
+
+    payload["source"] = "api/estado + contenido"
+    payload["estado"] = {
+        "pendiente_aprobacion": pendiente_api,
+        "publicada": estado.get("publicada"),
+        "titulo": estado.get("titulo"),
+        "fecha": estado.get("fecha"),
+    }
+    return payload
+
+
 def parse_compare_config() -> dict[str, tuple[str, str]]:
     raw = os.environ.get("HOSTING_COMPARE", "").replace("\n", ";")
     out: dict[str, tuple[str, str]] = {}
@@ -219,6 +277,20 @@ def main() -> None:
                 draft_url = draft_url_from_settings(token) or draft_url
             print(f"· {site}: sin acceso a la Hosting API, comparando contenido ({error.split('Detalle:')[0].strip()})")
             payload, error = compare_by_content(site, live_url, draft_url)
+            # El sitio de avances publica su propio estado; es la fuente oficial.
+            estado_token = os.environ.get("AVANCES_ESTADO_TOKEN", "").strip()
+            if payload and estado_token:
+                estado, err_estado = fetch_estado(live_url, estado_token)
+                if estado:
+                    payload = merge_estado(payload, estado)
+                    print(
+                        f"· {site}: /api/estado dice pendiente_aprobacion="
+                        f"{estado.get('pendiente_aprobacion')} ({estado.get('titulo') or 'sin título'})"
+                    )
+                else:
+                    print(f"· {site}: {err_estado}; se usa solo la comparación de contenido")
+            elif payload and not estado_token:
+                print(f"· {site}: sin AVANCES_ESTADO_TOKEN; solo comparación de contenido")
         write_doc(token, site, payload, error)
         if error:
             print(f"⚠ {site}: {error}")

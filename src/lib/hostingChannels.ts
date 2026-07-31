@@ -15,6 +15,9 @@ export interface HostingChannel {
   expireTime?: string;
   /** true = su contenido ya es el mismo que está en vivo. */
   published: boolean;
+  /** Título del reporte pendiente, cuando /api/estado lo informa. */
+  title?: string | null;
+  date?: string | null;
 }
 
 export interface HostingChannelsDoc {
