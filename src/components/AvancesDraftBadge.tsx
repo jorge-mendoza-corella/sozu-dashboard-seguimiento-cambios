@@ -22,6 +22,7 @@ const ESPERA_MAX_MS = 3 * 60_000;
 export function AvancesDraftBadge({ email }: { email: string }) {
   const qc = useQueryClient();
   const [revisando, setRevisando] = useState(false);
+  const [reciente, setReciente] = useState(false); // acaba de terminar una revisión
   const pedidoEn = useRef<string | null>(null);
 
   const { data } = useQuery({
@@ -65,11 +66,20 @@ export function AvancesDraftBadge({ email }: { email: string }) {
     if (!revisando) return;
     if (data?.updatedAt && data.updatedAt !== pedidoEn.current) {
       setRevisando(false);
+      setReciente(true);
       return;
     }
-    const t = window.setTimeout(() => setRevisando(false), ESPERA_MAX_MS);
+    const t = window.setTimeout(() => { setRevisando(false); setReciente(true); }, ESPERA_MAX_MS);
     return () => window.clearTimeout(t);
   }, [revisando, data?.updatedAt]);
+
+  // Anunciar el resultado un momento: sin esto la revisión termina en silencio
+  // y no se distingue de haberse quedado colgada.
+  useEffect(() => {
+    if (!reciente) return;
+    const t = window.setTimeout(() => setReciente(false), 8_000);
+    return () => window.clearTimeout(t);
+  }, [reciente]);
 
   const editarUrl = async () => {
     const url = window.prompt(
@@ -88,6 +98,19 @@ export function AvancesDraftBadge({ email }: { email: string }) {
   };
 
   const cuando = data?.updatedAt ? `revisado ${formatDistanceToNow(data.updatedAt)}` : "sin revisar aún";
+  // Qué vio la última revisión: sin esto un "no hay borrador" es indistinguible
+  // de una comprobación que falló.
+  const detalle = [
+    data?.error ? `Error: ${data.error}` : null,
+    data?.comparedPaths?.length
+      ? `Comparadas ${data.comparedPaths.length} páginas contra producción` +
+        (data.diffPaths?.length ? `: distintas ${data.diffPaths.join(", ")}` : ": todas iguales")
+      : null,
+    data?.estado
+      ? `/api/estado: pendiente_aprobacion=${String(data.estado.pendiente_aprobacion)}` +
+        (data.estado.titulo ? ` (${data.estado.titulo})` : "")
+      : null,
+  ].filter(Boolean).join("\n");
 
   if (draft) {
     return (
@@ -117,12 +140,13 @@ export function AvancesDraftBadge({ email }: { email: string }) {
       title={
         (revisando ? "Revisando si hay borrador pendiente…" : "Sin borrador pendiente.") +
         `\n${cuando}` +
+        (detalle ? `\n${detalle}` : "") +
         (settings?.draftUrl ? `\nCanal: ${settings.draftUrl}` : "") +
         "\n\nClic para revisar ahora · clic derecho para cambiar la URL del canal."
       }
     >
       {revisando && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
-      {revisando ? "revisando…" : "draft?"}
+      {revisando ? "revisando…" : reciente ? "sin borrador" : "draft?"}
     </button>
   );
 }

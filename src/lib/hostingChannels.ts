@@ -26,6 +26,11 @@ export interface HostingChannelsDoc {
   liveVersion: string | null;
   channels: HostingChannel[];
   error: string | null;
+  /** Rutas comparadas contra producción y cuáles salieron distintas. */
+  comparedPaths: string[];
+  diffPaths: string[];
+  /** Lo que respondió /api/estado del sitio, cuando se pudo consultar. */
+  estado: { pendiente_aprobacion?: boolean | null; publicada?: boolean | null; titulo?: string | null } | null;
 }
 
 export async function getHostingChannels(site: string): Promise<HostingChannelsDoc | null> {
@@ -37,7 +42,13 @@ export async function getHostingChannels(site: string): Promise<HostingChannelsD
     raw?: string;
     error?: string | null;
   };
-  let raw: { liveVersion?: string | null; channels?: HostingChannel[] } = {};
+  let raw: {
+    liveVersion?: string | null;
+    channels?: HostingChannel[];
+    comparedPaths?: string[];
+    diffPaths?: string[];
+    estado?: HostingChannelsDoc["estado"];
+  } = {};
   try {
     raw = d.raw ? JSON.parse(d.raw) : {};
   } catch {
@@ -49,6 +60,9 @@ export async function getHostingChannels(site: string): Promise<HostingChannelsD
     liveVersion: raw.liveVersion ?? null,
     channels: raw.channels ?? [],
     error: d.error ?? null,
+    comparedPaths: raw.comparedPaths ?? [],
+    diffPaths: raw.diffPaths ?? [],
+    estado: raw.estado ?? null,
   };
 }
 
