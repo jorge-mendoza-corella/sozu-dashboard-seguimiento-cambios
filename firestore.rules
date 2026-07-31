@@ -58,6 +58,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Ajustes sueltos del dashboard (p. ej. la URL del draft de avances).
+    // Los lee cualquier usuario registrado; solo el root los cambia.
+    match /settings/{key} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if request.auth != null
+        && request.auth.token.email == 'jorge.mendoza@sozu.com';
+    }
+
     // Grupos de contribuidores (agrupación para analítica).
     // Lectura: cualquier usuario registrado. Escritura: solo el root.
     match /contributor_groups/{id} {

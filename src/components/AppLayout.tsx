@@ -5,9 +5,10 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getHostingChannels, pendingDraft } from "@/lib/hostingChannels";
 import { triggerPlayTracksSync } from "@/lib/playTracks";
+import { getAvancesSettings, setAvancesDraftUrl } from "@/lib/avancesSettings";
 
 // Sitio de avance de obra. El badge DRAFT (solo root) aparece únicamente
 // cuando el canal de preview tiene contenido que todavía no se publica: eso lo
@@ -31,6 +32,7 @@ interface Props { children: React.ReactNode }
 export function AppLayout({ children }: Props) {
   const { appUser, logout } = useAuth();
   const { pathname } = useLocation();
+  const qc = useQueryClient();
   const isRoot = appUser?.email === SUPERUSER_EMAIL;
   const navItems = NAV_ITEMS.filter((i) => i.show(appUser?.role, isRoot));
 
@@ -41,12 +43,39 @@ export function AppLayout({ children }: Props) {
     enabled: isRoot,
     refetchInterval: 5 * 60_000,
   });
+  const { data: avances } = useQuery({
+    queryKey: ["avances-settings"],
+    queryFn: getAvancesSettings,
+    enabled: isRoot,
+    refetchInterval: 5 * 60_000,
+  });
   const draft = pendingDraft(hosting);
   // El badge solo sale con un draft confirmado sin publicar: si el sync no
   // opinó, no se muestra (mostrarlo de más equivale a mandar a una versión
   // que ya es la pública).
   const showDraft = isRoot && !!draft;
-  const draftUrl = draft?.url ?? AVANCES_DRAFT_FALLBACK;
+  const draftUrl = draft?.url ?? avances?.draftUrl ?? AVANCES_DRAFT_FALLBACK;
+
+  // La URL del canal cambia con cada draft nuevo y solo la Hosting API puede
+  // descubrirla (permiso pendiente), así que el root puede pegarla a mano.
+  const pedirDraftUrl = async () => {
+    const actual = avances?.draftUrl ?? "";
+    const url = window.prompt(
+      "URL del canal draft de avances\n(Firebase le pone un hash distinto a cada draft nuevo)\n\nVacío = quitarla:",
+      actual,
+    );
+    if (url === null) return;
+    const limpia = url.trim();
+    if (limpia && !/^https:\/\//.test(limpia)) {
+      window.alert("La URL debe empezar con https://");
+      return;
+    }
+    await setAvancesDraftUrl(limpia || null, appUser?.email ?? "");
+    await qc.invalidateQueries({ queryKey: ["avances-settings"] });
+    // Recalcular de inmediato con la URL nueva en vez de esperar al cron.
+    triggerPlayTracksSync().catch(() => {});
+    sessionStorage.removeItem("hosting-sync-pedido");
+  };
 
   // El sync corre cada 15 min; al entrar, si el dato está viejo se pide uno
   // fresco para que el badge no sobreviva a una publicación reciente.
@@ -97,13 +126,28 @@ export function AppLayout({ children }: Props) {
                 Avances
                 <ExternalLink className="h-3 w-3 opacity-60" />
               </a>
+              {isRoot && !showDraft && (
+                <button
+                  type="button"
+                  onClick={pedirDraftUrl}
+                  className="-ml-1.5 rounded border border-transparent px-1 py-0.5 text-[10px] text-muted-foreground/50 transition-colors hover:border-border hover:text-foreground"
+                  title={
+                    "Sin borrador pendiente." +
+                    (avances?.draftUrl ? `\nCanal vigilado: ${avances.draftUrl}` : "") +
+                    "\n\nSi acabas de generar un draft nuevo, su URL cambió: pégala aquí."
+                  }
+                >
+                  draft?
+                </button>
+              )}
               {showDraft && (
                 <a
                   href={draftUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="-ml-1.5 rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-amber-700 no-underline transition-colors hover:bg-amber-200 dark:border-amber-700/60 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60"
-                  title="Versión borrador del reporte de avances (canal draft, solo tú la ves)"
+                  onContextMenu={(e) => { e.preventDefault(); void pedirDraftUrl(); }}
+                  title="Versión borrador del reporte de avances (canal draft, solo tú la ves).&#10;Clic derecho para cambiar la URL del canal."
                 >
                   DRAFT
                 </a>

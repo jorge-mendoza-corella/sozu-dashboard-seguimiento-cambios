@@ -160,6 +160,19 @@ def parse_compare_config() -> dict[str, tuple[str, str]]:
     return out
 
 
+def draft_url_from_settings(token: str) -> str | None:
+    """URL del canal draft que el root dejó en el dashboard (settings/avances).
+
+    Tiene prioridad sobre la del workflow: el canal cambia de URL cada vez que
+    se crea uno nuevo, y así se actualiza sin tocar el repositorio.
+    """
+    r = requests.get(f"{FS_BASE}/settings/avances", headers=headers(token), timeout=30)
+    if r.status_code != 200:
+        return None
+    url = (r.json().get("fields", {}).get("draftUrl", {}) or {}).get("stringValue")
+    return url.strip() if url and url.strip() else None
+
+
 def main() -> None:
     token = os.environ.get("FIRESTORE_TOKEN", "").strip()
     if not token:
@@ -172,6 +185,8 @@ def main() -> None:
         if error and site in compare:
             # Sin permisos sobre el sitio: decidir por el contenido servido.
             live_url, draft_url = compare[site]
+            if site == "sozu-avances":
+                draft_url = draft_url_from_settings(token) or draft_url
             print(f"· {site}: sin acceso a la Hosting API, comparando contenido ({error.split('Detalle:')[0].strip()})")
             payload, error = compare_by_content(site, live_url, draft_url)
         write_doc(token, site, payload, error)
