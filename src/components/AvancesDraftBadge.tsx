@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Loader2, HardHat, ExternalLink } from "lucide-react";
 import { getHostingChannels, pendingDraft } from "@/lib/hostingChannels";
 import { triggerPlayTracksSync } from "@/lib/playTracks";
 import { getAvancesSettings, setAvancesDraftUrl } from "@/lib/avancesSettings";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 
 const SITE = "sozu-avances";
+const AVANCES_URL = "https://avances.sozu.com";
 // Con más de esto, el dato no sirve para decidir: se pide una revisión al abrir.
 const FRESCO_MS = 2 * 60_000;
 const ESPERA_MAX_MS = 3 * 60_000;
@@ -22,7 +23,6 @@ const ESPERA_MAX_MS = 3 * 60_000;
 export function AvancesDraftBadge({ email }: { email: string }) {
   const qc = useQueryClient();
   const [revisando, setRevisando] = useState(false);
-  const [reciente, setReciente] = useState(false); // acaba de terminar una revisión
   const pedidoEn = useRef<string | null>(null);
 
   const { data } = useQuery({
@@ -66,20 +66,11 @@ export function AvancesDraftBadge({ email }: { email: string }) {
     if (!revisando) return;
     if (data?.updatedAt && data.updatedAt !== pedidoEn.current) {
       setRevisando(false);
-      setReciente(true);
       return;
     }
-    const t = window.setTimeout(() => { setRevisando(false); setReciente(true); }, ESPERA_MAX_MS);
+    const t = window.setTimeout(() => setRevisando(false), ESPERA_MAX_MS);
     return () => window.clearTimeout(t);
   }, [revisando, data?.updatedAt]);
-
-  // Anunciar el resultado un momento: sin esto la revisión termina en silencio
-  // y no se distingue de haberse quedado colgada.
-  useEffect(() => {
-    if (!reciente) return;
-    const t = window.setTimeout(() => setReciente(false), 8_000);
-    return () => window.clearTimeout(t);
-  }, [reciente]);
 
   const editarUrl = async () => {
     const url = window.prompt(
@@ -112,8 +103,29 @@ export function AvancesDraftBadge({ email }: { email: string }) {
       : null,
   ].filter(Boolean).join("\n");
 
+  const link = (
+    <a
+      href={AVANCES_URL}
+      target="_blank"
+      rel="noreferrer"
+      onContextMenu={(e) => { e.preventDefault(); void editarUrl(); }}
+      className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground no-underline transition-colors hover:bg-muted hover:text-foreground"
+      title={
+        `Avance de obra (versión publicada) — avances.sozu.com\n${cuando}` +
+        (detalle ? `\n${detalle}` : "") +
+        "\nClic derecho: cambiar la URL del canal draft."
+      }
+    >
+      <HardHat className="h-4 w-4" />
+      Avances
+      <ExternalLink className="h-3 w-3 opacity-60" />
+    </a>
+  );
+
   if (draft) {
     return (
+      <span className="flex items-center">
+      {link}
       <a
         href={draft.url}
         target="_blank"
@@ -127,26 +139,22 @@ export function AvancesDraftBadge({ email }: { email: string }) {
       >
         DRAFT
       </a>
+      </span>
     );
   }
 
+  // Sin borrador pendiente no se pinta nada: el nav no debe cargar con un
+  // control permanente. La revisión ya ocurre sola al abrir y cada 15 min; el
+  // ajuste manual de la URL vive en el clic derecho sobre "Avances".
   return (
-    <button
-      type="button"
-      onClick={() => void revisar()}
-      onContextMenu={(e) => { e.preventDefault(); void editarUrl(); }}
-      disabled={revisando}
-      className="-ml-1.5 flex items-center gap-1 rounded border border-transparent px-1 py-0.5 text-[10px] text-muted-foreground/50 transition-colors hover:border-border hover:text-foreground disabled:opacity-70"
-      title={
-        (revisando ? "Revisando si hay borrador pendiente…" : "Sin borrador pendiente.") +
-        `\n${cuando}` +
-        (detalle ? `\n${detalle}` : "") +
-        (settings?.draftUrl ? `\nCanal: ${settings.draftUrl}` : "") +
-        "\n\nClic para revisar ahora · clic derecho para cambiar la URL del canal."
-      }
-    >
-      {revisando && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
-      {revisando ? "revisando…" : reciente ? "sin borrador" : "draft?"}
-    </button>
+    <span className="flex items-center">
+      {link}
+      {revisando && (
+        <Loader2
+          className="-ml-1.5 h-2.5 w-2.5 animate-spin text-muted-foreground/40"
+          aria-label="Revisando si hay borrador pendiente"
+        />
+      )}
+    </span>
   );
 }

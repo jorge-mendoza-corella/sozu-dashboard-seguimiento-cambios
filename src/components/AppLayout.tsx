@@ -50,21 +50,23 @@ export function AppLayout({ children }: Props) {
                 {label}
               </Link>
             ))}
-            {/* Sitio de avance de obra (aplicación aparte, se abre en otra pestaña) */}
-            <span className="ml-1 flex items-center">
+            {/* Sitio de avance de obra (aplicación aparte, se abre en otra pestaña).
+                Para el root incluye el badge del borrador pendiente. */}
+            {isRoot ? (
+              <AvancesDraftBadge email={appUser?.email ?? ""} />
+            ) : (
               <a
                 href={AVANCES_URL}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground no-underline transition-colors hover:bg-muted hover:text-foreground"
-                title="Avance de obra (versión publicada) — avances.sozu.com"
+                className="ml-1 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground no-underline transition-colors hover:bg-muted hover:text-foreground"
+                title="Avance de obra — avances.sozu.com"
               >
                 <HardHat className="h-4 w-4" />
                 Avances
                 <ExternalLink className="h-3 w-3 opacity-60" />
               </a>
-              {isRoot && <AvancesDraftBadge email={appUser?.email ?? ""} />}
-            </span>
+            )}
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <span
