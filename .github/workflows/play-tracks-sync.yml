@@ -41,6 +41,8 @@ jobs:
           # Token de la cuenta de Firebase (escribe Firestore por REST).
           FIRESTORE_TOKEN="$(gcloud auth print-access-token)"
           export FIRESTORE_TOKEN
+          # Útil cuando falta un permiso: dice a quién hay que dárselo.
+          echo "Cuenta de servicio del sync: $(gcloud config get-value account 2>/dev/null)"
 
           secret() {
             # Devuelve vacío si el secret no existe: cada script se salta solo.
