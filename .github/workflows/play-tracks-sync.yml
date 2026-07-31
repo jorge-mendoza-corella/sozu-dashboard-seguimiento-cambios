@@ -6,7 +6,7 @@ name: Sync estado de tiendas (Play / App Store)
 #   · App Store Connect — estado de revisión de la versión y builds
 on:
   schedule:
-    - cron: "*/30 * * * *" # cada 30 min
+    - cron: "*/15 * * * *" # cada 15 min
   workflow_dispatch: # botón "actualizar" del dashboard
 
 concurrency:
@@ -62,4 +62,8 @@ jobs:
           python ci/appstore_status_sync.py
 
           # --- Canales de Firebase Hosting (drafts pendientes de publicar) ---
-          HOSTING_SITES=sozu-avances python ci/hosting_channels_sync.py
+          # HOSTING_COMPARE es el respaldo cuando la cuenta de servicio no tiene
+          # permiso sobre el sitio: compara el HTML del draft contra el de producción.
+          HOSTING_SITES=sozu-avances \
+          HOSTING_COMPARE="sozu-avances|https://avances.sozu.com|https://sozu-avances--draft-u1wqsh7o.web.app" \
+            python ci/hosting_channels_sync.py

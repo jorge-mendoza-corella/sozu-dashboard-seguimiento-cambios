@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Activity, GitBranch, Users, GitCommit, LogOut, LayoutDashboard, HardHat, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -6,6 +7,7 @@ import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { getHostingChannels, pendingDraft } from "@/lib/hostingChannels";
+import { triggerPlayTracksSync } from "@/lib/playTracks";
 
 // Sitio de avance de obra. El badge DRAFT (solo root) aparece únicamente
 // cuando el canal de preview tiene contenido que todavía no se publica: eso lo
@@ -40,10 +42,22 @@ export function AppLayout({ children }: Props) {
     refetchInterval: 5 * 60_000,
   });
   const draft = pendingDraft(hosting);
-  // Sin datos del sync todavía (o sin permisos para leer Hosting): se muestra
-  // el canal conocido para no perder el acceso. Con datos, manda el sync.
-  const showDraft = isRoot && (hosting == null || !!hosting.error ? true : !!draft);
+  // El badge solo sale con un draft confirmado sin publicar: si el sync no
+  // opinó, no se muestra (mostrarlo de más equivale a mandar a una versión
+  // que ya es la pública).
+  const showDraft = isRoot && !!draft;
   const draftUrl = draft?.url ?? AVANCES_DRAFT_FALLBACK;
+
+  // El sync corre cada 15 min; al entrar, si el dato está viejo se pide uno
+  // fresco para que el badge no sobreviva a una publicación reciente.
+  useEffect(() => {
+    if (!isRoot || !hosting) return;
+    const age = hosting.updatedAt ? Date.now() - new Date(hosting.updatedAt).getTime() : Infinity;
+    if (age < 10 * 60_000) return;
+    if (sessionStorage.getItem("hosting-sync-pedido")) return;
+    sessionStorage.setItem("hosting-sync-pedido", "1");
+    triggerPlayTracksSync().catch(() => sessionStorage.removeItem("hosting-sync-pedido"));
+  }, [isRoot, hosting]);
 
   return (
     <div className="min-h-screen flex flex-col">

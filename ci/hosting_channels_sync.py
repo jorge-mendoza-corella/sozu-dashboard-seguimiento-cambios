@@ -9,13 +9,25 @@ ya fue publicado: el dashboard entonces no muestra el badge DRAFT.
 
 Corre en .github/workflows/play-tracks-sync.yml.
 
+Dos formas de averiguarlo, en orden:
+
+  1. Hosting API — exacta, pero exige que la cuenta de servicio tenga permiso
+     sobre el sitio (rol "Firebase Hosting Viewer" en el proyecto dueño).
+  2. Comparar el contenido servido por el canal contra el del sitio en vivo.
+     El banner de borrador de estos sitios se activa por hostname en el
+     navegador, así que el HTML servido es idéntico byte a byte una vez que el
+     draft se publicó. No requiere permisos: es HTTP público.
+
 Variables de entorno:
   FIRESTORE_TOKEN   access token de GCP (sirve también para Hosting API)
   GCP_PROJECT       proyecto Firebase (default: sozu-admin-dev)
   HOSTING_SITES     sitios a revisar, separados por coma (default: sozu-avances)
+  HOSTING_COMPARE   respaldo sin permisos, uno por línea o separados por ';':
+                    "sitio|https://url-en-vivo|https://url-del-draft"
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -109,19 +121,66 @@ def write_doc(token: str, site: str, payload: dict | None, error: str | None) ->
         fail(f"Firestore write {site}: {r.status_code} {r.text[:300]}")
 
 
+def page_hash(url: str) -> tuple[str | None, str | None]:
+    try:
+        r = requests.get(url, timeout=30, headers={"Cache-Control": "no-cache"})
+    except requests.RequestException as e:
+        return None, f"no se pudo leer {url}: {e}"
+    if r.status_code != 200:
+        return None, f"{url} respondió {r.status_code}"
+    return hashlib.sha256(r.content).hexdigest(), None
+
+
+def compare_by_content(site: str, live_url: str, draft_url: str) -> tuple[dict | None, str | None]:
+    """Respaldo sin permisos: el draft ya está publicado si sirve lo mismo que producción."""
+    live, err1 = page_hash(live_url)
+    draft, err2 = page_hash(draft_url)
+    if err1 or err2:
+        return None, err1 or err2
+    return {
+        "site": site,
+        "liveVersion": live,
+        "source": "contenido",
+        "channels": [{
+            "id": "draft",
+            "url": draft_url,
+            "version": draft,
+            "published": draft == live,
+        }],
+    }, None
+
+
+def parse_compare_config() -> dict[str, tuple[str, str]]:
+    raw = os.environ.get("HOSTING_COMPARE", "").replace("\n", ";")
+    out: dict[str, tuple[str, str]] = {}
+    for item in raw.split(";"):
+        parts = [p.strip() for p in item.split("|")]
+        if len(parts) == 3 and all(parts):
+            out[parts[0]] = (parts[1], parts[2])
+    return out
+
+
 def main() -> None:
     token = os.environ.get("FIRESTORE_TOKEN", "").strip()
     if not token:
         fail("Falta FIRESTORE_TOKEN.")
     sites = [s.strip() for s in os.environ.get("HOSTING_SITES", "sozu-avances").split(",") if s.strip()]
+    compare = parse_compare_config()
+
     for site in sites:
         payload, error = fetch_channels(token, site)
+        if error and site in compare:
+            # Sin permisos sobre el sitio: decidir por el contenido servido.
+            live_url, draft_url = compare[site]
+            print(f"· {site}: sin acceso a la Hosting API, comparando contenido ({error.split('Detalle:')[0].strip()})")
+            payload, error = compare_by_content(site, live_url, draft_url)
         write_doc(token, site, payload, error)
         if error:
             print(f"⚠ {site}: {error}")
         else:
             pend = [c["id"] for c in payload["channels"] if not c["published"]]
-            print(f"✓ {site}: {len(payload['channels'])} canal(es); sin publicar: {pend or 'ninguno'}")
+            via = payload.get("source", "hosting api")
+            print(f"✓ {site} (via {via}): {len(payload['channels'])} canal(es); sin publicar: {pend or 'ninguno'}")
 
 
 if __name__ == "__main__":
