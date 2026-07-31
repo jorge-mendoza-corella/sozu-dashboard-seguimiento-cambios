@@ -1,23 +1,13 @@
-import { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Activity, GitBranch, Users, GitCommit, LogOut, LayoutDashboard, HardHat, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getHostingChannels, pendingDraft } from "@/lib/hostingChannels";
-import { triggerPlayTracksSync } from "@/lib/playTracks";
-import { getAvancesSettings, setAvancesDraftUrl } from "@/lib/avancesSettings";
+import { AvancesDraftBadge } from "@/components/AvancesDraftBadge";
 
-// Sitio de avance de obra. El badge DRAFT (solo root) aparece únicamente
-// cuando el canal de preview tiene contenido que todavía no se publica: eso lo
-// determina el workflow programado comparando el release del canal contra el
-// que está en vivo. La URL del canal también viene de ahí, porque cambia cada
-// vez que se recrea; la constante es solo el respaldo si el sync aún no corrió.
+// Sitio de avance de obra. El badge de borrador vive en AvancesDraftBadge.
 const AVANCES_URL = "https://avances.sozu.com";
-const AVANCES_SITE = "sozu-avances";
-const AVANCES_DRAFT_FALLBACK = "https://sozu-avances--draft-u1wqsh7o.web.app";
 
 // `show(role, isRoot)` decide la visibilidad de cada item en el nav.
 const NAV_ITEMS = [
@@ -32,61 +22,8 @@ interface Props { children: React.ReactNode }
 export function AppLayout({ children }: Props) {
   const { appUser, logout } = useAuth();
   const { pathname } = useLocation();
-  const qc = useQueryClient();
   const isRoot = appUser?.email === SUPERUSER_EMAIL;
   const navItems = NAV_ITEMS.filter((i) => i.show(appUser?.role, isRoot));
-
-  // Draft del sitio de avances: solo interesa al root.
-  const { data: hosting } = useQuery({
-    queryKey: ["hosting-channels", AVANCES_SITE],
-    queryFn: () => getHostingChannels(AVANCES_SITE),
-    enabled: isRoot,
-    refetchInterval: 5 * 60_000,
-  });
-  const { data: avances } = useQuery({
-    queryKey: ["avances-settings"],
-    queryFn: getAvancesSettings,
-    enabled: isRoot,
-    refetchInterval: 5 * 60_000,
-  });
-  const draft = pendingDraft(hosting);
-  // El badge solo sale con un draft confirmado sin publicar: si el sync no
-  // opinó, no se muestra (mostrarlo de más equivale a mandar a una versión
-  // que ya es la pública).
-  const showDraft = isRoot && !!draft;
-  const draftUrl = draft?.url ?? avances?.draftUrl ?? AVANCES_DRAFT_FALLBACK;
-
-  // La URL del canal cambia con cada draft nuevo y solo la Hosting API puede
-  // descubrirla (permiso pendiente), así que el root puede pegarla a mano.
-  const pedirDraftUrl = async () => {
-    const actual = avances?.draftUrl ?? "";
-    const url = window.prompt(
-      "URL del canal draft de avances\n(Firebase le pone un hash distinto a cada draft nuevo)\n\nVacío = quitarla:",
-      actual,
-    );
-    if (url === null) return;
-    const limpia = url.trim();
-    if (limpia && !/^https:\/\//.test(limpia)) {
-      window.alert("La URL debe empezar con https://");
-      return;
-    }
-    await setAvancesDraftUrl(limpia || null, appUser?.email ?? "");
-    await qc.invalidateQueries({ queryKey: ["avances-settings"] });
-    // Recalcular de inmediato con la URL nueva en vez de esperar al cron.
-    triggerPlayTracksSync().catch(() => {});
-    sessionStorage.removeItem("hosting-sync-pedido");
-  };
-
-  // El sync corre cada 15 min; al entrar, si el dato está viejo se pide uno
-  // fresco para que el badge no sobreviva a una publicación reciente.
-  useEffect(() => {
-    if (!isRoot || !hosting) return;
-    const age = hosting.updatedAt ? Date.now() - new Date(hosting.updatedAt).getTime() : Infinity;
-    if (age < 10 * 60_000) return;
-    if (sessionStorage.getItem("hosting-sync-pedido")) return;
-    sessionStorage.setItem("hosting-sync-pedido", "1");
-    triggerPlayTracksSync().catch(() => sessionStorage.removeItem("hosting-sync-pedido"));
-  }, [isRoot, hosting]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -126,37 +63,7 @@ export function AppLayout({ children }: Props) {
                 Avances
                 <ExternalLink className="h-3 w-3 opacity-60" />
               </a>
-              {isRoot && !showDraft && (
-                <button
-                  type="button"
-                  onClick={pedirDraftUrl}
-                  className="-ml-1.5 rounded border border-transparent px-1 py-0.5 text-[10px] text-muted-foreground/50 transition-colors hover:border-border hover:text-foreground"
-                  title={
-                    "Sin borrador pendiente." +
-                    (avances?.draftUrl ? `\nCanal vigilado: ${avances.draftUrl}` : "") +
-                    "\n\nSi acabas de generar un draft nuevo, su URL cambió: pégala aquí."
-                  }
-                >
-                  draft?
-                </button>
-              )}
-              {showDraft && (
-                <a
-                  href={draftUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="-ml-1.5 rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-amber-700 no-underline transition-colors hover:bg-amber-200 dark:border-amber-700/60 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60"
-                  onContextMenu={(e) => { e.preventDefault(); void pedirDraftUrl(); }}
-                  title={
-                    (draft?.title
-                      ? `Borrador pendiente de aprobar: ${draft.title}`
-                      : "Versión borrador del reporte de avances (solo tú la ves)") +
-                    "\nClic derecho para cambiar la URL del canal."
-                  }
-                >
-                  DRAFT
-                </a>
-              )}
+              {isRoot && <AvancesDraftBadge email={appUser?.email ?? ""} />}
             </span>
           </nav>
           <div className="ml-auto flex items-center gap-3">
