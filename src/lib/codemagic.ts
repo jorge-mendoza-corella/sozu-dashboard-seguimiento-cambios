@@ -218,6 +218,33 @@ export async function uploadAndroidKeystore(appId: string, params: {
   await upsertSecureVariable(appId, ANDROID_SIGNING_GROUP, "ANDROID_KEY_PASSWORD", params.keyPassword);
 }
 
+/** Nombre que espera el workflow para las credenciales de Google Play. */
+export const PLAY_CREDENTIALS_VAR = "GCLOUD_SERVICE_ACCOUNT_CREDENTIALS";
+
+/**
+ * Guarda el JSON del service account de Play Console como variable segura, en
+ * el MISMO grupo que el keystore: si queda en otro grupo el workflow no lo
+ * carga y Codemagic falla con "Expecting value: line 1 column 1" (recibe una
+ * cadena vacía y trata de parsearla como JSON).
+ */
+export async function uploadPlayServiceAccount(appId: string, json: string): Promise<void> {
+  const limpio = json.trim();
+  let parsed: { type?: string; client_email?: string; private_key?: string };
+  try {
+    parsed = JSON.parse(limpio);
+  } catch {
+    throw new Error(
+      "Eso no es un JSON válido. Pega el archivo completo del service account, desde la primera { hasta la última }.",
+    );
+  }
+  if (parsed.type !== "service_account" || !parsed.client_email || !parsed.private_key) {
+    throw new Error(
+      'El JSON no parece de un service account (falta "type": "service_account", client_email o private_key).',
+    );
+  }
+  await upsertSecureVariable(appId, ANDROID_SIGNING_GROUP, PLAY_CREDENTIALS_VAR, limpio);
+}
+
 export interface BuildStatusInfo {
   label: string;
   isRunning: boolean;

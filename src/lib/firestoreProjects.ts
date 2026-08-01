@@ -26,6 +26,7 @@ export interface Project {
   approverEmail?: string; // usuario del dashboard que aprueba los PRs del proyecto (usa SU token de GitHub)
   notifyAuthors?: string[]; // logins de GitHub seleccionables como autor extra al crear PR (por proyecto)
   androidKeystoreUploadedAt?: string; // ISO — última subida del keystore Android vía dashboard
+  playCredentialsUploadedAt?: string; // ISO — última subida del service account de Play vía dashboard
   androidPackage?: string; // applicationId de Android (ej. com.sozu.clientes_app); se inyecta al build de Codemagic
   iosBundleId?: string; // bundle id de iOS (ej. com.sozu.sozuClienteApp); para leer el estado en App Store Connect
   // "simple" (default): construir y publicar directo en la tienda, en un clic.
@@ -115,6 +116,11 @@ export async function setProjectDeployMode(id: string, mode: "simple" | "avanzad
 /** Marca cuándo se subió el keystore Android desde el dashboard (solo informativo). */
 export async function setProjectKeystoreUploaded(id: string) {
   await updateDoc(doc(db, "projects", id), { androidKeystoreUploadedAt: new Date().toISOString() });
+}
+
+/** Marca cuándo se subió el service account de Google Play (solo informativo). */
+export async function setProjectPlayCredentialsUploaded(id: string) {
+  await updateDoc(doc(db, "projects", id), { playCredentialsUploadedAt: new Date().toISOString() });
 }
 
 /** Logins de GitHub que aparecen como seleccionables al crear PR en el proyecto. */

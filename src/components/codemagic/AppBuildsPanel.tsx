@@ -10,12 +10,15 @@ import { SelectNative } from "@/components/ui/select-native";
 import { useCodemagicApps, useCodemagicBuilds, useBranchHead, useActiveDeploy } from "@/hooks/useCodemagic";
 import {
   startBuild, cancelBuild, buildStatusInfo, buildUrl, buildCommitSha, appRepo,
-  formatBuildDate, uploadAndroidKeystore, PLATFORMS, WORKFLOW_LABELS, SYNC_TESTERS_WORKFLOW,
+  formatBuildDate, uploadAndroidKeystore, uploadPlayServiceAccount, PLAY_CREDENTIALS_VAR,
+  PLATFORMS, WORKFLOW_LABELS, SYNC_TESTERS_WORKFLOW,
   type CodemagicBuild, type PlatformDef,
 } from "@/lib/codemagic";
 import { useAuth } from "@/hooks/useAuth";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
-import { setProjectKeystoreUploaded, setProjectDeployMode } from "@/lib/firestoreProjects";
+import {
+  setProjectKeystoreUploaded, setProjectDeployMode, setProjectPlayCredentialsUploaded,
+} from "@/lib/firestoreProjects";
 import { cn } from "@/lib/utils";
 import type { CicdPermissions } from "@/lib/firestoreUsers";
 import { setProjectTesters, setProjectTestLinks, type Project } from "@/lib/firestoreProjects";
@@ -564,6 +567,32 @@ export function AppBuildsPanel({ appId, perms, project }: {
     }
   };
 
+  // Cuenta de servicio de Google Play: sin ella el workflow recibe una cadena
+  // vacía y falla con "Expecting value: line 1 column 1 (char 0)".
+  const [saOpen, setSaOpen] = useState(false);
+  const [saBusy, setSaBusy] = useState(false);
+  const [saError, setSaError] = useState("");
+  const [saJson, setSaJson] = useState("");
+
+  const handleUploadServiceAccount = async () => {
+    if (!saJson.trim()) return;
+    setSaBusy(true);
+    setSaError("");
+    try {
+      await uploadPlayServiceAccount(appId, saJson);
+      if (project) {
+        await setProjectPlayCredentialsUploaded(project.id);
+        await qc.invalidateQueries({ queryKey: ["projects"] });
+      }
+      setSaOpen(false);
+      setSaJson("");
+    } catch (e) {
+      setSaError(e instanceof Error ? e.message : "Error al guardar las credenciales");
+    } finally {
+      setSaBusy(false);
+    }
+  };
+
   // Links de invitación (fijos por app; se configuran una sola vez).
   // Google/Apple no exponen estos links por API → se pegan una vez desde la consola.
   const editTestLink = (kind: TestLinkKind) => {
@@ -891,6 +920,54 @@ export function AppBuildsPanel({ appId, perms, project }: {
           </div>
         )}
 
+        {/* Credenciales de publicación (solo root). Fuera de la sección de
+            testers: en modo simple esa sección no se muestra y estas dos cosas
+            son justo las que hacen falta para poder publicar. */}
+        {isRoot && project && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-dashed px-3 py-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Credenciales Android
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="text-[10px] text-muted-foreground/70">
+                Keystore:{" "}
+                {project.androidKeystoreUploadedAt
+                  ? `subido hace ${formatDistanceToNow(project.androidKeystoreUploadedAt)}`
+                  : "sin subir"}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setKsError(""); setKsOpen(true); }}
+                className="text-[10px] text-muted-foreground underline hover:text-foreground"
+                title="Subir/actualizar el .jks — se guarda como variables cifradas en Codemagic"
+              >
+                {project.androidKeystoreUploadedAt ? "actualizar" : "subir"}
+              </button>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="text-[10px] text-muted-foreground/70">
+                Cuenta de servicio de Play:{" "}
+                {project.playCredentialsUploadedAt
+                  ? `subida hace ${formatDistanceToNow(project.playCredentialsUploadedAt)}`
+                  : "sin subir"}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setSaError(""); setSaOpen(true); }}
+                className="text-[10px] text-muted-foreground underline hover:text-foreground"
+                title="JSON del service account de Play Console — sin esto Codemagic no puede publicar en Google Play"
+              >
+                {project.playCredentialsUploadedAt ? "actualizar" : "subir"}
+              </button>
+            </span>
+            {!project.playCredentialsUploadedAt && (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                Falta la cuenta de servicio: la publicación a Play fallará.
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Estado en las tiendas (lo alimenta el workflow programado) */}
         {project?.androidPackage && <PlayTracksCard project={project} canRefresh={perms.buildApp} />}
         {project?.iosBundleId && <AppStoreStatusCard project={project} />}
@@ -945,25 +1022,6 @@ export function AppBuildsPanel({ appId, perms, project }: {
                   </span>
                 );
               })}
-              {/* Keystore Android (solo root): se guarda cifrado en Codemagic */}
-              {isRoot && (
-                <span className="flex items-center gap-1">
-                  <span className="text-[10px] text-muted-foreground/70">
-                    Keystore Android:{" "}
-                    {project?.androidKeystoreUploadedAt
-                      ? `subido hace ${formatDistanceToNow(project.androidKeystoreUploadedAt)}`
-                      : "sin subir"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => { setKsError(""); setKsOpen(true); }}
-                    className="text-[10px] text-muted-foreground underline hover:text-foreground"
-                    title="Subir/actualizar el .jks — se guarda como variables cifradas en Codemagic"
-                  >
-                    {project?.androidKeystoreUploadedAt ? "actualizar" : "subir"}
-                  </button>
-                </span>
-              )}
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {testers.map((email) => (
@@ -1280,6 +1338,49 @@ export function AppBuildsPanel({ appId, perms, project }: {
                 >
                   {ksBusy ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Upload className="h-4 w-4 mr-1.5" />}
                   Subir cifrado
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Cuenta de servicio de Google Play (solo root) */}
+        {saOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"
+            onClick={() => !saBusy && setSaOpen(false)}
+          >
+            <div
+              className="w-full max-w-lg rounded-xl border bg-background p-5 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="flex items-center gap-2 text-base font-semibold">
+                <Upload className="h-4 w-4 text-lime-600" />
+                Cuenta de servicio de Google Play
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Pega el JSON completo del service account (Play Console → Setup → API access).
+                Se guarda como la variable cifrada{" "}
+                <span className="font-mono text-[11px] text-foreground">{PLAY_CREDENTIALS_VAR}</span>{" "}
+                en el grupo <span className="font-mono text-[11px] text-foreground">android_signing_custom</span>,
+                que es de donde la lee el build. Ponerla en otro grupo es lo que produce el error
+                "Expecting value: line 1 column 1".
+              </p>
+              <textarea
+                className="mt-3 h-44 w-full rounded-md border bg-background px-3 py-2 font-mono text-[11px]"
+                placeholder={'{\n  "type": "service_account",\n  "project_id": "…",\n  "private_key": "-----BEGIN PRIVATE KEY-----\\n…",\n  "client_email": "…@….iam.gserviceaccount.com"\n}'}
+                spellCheck={false}
+                value={saJson}
+                onChange={(e) => setSaJson(e.target.value)}
+              />
+              {saError && <p className="mt-1 text-xs text-destructive">{saError}</p>}
+              <div className="mt-4 flex justify-end gap-2">
+                <Button variant="outline" size="sm" disabled={saBusy} onClick={() => setSaOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button size="sm" disabled={saBusy || !saJson.trim()} onClick={handleUploadServiceAccount}>
+                  {saBusy ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Upload className="h-4 w-4 mr-1.5" />}
+                  Guardar cifrado
                 </Button>
               </div>
             </div>
