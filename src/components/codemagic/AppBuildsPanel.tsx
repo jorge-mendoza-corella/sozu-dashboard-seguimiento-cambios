@@ -69,6 +69,18 @@ const TEST_LINKS: Record<TestLinkKind, { label: string; help: string }> = {
   },
 };
 
+// A qué canal fue cada publicación. Se declara workflow por workflow porque
+// con un ternario por defecto un workflow nuevo se anuncia como canal de
+// pruebas: `android-store` publica en producción y salía como "Play interno".
+const DESTINO_PUBLICACION: Record<string, { label: string; produccion: boolean }> = {
+  "android-publish": { label: "Play interno", produccion: false },
+  "android-production": { label: "Play Store", produccion: true },
+  "android-store": { label: "Play Store", produccion: true },
+  "ios-publish": { label: "TestFlight", produccion: false },
+  "ios-appstore": { label: "App Store Connect", produccion: true },
+  "ios-store": { label: "App Store Connect", produccion: true },
+};
+
 // ---------------------------------------------------------------------------
 // Plataforma de un build: por prefijo del workflow, o por sus artefactos
 // (builds viejos disparados desde la UI de Codemagic no traen workflow id
@@ -1163,10 +1175,11 @@ export function AppBuildsPanel({ appId, perms, project }: {
               const dur = duration(b);
               const when = b.startedAt ?? b.createdAt;
               const tags = markers.get(b._id) ?? [];
-              const isIosCloud = plat === "ios" && info.tone === "success" &&
-                (b.workflowId === "ios-publish" || b.workflowId === "ios-appstore" || b.workflowId === "ios-store");
-              const isAndroidCloud = plat === "android" && info.tone === "success" &&
-                (b.workflowId === "android-publish" || b.workflowId === "android-production" || b.workflowId === "android-store");
+              const destino = DESTINO_PUBLICACION[b.workflowId ?? ""];
+              // Publicó en la nube = está en DESTINO_PUBLICACION, así no hay
+              // dos listas de workflows que mantener en sincronía.
+              const isIosCloud = plat === "ios" && info.tone === "success" && !!destino;
+              const isAndroidCloud = plat === "android" && info.tone === "success" && !!destino;
               return (
                 <div key={b._id} className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs">
                   <span className={cn("shrink-0 rounded-full border px-2 py-0.5 font-medium", TONE_CLASSES[info.tone])}>
@@ -1217,27 +1230,35 @@ export function AppBuildsPanel({ appId, perms, project }: {
                       }
                       target="_blank"
                       rel="noreferrer"
-                      title="El build vive en la nube de Apple: instálalo desde la app TestFlight o revisa App Store Connect"
+                      title={
+                        destino?.produccion
+                          ? "Enviado a revisión de App Store. Su estado se ve en App Store Connect."
+                          : "El build vive en la nube de Apple: instálalo desde la app TestFlight."
+                      }
                       className="flex items-center gap-1 rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-sky-700 hover:bg-sky-100 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-300"
                     >
                       <Cloud className="h-3 w-3" />
-                      {b.workflowId === "ios-appstore" ? "App Store Connect" : "TestFlight"}
+                      {destino?.label ?? "App Store Connect"}
                     </a>
                   )}
                   {isAndroidCloud && (
                     <a
                       href={
-                        b.workflowId === "android-publish" && project?.playInternalUrl
+                        !destino?.produccion && project?.playInternalUrl
                           ? project.playInternalUrl
                           : "https://play.google.com/console"
                       }
                       target="_blank"
                       rel="noreferrer"
-                      title="El build está en Google Play. Link de invitación para testers: Play Console → Testing → Internal testing → Testers → Copy link"
+                      title={
+                        destino?.produccion
+                          ? "Publicado en el canal de producción de Google Play. Su estado (revisión incluida) se ve en Play Console."
+                          : "El build está en el canal interno de Google Play. Link de invitación: Play Console → Testing → Internal testing → Testers → Copy link"
+                      }
                       className="flex items-center gap-1 rounded border border-lime-200 bg-lime-50 px-1.5 py-0.5 text-lime-700 hover:bg-lime-100 dark:border-lime-900/50 dark:bg-lime-950/30 dark:text-lime-300"
                     >
                       <Cloud className="h-3 w-3" />
-                      {b.workflowId === "android-production" ? "Play Store" : "Play interno"}
+                      {destino?.label ?? "Play Store"}
                     </a>
                   )}
                   <a
