@@ -505,23 +505,29 @@ export async function mergeWithBypass(
   pullNumber: number,
   prAuthor: string,
   approver?: ApproverAuth,
+  /** El PR ya tiene una aprobación: mergear sin volver a aprobar. */
+  alreadyApproved = false,
 ): Promise<void> {
-  let approverOctokit: Octokit | null = null;
+  // Con aprobación previa no hace falta el bypass, y re-aprobar borraría la
+  // trazabilidad de quién revisó de verdad (quedaría marcado como automático).
+  if (!alreadyApproved) {
+    let approverOctokit: Octokit | null = null;
 
-  if (approver && approver.login !== prAuthor) {
-    approverOctokit = new Octokit({ auth: approver.token });
-  } else if (reviewerOctokit) {
-    const { data: reviewerUser } = await reviewerOctokit.users.getAuthenticated();
-    approverOctokit = prAuthor === reviewerUser.login ? octokit : reviewerOctokit;
-  }
-  if (!approverOctokit) {
-    throw new Error("Sin aprobador disponible: configura el aprobador del proyecto (con API key) o VITE_GITHUB_REVIEWER_TOKEN.");
-  }
+    if (approver && approver.login !== prAuthor) {
+      approverOctokit = new Octokit({ auth: approver.token });
+    } else if (reviewerOctokit) {
+      const { data: reviewerUser } = await reviewerOctokit.users.getAuthenticated();
+      approverOctokit = prAuthor === reviewerUser.login ? octokit : reviewerOctokit;
+    }
+    if (!approverOctokit) {
+      throw new Error("Sin aprobador disponible: configura el aprobador del proyecto (con API key) o VITE_GITHUB_REVIEWER_TOKEN.");
+    }
 
-  await approverOctokit.pulls.createReview({
-    owner, repo, pull_number: pullNumber, event: "APPROVE",
-    body: "Auto-aprobado por el dashboard (bypass a ramas no productivas).",
-  });
+    await approverOctokit.pulls.createReview({
+      owner, repo, pull_number: pullNumber, event: "APPROVE",
+      body: "Auto-aprobado por el dashboard (bypass a ramas no productivas).",
+    });
+  }
 
   await actor().pulls.merge({
     owner, repo, pull_number: pullNumber, merge_method: "merge",

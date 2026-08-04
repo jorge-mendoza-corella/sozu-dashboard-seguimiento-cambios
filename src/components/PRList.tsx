@@ -126,7 +126,10 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
       if (pr.base === "main") {
         await mergePR(owner, repo, pr.number, "merge");
       } else {
-        await mergeWithBypass(owner, repo, pr.number, pr.author, approver ?? undefined);
+        await mergeWithBypass(
+          owner, repo, pr.number, pr.author, approver ?? undefined,
+          pr.reviewDecision === "APPROVED",
+        );
       }
       setMergedPRs((prev) => new Set([...prev, pr.number]));
       setResult({ prNumber: pr.number, ok: true, msg: `Merge completado · ${pr.head} → ${pr.base}` });
@@ -164,7 +167,10 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
         // mergedPRs oculta el botón de inmediato tras confirmar el merge
         // Permiso por rama destino: main requiere mergeMain; el resto, mergeDev.
         const hasMergePerm = isToMain ? perms.mergeMain : perms.mergeDev;
-        const canMerge = hasMergePerm && !mergedPRs.has(pr.number) && (isToMain ? isApproved : !isApproved);
+        // A main solo se mergea con aprobación. A las demás ramas siempre se
+        // puede: antes se exigía que NO estuviera aprobado y el botón
+        // desaparecía justo al aprobar el PR, dejándolo sin salida.
+        const canMerge = hasMergePerm && !mergedPRs.has(pr.number) && (!isToMain || isApproved);
         const canClose = perms.createPR && !mergedPRs.has(pr.number);
 
         const isPanelOpen  = openPanel?.prNumber === pr.number;
