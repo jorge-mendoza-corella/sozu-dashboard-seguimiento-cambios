@@ -15,6 +15,7 @@ import {
   type CodemagicBuild, type PlatformDef,
 } from "@/lib/codemagic";
 import { useAuth } from "@/hooks/useAuth";
+import { getAllContributorPhones } from "@/lib/firestoreContributors";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import {
   setProjectKeystoreUploaded, setProjectDeployMode, setProjectPlayCredentialsUploaded,
@@ -737,7 +738,14 @@ export function AppBuildsPanel({ appId, perms, project }: {
       // Package Android configurado en el dashboard → env var del build/promote.
       // Se pasa solo si tiene valor; el gradle/codemagic.yaml tienen fallback.
       const pkg = project?.androidPackage?.trim();
-      const mergedEnv = pkg ? { ANDROID_PACKAGE_NAME: pkg, ...envVars } : envVars;
+      // Teléfono de quien lanza, para que el workflow avise por WhatsApp al
+      // terminar: un build tarda ~10 min y nadie se queda mirando la pestaña.
+      const telefono = appUser?.githubLogin ? (await getAllContributorPhones())[appUser.githubLogin] : undefined;
+      const mergedEnv: Record<string, string> = {
+        ...(pkg ? { ANDROID_PACKAGE_NAME: pkg } : {}),
+        ...(telefono ? { WA_PHONE: telefono, WA_ACTOR: appUser?.githubLogin ?? "" } : {}),
+        ...envVars,
+      };
       const buildId = await startBuild(appId, workflowId, effectiveBranch, mergedEnv);
       setPendingWorkflows((p) => ({ ...p, [workflowId]: { id: buildId, t: Date.now() } }));
       await refresh();

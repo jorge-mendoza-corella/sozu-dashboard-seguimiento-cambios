@@ -25,6 +25,10 @@ export function useCodemagicBuilds(appId: string | undefined) {
       const active = builds?.some((b) => buildStatusInfo(b.status).isRunning);
       return active ? 15 * 1000 : 60 * 1000;
     },
+    // Un build tarda ~10 min y nadie se queda mirándolo: por defecto el
+    // intervalo se pausa al perder el foco y la vista se queda congelada en
+    // "construyendo" hasta recargar a mano.
+    refetchIntervalInBackground: true,
   });
 }
 

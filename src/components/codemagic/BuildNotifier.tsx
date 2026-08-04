@@ -57,7 +57,7 @@ export function BuildNotifier() {
   const vistos = useRef<Set<string> | null>(null);
   const primeraCarga = useRef(true);
 
-  const { data: builds = [] } = useQuery({
+  const { data: builds = [], refetch } = useQuery({
     queryKey: ["codemagic-builds-todos", appIds],
     queryFn: async () => {
       const listas = await Promise.all(appIds.map((id) => getRecentBuilds(id, 10).catch(() => [])));
@@ -65,7 +65,24 @@ export function BuildNotifier() {
     },
     enabled: isCodemagicConfigured && appIds.length > 0,
     refetchInterval: 20_000,
+    // Sin esto el aviso solo llegaría con la pestaña en primer plano, que es
+    // justo cuando no hace falta.
+    refetchIntervalInBackground: true,
   });
+
+  // Al volver a la pestaña, comprobar de inmediato en vez de esperar al
+  // siguiente intervalo.
+  useEffect(() => {
+    const alVolver = () => {
+      if (document.visibilityState === "visible") void refetch();
+    };
+    document.addEventListener("visibilitychange", alVolver);
+    window.addEventListener("focus", alVolver);
+    return () => {
+      document.removeEventListener("visibilitychange", alVolver);
+      window.removeEventListener("focus", alVolver);
+    };
+  }, [refetch]);
 
   useEffect(() => {
     if (builds.length === 0) return;
