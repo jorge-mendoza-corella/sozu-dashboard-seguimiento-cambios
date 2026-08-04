@@ -160,7 +160,12 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
         const hasPendingReview = rd === "REVIEW_REQUIRED";
         const isApproved       = rd === "APPROVED";
         const hasChangesReq    = rd === "CHANGES_REQUESTED";
-        const hasAnyReviewBadge = hasPendingReview || isApproved || hasChangesReq;
+        // Sin aprobación vigente y sin reviewer solicitado (rd === null) antes
+        // no se pintaba nada: pasa siempre que main/dev tienen
+        // "dismiss stale approvals" y un merge a la base descarta la
+        // aprobación del PR, dejándolo sin forma de volver a aprobarse.
+        const needsApproval = rd === null && !pr.draft;
+        const hasAnyReviewBadge = hasPendingReview || isApproved || hasChangesReq || needsApproval;
         const hasConflict = pr.hasConflict;
 
         // main: merge solo si aprobado | non-main: merge solo si aún no aprobado
@@ -308,6 +313,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                       Aprobado
                     </span>
                   ) : !perms.approve ? (
+                    needsApproval ? null : (
                     <span
                       className={cn(
                         "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border",
@@ -319,20 +325,29 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                       {hasChangesReq && <XCircle className="h-2.5 w-2.5" />}
                       {hasPendingReview ? "Review" : "Cambios"}
                     </span>
+                    )
                   ) : (
                     <button
                       onClick={() => togglePanel(pr.number, "review")}
-                      title={hasPendingReview ? `Review solicitada a: ${pr.requestedReviewers.join(", ")}` : "Cambios solicitados"}
+                      title={
+                        hasPendingReview
+                          ? `Review solicitada a: ${pr.requestedReviewers.join(", ")}`
+                          : hasChangesReq
+                            ? "Cambios solicitados"
+                            : "Sin aprobación vigente. Si ya lo habías aprobado, un merge a la rama destino la descartó (dismiss stale approvals)."
+                      }
                       className={cn(
                         "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border",
                         hasPendingReview && "bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700/60",
                         hasChangesReq && "bg-red-100 text-red-700 border-red-300 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700/60",
+                        needsApproval && "bg-muted text-muted-foreground border-border hover:bg-muted/70",
                         isReviewOpen && "ring-1 ring-current",
                       )}
                     >
                       {hasPendingReview && <Clock className="h-2.5 w-2.5" />}
                       {hasChangesReq && <XCircle className="h-2.5 w-2.5" />}
-                      {hasPendingReview ? "Review" : "Cambios"}
+                      {needsApproval && <CheckCircle className="h-2.5 w-2.5" />}
+                      {hasPendingReview ? "Review" : hasChangesReq ? "Cambios" : "Aprobar"}
                     </button>
                   )
                 )}

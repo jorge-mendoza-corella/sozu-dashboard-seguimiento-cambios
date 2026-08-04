@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
 import { AvancesDraftBadge } from "@/components/AvancesDraftBadge";
+import { BuildNotifier } from "@/components/codemagic/BuildNotifier";
 
 // Sitio de avance de obra. El badge de borrador vive en AvancesDraftBadge.
 const AVANCES_URL = "https://avances.sozu.com";
@@ -83,6 +84,8 @@ export function AppLayout({ children }: Props) {
         </div>
       </header>
       <main className="flex-1">{children}</main>
+      {/* Avisos de builds y publicaciones de apps, en cualquier pestaña. */}
+      <BuildNotifier />
     </div>
   );
 }
