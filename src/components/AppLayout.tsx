@@ -84,6 +84,21 @@ export function AppLayout({ children }: Props) {
         </div>
       </header>
       <main className="flex-1">{children}</main>
+      {/* En móvil el header va justo de espacio y esconde versión y correo:
+          se muestran al pie, que ahí no compiten con la navegación. */}
+      <footer className="border-t px-6 py-3 md:hidden">
+        <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-center text-[10px] text-muted-foreground/70">
+          <span className="font-mono" title="Versión desplegada (se genera en cada deploy)">
+            v{__APP_BUILD__}
+          </span>
+          {appUser?.email && (
+            <>
+              <span aria-hidden>·</span>
+              <span>{appUser.email}</span>
+            </>
+          )}
+        </p>
+      </footer>
       {/* Avisos de builds y publicaciones de apps, en cualquier pestaña. */}
       <BuildNotifier />
     </div>
