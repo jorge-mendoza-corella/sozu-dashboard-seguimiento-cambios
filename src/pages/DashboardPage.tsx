@@ -81,6 +81,17 @@ export function DashboardPage() {
     return m;
   }, [allProjects, allUsers]);
 
+  // Credenciales de todos los usuarios con token: si alguno es CODEOWNER del
+  // repo, el dashboard firma la review también con su cuenta — sin eso, en
+  // repos con CODEOWNERS el approve del aprobador no satisface la protección
+  // de rama y GitHub sigue pidiendo la revisión del dueño del código.
+  const codeOwnerAuths = useMemo<ApproverAuth[]>(
+    () => allUsers
+      .filter((u) => !!u.githubToken && !!u.githubLogin)
+      .map((u) => ({ token: u.githubToken as string, login: u.githubLogin as string })),
+    [allUsers],
+  );
+
   // Proyectos visibles según el acceso del usuario (root ve todos; legacy sin
   // projectIds = todos por compatibilidad).
   const projects = useMemo(() => {
@@ -382,6 +393,7 @@ export function DashboardPage() {
                         perms={perms}
                         canReorder={isRoot}
                         approver={approverByProject.get(p.id) ?? null}
+                        codeOwnerAuths={codeOwnerAuths}
                         selfLogin={isRoot ? null : appUser?.githubLogin ?? null}
                         notifyAuthors={p.notifyAuthors ?? []}
                         onRefetch={() => refetch()}

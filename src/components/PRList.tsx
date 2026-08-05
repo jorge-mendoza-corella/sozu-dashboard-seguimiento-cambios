@@ -23,11 +23,13 @@ interface Props {
   perms?: CicdPermissions;
   /** Aprobador configurado del proyecto (firma reviews con SU token). */
   approver?: ApproverAuth | null;
+  /** Credenciales de todos los usuarios: firman como CODEOWNER si les toca. */
+  codeOwnerAuths?: ApproverAuth[];
   /** Con valor: sin permiso "ver cambios de otros" — detalle ajeno oculto. */
   selfLogin?: string | null;
 }
 
-export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, approver = null, selfLogin = null }: Props) {
+export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null }: Props) {
   const [openPanel, setOpenPanel] = useState<{ prNumber: number; mode: PanelMode } | null>(null);
   const [activeEvent, setActiveEvent] = useState<ReviewEvent | null>(null);
   const [comment, setComment] = useState("");
@@ -82,7 +84,10 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
     if ((event === "REQUEST_CHANGES" || event === "COMMENT") && !comment.trim()) return;
     setLoading(true);
     try {
-      await submitReview(owner, repo, pr.number, event, comment.trim(), approver ?? undefined);
+      await submitReview(
+        owner, repo, pr.number, event, comment.trim(), approver ?? undefined,
+        codeOwnerAuths, pr.author,
+      );
       setResult({
         prNumber: pr.number,
         ok: true,
@@ -129,6 +134,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
         await mergeWithBypass(
           owner, repo, pr.number, pr.author, approver ?? undefined,
           pr.reviewDecision === "APPROVED",
+          codeOwnerAuths,
         );
       }
       setMergedPRs((prev) => new Set([...prev, pr.number]));

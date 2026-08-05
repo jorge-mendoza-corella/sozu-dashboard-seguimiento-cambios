@@ -302,6 +302,15 @@ export function hasFailingDeploy(latestRuns: WorkflowRun[]): boolean {
   return false;
 }
 
+/**
+ * Estado de revisión tal como lo evalúa GitHub (`reviewDecision` de GraphQL):
+ * respeta la protección de rama, incluido `require_code_owner_reviews`. Con
+ * CODEOWNERS un approve de alguien que no es dueño del código deja el PR en
+ * REVIEW_REQUIRED — el cálculo por REST (solo mirar los states) lo daba por
+ * APPROVED y el dashboard mostraba aprobado un PR que GitHub no dejaba mergear.
+ * `reviewDecision` es null en repos sin reviews requeridas: ahí se cae al
+ * cálculo manual con las reviews de la misma query.
+ */
 async function getPRReviewDecision(
   owner: string,
   repo: string,
@@ -309,14 +318,25 @@ async function getPRReviewDecision(
   requestedReviewers: string[],
 ): Promise<"APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null> {
   try {
-    const { data: reviews } = await octokit.pulls.listReviews({ owner, repo, pull_number: pullNumber });
-    const latestByUser = new Map<string, string>();
-    for (const review of reviews) {
-      if (review.state !== "COMMENTED" && review.user?.login) {
-        latestByUser.set(review.user.login, review.state);
+    const gql = `query {
+      repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(repo)}) {
+        pullRequest(number: ${pullNumber}) {
+          reviewDecision
+          latestReviews(last: 50) { nodes { state author { login } } }
+        }
       }
+    }`;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any = await octokit.graphql(gql);
+    const pr = data.repository?.pullRequest;
+    const decision = pr?.reviewDecision as string | null | undefined;
+    if (decision === "APPROVED" || decision === "CHANGES_REQUESTED" || decision === "REVIEW_REQUIRED") {
+      return decision;
     }
-    const states = [...latestByUser.values()];
+    const states: string[] = (pr?.latestReviews?.nodes ?? [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((n: any) => n?.state)
+      .filter((s: string | undefined): s is string => !!s && s !== "COMMENTED");
     if (states.includes("CHANGES_REQUESTED")) return "CHANGES_REQUESTED";
     if (states.includes("APPROVED")) return "APPROVED";
     if (requestedReviewers.length > 0) return "REVIEW_REQUIRED";
@@ -324,6 +344,122 @@ async function getPRReviewDecision(
   } catch {
     return requestedReviewers.length > 0 ? "REVIEW_REQUIRED" : null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// CODEOWNERS: con `require_code_owner_reviews` GitHub exige la review de los
+// dueños del código, no de cualquiera. El dashboard firma también con la cuenta
+// del dueño (si hay token para ella) para que un approve desde aquí valga tanto
+// para main como para dev.
+// ---------------------------------------------------------------------------
+
+const CODEOWNERS_PATHS = [".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"];
+const codeOwnersCache = new Map<string, Promise<string[]>>();
+
+/** Logins (sin @) que son dueños del repo según CODEOWNERS. Los teams se omiten. */
+export function getCodeOwnerLogins(owner: string, repo: string): Promise<string[]> {
+  const key = `${owner}/${repo}`;
+  const cached = codeOwnersCache.get(key);
+  if (cached) return cached;
+
+  const task = (async () => {
+    for (const path of CODEOWNERS_PATHS) {
+      try {
+        const { data } = await octokit.repos.getContent({ owner, repo, path });
+        const content = (data as { content?: string }).content;
+        if (!content) continue;
+        const text = atob(content.replace(/\n/g, ""));
+        const logins = new Set<string>();
+        for (const rawLine of text.split("\n")) {
+          const line = rawLine.split("#")[0].trim();
+          if (!line) continue;
+          for (const token of line.split(/\s+/).slice(1)) {
+            if (token.startsWith("@") && !token.includes("/")) logins.add(token.slice(1));
+          }
+        }
+        return [...logins];
+      } catch {
+        /* ese path no existe: probar el siguiente */
+      }
+    }
+    return [];
+  })();
+
+  codeOwnersCache.set(key, task);
+  return task;
+}
+
+const envAuthCache = new Map<string, Promise<ApproverAuth | null>>();
+
+/** Credenciales de un token de env (su login se resuelve una sola vez). */
+function getEnvAuth(kind: "primary" | "reviewer"): Promise<ApproverAuth | null> {
+  const cached = envAuthCache.get(kind);
+  if (cached) return cached;
+  const token = (kind === "primary"
+    ? import.meta.env.VITE_GITHUB_TOKEN
+    : import.meta.env.VITE_GITHUB_REVIEWER_TOKEN) as string | undefined;
+  const client = kind === "primary" ? octokit : reviewerOctokit;
+  const task: Promise<ApproverAuth | null> = token && client
+    ? client.users.getAuthenticated().then((r) => ({ token, login: r.data.login })).catch(() => null)
+    : Promise.resolve(null);
+  envAuthCache.set(kind, task);
+  return task;
+}
+
+/**
+ * Aprueba el PR con la cuenta de cada CODEOWNER que aún no lo haya aprobado y
+ * para la que tengamos token (aprobador del proyecto, usuarios del dashboard o
+ * el reviewer de env). Devuelve los logins con los que se firmó.
+ * No hace nada si el repo no tiene CODEOWNERS, o si el único dueño es el autor
+ * del PR (GitHub no permite aprobar tu propio PR).
+ */
+export async function ensureCodeOwnerApproval(
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  prAuthor: string,
+  auths: ApproverAuth[] = [],
+): Promise<string[]> {
+  const owners = await getCodeOwnerLogins(owner, repo);
+  if (owners.length === 0) return [];
+
+  // Los tokens de env también sirven: el principal suele ser la cuenta dueña
+  // del repo, que es justo el CODEOWNER que GitHub está esperando.
+  const [envPrimary, envReviewer] = await Promise.all([getEnvAuth("primary"), getEnvAuth("reviewer")]);
+  const byLogin = new Map<string, ApproverAuth>();
+  for (const a of [...auths, envPrimary, envReviewer]) {
+    if (a?.token && a.login) byLogin.set(a.login.toLowerCase(), a);
+  }
+
+  // Quién ya tiene un approve vigente (las dismissed vienen como DISMISSED).
+  const approved = new Set<string>();
+  try {
+    const { data: reviews } = await octokit.pulls.listReviews({ owner, repo, pull_number: pullNumber });
+    for (const r of reviews) {
+      if (r.state === "APPROVED" && r.user?.login) approved.add(r.user.login.toLowerCase());
+    }
+  } catch {
+    /* sin lectura de reviews: intentamos aprobar igual, GitHub deduplica */
+  }
+
+  const signed: string[] = [];
+  for (const login of owners) {
+    const key = login.toLowerCase();
+    if (key === prAuthor.toLowerCase()) continue; // nadie aprueba su propio PR
+    if (approved.has(key)) continue;
+    const auth = byLogin.get(key);
+    if (!auth) continue;
+    try {
+      await new Octokit({ auth: auth.token }).pulls.createReview({
+        owner, repo, pull_number: pullNumber, event: "APPROVE",
+        body: "Aprobado desde el dashboard como dueño del código (CODEOWNERS).",
+      });
+      signed.push(auth.login);
+    } catch {
+      /* si esta cuenta no puede aprobar, seguimos con el resto */
+    }
+  }
+  return signed;
 }
 
 async function getAheadBy(owner: string, repo: string, base: string, head: string): Promise<number> {
@@ -507,6 +643,8 @@ export async function mergeWithBypass(
   approver?: ApproverAuth,
   /** El PR ya tiene una aprobación: mergear sin volver a aprobar. */
   alreadyApproved = false,
+  /** Credenciales disponibles para firmar como CODEOWNER si hace falta. */
+  codeOwnerAuths: ApproverAuth[] = [],
 ): Promise<void> {
   // Con aprobación previa no hace falta el bypass, y re-aprobar borraría la
   // trazabilidad de quién revisó de verdad (quedaría marcado como automático).
@@ -528,6 +666,12 @@ export async function mergeWithBypass(
       body: "Auto-aprobado por el dashboard (bypass a ramas no productivas).",
     });
   }
+
+  // El approve del aprobador no basta si el repo tiene CODEOWNERS: la
+  // protección de dev exige la review del dueño del código. Se firma también
+  // con esa cuenta (incluso si el PR ya estaba aprobado por otro).
+  const auths = [...codeOwnerAuths, ...(approver ? [approver] : [])];
+  await ensureCodeOwnerApproval(owner, repo, pullNumber, prAuthor, auths);
 
   await actor().pulls.merge({
     owner, repo, pull_number: pullNumber, merge_method: "merge",
@@ -714,6 +858,10 @@ export async function submitReview(
   event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
   body: string = "",
   approver?: ApproverAuth,
+  /** Credenciales disponibles para firmar también como CODEOWNER. */
+  codeOwnerAuths: ApproverAuth[] = [],
+  /** Autor del PR: no se le puede pedir que apruebe su propio PR. */
+  prAuthor: string = "",
 ): Promise<void> {
   // La review la firma el aprobador del proyecto; sin él, el token legacy.
   const reviewer = approver ? new Octokit({ auth: approver.token }) : reviewerOctokit;
@@ -727,6 +875,14 @@ export async function submitReview(
     event,
     body,
   });
+
+  // Un approve solo cuenta para GitHub si lo firma un dueño del código cuando
+  // el repo tiene CODEOWNERS. Se añade esa firma para que aprobar aquí deje el
+  // PR realmente mergeable y no quede "Awaiting approval" en GitHub.
+  if (event === "APPROVE") {
+    const auths = [...codeOwnerAuths, ...(approver ? [approver] : [])];
+    await ensureCodeOwnerApproval(owner, repo, pullNumber, prAuthor, auths);
+  }
 }
 
 // ---------------------------------------------------------------------------
