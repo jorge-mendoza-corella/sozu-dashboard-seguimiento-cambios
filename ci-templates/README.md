@@ -26,6 +26,7 @@ Colócalo como `.github/workflows/notify-pr-dev.yml` en cada repo monitoreado:
 - `jorgeIMendoza/sozu-supabase-migrations`
 - `jorgeIMendoza/sozu-edge-functions`
 - `jorgeIMendoza/sozu-n8n-workflows`
+- `jorgeIMendoza/sozu-mcp`
 - `sozu-com/server-stp`
 
 Los autores salen de las líneas `<!-- pr_author: login -->` que el dashboard

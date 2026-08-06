@@ -10,6 +10,7 @@
 #   - jorgeIMendoza/sozu-supabase-migrations
 #   - jorgeIMendoza/sozu-edge-functions
 #   - jorgeIMendoza/sozu-n8n-workflows
+#   - jorgeIMendoza/sozu-mcp
 #   - sozu-com/server-stp
 #
 # El aviso al admin y el aviso a los autores van en JOBS SEPARADOS, y ninguno
