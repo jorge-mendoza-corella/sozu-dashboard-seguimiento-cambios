@@ -102,7 +102,17 @@ jobs:
             echo "Sin teléfono guardado para '$ACTOR' en contributors; se omite la notificación."
             exit 0
           fi
-          curl -s -X POST "$N8N_WEBHOOK" \
-            -H "apikey: $N8N_APIKEY" \
-            -H "Content-Type: application/json" \
-            -d "{\"tipo\":\"wa\",\"telefono\":\"+521${PHONE}\",\"mensajeWA\":\"Ha quedado listo tu deploy en ${ENVIRONMENT} del repo ${GITHUB_REPOSITORY##*/}, puedes revisar\",\"instanciaWA\":\"Pruebas de todo\"}"
+          PAYLOAD="$(jq -n --arg tel "+521${PHONE}" \
+            --arg msg "Ha quedado listo tu deploy en ${ENVIRONMENT} del repo ${GITHUB_REPOSITORY##*/}, puedes revisar" \
+            '{tipo:"wa",telefono:$tel,mensajeWA:$msg,instanciaWA:"Pruebas de todo"}')"
+          # Tres intentos: un webhook que no responde a la primera dejaba el
+          # aviso perdido en silencio.
+          for intento in 1 2 3; do
+            CODE="$(curl -s -o /tmp/n8n.out -w '%{http_code}' --max-time 20 \
+              -X POST "$N8N_WEBHOOK" -H "apikey: $N8N_APIKEY" \
+              -H "Content-Type: application/json" -d "$PAYLOAD" || echo 000)"
+            case "$CODE" in 2*) echo "Notificado $ACTOR"; exit 0 ;; esac
+            echo "Intento ${intento} falló (HTTP ${CODE}): $(cat /tmp/n8n.out)"
+            sleep $((intento * 5))
+          done
+          echo "::warning::No se pudo notificar el deploy tras 3 intentos"
