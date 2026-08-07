@@ -11,6 +11,9 @@ const AVANCES_URL = "https://avances.sozu.com";
 // Con más de esto, el dato no sirve para decidir: se pide una revisión al abrir.
 const FRESCO_MS = 2 * 60_000;
 const ESPERA_MAX_MS = 3 * 60_000;
+// Cada cuánto, como mucho, se puede pedir una revisión nueva.
+const REVISION_MIN_MS = 3 * 60_000;
+const ULTIMA_REVISION_KEY = "avances-revisado-en";
 
 /**
  * Badge del borrador del sitio de avances (solo root).
@@ -51,15 +54,43 @@ export function AvancesDraftBadge({ email }: { email: string }) {
     }
   };
 
-  // Al abrir el dashboard con el dato viejo, revisar una vez.
-  useEffect(() => {
+  /**
+   * Pide una revisión si el dato guardado ya no sirve, como mucho una cada
+   * REVISION_MIN_MS. Antes esto corría UNA sola vez por pestaña (un flag en
+   * sessionStorage): con el dashboard abierto desde antes de que se publicara
+   * el borrador, no volvía a pedirse nunca y el badge no aparecía hasta el
+   * siguiente cron — que aun pidiéndose cada 15 minutos, GitHub llega a
+   * espaciarlo más de una hora.
+   */
+  const revisarSiHaceFalta = () => {
+    if (revisando) return;
     if (data === undefined) return; // aún cargando
     if (edadMs <= FRESCO_MS) return;
-    if (sessionStorage.getItem("avances-revisado")) return;
-    sessionStorage.setItem("avances-revisado", "1");
+    const ultima = Number(sessionStorage.getItem(ULTIMA_REVISION_KEY) ?? 0);
+    if (Date.now() - ultima < REVISION_MIN_MS) return;
+    sessionStorage.setItem(ULTIMA_REVISION_KEY, String(Date.now()));
     void revisar();
+  };
+
+  // Al abrir el dashboard, y cada vez que llega un dato ya viejo.
+  useEffect(() => {
+    revisarSiHaceFalta();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
+
+  // Al volver a la pestaña: es justo cuando alguien mira si hay borrador.
+  useEffect(() => {
+    const alVolver = () => {
+      if (document.visibilityState === "visible") revisarSiHaceFalta();
+    };
+    document.addEventListener("visibilitychange", alVolver);
+    window.addEventListener("focus", alVolver);
+    return () => {
+      document.removeEventListener("visibilitychange", alVolver);
+      window.removeEventListener("focus", alVolver);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, revisando]);
 
   // Termina la espera cuando el workflow escribe un dato nuevo (o se agota).
   useEffect(() => {
