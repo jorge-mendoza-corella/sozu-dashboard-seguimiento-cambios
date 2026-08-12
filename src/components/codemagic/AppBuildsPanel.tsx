@@ -599,23 +599,29 @@ export function AppBuildsPanel({ appId, perms, project }: {
       // El mismo JSON le sirve al sync que lee los tracks de Play: sin esto
       // había que crear el secret en Secret Manager a mano y, mientras faltara,
       // las versiones de tienda salían vacías en las cards.
+      let falloElSync: string | null = null;
       if (appUser?.email) {
         try {
           await setPlayServiceAccountForSync(saJson, appUser.email);
           await qc.invalidateQueries({ queryKey: ["store-credentials-meta"] });
         } catch (e) {
           // Que falle esto no invalida la subida a Codemagic, que es lo que
-          // permite publicar; se avisa y se sigue.
-          setSaError(
-            `Guardado para publicar, pero no para el estado de tiendas: ${
-              e instanceof Error ? e.message : "error desconocido"
-            }`,
-          );
+          // permite publicar. Pero el modal NO se cierra: cerrarlo dejaba el
+          // aviso invisible y parecía que todo había quedado bien, mientras el
+          // sync seguía diciendo que no había credenciales.
+          falloElSync = e instanceof Error ? e.message : "error desconocido";
         }
       }
       if (project) {
         await setProjectPlayCredentialsUploaded(project.id);
         await qc.invalidateQueries({ queryKey: ["projects"] });
+      }
+      if (falloElSync) {
+        setSaError(
+          `Guardado en Codemagic para publicar, pero NO para el estado de tiendas: ${falloElSync}. ` +
+          "Las versiones de tienda seguirán vacías hasta que esto funcione.",
+        );
+        return;
       }
       setSaOpen(false);
       setSaJson("");
@@ -1030,6 +1036,21 @@ export function AppBuildsPanel({ appId, perms, project }: {
             {!project.playCredentialsUploadedAt && (
               <span className="text-[10px] text-amber-600 dark:text-amber-400">
                 Falta la cuenta de servicio: la publicación a Play fallará.
+              </span>
+            )}
+            {/* El mismo JSON tiene que quedar guardado para el sync, y eso es
+                aparte de Codemagic: sin este aviso no había forma de ver que
+                faltaba, salvo leer el log del workflow. */}
+            {isRoot && project.playCredentialsUploadedAt && !credsMeta?.playUpdatedAt && (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                La cuenta de servicio está en Codemagic pero no guardada para leer
+                las versiones de tienda: vuelve a subirla (recarga antes la página).
+              </span>
+            )}
+            {isRoot && credsMeta?.playUpdatedAt && (
+              <span className="text-[10px] text-muted-foreground/70">
+                Versiones de tienda: leyendo Play desde hace{" "}
+                {formatDistanceToNow(credsMeta.playUpdatedAt)}
               </span>
             )}
             {/* Llave de App Store Connect: solo la usa el sync que lee el estado
