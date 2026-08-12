@@ -11,20 +11,47 @@ header `apikey`).
 
 ---
 
-## 1. PR abierto hacia `dev` (desde fuera) → avisa al admin
+## 1. Notificaciones de PR (abierto hacia `dev`, y cerrado hacia `dev`/`main`)
 
 Archivo: [`notify-pr-dev.yml`](./notify-pr-dev.yml)
-Destino: número fijo `+5217221514185`.
+
+- **Abierto hacia `dev`** → avisa al admin (número fijo `+5217221514185`).
+- **Cerrado hacia `dev` o `main`** (con o sin merge) → avisa a cada autor real del
+  PR (teléfono en `contributors/{login}.telefonoWhatsapp`) y al admin.
 
 Colócalo como `.github/workflows/notify-pr-dev.yml` en cada repo monitoreado:
 
+- `jorgeIMendoza/sozu-cliente-app`
 - `jorgeIMendoza/sozu-admin`
 - `jorgeIMendoza/sozu-supabase-migrations`
 - `jorgeIMendoza/sozu-edge-functions`
 - `jorgeIMendoza/sozu-n8n-workflows`
+- `jorgeIMendoza/sozu-mcp`
 - `sozu-com/server-stp`
 
-Variables: `$repositorio` = `github.event.repository.name`, `$quien_genera` = `github.actor`.
+Los autores salen de las líneas `<!-- pr_author: login -->` que el dashboard
+embebe en el body; si no hay ninguna, se usa el autor del PR en GitHub.
+
+### Por qué no usa actions del marketplace
+
+El 2026-08-06 el merge a `dev` de un PR en `sozu-cliente-app` no notificó a
+nadie: el job murió en **Set up job** con `Failed to resolve action download
+info. Error: Service Unavailable` al resolver `google-github-actions/auth` y
+`setup-gcloud`. Eso pasa antes de cualquier step, así que los
+`continue-on-error: true` de esos pasos no evitaron nada y el aviso al admin
+—que solo necesitaba `curl`— cayó con ellos.
+
+Ahora:
+
+- El access token de Google se obtiene firmando un JWT con `openssl` a partir de
+  `secrets.FIREBASE_GCP_DEV`. Solo se usan `curl`, `jq` y `openssl`, que ya
+  vienen en el runner: cero actions de terceros que resolver.
+- El aviso al admin vive en su propio job (`notify-cerrado-admin`), así que un
+  problema leyendo teléfonos ya no puede silenciarlo.
+- Los envíos al webhook reintentan 3 veces y el job falla si ninguno entra: un
+  aviso perdido queda visible en Actions en lugar de desaparecer.
+- Todos los jobs tienen `timeout-minutes` (el job cancelado se quedó 15 min
+  colgado antes de morir).
 
 ---
 
