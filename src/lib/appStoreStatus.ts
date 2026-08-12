@@ -84,6 +84,16 @@ export function buildStateLabel(state?: string): string {
   }
 }
 
+/**
+ * Versión que hoy está a la venta en el App Store: la que quedó
+ * `READY_FOR_SALE`. Las que están en revisión o preparándose no cuentan, así
+ * que si no hay ninguna a la venta devuelve null (aún no se ha publicado nada).
+ */
+export function appStoreLiveVersion(doc: AppStoreStatusDoc | null | undefined): string | null {
+  const live = doc?.versions.find((v) => v.state === "READY_FOR_SALE");
+  return live?.version?.trim() || null;
+}
+
 export async function getAppStoreStatus(bundleId: string): Promise<AppStoreStatusDoc | null> {
   const snap = await getDoc(doc(db, "appStoreStatus", bundleId));
   if (!snap.exists()) return null;

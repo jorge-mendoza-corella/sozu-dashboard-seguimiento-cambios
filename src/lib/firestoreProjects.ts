@@ -43,6 +43,10 @@ export interface MonitoredRepo {
   order?: number; // orden manual dentro del proyecto (drag & drop)
   addedBy: string;
   createdAt: unknown;
+  // URL pública del front que publica este repo. Tenerla es lo que marca al
+  // repo como front: la card muestra el link, el botón de copiar y la versión
+  // que sirve ese sitio (la lee el sync en `frontVersions/{id}`).
+  frontUrl?: string;
 }
 
 const PROJECT_COLORS = [
@@ -172,7 +176,7 @@ export async function getRepos(): Promise<MonitoredRepo[]> {
 }
 
 export async function addRepo(
-  input: { owner: string; repo: string; label: string; projectId: string },
+  input: { owner: string; repo: string; label: string; projectId: string; frontUrl?: string },
   addedBy: string,
 ): Promise<void> {
   const id = repoDocId(input.owner, input.repo);
@@ -188,6 +192,10 @@ export async function addRepo(
     order: all.length, // al final
     addedBy,
     createdAt: serverTimestamp(),
+    // Solo si se dio: tenerla es lo que marca al repo como front.
+    ...(input.frontUrl?.trim()
+      ? { frontUrl: input.frontUrl.trim().replace(/\/+$/, "") }
+      : {}),
   });
 }
 
@@ -205,6 +213,14 @@ export async function moveRepoToProject(id: string, projectId: string) {
 /** Cambia el nombre a mostrar del repo (ej. "Frontend", "Backend"). */
 export async function setRepoLabel(id: string, label: string) {
   await updateDoc(doc(db, "repos", id), { label: label.trim() });
+}
+
+/** URL del front que publica el repo. Vacío = el repo deja de ser front. */
+export async function setRepoFrontUrl(id: string, url: string | null) {
+  const limpia = url?.trim();
+  await updateDoc(doc(db, "repos", id), {
+    frontUrl: limpia ? limpia.replace(/\/+$/, "") : deleteField(),
+  });
 }
 
 export async function removeRepo(id: string) {

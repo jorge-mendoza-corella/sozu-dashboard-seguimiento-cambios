@@ -19,6 +19,7 @@ export function AddRepoModal({ onClose, defaultProjectId }: { onClose: () => voi
 
   const [url, setUrl] = useState("");
   const [label, setLabel] = useState("");
+  const [frontUrl, setFrontUrl] = useState("");
   const [projectId, setProjectId] = useState(defaultProjectId ?? "");
   const [newProject, setNewProject] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
@@ -70,8 +71,14 @@ export function AddRepoModal({ onClose, defaultProjectId }: { onClose: () => voi
     if (!parsed || !projectId) return;
     setSaving(true);
     setError("");
+    const front = frontUrl.trim();
+    if (front && !/^https?:\/\//.test(front)) {
+      setError("La URL del front debe empezar con http:// o https://");
+      setSaving(false);
+      return;
+    }
     try {
-      await addRepo({ owner: parsed.owner, repo: parsed.repo, label, projectId }, appUser!.email);
+      await addRepo({ owner: parsed.owner, repo: parsed.repo, label, projectId, frontUrl: front }, appUser!.email);
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["repos"] }),
         qc.invalidateQueries({ queryKey: ["github-status"] }),
@@ -212,6 +219,21 @@ export function AddRepoModal({ onClose, defaultProjectId }: { onClose: () => voi
               value={label}
               onChange={(e) => setLabel(e.target.value)}
             />
+
+            {/* Con URL, el repo cuenta como front: su card muestra el link, el
+                botón de copiar y la versión que sirve el sitio. */}
+            <label className="mt-3 block text-sm font-medium">
+              URL del front <span className="font-normal text-muted-foreground">(opcional)</span>
+            </label>
+            <input
+              className="mt-1 w-full rounded-md border bg-background px-3 py-2 font-mono text-sm"
+              placeholder="https://mi-sitio.com"
+              value={frontUrl}
+              onChange={(e) => setFrontUrl(e.target.value)}
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Si la pones, la card mostrará el link, un botón para copiarlo y la versión publicada.
+            </p>
           </div>
 
           {error && <p className="mt-3 text-sm text-destructive">{error}</p>}

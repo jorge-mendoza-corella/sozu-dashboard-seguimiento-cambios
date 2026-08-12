@@ -58,6 +58,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Versión que sirve cada front. La escribe el sync con la cuenta de
+    // servicio (ignora estas reglas); desde el dashboard solo se lee.
+    match /frontVersions/{repoId} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if false;
+    }
+
     // Ajustes sueltos del dashboard (p. ej. la URL del draft de avances).
     // Los lee cualquier usuario registrado; solo el root los cambia.
     match /settings/{docId} {
