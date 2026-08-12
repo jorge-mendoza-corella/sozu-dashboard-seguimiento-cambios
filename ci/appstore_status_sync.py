@@ -13,6 +13,8 @@ Variables de entorno:
   ASC_KEY_ID        Key ID de la App Store Connect API
   ASC_ISSUER_ID     Issuer ID de la App Store Connect API
   ASC_PRIVATE_KEY   contenido del .p8 (incluye BEGIN/END PRIVATE KEY)
+                    Si faltan, se usan las que el root haya dejado desde el
+                    dashboard (Firestore storeCredentials/appStoreConnect).
   GCP_PROJECT       id del proyecto Firebase (default: sozu-admin-dev)
 """
 from __future__ import annotations
@@ -27,6 +29,8 @@ from urllib.parse import quote
 import jwt  # PyJWT
 import requests
 
+from store_credentials import app_store_connect
+
 GCP_PROJECT = os.environ.get("GCP_PROJECT", "sozu-admin-dev")
 FS_BASE = f"https://firestore.googleapis.com/v1/projects/{GCP_PROJECT}/databases/(default)/documents"
 ASC_BASE = "https://api.appstoreconnect.apple.com/v1"
@@ -37,13 +41,13 @@ def fail(msg: str) -> None:
     sys.exit(1)
 
 
-def asc_token() -> str:
+def asc_token(creds: dict) -> str:
     now = int(time.time())
     return jwt.encode(
-        {"iss": os.environ["ASC_ISSUER_ID"], "iat": now, "exp": now + 900, "aud": "appstoreconnect-v1"},
-        os.environ["ASC_PRIVATE_KEY"].replace("\\n", "\n"),
+        {"iss": creds["issuer_id"], "iat": now, "exp": now + 900, "aud": "appstoreconnect-v1"},
+        creds["private_key"].replace("\\n", "\n"),
         algorithm="ES256",
-        headers={"kid": os.environ["ASC_KEY_ID"], "typ": "JWT"},
+        headers={"kid": creds["key_id"], "typ": "JWT"},
     )
 
 
@@ -166,16 +170,25 @@ def main() -> None:
     fs_token = os.environ.get("FIRESTORE_TOKEN", "").strip()
     if not fs_token:
         fail("Falta FIRESTORE_TOKEN.")
-    if not all(os.environ.get(k, "").strip() for k in ("ASC_KEY_ID", "ASC_ISSUER_ID", "ASC_PRIVATE_KEY")):
-        print("Sin credenciales de App Store Connect: no hay nada que consultar en iOS.")
+    # Del entorno (Secret Manager) o, si no están, de lo que el root dejó en el
+    # dashboard: sin esto el sync callaba y iOS salía vacío.
+    creds, origen = app_store_connect(FS_BASE, fs_token)
+    if not creds:
+        print(
+            "Sin credenciales de App Store Connect: créalas como secrets "
+            "DASHBOARD_ASC_KEY_ID / DASHBOARD_ASC_ISSUER_ID / DASHBOARD_ASC_PRIVATE_KEY, "
+            "o dejalas desde el dashboard (panel de la app > App Store Connect). "
+            "No hay nada que consultar en iOS."
+        )
         return
+    print(f"· credenciales de App Store Connect tomadas del {origen}")
 
     bundles = list_ios_bundles(fs_token)
     if not bundles:
         print("Ningún proyecto tiene Bundle ID iOS configurado. Nada que sincronizar.")
         return
 
-    token = asc_token()
+    token = asc_token(creds)
     for bundle, project_id in bundles:
         payload, error = fetch_status(token, bundle)
         write_doc(fs_token, bundle, project_id, payload, error)

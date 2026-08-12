@@ -40,11 +40,14 @@ GCP_PROJECT = os.environ.get("GCP_PROJECT", "sozu-admin-dev")
 FS_BASE = f"https://firestore.googleapis.com/v1/projects/{GCP_PROJECT}/databases/(default)/documents"
 
 TIMEOUT = 30
-# Versión datada tipo 1.0.2026.0807.1521: la que generan estos fronts con Vite.
-# Es inequívoca, así que se puede buscar a pelo en el HTML o en el bundle.
+# Versiones inequívocas, que se pueden buscar a pelo en el HTML o en el bundle:
+#   · 1.0.2026.0807.1521   — fronts Vite (dashboard, admin)
+#   · 1.0.3-260812.1018    — apps Flutter: X.Y.Z del tag + hora del build
 # La `v` de "v1.0.2026…" va fuera del grupo: pegada al número no hay \b que la
 # separe, y sin esto un `<div>v1.0.2026.0807.1521</div>` no casaba.
-DATED_VERSION = re.compile(r"v?(\d+\.\d+\.20\d{2}\.\d{4}\.\d{4})\b")
+DATED_VERSION = re.compile(
+    r"v?(\d+\.\d+\.\d+-\d{6}\.\d{4}|\d+\.\d+\.20\d{2}\.\d{4}\.\d{4})\b"
+)
 # Un semver suelto NO sirve: `avances.sozu.com` importa el SDK de Firebase
 # desde gstatic y el primer "1.2.3" del HTML era la versión de esa librería.
 # Solo se acepta si algo lo declara como la versión del sitio.
@@ -58,7 +61,13 @@ META_VERSION = re.compile(
     re.IGNORECASE,
 )
 SCRIPT_SRC = re.compile(r"""<script[^>]+src=["']([^"']+\.js)["']""", re.IGNORECASE)
+# Referencias a otros .js DENTRO de un bundle. Las apps Flutter cargan
+# `flutter_bootstrap.js` desde el HTML y este a su vez `main.dart.js`, que es
+# donde vive la versión que se ve en pantalla: sin seguir ese salto no se
+# encuentra nunca.
+JS_REF = re.compile(r"""["']([\w./-]+\.js)(?:\?[^"']*)?["']""")
 MAX_BUNDLES = 3
+MAX_NESTED = 2
 
 
 def fail(msg: str) -> None:
@@ -121,7 +130,34 @@ def front_repos(token: str) -> list[dict]:
 
 
 def read_version(url: str) -> tuple[str | None, str, str | None]:
-    """Devuelve (versión, fuente, error). La versión es None si no se encontró."""
+    """Devuelve (versión, fuente, error). La versión es None si no se encontró.
+
+    Se recorren todas las fuentes y gana la más completa, no la primera: el
+    `/version.json` de una app Flutter lo genera el propio build con la versión
+    del pubspec (`1.0.0`), mientras el pie del sitio anuncia `1.0.3-260812.1018`.
+    Quedarse con la primera fuente mostraba `1.0.0` en la card mientras el sitio
+    decía otra cosa. Una versión con sufijo de build (o datada) siempre gana a un
+    semver pelado.
+    """
+    # Candidatos como (rango, versión, fuente); rango 0 = inequívoca.
+    candidatos: list[tuple[int, str, str]] = []
+
+    def anota(valor: str | None, fuente: str) -> None:
+        if not valor:
+            return
+        valor = valor.strip()
+        if not valor:
+            return
+        # Con sufijo (-260812.1018) o datada: es la versión real del build.
+        rango = 0 if DATED_VERSION.fullmatch(valor) else (1 if "-" in valor else 2)
+        candidatos.append((rango, valor, fuente))
+
+    def mejor() -> tuple[str, str] | None:
+        if not candidatos:
+            return None
+        rango, valor, fuente = min(candidatos, key=lambda c: c[0])
+        return valor, fuente
+
     # 1 · version.json, la vía explícita.
     try:
         r = requests.get(f"{url}/version.json", timeout=TIMEOUT, headers={"Cache-Control": "no-cache"})
@@ -129,36 +165,58 @@ def read_version(url: str) -> tuple[str | None, str, str | None]:
             data = r.json()
             for key in ("version", "build", "appVersion"):
                 val = data.get(key)
-                if isinstance(val, (str, int, float)) and str(val).strip():
-                    return str(val).strip(), "version.json", None
+                if isinstance(val, (str, int, float)):
+                    anota(str(val), "version.json")
+                    break
     except (requests.RequestException, ValueError):
         pass  # no lo publica o no es JSON: se sigue con el HTML
 
+    elegido = mejor()
+    if elegido and candidatos[0][0] == 0:
+        return elegido[0], elegido[1], None  # ya es inequívoca: no bajar bundles
+
     html, err = fetch_text(url)
     if err:
-        return None, "-", err
+        # Sin HTML no hay más que rascar; si version.json dio algo, sirve.
+        return (elegido[0], elegido[1], None) if elegido else (None, "-", err)
 
-    # 2 · meta tag.
     m = META_VERSION.search(html)
-    if m and m.group(1).strip():
-        return m.group(1).strip(), "meta", None
+    if m:
+        anota(m.group(1), "meta")
+    anota(first_version(html), "html")
 
-    # 3 · el HTML servido.
-    v = first_version(html)
-    if v:
-        return v, "html", None
+    # Los bundles JS: aquí solo vale la versión inequívoca, porque un bundle
+    # está lleno de versiones de librerías.
+    if not any(c[0] == 0 for c in candidatos):
+        for src in bundle_urls(url, html):
+            js, _ = fetch_text(src)
+            if not js:
+                continue
+            v = first_version(js, allow_labeled=False)
+            if v:
+                anota(v, "bundle")
+                break
 
-    # 4 · los bundles JS (los fronts Vite inyectan la versión ahí). Aquí solo
-    # vale la versión datada: un bundle está lleno de versiones de librerías.
-    for src in SCRIPT_SRC.findall(html)[:MAX_BUNDLES]:
-        js, _ = fetch_text(urljoin(url + "/", src))
+    elegido = mejor()
+    if elegido:
+        return elegido[0], elegido[1], None
+    return None, "-", "el sitio no publica una versión reconocible (considera exponer /version.json)"
+
+
+def bundle_urls(url: str, html: str) -> list[str]:
+    """Bundles a revisar: los del HTML y los que estos referencian."""
+    base = url + "/"
+    propios = [urljoin(base, s) for s in SCRIPT_SRC.findall(html) if not s.startswith(("http://", "https://"))]
+    salida = list(propios[:MAX_BUNDLES])
+    for src in propios[:MAX_NESTED]:
+        js, _ = fetch_text(src)
         if not js:
             continue
-        v = first_version(js, allow_labeled=False)
-        if v:
-            return v, "bundle", None
-
-    return None, "-", "el sitio no publica una versión reconocible (considera exponer /version.json)"
+        for ref in JS_REF.findall(js)[:MAX_BUNDLES]:
+            hijo = urljoin(base, ref)
+            if hijo not in salida:
+                salida.append(hijo)
+    return salida
 
 
 def write_doc(token: str, repo_id: str, url: str, version: str | None, source: str, error: str | None) -> None:
