@@ -71,3 +71,7 @@ jobs:
           HOSTING_SITES=sozu-avances \
           HOSTING_COMPARE="sozu-avances|https://avances.sozu.com|https://sozu-avances--draft-u1wqsh7o.web.app" \
             python ci/hosting_channels_sync.py
+
+          # --- Versión que sirve cada front (repos con frontUrl) ---
+          # El navegador no puede leer esos sitios (no mandan CORS); aquí sí.
+          python ci/front_versions_sync.py

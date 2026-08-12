@@ -12,6 +12,8 @@ import { BranchRow } from "./BranchRow";
 import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
 import { DeployMetaTooltip } from "./DeployMetaTooltip";
+import { FrontInfoBar } from "./FrontInfoBar";
+import type { FrontVersion } from "@/lib/frontVersions";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
 import { createPR, hasFailingDeploy, getBranchCommitAuthors, getPendingReleasePRs, type ApproverAuth, type PRWithCommits } from "@/lib/github";
 import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
@@ -49,13 +51,20 @@ interface Props {
   approver?: ApproverAuth | null;
   /** Credenciales de los usuarios del dashboard: firman como CODEOWNER si les toca. */
   codeOwnerAuths?: ApproverAuth[];
+  /** URL del front que publica el repo; con ella el repo cuenta como front. */
+  frontUrl?: string;
+  /** Versión que sirve ese front (la lee el sync; ver lib/frontVersions). */
+  frontVersion?: FrontVersion | null;
+  /** Solo proyectos app: paquete Android y bundle iOS, para las versiones de tienda. */
+  androidPackage?: string;
+  iosBundleId?: string;
   /** Login de GitHub del usuario logueado — para el permiso "ver cambios de otros". */
   selfLogin?: string | null;
   /** Logins seleccionables como autor extra al crear PR (configurados por proyecto). */
   notifyAuthors?: string[];
 }
 
-export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [] }: Props) {
+export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontUrl, frontVersion = null, androidPackage, iosBundleId }: Props) {
   // Sin el permiso viewOthers el usuario solo ve SUS ramas y PRs
   // (main/dev siempre visibles: son estado compartido del repo).
   const canViewOthers = perms.viewOthers || !selfLogin;
@@ -353,6 +362,17 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           </div>
         </div>
         {status.error && <p className="text-xs text-destructive mt-1">{status.error}</p>}
+        {/* Front del repo: link, copiar y versión servida (más tiendas si es app). */}
+        {frontUrl && (
+          <div className="mt-2">
+            <FrontInfoBar
+              frontUrl={frontUrl}
+              frontVersion={frontVersion}
+              androidPackage={androidPackage}
+              iosBundleId={iosBundleId}
+            />
+          </div>
+        )}
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4 flex-1">

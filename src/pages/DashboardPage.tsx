@@ -12,6 +12,7 @@ import { useProjects, useRepos, useAccessibleRepoIds } from "@/hooks/useProjects
 import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
+import { getFrontVersions } from "@/lib/frontVersions";
 import { SUPERUSER_EMAIL, resolvePermissions, getAllUsers } from "@/lib/firestoreUsers";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -80,6 +81,15 @@ export function DashboardPage() {
     }
     return m;
   }, [allProjects, allUsers]);
+
+  // Versión que sirve cada front (repos con frontUrl). La escribe el sync
+  // programado: el navegador no puede leer esos sitios por CORS.
+  const { data: frontVersions = {} } = useQuery({
+    queryKey: ["front-versions"],
+    queryFn: () => getFrontVersions().catch(() => ({})),
+    staleTime: 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+  });
 
   // Credenciales de todos los usuarios con token: si alguno es CODEOWNER del
   // repo, el dashboard firma la review también con su cuenta — sin eso, en
@@ -396,6 +406,9 @@ export function DashboardPage() {
                         codeOwnerAuths={codeOwnerAuths}
                         selfLogin={isRoot ? null : appUser?.githubLogin ?? null}
                         notifyAuthors={p.notifyAuthors ?? []}
+                        frontVersions={frontVersions}
+                        androidPackage={p.isApp ? p.androidPackage : undefined}
+                        iosBundleId={p.isApp ? p.iosBundleId : undefined}
                         onRefetch={() => refetch()}
                         onReorder={handleReorder}
                       />

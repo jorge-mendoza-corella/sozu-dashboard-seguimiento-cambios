@@ -74,6 +74,21 @@ export async function getPlayTracks(pkg: string): Promise<PlayTracksDoc | null> 
   };
 }
 
+/**
+ * Versión que hoy está publicada en producción de Play: el release `completed`
+ * del track `production`. Los tracks de prueba no cuentan — lo que interesa es
+ * qué tiene instalado la gente. Devuelve el nombre del release (versionName) o,
+ * si viniera vacío, el versionCode más alto.
+ */
+export function playProductionVersion(doc: PlayTracksDoc | null | undefined): string | null {
+  const prod = doc?.tracks.find((t) => t.track.toLowerCase() === "production");
+  const rel = prod?.releases?.find((r) => r.status === "completed") ?? prod?.releases?.[0];
+  if (!rel) return null;
+  if (rel.name?.trim()) return rel.name.trim();
+  const codes = (rel.versionCodes ?? []).map(Number).filter((n) => !Number.isNaN(n));
+  return codes.length ? String(Math.max(...codes)) : null;
+}
+
 const SYNC_REPO = { owner: "jorge-mendoza-corella", repo: "sozu-dashboard-seguimiento-cambios" };
 const SYNC_WORKFLOW = "play-tracks-sync.yml";
 

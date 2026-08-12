@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { X, Loader2, Trash2, Plus, FolderGit2, Pencil, Check, Smartphone } from "lucide-react";
+import { X, Loader2, Trash2, Plus, FolderGit2, Pencil, Check, Smartphone, Globe } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
 import { cn } from "@/lib/utils";
 import {
   addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel, setProjectIsApp, setProjectCodemagicApp, setProjectApprover, setProjectNotifyAuthors, setProjectAndroidPackage,
-  setProjectIosBundleId,
+  setProjectIosBundleId, setRepoFrontUrl,
 } from "@/lib/firestoreProjects";
 import { listRepoContributors } from "@/lib/github";
 import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
@@ -487,6 +487,29 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                     <p className="truncate text-sm font-medium">{r.label}</p>
                   )}
                   <p className="truncate font-mono text-[11px] text-muted-foreground">{r.owner}/{r.repo}</p>
+                  {/* URL del front. Tenerla es lo que marca al repo como front:
+                      su card pasa a mostrar el link, el copiar y la versión. */}
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <Globe className={cn("h-3 w-3 shrink-0", r.frontUrl ? "text-sky-600 dark:text-sky-400" : "text-muted-foreground/50")} />
+                    <input
+                      className="min-w-0 flex-1 rounded border bg-background px-1.5 py-0.5 font-mono text-[11px]"
+                      placeholder="URL del front (vacío = no es front)"
+                      defaultValue={r.frontUrl ?? ""}
+                      disabled={busy === `front-${r.id}`}
+                      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                      onBlur={(e) => {
+                        const nueva = e.target.value.trim();
+                        if (nueva === (r.frontUrl ?? "")) return;
+                        if (nueva && !/^https?:\/\//.test(nueva)) {
+                          setError("La URL del front debe empezar con http:// o https://");
+                          e.target.value = r.frontUrl ?? "";
+                          return;
+                        }
+                        run(`front-${r.id}`, () => setRepoFrontUrl(r.id, nueva || null), refreshRepos);
+                      }}
+                    />
+                    {busy === `front-${r.id}` && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                  </div>
                 </div>
                 {isEditingRepo ? (
                   <Button size="icon" variant="ghost" className="h-7 w-7" disabled={busy === `lbl-${r.id}`} onClick={saveLabel}>

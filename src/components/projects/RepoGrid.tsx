@@ -3,6 +3,7 @@ import { GripVertical } from "lucide-react";
 import { RepoCard, RepoCardSkeleton } from "@/components/RepoCard";
 import { cn } from "@/lib/utils";
 import type { RepoStatus, ApproverAuth } from "@/lib/github";
+import type { FrontVersion } from "@/lib/frontVersions";
 import type { MonitoredRepo } from "@/lib/firestoreProjects";
 import type { CicdPermissions } from "@/lib/firestoreUsers";
 
@@ -17,13 +18,18 @@ interface Props {
   codeOwnerAuths?: ApproverAuth[];
   selfLogin?: string | null;
   notifyAuthors?: string[];
+  /** Versión que sirve cada front, por id de repo (`owner__repo`). */
+  frontVersions?: Record<string, FrontVersion>;
+  /** Proyecto app: identificadores de tienda, para las versiones publicadas. */
+  androidPackage?: string;
+  iosBundleId?: string;
   onRefetch: () => void;
   onReorder: (ids: string[]) => void;
 }
 
 const keyOf = (r: MonitoredRepo) => `${r.owner}/${r.repo}`;
 
-export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], onRefetch, onReorder }: Props) {
+export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontVersions = {}, androidPackage, iosBundleId, onRefetch, onReorder }: Props) {
   const [items, setItems] = useState<MonitoredRepo[]>(repos);
   const dragFrom = useRef<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -80,7 +86,21 @@ export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canRe
                 <GripVertical className="h-4 w-4" />
               </div>
             )}
-            <RepoCard status={status} onRefetch={onRefetch} readOnly={isViewer} perms={perms} approver={approver} codeOwnerAuths={codeOwnerAuths} selfLogin={selfLogin} notifyAuthors={notifyAuthors} />
+            <RepoCard
+              status={status}
+              onRefetch={onRefetch}
+              readOnly={isViewer}
+              perms={perms}
+              approver={approver}
+              codeOwnerAuths={codeOwnerAuths}
+              selfLogin={selfLogin}
+              notifyAuthors={notifyAuthors}
+              frontUrl={r.frontUrl}
+              frontVersion={frontVersions[r.id] ?? null}
+              // Las tiendas solo aplican al repo que publica el front de la app.
+              androidPackage={r.frontUrl ? androidPackage : undefined}
+              iosBundleId={r.frontUrl ? iosBundleId : undefined}
+            />
           </div>
         );
       })}
