@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Smartphone, Play, Loader2, ExternalLink, XCircle, Download, AlertCircle,
   GitBranch, Upload, Clock, CheckCircle2, Rocket, Cloud,
@@ -16,6 +16,9 @@ import {
 } from "@/lib/codemagic";
 import { useAuth } from "@/hooks/useAuth";
 import { getAllContributorPhones } from "@/lib/firestoreContributors";
+import {
+  getStoreCredentialsMeta, setPlayServiceAccountForSync, setAppStoreConnectForSync,
+} from "@/lib/storeCredentials";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import {
   setProjectKeystoreUploaded, setProjectDeployMode, setProjectPlayCredentialsUploaded,
@@ -593,6 +596,23 @@ export function AppBuildsPanel({ appId, perms, project }: {
     setSaError("");
     try {
       await uploadPlayServiceAccount(appId, saJson);
+      // El mismo JSON le sirve al sync que lee los tracks de Play: sin esto
+      // había que crear el secret en Secret Manager a mano y, mientras faltara,
+      // las versiones de tienda salían vacías en las cards.
+      if (appUser?.email) {
+        try {
+          await setPlayServiceAccountForSync(saJson, appUser.email);
+          await qc.invalidateQueries({ queryKey: ["store-credentials-meta"] });
+        } catch (e) {
+          // Que falle esto no invalida la subida a Codemagic, que es lo que
+          // permite publicar; se avisa y se sigue.
+          setSaError(
+            `Guardado para publicar, pero no para el estado de tiendas: ${
+              e instanceof Error ? e.message : "error desconocido"
+            }`,
+          );
+        }
+      }
       if (project) {
         await setProjectPlayCredentialsUploaded(project.id);
         await qc.invalidateQueries({ queryKey: ["projects"] });
@@ -603,6 +623,33 @@ export function AppBuildsPanel({ appId, perms, project }: {
       setSaError(e instanceof Error ? e.message : "Error al guardar las credenciales");
     } finally {
       setSaBusy(false);
+    }
+  };
+
+  // Llave de App Store Connect: la usa el sync para leer el estado en iOS
+  // (versión a la venta, revisión, builds). Solo el root puede guardarla.
+  const [ascOpen, setAscOpen] = useState(false);
+  const [ascBusy, setAscBusy] = useState(false);
+  const [ascError, setAscError] = useState("");
+  const [asc, setAsc] = useState({ keyId: "", issuerId: "", privateKey: "" });
+  const { data: credsMeta } = useQuery({
+    queryKey: ["store-credentials-meta"],
+    queryFn: () => getStoreCredentialsMeta().catch(() => null),
+    staleTime: 60_000,
+  });
+
+  const handleSaveAsc = async () => {
+    setAscBusy(true);
+    setAscError("");
+    try {
+      await setAppStoreConnectForSync(asc, appUser!.email);
+      await qc.invalidateQueries({ queryKey: ["store-credentials-meta"] });
+      setAscOpen(false);
+      setAsc({ keyId: "", issuerId: "", privateKey: "" });
+    } catch (e) {
+      setAscError(e instanceof Error ? e.message : "Error al guardar la llave");
+    } finally {
+      setAscBusy(false);
     }
   };
 
@@ -983,6 +1030,31 @@ export function AppBuildsPanel({ appId, perms, project }: {
             {!project.playCredentialsUploadedAt && (
               <span className="text-[10px] text-amber-600 dark:text-amber-400">
                 Falta la cuenta de servicio: la publicación a Play fallará.
+              </span>
+            )}
+            {/* Llave de App Store Connect: solo la usa el sync que lee el estado
+                en iOS, así que se ofrece cuando el proyecto tiene bundle id. */}
+            {isRoot && project.iosBundleId && (
+              <span className="flex items-center gap-1">
+                <span className="text-[10px] text-muted-foreground/70">
+                  Llave de App Store Connect:{" "}
+                  {credsMeta?.ascUpdatedAt
+                    ? `guardada hace ${formatDistanceToNow(credsMeta.ascUpdatedAt)}`
+                    : "sin guardar"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setAscError(""); setAscOpen(true); }}
+                  className="text-[10px] text-muted-foreground underline hover:text-foreground"
+                  title="Key ID, Issuer ID y .p8 de la App Store Connect API — sin esto el dashboard no puede leer el estado en iOS"
+                >
+                  {credsMeta?.ascUpdatedAt ? "actualizar" : "guardar"}
+                </button>
+              </span>
+            )}
+            {isRoot && project.iosBundleId && !credsMeta?.ascUpdatedAt && (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                Sin la llave de App Store Connect no se puede mostrar la versión de iOS.
               </span>
             )}
           </div>
@@ -1410,6 +1482,68 @@ export function AppBuildsPanel({ appId, perms, project }: {
                 <Button size="sm" disabled={saBusy || !saJson.trim()} onClick={handleUploadServiceAccount}>
                   {saBusy ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Upload className="h-4 w-4 mr-1.5" />}
                   Guardar cifrado
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Llave de App Store Connect (solo root) */}
+        {ascOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-[2px]"
+            onClick={() => !ascBusy && setAscOpen(false)}
+          >
+            <div
+              className="w-full max-w-lg rounded-xl border bg-background p-5 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="flex items-center gap-2 text-base font-semibold">
+                <Upload className="h-4 w-4 text-sky-600" />
+                Llave de App Store Connect
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                De App Store Connect → Users and Access → Integrations → App Store Connect API.
+                Con permiso de lectura basta: solo se consulta el estado de la app (versión a la
+                venta, revisión y builds) para mostrarlo en el dashboard.
+              </p>
+              <div className="mt-3 grid gap-2">
+                <input
+                  className="w-full rounded-md border bg-background px-3 py-2 font-mono text-[11px]"
+                  placeholder="Key ID (p. ej. 2X9ABC3DEF)"
+                  value={asc.keyId}
+                  onChange={(e) => setAsc({ ...asc, keyId: e.target.value })}
+                />
+                <input
+                  className="w-full rounded-md border bg-background px-3 py-2 font-mono text-[11px]"
+                  placeholder="Issuer ID (el UUID de la parte de arriba)"
+                  value={asc.issuerId}
+                  onChange={(e) => setAsc({ ...asc, issuerId: e.target.value })}
+                />
+                <textarea
+                  className="h-36 w-full rounded-md border bg-background px-3 py-2 font-mono text-[11px]"
+                  placeholder={"-----BEGIN PRIVATE KEY-----\n…contenido del .p8…\n-----END PRIVATE KEY-----"}
+                  spellCheck={false}
+                  value={asc.privateKey}
+                  onChange={(e) => setAsc({ ...asc, privateKey: e.target.value })}
+                />
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                El .p8 solo se puede descargar una vez desde Apple: guárdalo también fuera de aquí.
+                Una vez enviado, nadie puede volver a leerlo desde el dashboard — solo sustituirlo.
+              </p>
+              {ascError && <p className="mt-1 text-xs text-destructive">{ascError}</p>}
+              <div className="mt-4 flex justify-end gap-2">
+                <Button variant="outline" size="sm" disabled={ascBusy} onClick={() => setAscOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={ascBusy || !asc.keyId.trim() || !asc.issuerId.trim() || !asc.privateKey.trim()}
+                  onClick={handleSaveAsc}
+                >
+                  {ascBusy ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Upload className="h-4 w-4 mr-1.5" />}
+                  Guardar
                 </Button>
               </div>
             </div>

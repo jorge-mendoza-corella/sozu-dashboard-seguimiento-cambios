@@ -10,7 +10,9 @@ Corre en GitHub Actions (ver .github/workflows/play-tracks-sync.yml):
 
 Variables de entorno:
   FIRESTORE_TOKEN   access token de GCP (cuenta de Firebase) para Firestore REST
-  PLAY_SA_JSON      JSON del service account con acceso a Play Console
+  PLAY_SA_JSON      JSON del service account con acceso a Play Console. Si no
+                    viene, se usa el que el root haya dejado desde el dashboard
+                    (Firestore storeCredentials/play).
   GCP_PROJECT       id del proyecto Firebase (default: sozu-admin-dev)
 
 La API de Play exige abrir un "edit" (transacción) incluso para leer tracks; el
@@ -27,6 +29,8 @@ from urllib.parse import quote
 
 import jwt  # PyJWT
 import requests
+
+from store_credentials import play_service_account
 
 GCP_PROJECT = os.environ.get("GCP_PROJECT", "sozu-admin-dev")
 FS_BASE = f"https://firestore.googleapis.com/v1/projects/{GCP_PROJECT}/databases/(default)/documents"
@@ -145,10 +149,17 @@ def main() -> None:
     fs_token = os.environ.get("FIRESTORE_TOKEN", "").strip()
     if not fs_token:
         fail("Falta FIRESTORE_TOKEN.")
-    raw_sa = os.environ.get("PLAY_SA_JSON", "").strip()
+    # Del entorno (Secret Manager) o, si no está, de lo que el root dejó en el
+    # dashboard: sin esto el sync callaba y las tiendas salían vacías.
+    raw_sa, origen = play_service_account(FS_BASE, fs_token)
     if not raw_sa:
-        print("Sin PLAY_SA_JSON: no hay service account de Play configurado. Nada que hacer.")
+        print(
+            "Sin service account de Play: créalo como secret DASHBOARD_PLAY_SERVICE_ACCOUNT "
+            "o subelo desde el dashboard (panel de la app > Cuenta de servicio de Play). "
+            "Nada que hacer."
+        )
         return
+    print(f"· service account de Play tomado del {origen}")
     try:
         sa = json.loads(raw_sa)
     except json.JSONDecodeError as e:
