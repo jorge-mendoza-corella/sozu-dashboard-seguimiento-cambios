@@ -84,14 +84,27 @@ export function buildStateLabel(state?: string): string {
   }
 }
 
+export interface AppStorePublished {
+  version: string;
+  state?: string;
+  /** false = enviada pero todavía no a la venta (en revisión, preparándose…). */
+  aLaVenta: boolean;
+}
+
 /**
- * Versión que hoy está a la venta en el App Store: la que quedó
- * `READY_FOR_SALE`. Las que están en revisión o preparándose no cuentan, así
- * que si no hay ninguna a la venta devuelve null (aún no se ha publicado nada).
+ * Versión más avanzada en el App Store: la que está a la venta y, si no hay,
+ * la última enviada. Exigir `READY_FOR_SALE` dejaba un guión en la card justo
+ * después de publicar, mientras Apple revisa — que es cuando más se consulta.
+ * `aLaVenta` distingue una de otra.
  */
-export function appStoreLiveVersion(doc: AppStoreStatusDoc | null | undefined): string | null {
+export function appStoreLiveVersion(doc: AppStoreStatusDoc | null | undefined): AppStorePublished | null {
   const live = doc?.versions.find((v) => v.state === "READY_FOR_SALE");
-  return live?.version?.trim() || null;
+  if (live?.version?.trim()) {
+    return { version: live.version.trim(), state: live.state, aLaVenta: true };
+  }
+  const enCurso = doc?.versions.find((v) => v.version?.trim());
+  if (!enCurso?.version) return null;
+  return { version: enCurso.version.trim(), state: enCurso.state, aLaVenta: false };
 }
 
 export async function getAppStoreStatus(bundleId: string): Promise<AppStoreStatusDoc | null> {

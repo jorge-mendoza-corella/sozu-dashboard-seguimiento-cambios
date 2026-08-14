@@ -4,8 +4,8 @@ import { Globe, ExternalLink, Copy, Check, Smartphone, Apple } from "lucide-reac
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import type { FrontVersion } from "@/lib/frontVersions";
-import { getPlayTracks, playProductionVersion } from "@/lib/playTracks";
-import { getAppStoreStatus, appStoreLiveVersion } from "@/lib/appStoreStatus";
+import { getPlayTracks, playPublishedVersion, releaseStatusInfo } from "@/lib/playTracks";
+import { getAppStoreStatus, appStoreLiveVersion, versionStateInfo } from "@/lib/appStoreStatus";
 
 interface Props {
   /** URL del front. Sin ella no se pinta nada: el repo no es front. */
@@ -66,7 +66,7 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
     : `No se pudo leer la versión de ${bonito}\n${revisado}` +
       (frontVersion?.error ? `\n${frontVersion.error}` : "");
 
-  const playVersion = playProductionVersion(play);
+  const playPub = playPublishedVersion(play);
   const iosVersion = appStoreLiveVersion(appStore);
   const esApp = !!androidPackage || !!iosBundleId;
 
@@ -118,27 +118,46 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
           {androidPackage && (
             <span
               title={
-                playVersion
-                  ? `Publicado en Google Play (producción): ${playVersion}`
-                  : "Aún no hay una versión publicada en producción de Google Play"
+                play?.error
+                  ? `No se pudo leer Google Play: ${play.error}`
+                  : playPub
+                    ? `Google Play · track ${playPub.track}` +
+                      (playPub.status ? ` · ${releaseStatusInfo(playPub.status).label}` : "") +
+                      (playPub.esProduccion ? "" : " (aún no está en producción)")
+                    : "Aún no hay ninguna versión subida a Google Play, o falta la cuenta de servicio para leerlo"
               }
-              className="flex items-center gap-1 rounded-md border border-transparent bg-muted px-1.5 py-1 font-mono text-foreground/80"
+              className={cn(
+                "flex items-center gap-1 rounded-md border border-transparent bg-muted px-1.5 py-1 font-mono text-foreground/80",
+                // Lo que no está en producción no es lo que la gente tiene
+                // instalado: se distingue en lugar de darlo por publicado.
+                playPub && !playPub.esProduccion && "border-dashed border-muted-foreground/40",
+              )}
             >
               <Smartphone className="h-3 w-3 text-muted-foreground" />
-              {playVersion ?? "—"}
+              {playPub?.version ?? "—"}
+              {playPub && !playPub.esProduccion && (
+                <span className="font-sans text-[10px] text-muted-foreground">{playPub.track}</span>
+              )}
             </span>
           )}
           {iosBundleId && (
             <span
               title={
-                iosVersion
-                  ? `A la venta en el App Store: ${iosVersion}`
-                  : "Aún no hay una versión a la venta en el App Store"
+                appStore?.error
+                  ? `No se pudo leer App Store Connect: ${appStore.error}`
+                  : iosVersion
+                    ? (iosVersion.aLaVenta ? "A la venta en el App Store" : "Enviada al App Store, aún no a la venta") +
+                      `: ${iosVersion.version}` +
+                      (iosVersion.state ? ` · ${versionStateInfo(iosVersion.state).label}` : "")
+                    : "Aún no hay ninguna versión en App Store Connect, o falta la llave para leerlo"
               }
-              className="flex items-center gap-1 rounded-md border border-transparent bg-muted px-1.5 py-1 font-mono text-foreground/80"
+              className={cn(
+                "flex items-center gap-1 rounded-md border border-transparent bg-muted px-1.5 py-1 font-mono text-foreground/80",
+                iosVersion && !iosVersion.aLaVenta && "border-dashed border-muted-foreground/40",
+              )}
             >
               <Apple className="h-3 w-3 text-muted-foreground" />
-              {iosVersion ?? "—"}
+              {iosVersion?.version ?? "—"}
             </span>
           )}
         </>
