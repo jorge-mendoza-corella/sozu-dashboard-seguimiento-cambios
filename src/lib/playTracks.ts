@@ -74,19 +74,53 @@ export async function getPlayTracks(pkg: string): Promise<PlayTracksDoc | null> 
   };
 }
 
-/**
- * Versión que hoy está publicada en producción de Play: el release `completed`
- * del track `production`. Los tracks de prueba no cuentan — lo que interesa es
- * qué tiene instalado la gente. Devuelve el nombre del release (versionName) o,
- * si viniera vacío, el versionCode más alto.
- */
-export function playProductionVersion(doc: PlayTracksDoc | null | undefined): string | null {
-  const prod = doc?.tracks.find((t) => t.track.toLowerCase() === "production");
-  const rel = prod?.releases?.find((r) => r.status === "completed") ?? prod?.releases?.[0];
-  if (!rel) return null;
+export interface PlayPublished {
+  version: string;
+  track: string;
+  status?: string;
+  /** false = está en un track de prueba, no en producción. */
+  esProduccion: boolean;
+}
+
+const ORDEN_TRACKS = ["production", "beta", "alpha", "internal"];
+
+const versionDeRelease = (rel: PlayRelease): string | null => {
   if (rel.name?.trim()) return rel.name.trim();
   const codes = (rel.versionCodes ?? []).map(Number).filter((n) => !Number.isNaN(n));
   return codes.length ? String(Math.max(...codes)) : null;
+};
+
+/**
+ * Última versión subida a Play, empezando por producción y bajando a los tracks
+ * de prueba. No se exige `completed`: un release recién enviado queda en
+ * `inProgress` o `draft` mientras Google lo revisa, y con esa exigencia la card
+ * mostraba un guión justo después de publicar, que es cuando más se mira.
+ * `esProduccion` y `status` quedan a la vista para no confundir un envío a
+ * pruebas internas con lo que tiene instalado la gente.
+ */
+export function playPublishedVersion(doc: PlayTracksDoc | null | undefined): PlayPublished | null {
+  if (!doc) return null;
+  const candidatos = [...doc.tracks].sort((a, b) => {
+    const ia = ORDEN_TRACKS.indexOf(a.track.toLowerCase());
+    const ib = ORDEN_TRACKS.indexOf(b.track.toLowerCase());
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+  for (const t of candidatos) {
+    const rel =
+      t.releases?.find((r) => r.status === "completed") ??
+      t.releases?.find((r) => r.status === "inProgress") ??
+      t.releases?.[0];
+    const version = rel ? versionDeRelease(rel) : null;
+    if (version) {
+      return {
+        version,
+        track: t.track,
+        status: rel?.status,
+        esProduccion: t.track.toLowerCase() === "production",
+      };
+    }
+  }
+  return null;
 }
 
 const SYNC_REPO = { owner: "jorge-mendoza-corella", repo: "sozu-dashboard-seguimiento-cambios" };
