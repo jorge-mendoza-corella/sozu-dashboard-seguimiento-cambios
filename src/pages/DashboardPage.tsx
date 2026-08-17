@@ -9,6 +9,7 @@ import { ActiveBuildChips } from "@/components/codemagic/ActiveBuildChips";
 import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { useProjects, useRepos, useAccessibleRepoIds } from "@/hooks/useProjectsRepos";
+import { useCanPublishApps } from "@/hooks/useClients";
 import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
@@ -44,6 +45,7 @@ export function DashboardPage() {
   const isViewer = appUser?.role === "viewer";
   const isRoot = appUser?.email === SUPERUSER_EMAIL; // solo jorge gestiona proyectos/repos
   const perms = resolvePermissions(appUser); // permisos CI/CD granulares del usuario
+  const publishApps = useCanPublishApps(appUser); // publicar en tiendas: feature de pago del cliente
   const qc = useQueryClient();
 
   const { data: allProjects = [], isLoading: loadingProjects } = useProjects();
@@ -345,11 +347,25 @@ export function DashboardPage() {
             {projects.map((p) => {
               const projectRepos = reposByProject.get(p.id) ?? [];
               // Sub-pestaña "Deploy App": solo proyectos APP vinculados a Codemagic
-              // y usuarios con el permiso buildApp.
-              const showDeployTab = !!p.isApp && !!p.codemagicAppId && isCodemagicConfigured && perms.buildApp;
+              // y usuarios con el permiso buildApp. Además, publicar apps es un
+              // costo extra que el cliente puede tener o no contratado.
+              const publicacionContratada = publishApps.contratada(p.clientId);
+              const showDeployTab =
+                !!p.isApp && !!p.codemagicAppId && isCodemagicConfigured && perms.buildApp &&
+                publishApps.puedePublicar(p.clientId);
               const view = showDeployTab ? projectView : "repos";
               return (
                 <TabsContent key={p.id} value={p.id}>
+                  {/* App con Codemagic listo pero sin la publicación contratada:
+                      se dice por qué, en lugar de esconder la pestaña sin más.
+                      El aviso lo ve cualquiera (el root además sigue pudiendo
+                      publicar, para no quedarse sin operar su propia app). */}
+                  {p.isApp && !!p.codemagicAppId && !publicacionContratada && (
+                    <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+                      El cliente de este proyecto no tiene contratada la publicación de apps
+                      (es un costo extra).{isRoot ? " Actívala en Configuración → Precios y features." : ""}
+                    </p>
+                  )}
                   {showDeployTab && (
                     <div className="mb-4 flex gap-1 border-b">
                       {([

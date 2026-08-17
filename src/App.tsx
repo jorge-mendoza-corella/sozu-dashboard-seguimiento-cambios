@@ -11,6 +11,8 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { UsersPage } from "@/pages/UsersPage";
 import { ContributorsPage } from "@/pages/ContributorsPage";
 import { ResumenPage } from "@/pages/ResumenPage";
+import { ConfiguracionPage } from "@/pages/ConfiguracionPage";
+import { NegocioPage } from "@/pages/NegocioPage";
 
 const queryClient = new QueryClient();
 
@@ -58,6 +60,10 @@ function AppRoutes() {
         <Route path="/resumen" element={<ResumenPage />} />
         <Route path="/contributors" element={isRoot ? <ContributorsPage /> : <Navigate to="/" replace />} />
         <Route path="/users" element={isRoot ? <UsersPage /> : <Navigate to="/" replace />} />
+        {/* Negocio y configuración del SaaS: precios, datos fiscales y features
+            contratadas. Solo los administra el root (igual que Usuarios). */}
+        <Route path="/negocio" element={isRoot ? <NegocioPage /> : <Navigate to="/" replace />} />
+        <Route path="/configuracion" element={isRoot ? <ConfiguracionPage /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppLayout>

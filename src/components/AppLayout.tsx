@@ -1,21 +1,24 @@
 import { Link, useLocation } from "react-router-dom";
-import { Activity, GitBranch, Users, GitCommit, LogOut, LayoutDashboard, HardHat, ExternalLink } from "lucide-react";
+import {
+  Activity, GitBranch, Users, GitCommit, LogOut, LayoutDashboard, HardHat, ExternalLink,
+  TrendingUp, Settings,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { useAvancesAccess, AVANCES_URL_DEFAULT } from "@/hooks/useClients";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
 import { AvancesDraftBadge } from "@/components/AvancesDraftBadge";
 import { BuildNotifier } from "@/components/codemagic/BuildNotifier";
 
-// Sitio de avance de obra. El badge de borrador vive en AvancesDraftBadge.
-const AVANCES_URL = "https://avances.sozu.com";
-
 // `show(role, isRoot)` decide la visibilidad de cada item en el nav.
 const NAV_ITEMS = [
   { to: "/resumen", label: "Resumen", icon: LayoutDashboard, show: () => true },
   { to: "/", label: "CI/CD", icon: GitBranch, show: () => true },
+  { to: "/negocio", label: "Negocio", icon: TrendingUp, show: (_r: string | undefined, root: boolean) => root },
   { to: "/contributors", label: "Contribuidores", icon: GitCommit, show: (_r: string | undefined, root: boolean) => root },
   { to: "/users", label: "Usuarios", icon: Users, show: (_r: string | undefined, root: boolean) => root },
+  { to: "/configuracion", label: "Configuración", icon: Settings, show: (_r: string | undefined, root: boolean) => root },
 ];
 
 interface Props { children: React.ReactNode }
@@ -25,6 +28,13 @@ export function AppLayout({ children }: Props) {
   const { pathname } = useLocation();
   const isRoot = appUser?.email === SUPERUSER_EMAIL;
   const navItems = NAV_ITEMS.filter((i) => i.show(appUser?.role, isRoot));
+  // Ver avances es una feature que se contrata por cliente: si ninguno de los
+  // clientes del usuario la tiene prendida, el link no aparece.
+  const avances = useAvancesAccess(appUser);
+  // La URL viene de Firestore y termina en un href: se revalida el esquema aquí
+  // también, no solo al guardarla, para que un `javascript:` escrito por fuera
+  // del dashboard no se convierta en un link ejecutable.
+  const avancesUrl = /^https?:\/\//i.test(avances.url) ? avances.url : AVANCES_URL_DEFAULT;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -55,19 +65,19 @@ export function AppLayout({ children }: Props) {
                 Para el root incluye el badge del borrador pendiente. */}
             {isRoot ? (
               <AvancesDraftBadge email={appUser?.email ?? ""} />
-            ) : (
+            ) : avances.allowed ? (
               <a
-                href={AVANCES_URL}
+                href={avancesUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="ml-1 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground no-underline transition-colors hover:bg-muted hover:text-foreground"
-                title="Avance de obra — avances.sozu.com"
+                title={`Avance de obra — ${avancesUrl.replace(/^https?:\/\//, "")}`}
               >
                 <HardHat className="h-4 w-4" />
                 Avances
                 <ExternalLink className="h-3 w-3 opacity-60" />
               </a>
-            )}
+            ) : null}
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <span
