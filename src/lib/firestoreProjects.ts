@@ -15,6 +15,9 @@ export interface Project {
   order: number;
   createdBy: string;
   createdAt: unknown;
+  // Cliente (empresa/persona) dueño del proyecto. Sin él el proyecto no se le
+  // cobra a nadie: la configuración lo marca como "sin cliente".
+  clientId?: string;
   seeded?: boolean; // ya se sembraron los repos por defecto (no volver a auto-agregar)
   isApp?: boolean;  // marca el proyecto como una app móvil/app
   codemagicAppId?: string; // app de Codemagic vinculada (builds desde el dashboard)
@@ -47,6 +50,9 @@ export interface MonitoredRepo {
   // repo como front: la card muestra el link, el botón de copiar y la versión
   // que sirve ese sitio (la lee el sync en `frontVersions/{id}`).
   frontUrl?: string;
+  // Precio mensual fijado a ESTE repo. Es lo primero que mira el cobro; si no
+  // está, se usa la tarifa del cliente y luego el default global.
+  monthlyPrice?: number;
 }
 
 const PROJECT_COLORS = [
@@ -82,6 +88,13 @@ export async function addProject(name: string, addedBy: string): Promise<string>
 
 export async function renameProject(id: string, name: string) {
   await updateDoc(doc(db, "projects", id), { name: name.trim() });
+}
+
+/** Asigna el proyecto a un cliente (null = dejarlo sin cliente, no se cobra). */
+export async function setProjectClient(id: string, clientId: string | null) {
+  await updateDoc(doc(db, "projects", id), {
+    clientId: clientId ?? deleteField(),
+  });
 }
 
 export async function setProjectIsApp(id: string, isApp: boolean) {
@@ -220,6 +233,19 @@ export async function setRepoFrontUrl(id: string, url: string | null) {
   const limpia = url?.trim();
   await updateDoc(doc(db, "repos", id), {
     frontUrl: limpia ? limpia.replace(/\/+$/, "") : deleteField(),
+  });
+}
+
+/**
+ * Precio mensual propio de este repo. null = quitarlo y volver a la tarifa del
+ * cliente (o al default global si el cliente tampoco tiene una).
+ */
+export async function setRepoMonthlyPrice(id: string, price: number | null) {
+  if (price !== null && (!Number.isFinite(price) || price < 0)) {
+    throw new Error("El precio del repo debe ser un número mayor o igual a 0.");
+  }
+  await updateDoc(doc(db, "repos", id), {
+    monthlyPrice: price === null ? deleteField() : price,
   });
 }
 

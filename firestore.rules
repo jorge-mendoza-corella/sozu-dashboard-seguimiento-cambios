@@ -2,6 +2,19 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Toda la autorización del dashboard cuelga de comparar el email contra el
+    // del root. Si algún día se habilita otro proveedor en el proyecto Firebase
+    // (Email/Password, custom token), alguien podría registrarse con ese mismo
+    // email sin verificarlo y quedar como root. Las colecciones del SaaS —las
+    // que guardan datos fiscales y la llave de facturación— exigen además que el
+    // login sea de Google y con el email verificado.
+    function esRootVerificado() {
+      return request.auth != null
+        && request.auth.token.email == 'jorge.mendoza@sozu.com'
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+
     match /users/{email} {
       // Self-read
       allow read: if request.auth != null && request.auth.token.email == email;
@@ -66,6 +79,35 @@ service cloud.firestore {
       allow read: if false;
       allow write: if request.auth != null
         && request.auth.token.email == 'jorge.mendoza@sozu.com';
+    }
+
+    // Secretos de integraciones que solo consume el backend/los syncs (hoy la
+    // API key de Facturapi). Mismo criterio que storeCredentials: desde el
+    // navegador se escriben pero NUNCA se leen, ni el propio root.
+    match /secrets/{docId} {
+      allow read: if false;
+      allow write: if esRootVerificado();
+    }
+
+    // Clientes del SaaS (empresa o persona que paga). El doc raíz solo trae
+    // identidad y features contratadas: eso lo lee cualquier usuario registrado
+    // porque la navegación necesita el nombre del cliente y su link de avances,
+    // y se carga en cada página.
+    //
+    // Los datos fiscales (RFC, domicilio) y las tarifas viven aparte, en
+    // `clients/{id}/private/billing`, y solo los leen los superusers: si
+    // estuvieran en el doc raíz, el RFC y los precios de todos los clientes
+    // bajarían al navegador de cualquier viewer.
+    match /clients/{id} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if esRootVerificado();
+
+      match /private/{docId} {
+        allow read: if request.auth != null
+          && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'superuser';
+        allow write: if esRootVerificado();
+      }
     }
 
     // Versión que sirve cada front. La escribe el sync con la cuenta de
