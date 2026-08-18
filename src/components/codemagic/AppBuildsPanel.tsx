@@ -117,14 +117,15 @@ const BUILD_PHASES = [
 
 /** Card destacada de un build en curso: fases, cronómetro y progreso estimado. */
 function ActiveBuildCard({
-  b, wfName, avgMs, appId, canCancel, busy, onCancel,
+  b, wfName, avgMs, appId, canCancel, estaBusy, onCancel,
 }: {
   b: CodemagicBuild;
   wfName: string;
   avgMs: number | null;
   appId: string;
   canCancel: boolean;
-  busy: string | null;
+  /** Predicado por clave: cada acción lleva su propio estado, no uno compartido. */
+  estaBusy: (key: string) => boolean;
   onCancel: (id: string) => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
@@ -133,12 +134,21 @@ function ActiveBuildCard({
     return () => clearInterval(t);
   }, []);
 
-  const startedIso = b.startedAt ?? b.createdAt;
-  const elapsedMs = startedIso ? Math.max(0, now - new Date(startedIso).getTime()) : 0;
+  // Un build que Codemagic todavía no arranca (espera turno de máquina) NO
+  // tiene `startedAt`. Antes se caía a `createdAt`, así que el cronómetro y la
+  // barra corrían durante la cola: un build encolado llegaba a "85%" sin haber
+  // empezado, y al liberarse la máquina —justo cuando terminaba el build de la
+  // otra plataforma— aparecía `startedAt`, el tiempo se recalculaba desde el
+  // arranque real y la barra caía a cero. Parecía que el build se había
+  // reiniciado solo; en realidad recién empezaba.
+  const enCola = !b.startedAt;
+  const referenciaIso = b.startedAt ?? b.createdAt;
+  const elapsedMs = referenciaIso ? Math.max(0, now - new Date(referenciaIso).getTime()) : 0;
   const mm = Math.floor(elapsedMs / 60000);
   const ss = String(Math.floor(elapsedMs / 1000) % 60).padStart(2, "0");
-  // Progreso estimado contra el promedio de builds exitosos del mismo workflow.
-  const pct = avgMs ? Math.min(96, Math.round((elapsedMs / avgMs) * 100)) : null;
+  // El progreso estimado solo tiene sentido con el build corriendo: en cola no
+  // se estima nada, se dice que está esperando.
+  const pct = !enCola && avgMs ? Math.min(96, Math.round((elapsedMs / avgMs) * 100)) : null;
 
   // "initializing" ocurre antes de "queued"; otros estados intermedios
   // desconocidos se asumen en plena construcción.
@@ -197,14 +207,25 @@ function ActiveBuildCard({
           <GitBranch className="h-3 w-3" />{b.branch}
         </span>
         <span className="flex-1" />
-        <span className={cn("font-mono text-sm font-semibold tabular-nums", theme.timer)}>
+        <span className={cn("font-mono text-sm font-semibold tabular-nums", enCola ? "text-muted-foreground" : theme.timer)}>
           {mm}:{ss}
         </span>
-        {avgMs && (
+        {enCola ? (
+          <span
+            className="text-[10px] font-medium text-amber-600 dark:text-amber-400"
+            title={
+              "Codemagic todavía no le asigna máquina. El cronómetro cuenta la espera, no el build: " +
+              "cuando arranque de verdad, el tiempo empieza de cero. Cuántos builds corren a la vez " +
+              "depende del plan de Codemagic, no del dashboard."
+            }
+          >
+            en cola · aún no arranca
+          </span>
+        ) : avgMs ? (
           <span className="text-[10px] text-muted-foreground">
             / ~{Math.round(avgMs / 60000)}m típico
           </span>
-        )}
+        ) : null}
         <a
           href={buildUrl(appId, b._id)}
           target="_blank"
@@ -217,11 +238,11 @@ function ActiveBuildCard({
         {canCancel && (
           <button
             type="button"
-            disabled={busy === b._id}
+            disabled={estaBusy(b._id)}
             onClick={() => onCancel(b._id)}
             className="flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-xs text-destructive hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:hover:bg-red-950/30"
           >
-            {busy === b._id ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />}
+            {estaBusy(b._id) ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />}
             Cancelar
           </button>
         )}
@@ -280,7 +301,7 @@ const PLAT_META: Record<Plat, { label: string; cls: string }> = {
 
 /** Fila de una plataforma: construir artefacto y, si ya existe, enviarlo a la store. */
 function PlatformRow({
-  platform, branch, builds, headSha, deployActive, perms, busy, pendingWorkflows, onRequestStart, simple,
+  platform, branch, builds, headSha, deployActive, perms, estaBusy, pendingWorkflows, onRequestStart, simple,
 }: {
   platform: PlatformDef;
   branch: string;
@@ -288,7 +309,7 @@ function PlatformRow({
   headSha: string | null | undefined;
   deployActive: boolean;
   perms: CicdPermissions;
-  busy: string | null;
+  estaBusy: (key: string) => boolean;
   pendingWorkflows: Record<string, { id: string; t: number }>;
   onRequestStart: (workflowId: string, key: string, opts?: { askNotes?: boolean; label?: string }) => void;
   /** Modo simple: Construir + un solo botón que publica directo en la tienda. */
@@ -372,10 +393,10 @@ function PlatformRow({
             size="sm"
             variant="outline"
             title={buildDisabledReason ?? `Construir artefacto ${platform.label} (${branch})`}
-            disabled={!!buildDisabledReason || busy === buildKey}
+            disabled={!!buildDisabledReason || estaBusy(buildKey)}
             onClick={() => onRequestStart(platform.buildWorkflowId, buildKey, { label: `Construir ${platform.label}` })}
           >
-            {buildInProgress || busy === buildKey ? (
+            {buildInProgress || estaBusy(buildKey) ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
             ) : (
               <Play className="h-3.5 w-3.5 mr-1.5" />
@@ -388,12 +409,12 @@ function PlatformRow({
               size="sm"
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
               title={storeDisabledReason ?? `Publicar directo en ${platform.promoteLabel} (pide comentario de la versión)`}
-              disabled={!!storeDisabledReason || busy === storeKey}
+              disabled={!!storeDisabledReason || estaBusy(storeKey)}
               onClick={() => onRequestStart(platform.storeDirectWorkflowId, storeKey, {
                 askNotes: true, label: `Publicar en ${platform.promoteLabel}`,
               })}
             >
-              {storeInProgress || busy === storeKey ? (
+              {storeInProgress || estaBusy(storeKey) ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
               ) : (
                 <Rocket className="h-3.5 w-3.5 mr-1.5" />
@@ -404,10 +425,10 @@ function PlatformRow({
             <Button
               size="sm"
               title={publishDisabledReason ?? `Construir y enviar a ${platform.storeLabel}`}
-              disabled={!!publishDisabledReason || busy === publishKey}
+              disabled={!!publishDisabledReason || estaBusy(publishKey)}
               onClick={() => onRequestStart(platform.publishWorkflowId, publishKey, { label: `Enviar a ${platform.storeLabel}` })}
             >
-              {publishInProgress || busy === publishKey ? (
+              {publishInProgress || estaBusy(publishKey) ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
               ) : (
                 <Upload className="h-3.5 w-3.5 mr-1.5" />
@@ -420,10 +441,10 @@ function PlatformRow({
               size="sm"
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
               title={promoteDisabledReason ?? `Enviar a ${platform.promoteLabel} (pide comentario de la versión)`}
-              disabled={!!promoteDisabledReason || busy === promoteKey}
+              disabled={!!promoteDisabledReason || estaBusy(promoteKey)}
               onClick={() => onRequestStart(platform.promoteWorkflowId, promoteKey, { askNotes: true, label: `Enviar a ${platform.promoteLabel}` })}
             >
-              {promoteInProgress || busy === promoteKey ? (
+              {promoteInProgress || estaBusy(promoteKey) ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
               ) : (
                 <Rocket className="h-3.5 w-3.5 mr-1.5" />
@@ -477,7 +498,19 @@ export function AppBuildsPanel({ appId, perms, project }: {
   const { data: headSha } = useBranchHead(repo?.owner, repo?.repo, effectiveBranch);
   const { data: deployActive = false } = useActiveDeploy(repo?.owner, repo?.repo);
 
-  const [busy, setBusy] = useState<string | null>(null);
+  // Acciones en vuelo, por clave. Antes era un solo string: con Android e iOS
+  // trabajando a la vez, la primera acción que terminaba ponía `busy` en null y
+  // le apagaba el spinner a la otra, que seguía corriendo. Un conjunto mantiene
+  // cada plataforma con su propio estado.
+  const [busyKeys, setBusyKeys] = useState<Set<string>>(() => new Set());
+  const marcarBusy = (key: string, activo: boolean) =>
+    setBusyKeys((prev) => {
+      const next = new Set(prev);
+      if (activo) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  const estaBusy = (key: string | null) => !!key && busyKeys.has(key);
   const [error, setError] = useState("");
   const [showAll, setShowAll] = useState(false);
   // Modo simple (default): Construir + publicar directo a la tienda. El modo
@@ -810,7 +843,19 @@ export function AppBuildsPanel({ appId, perms, project }: {
   };
 
   const doStart = async (workflowId: string, key: string, envVars?: Record<string, string>) => {
-    setBusy(key);
+    // Guardia contra el disparo doble: si ese workflow ya tiene un build vivo
+    // —corriendo o esperando turno de máquina— lanzar otro no lo adelanta, solo
+    // encola trabajo repetido y confunde cuál es cuál. Cada plataforma sigue
+    // siendo independiente: esto solo mira SU workflow.
+    const yaVivo = builds.some((b) => b.workflowId === workflowId && isRunning(b));
+    if (yaVivo || pendingWorkflows[workflowId] !== undefined) {
+      setError(
+        `${WORKFLOW_LABELS[workflowId] ?? workflowId} ya tiene un build en curso o en cola. ` +
+        "Espera a que termine o cancélalo antes de lanzar otro.",
+      );
+      return;
+    }
+    marcarBusy(key, true);
     setError("");
     // Bloqueo optimista INMEDIATO (id temporal); se sustituye por el buildId
     // real cuando la API responde, o se revierte si el POST falla.
@@ -859,7 +904,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
       });
       setError(e instanceof Error ? e.message : "Error al iniciar el build");
     } finally {
-      setBusy(null);
+      marcarBusy(key, false);
     }
   };
 
@@ -881,7 +926,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
   };
 
   const doCancel = async (buildId: string) => {
-    setBusy(buildId);
+    marcarBusy(buildId, true);
     setError("");
     try {
       await cancelBuild(buildId);
@@ -889,7 +934,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al cancelar el build");
     } finally {
-      setBusy(null);
+      marcarBusy(buildId, false);
     }
   };
 
@@ -981,7 +1026,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
               headSha={headSha}
               deployActive={deployActive}
               perms={perms}
-              busy={busy}
+              estaBusy={estaBusy}
               pendingWorkflows={pendingWorkflows}
               onRequestStart={requestStart}
               simple={simple}
@@ -1022,7 +1067,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
                   avgMs={avgDurationByWorkflow.get(b.workflowId) ?? null}
                   appId={appId}
                   canCancel={perms.buildApp}
-                  busy={busy}
+                  estaBusy={estaBusy}
                   onCancel={(id) => requestCancel(id, wfName)}
                 />
               );
@@ -1410,12 +1455,12 @@ export function AppBuildsPanel({ appId, perms, project }: {
                   {info.isRunning && perms.buildApp && (
                     <button
                       type="button"
-                      disabled={busy === b._id}
+                      disabled={estaBusy(b._id)}
                       onClick={() => requestCancel(b._id, wfName || "build")}
                       className="flex items-center gap-1 text-destructive hover:opacity-80 disabled:opacity-50"
                       title="Cancelar build"
                     >
-                      {busy === b._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                      {estaBusy(b._id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
                     </button>
                   )}
                 </div>
