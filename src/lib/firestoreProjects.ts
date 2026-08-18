@@ -29,7 +29,14 @@ export interface Project {
   approverEmail?: string; // usuario del dashboard que aprueba los PRs del proyecto (usa SU token de GitHub)
   notifyAuthors?: string[]; // logins de GitHub seleccionables como autor extra al crear PR (por proyecto)
   androidKeystoreUploadedAt?: string; // ISO — última subida del keystore Android vía dashboard
-  playCredentialsUploadedAt?: string; // ISO — última subida del service account de Play vía dashboard
+  playCredentialsUploadedAt?: string; // ISO — última subida del service account de Play a Codemagic
+  // Credenciales de tienda PROPIAS de este proyecto (los secretos viven en
+  // `projects/{id}/private/*`, que el navegador no puede leer). Aquí solo queda
+  // el rastro visible de cuándo y quién las dejó.
+  playCredentialsUpdatedAt?: unknown;
+  playCredentialsUpdatedBy?: string;
+  ascCredentialsUpdatedAt?: unknown;
+  ascCredentialsUpdatedBy?: string;
   androidPackage?: string; // applicationId de Android (ej. com.sozu.clientes_app); se inyecta al build de Codemagic
   iosBundleId?: string; // bundle id de iOS (ej. com.sozu.sozuClienteApp); para leer el estado en App Store Connect
   // "simple" (default): construir y publicar directo en la tienda, en un clic.

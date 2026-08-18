@@ -286,6 +286,16 @@ service cloud.firestore {
       allow update: if administraCliente(resource.data.clientId)
         && administraCliente(request.resource.data.clientId);
       allow delete: if administraCliente(resource.data.clientId);
+
+      // Credenciales de tienda PROPIAS del proyecto: service account de Play y
+      // llave de App Store Connect. Cada app tiene las suyas —antes había una
+      // sola para todas— y aquí aplica el mismo criterio que a los otros
+      // secretos: desde el navegador se escriben, NUNCA se leen. Quien las
+      // consume son los syncs con cuenta de servicio, que ignoran estas reglas.
+      match /private/{docId} {
+        allow read: if false;
+        allow write: if esRootVerificado();
+      }
     }
     match /repos/{id} {
       allow read: if request.auth != null

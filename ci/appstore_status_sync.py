@@ -8,13 +8,18 @@ appStoreVersions.appVersionState y reviewSubmissions.state.
 
 Corre junto a play_tracks_sync.py en .github/workflows/play-tracks-sync.yml.
 
+Las credenciales se resuelven POR PROYECTO: cada app puede estar en la cuenta de
+App Store Connect de otra empresa, y una llave única para todas contestaba "no
+existe ninguna app con ese bundle id". Orden: el doc privado del proyecto, luego
+el entorno, luego el global heredado (ver store_credentials.py).
+
 Variables de entorno:
   FIRESTORE_TOKEN   access token de GCP (cuenta de Firebase) para Firestore REST
   ASC_KEY_ID        Key ID de la App Store Connect API
   ASC_ISSUER_ID     Issuer ID de la App Store Connect API
   ASC_PRIVATE_KEY   contenido del .p8 (incluye BEGIN/END PRIVATE KEY)
-                    Si faltan, se usan las que el root haya dejado desde el
-                    dashboard (Firestore storeCredentials/appStoreConnect).
+                    Las tres son solo el respaldo de los proyectos que todavía no
+                    tienen su propia llave guardada desde el dashboard.
   GCP_PROJECT       id del proyecto Firebase (default: sozu-admin-dev)
 """
 from __future__ import annotations
@@ -29,7 +34,7 @@ from urllib.parse import quote
 import jwt  # PyJWT
 import requests
 
-from store_credentials import app_store_connect
+from store_credentials import app_store_connect_for
 
 GCP_PROJECT = os.environ.get("GCP_PROJECT", "sozu-admin-dev")
 FS_BASE = f"https://firestore.googleapis.com/v1/projects/{GCP_PROJECT}/databases/(default)/documents"
@@ -41,14 +46,38 @@ def fail(msg: str) -> None:
     sys.exit(1)
 
 
-def asc_token(creds: dict) -> str:
+def asc_token(creds: dict) -> tuple[str | None, str | None]:
+    """(JWT para la App Store Connect API, error).
+
+    El error se devuelve en vez de cortar el script: con una llave por proyecto,
+    un .p8 mal pegado solo debe romper la app de ese proyecto.
+    """
     now = int(time.time())
-    return jwt.encode(
-        {"iss": creds["issuer_id"], "iat": now, "exp": now + 900, "aud": "appstoreconnect-v1"},
-        creds["private_key"].replace("\\n", "\n"),
-        algorithm="ES256",
-        headers={"kid": creds["key_id"], "typ": "JWT"},
-    )
+    try:
+        return jwt.encode(
+            {"iss": creds["issuer_id"], "iat": now, "exp": now + 900, "aud": "appstoreconnect-v1"},
+            creds["private_key"].replace("\\n", "\n"),
+            algorithm="ES256",
+            headers={"kid": creds["key_id"], "typ": "JWT"},
+        ), None
+    except (KeyError, TypeError, ValueError, jwt.PyJWTError) as e:
+        # PyJWT levanta InvalidKeyError si el .p8 llegó cortado o no es EC.
+        return None, (
+            f"La llave de App Store Connect no sirve para firmar ({type(e).__name__}: {e}). "
+            "Vuelve a pegar el .p8 completo, con las líneas BEGIN/END PRIVATE KEY."
+        )
+
+
+def token_de(creds: dict, cache: dict[str, tuple[str | None, str | None]]) -> tuple[str | None, str | None]:
+    """JWT de ASC cacheado por `key_id`.
+
+    Varias apps de la misma empresa comparten llave: firmar una vez por app sería
+    trabajo repetido para un token idéntico.
+    """
+    clave = creds.get("key_id") or "?"
+    if clave not in cache:
+        cache[clave] = asc_token(creds)
+    return cache[clave]
 
 
 def fs_headers(token: str) -> dict:
@@ -170,26 +199,34 @@ def main() -> None:
     fs_token = os.environ.get("FIRESTORE_TOKEN", "").strip()
     if not fs_token:
         fail("Falta FIRESTORE_TOKEN.")
-    # Del entorno (Secret Manager) o, si no están, de lo que el root dejó en el
-    # dashboard: sin esto el sync callaba y iOS salía vacío.
-    creds, origen = app_store_connect(FS_BASE, fs_token)
-    if not creds:
-        print(
-            "Sin credenciales de App Store Connect: créalas como secrets "
-            "DASHBOARD_ASC_KEY_ID / DASHBOARD_ASC_ISSUER_ID / DASHBOARD_ASC_PRIVATE_KEY, "
-            "o dejalas desde el dashboard (panel de la app > App Store Connect). "
-            "No hay nada que consultar en iOS."
-        )
-        return
-    print(f"· credenciales de App Store Connect tomadas del {origen}")
 
     bundles = list_ios_bundles(fs_token)
     if not bundles:
         print("Ningún proyecto tiene Bundle ID iOS configurado. Nada que sincronizar.")
         return
 
-    token = asc_token(creds)
+    tokens: dict[str, tuple[str | None, str | None]] = {}
     for bundle, project_id in bundles:
+        # La llave es de ESTA app: la de su proyecto y, mientras nadie la haya
+        # migrado, el respaldo del entorno o el global.
+        creds, origen = app_store_connect_for(FS_BASE, fs_token, project_id)
+        if not creds:
+            error = (
+                f"El proyecto '{project_id}' no tiene llave de App Store Connect. Súbela en el "
+                "dashboard (panel de la app > App Store Connect): Key ID, Issuer ID y el .p8 de "
+                "la cuenta de Apple de esa empresa."
+            )
+            write_doc(fs_token, bundle, project_id, None, error)
+            print(f"⚠ {bundle}: {error}")
+            continue
+
+        token, error = token_de(creds, tokens)
+        if error:
+            write_doc(fs_token, bundle, project_id, None, error)
+            print(f"⚠ {bundle}: {error}")
+            continue
+
+        print(f"· {bundle}: credenciales de App Store Connect del {origen}")
         payload, error = fetch_status(token, bundle)
         write_doc(fs_token, bundle, project_id, payload, error)
         if error:

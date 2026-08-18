@@ -115,6 +115,43 @@ y por eso solo lleva nombre, logo, color y el id del cliente.
 Sin doc para ese host, el login se queda con la marca del proveedor. Un cliente
 con su propio dominio apuntado al hosting ve su marca desde la puerta.
 
+## Credenciales de tienda por app
+
+Cada proyecto APP publica con SU propia cuenta de tienda, así que sus
+credenciales son suyas y no se comparten:
+
+| Ruta | Contenido |
+| --- | --- |
+| `projects/{id}/private/playSecret` | service account de Google Play |
+| `projects/{id}/private/ascSecret` | llave de App Store Connect (`keyId`, `issuerId`, `privateKey`) |
+| `storeCredentials/{play,appStoreConnect}` | las globales de antes, ahora solo respaldo |
+
+Los secretos tienen `allow read: if false`: desde el navegador se escriben y
+nunca se leen, ni el root. Lo visible es el rastro —`playCredentialsUpdatedAt/By`
+y `ascCredentialsUpdatedAt/By` en el doc del proyecto—, que es lo que la interfaz
+muestra para saber que ya están puestas.
+
+Los syncs resuelven por proyecto, y en este orden: **el doc privado del proyecto
+→ el entorno (Secret Manager) → el global heredado**. El entorno dejó de ganar a
+propósito: la credencial del proyecto es la que identifica a esa app, y si el
+entorno la tapara volveríamos a tener una sola credencial para todos. Un proyecto
+sin credencial por ninguna vía no tumba el sync: queda su error en el doc de la
+tienda y los demás siguen.
+
+### Migración
+
+`python ci/migrate_store_credentials.py` copia las credenciales globales a cada
+proyecto APP —arrancando por Sozu Clientes APP y Sozu Agentes APP, que hoy usan
+la misma— para que nadie se quede sin publicar mientras se les cargan las suyas.
+Es idempotente y no pisa lo que ya tenga valor (`--force` para forzar,
+`--dry-run` para ver qué haría). Solo puede correr con cuenta de servicio: los
+secretos no se pueden leer desde el navegador, así que la copia no se puede hacer
+desde el dashboard.
+
+Después de migrar, lo pendiente es **darle a cada app su propia cuenta de tienda**:
+mientras compartan el service account, un acceso a Play Console alcanza para las
+dos.
+
 ## Notificaciones de WhatsApp
 
 Los avisos de PR y de deploy salen por un webhook de n8n. Antes había una sola
