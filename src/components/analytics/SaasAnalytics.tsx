@@ -13,7 +13,8 @@ import { Bar, Line, Doughnut } from "react-chartjs-2";
 import { Card, CardContent } from "@/components/ui/card";
 import { useBillingOverview } from "@/hooks/useClients";
 import { useProjects } from "@/hooks/useProjectsRepos";
-import { getAllUsers } from "@/lib/firestoreUsers";
+import { getVisibleUsers } from "@/lib/firestoreUsers";
+import { useAuth } from "@/hooks/useAuth";
 import { formatMoney, formatMixed, type ClientBillingSummary } from "@/lib/billing";
 import type { Currency } from "@/lib/firestoreClients";
 import { BAR_COLORS } from "@/lib/colors";
@@ -49,11 +50,16 @@ const money = (n: number) => Math.round(n * 100) / 100;
 const colorAt = (i: number) => BAR_COLORS[i % BAR_COLORS.length];
 
 export function SaasAnalytics() {
-  const { overview, isLoading: cargandoCobro } = useBillingOverview();
+  // El panel se recorta a lo que el usuario administra: un administrador de
+  // empresa ve su propia cuenta, no la cartera completa. Los usuarios se piden
+  // con `getVisibleUsers` porque las reglas no le dejan barrer la colección
+  // entera: pedir todos le devolvía permission-denied y tumbaba la gráfica.
+  const { appUser } = useAuth();
+  const { overview, isLoading: cargandoCobro } = useBillingOverview(appUser);
   const { data: projects = [], isLoading: cargandoProyectos } = useProjects();
   const { data: users = [], isLoading: cargandoUsuarios } = useQuery({
-    queryKey: ["users-all"],
-    queryFn: getAllUsers,
+    queryKey: ["users-visible", appUser?.email ?? "anon"],
+    queryFn: () => getVisibleUsers(appUser),
     staleTime: 60_000,
   });
 

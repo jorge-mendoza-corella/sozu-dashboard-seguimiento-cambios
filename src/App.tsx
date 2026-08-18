@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { SUPERUSER_EMAIL, canAdminister } from "@/lib/firestoreUsers";
 import { setSessionGithubAuth } from "@/lib/github";
 import { AppLayout } from "@/components/AppLayout";
 import { GithubTokenGate } from "@/components/GithubTokenGate";
@@ -41,6 +41,8 @@ function AppRoutes() {
   // Contribuidores y Usuarios: solo el superusuario raíz (jorge.mendoza@sozu.com).
   // (Bloqueado también por URL directa.)
   const isRoot = appUser?.email === SUPERUSER_EMAIL;
+  const puedeAdministrar = canAdminister(appUser);
+  const esAdminGlobal = isRoot || appUser?.role === "superuser";
 
   // Gate obligatorio: sin API key de GitHub no se puede usar nada (root exento).
   if (appUser && !isRoot && !appUser.githubToken && !tokenJustSaved) {
@@ -59,11 +61,15 @@ function AppRoutes() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/resumen" element={<ResumenPage />} />
         <Route path="/contributors" element={isRoot ? <ContributorsPage /> : <Navigate to="/" replace />} />
-        <Route path="/users" element={isRoot ? <UsersPage /> : <Navigate to="/" replace />} />
-        {/* Negocio y configuración del SaaS: precios, datos fiscales y features
-            contratadas. Solo los administra el root (igual que Usuarios). */}
-        <Route path="/negocio" element={isRoot ? <NegocioPage /> : <Navigate to="/" replace />} />
-        <Route path="/configuracion" element={isRoot ? <ConfiguracionPage /> : <Navigate to="/" replace />} />
+        {/* Usuarios, Negocio y Configuración las abre cualquier administrador:
+            el global ve todo el servicio y el de empresa solo sus clientes
+            (cada pantalla se recorta sola con `useClientScope`). Las reglas de
+            Firestore repiten el corte, así que esconder no es la única defensa. */}
+        <Route path="/users" element={puedeAdministrar ? <UsersPage /> : <Navigate to="/" replace />} />
+        {/* Negocio expone tarifas y datos fiscales de toda la cartera: es del
+            admin global, no del administrador de empresa. */}
+        <Route path="/negocio" element={esAdminGlobal ? <NegocioPage /> : <Navigate to="/" replace />} />
+        <Route path="/configuracion" element={puedeAdministrar ? <ConfiguracionPage /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppLayout>

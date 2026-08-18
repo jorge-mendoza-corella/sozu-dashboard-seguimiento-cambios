@@ -51,9 +51,9 @@ export function PricingFeaturesSection() {
   const qc = useQueryClient();
   // Las tarifas viven en el doc privado del cliente: esta pantalla necesita la
   // lectura de administración, no la pública de la navegación.
-  const { data: clients = [], isLoading: cargandoClientes } = useClientsBilling();
+  const { data: clients = [], isLoading: cargandoClientes } = useClientsBilling(appUser);
   const { data: settings = DEFAULT_BILLING_SETTINGS } = useBillingSettings();
-  const { overview } = useBillingOverview();
+  const { overview } = useBillingOverview(appUser);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");

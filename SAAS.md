@@ -62,6 +62,54 @@ apagar el deploy de todos por un fetch lento sería peor que dejarlo pasar.
 > pueda hacer valer, publicar tiene que pasar por una función de servidor que lea
 > `clients/{id}/private/billing` con cuenta de servicio.
 
+## Roles
+
+| Rol | Qué manda |
+| --- | --- |
+| Superusuario raíz (`jorge.mendoza@sozu.com`) | todo, y es el único que crea clientes, mueve tarifas y toca datos fiscales |
+| `superuser` — Administrador global | ve y opera todo el servicio |
+| `client_admin` — Administrador de empresa | sus empresas (`clientIds`): proyectos, repos, viewers y notificaciones. No ve otras empresas |
+| `viewer` | los proyectos que se le asignen (`projectIds`) |
+
+Un `client_admin` ve **todos** los proyectos de sus empresas, sin necesidad de
+listarlos en `projectIds`: son suyos por pertenecer a la empresa. El recorte de
+pantallas sale de `useClientScope`, y las reglas de Firestore repiten el mismo
+corte para que esconder no sea la única defensa:
+
+- Crea, edita y borra **solo viewers** de sus empresas (`administraTodas` exige
+  que las dos puntas del cambio —la empresa que tenía y la que queda— sean suyas).
+- Escribe proyectos y repos de sus empresas, pero **no `monthlyPrice`**: ese
+  campo es lo que se le cobra a su propia empresa, así que solo lo mueve el root.
+- Lee y escribe `clients/{id}/private/notifications`, y nada más de la
+  subcolección privada de otros clientes.
+
+> Cuidado con `hasOnly` en las reglas: `[].hasOnly([])` es verdadero, así que
+> toda comprobación exige además que ambas listas traigan algo. Sin ese guardia,
+> cualquier usuario autenticado podía escribir los docs legacy sin empresa.
+
+## Notificaciones de WhatsApp
+
+Los avisos de PR y de deploy salen por un webhook de n8n. Antes había una sola
+instancia y una sola apikey escritas en el YAML: todas las empresas compartían
+número. Ahora se configura por empresa, con la misma cascada que los precios —lo
+que la empresa tenga puesto gana, lo que deje vacío se hereda del global:
+
+| Ruta | Contenido |
+| --- | --- |
+| `settings/notifications` | instancia, webhook, teléfono admin y `enabled` por defecto |
+| `secrets/whatsapp` | apikey por defecto (`allow read: if false`) |
+| `clients/{id}/private/notifications` | lo mismo, para esa empresa |
+| `clients/{id}/private/whatsappSecret` | apikey de la empresa (no la lee nadie desde el navegador) |
+
+Los workflows resuelven la empresa desde el repo:
+`repos/{owner}__{repo}.projectId` → `projects/{id}.clientId` → config del cliente.
+Si el repo no está dado de alta o su proyecto no tiene cliente, usan el default
+global y lo dicen en el log: un repo sin asignar sigue notificando como antes.
+
+Los teléfonos de los contribuidores no viven aquí: siguen en
+`contributors/{login}.telefonoWhatsapp`. Lo que se configura por empresa es la
+instancia, el webhook, la apikey y el número que recibe los avisos administrativos.
+
 ## Colecciones nuevas en Firestore
 
 | Ruta | Contenido | Reglas |

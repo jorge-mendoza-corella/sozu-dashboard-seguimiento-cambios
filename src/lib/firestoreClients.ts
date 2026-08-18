@@ -3,6 +3,11 @@ import {
   doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs, serverTimestamp,
   query, where, deleteField,
 } from "firebase/firestore";
+import { SUPERUSER_EMAIL, type AppUser } from "./firestoreUsers";
+
+/** Admin global: el root y cualquier `superuser`. Son los que ven todo. */
+const esAdminGlobalUser = (u: AppUser | null) =>
+  !!u && (u.email === SUPERUSER_EMAIL || u.role === "superuser");
 
 // ---------------------------------------------------------------------------
 // Clientes del SaaS: la empresa o persona que paga el servicio. Un cliente
@@ -138,15 +143,38 @@ interface ClientPrivate {
 
 // --- CRUD -------------------------------------------------------------------
 
+const ordenar = (cs: Client[]) =>
+  cs.sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || a.legalName.localeCompare(b.legalName));
+
 /**
- * Identidad y features de los clientes, sin datos fiscales ni tarifas. Es la
- * lectura que hace toda la app (incluido `AppLayout` en cada página).
+ * Identidad y features de TODOS los clientes. Barrer la colección solo se lo
+ * permiten las reglas a un admin global; el resto usa `getClientsFor`.
  */
 export async function getClients(): Promise<Client[]> {
   const snap = await getDocs(collection(db, "clients"));
-  return snap.docs
-    .map((d) => ({ id: d.id, ...(d.data() as Omit<Client, "id">) }))
-    .sort((a, b) => (a.order ?? 1e9) - (b.order ?? 1e9) || a.legalName.localeCompare(b.legalName));
+  return ordenar(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Client, "id">) })));
+}
+
+/**
+ * Los clientes que este usuario puede leer.
+ *
+ * Un admin global barre la colección. Los demás solo pueden leer las empresas a
+ * las que pertenecen, y además **de una en una**: las reglas acotan la lectura
+ * por documento, y una consulta de colección que el motor no puede demostrar se
+ * deniega entera. Por eso aquí se piden por id en lugar de filtrar en memoria.
+ */
+export async function getClientsFor(user: AppUser | null): Promise<Client[]> {
+  if (esAdminGlobalUser(user)) return getClients();
+  const ids = user?.clientIds ?? [];
+  if (ids.length === 0) return []; // legacy sin empresa: no puede leer ninguna
+  const docs = await Promise.all(
+    ids.map((id) => getDoc(doc(db, "clients", id)).catch(() => null)),
+  );
+  return ordenar(
+    docs
+      .filter((d): d is NonNullable<typeof d> => !!d && d.exists())
+      .map((d) => ({ id: d.id, ...(d.data() as Omit<Client, "id">) })),
+  );
 }
 
 /**
@@ -156,8 +184,8 @@ export async function getClients(): Promise<Client[]> {
  * Si las reglas niegan el doc privado, ese cliente queda sin fiscal ni billing
  * en lugar de tumbar la pantalla completa.
  */
-export async function getClientsWithBilling(): Promise<Client[]> {
-  const base = await getClients();
+export async function getClientsWithBilling(user: AppUser | null = null): Promise<Client[]> {
+  const base = user ? await getClientsFor(user) : await getClients();
   return Promise.all(
     base.map(async (c) => {
       try {

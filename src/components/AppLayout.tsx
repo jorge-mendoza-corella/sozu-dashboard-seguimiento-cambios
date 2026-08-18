@@ -6,19 +6,25 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useAvancesAccess, AVANCES_URL_DEFAULT } from "@/hooks/useClients";
-import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { SUPERUSER_EMAIL, canAdminister } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
 import { AvancesDraftBadge } from "@/components/AvancesDraftBadge";
 import { BuildNotifier } from "@/components/codemagic/BuildNotifier";
 
-// `show(role, isRoot)` decide la visibilidad de cada item en el nav.
+// Cada item dice quién lo ve: el root, cualquier administrador (global o de
+// empresa), o todo el mundo. Las rutas repiten el corte en App.tsx.
+interface NavVisibility { root: boolean; admin: boolean; adminGlobal: boolean }
+
 const NAV_ITEMS = [
   { to: "/resumen", label: "Resumen", icon: LayoutDashboard, show: () => true },
   { to: "/", label: "CI/CD", icon: GitBranch, show: () => true },
-  { to: "/negocio", label: "Negocio", icon: TrendingUp, show: (_r: string | undefined, root: boolean) => root },
-  { to: "/contributors", label: "Contribuidores", icon: GitCommit, show: (_r: string | undefined, root: boolean) => root },
-  { to: "/users", label: "Usuarios", icon: Users, show: (_r: string | undefined, root: boolean) => root },
-  { to: "/configuracion", label: "Configuración", icon: Settings, show: (_r: string | undefined, root: boolean) => root },
+  // Negocio son las tarifas y los datos fiscales de la cartera: solo admin
+  // global. Un administrador de empresa no ve ni lo suyo aquí — las reglas ni
+  // siquiera le dejan leer su `private/billing`.
+  { to: "/negocio", label: "Negocio", icon: TrendingUp, show: (v: NavVisibility) => v.adminGlobal },
+  { to: "/contributors", label: "Contribuidores", icon: GitCommit, show: (v: NavVisibility) => v.root },
+  { to: "/users", label: "Usuarios", icon: Users, show: (v: NavVisibility) => v.admin },
+  { to: "/configuracion", label: "Configuración", icon: Settings, show: (v: NavVisibility) => v.admin },
 ];
 
 interface Props { children: React.ReactNode }
@@ -27,7 +33,13 @@ export function AppLayout({ children }: Props) {
   const { appUser, logout } = useAuth();
   const { pathname } = useLocation();
   const isRoot = appUser?.email === SUPERUSER_EMAIL;
-  const navItems = NAV_ITEMS.filter((i) => i.show(appUser?.role, isRoot));
+  const navItems = NAV_ITEMS.filter((i) =>
+    i.show({
+      root: isRoot,
+      admin: canAdminister(appUser),
+      adminGlobal: isRoot || appUser?.role === "superuser",
+    }),
+  );
   // Ver avances es una feature que se contrata por cliente: si ninguno de los
   // clientes del usuario la tiene prendida, el link no aparece.
   const avances = useAvancesAccess(appUser);

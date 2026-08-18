@@ -15,6 +15,47 @@ service cloud.firestore {
         && request.auth.token.firebase.sign_in_provider == 'google.com';
     }
 
+    // Perfil del usuario que hace la petición (rol y empresas asignadas).
+    function perfil() {
+      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data;
+    }
+    function esSuperuser() {
+      return request.auth != null && perfil().role == 'superuser';
+    }
+    // Administrador de UNA empresa: manda dentro de sus clientes y de nadie más.
+    function administraCliente(clientId) {
+      return request.auth != null
+        && perfil().role == 'client_admin'
+        && perfil().clientIds is list
+        && perfil().clientIds.hasAny([clientId]);
+    }
+    // Empresas que administra quien pide (lista vacía si no es admin de empresa).
+    function misEmpresas() {
+      return request.auth != null && perfil().role == 'client_admin' && perfil().clientIds is list
+        ? perfil().clientIds : [];
+    }
+
+    // ¿Todas las empresas de `lista` son suyas? Las dos listas tienen que traer
+    // algo: `[].hasOnly([])` es verdadero, y sin este guardia cualquier usuario
+    // autenticado podría escribir los docs legacy que no tienen empresa.
+    //
+    // `let` para leer el perfil UNA vez: cada llamada a misEmpresas() es un
+    // get(), y una regla tiene tope de 10 accesos por petición.
+    function administraTodas(lista) {
+      let mias = misEmpresas();
+      return mias.size() > 0
+        && lista is list
+        && lista.size() > 0
+        && lista.hasOnly(mias);
+    }
+
+    // ¿El usuario pertenece a esa empresa? (empleado o administrador de ella)
+    function perteneceA(clientId) {
+      return request.auth != null
+        && perfil().clientIds is list
+        && perfil().clientIds.hasAny([clientId]);
+    }
+
     match /users/{email} {
       // Self-read
       allow read: if request.auth != null && request.auth.token.email == email;
@@ -23,9 +64,32 @@ service cloud.firestore {
       allow read: if request.auth != null
         && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'superuser';
 
+      // Un administrador de empresa ve a la gente de SUS empresas (y solo a esa).
+      allow read: if request.auth != null
+        && resource.data.clientIds is list
+        && resource.data.clientIds.hasAny(misEmpresas());
+
       // Solo el superusuario raíz (jorge) gestiona accesos (no puede tocar su propio doc raíz)
       allow write: if request.auth != null
         && request.auth.token.email == 'jorge.mendoza@sozu.com'
+        && email != 'jorge.mendoza@sozu.com';
+
+      // El administrador de empresa da de alta y baja a los VIEWERS de sus
+      // empresas. No puede crear ni tocar administradores —ni ascender a nadie,
+      // porque el rol resultante tiene que ser 'viewer'— ni sacar a un usuario
+      // de su empresa hacia otra: `hasOnly` acota las dos puntas del cambio.
+      allow create: if request.resource.data.role == 'viewer'
+        && administraTodas(request.resource.data.clientIds)
+        && email != 'jorge.mendoza@sozu.com';
+
+      allow update: if resource.data.role == 'viewer'
+        && administraTodas(resource.data.clientIds)
+        && request.resource.data.role == 'viewer'
+        && administraTodas(request.resource.data.clientIds)
+        && email != 'jorge.mendoza@sozu.com';
+
+      allow delete: if resource.data.role == 'viewer'
+        && administraTodas(resource.data.clientIds)
         && email != 'jorge.mendoza@sozu.com';
 
       // Cada usuario puede registrar/actualizar SU propia API key de GitHub
@@ -42,11 +106,16 @@ service cloud.firestore {
         && request.resource.data.role == 'superuser';
     }
 
-    // Teléfonos de WhatsApp de contribuidores de GitHub.
-    // Cualquier usuario autenticado (registrado en /users) puede leer y escribir.
+    // Teléfonos de WhatsApp de contribuidores de GitHub. Los lee cualquier
+    // usuario registrado (el dashboard los muestra y los manda al build), pero
+    // escribirlos quedó restringido al root: con la escritura abierta, cualquier
+    // usuario podía apuntar el teléfono de un contribuidor ajeno al suyo y
+    // desviarse los avisos de los PRs de otra empresa. La pantalla que los edita
+    // (Contribuidores) ya era exclusiva del root.
     match /contributors/{login} {
-      allow read, write: if request.auth != null
+      allow read: if request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if esRootVerificado();
     }
 
     // Estado de los tracks de Google Play por package. Solo lo escribe el
@@ -99,14 +168,33 @@ service cloud.firestore {
     // estuvieran en el doc raíz, el RFC y los precios de todos los clientes
     // bajarían al navegador de cualquier viewer.
     match /clients/{id} {
-      allow read: if request.auth != null
-        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      // Solo lo ve quien tiene algo que ver con esa empresa: un admin global, su
+      // administrador, o alguien que pertenece a ella (la navegación necesita su
+      // link de avances). Dejarlo abierto a cualquier usuario registrado exponía
+      // la razón social, el contacto y los precios de features de TODOS los
+      // clientes a cualquiera con consola del navegador.
+      //
+      // Un usuario legacy sin `clientIds` deja de leer la colección: los hooks
+      // fallan abierto (conservan el acceso previo con la URL default), así que
+      // no se le rompe nada.
+      allow read: if esSuperuser() || administraCliente(id) || perteneceA(id);
       allow write: if esRootVerificado();
 
+      // Datos fiscales, tarifas y configuración de notificaciones de la empresa.
+      // Los lee un superuser, o el administrador de ESA empresa. `whatsappSecret`
+      // no lo lee nadie desde el navegador: es la apikey del webhook, y solo la
+      // consumen los workflows con cuenta de servicio (que ignoran estas reglas).
       match /private/{docId} {
-        allow read: if request.auth != null
-          && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'superuser';
-        allow write: if esRootVerificado();
+        // El administrador de empresa lee SOLO sus notificaciones. Las tarifas y
+        // los datos fiscales son del dueño del SaaS: la pantalla se lo dice, y
+        // la regla lo respalda en vez de dejarlo como promesa de la interfaz.
+        allow read: if docId != 'whatsappSecret'
+          && (esSuperuser() || (administraCliente(id) && docId == 'notifications'));
+
+        // El root toca todo lo del cliente. El administrador de empresa solo
+        // sus notificaciones: precios y datos fiscales son del dueño del SaaS.
+        allow write: if esRootVerificado()
+          || (administraCliente(id) && (docId == 'notifications' || docId == 'whatsappSecret'));
       }
     }
 
@@ -138,17 +226,47 @@ service cloud.firestore {
 
     // Proyectos y repositorios monitoreados.
     // Lectura: cualquier usuario registrado. Escritura: solo superusers (admins).
+    // El administrador de empresa manda dentro de SUS proyectos: puede crearlos,
+    // renombrarlos y configurarlos. Lo que no puede es mover un proyecto a otra
+    // empresa (ni traérselo): en un update las dos puntas —la empresa que tenía
+    // y la que queda— tienen que ser suyas.
     match /projects/{id} {
       allow read: if request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
       allow write: if request.auth != null
         && request.auth.token.email == 'jorge.mendoza@sozu.com';
+
+      allow create: if administraCliente(request.resource.data.clientId);
+      allow update: if administraCliente(resource.data.clientId)
+        && administraCliente(request.resource.data.clientId);
+      allow delete: if administraCliente(resource.data.clientId);
     }
     match /repos/{id} {
       allow read: if request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
       allow write: if request.auth != null
         && request.auth.token.email == 'jorge.mendoza@sozu.com';
+
+      // El repo hereda la empresa de su proyecto, así que hay que ir a buscarla.
+      // Un repo sin proyecto válido no lo escribe nadie más que el root.
+      //
+      // `monthlyPrice` queda fuera de su alcance a propósito: el precio del repo
+      // es lo que se le cobra a esa misma empresa, y su administrador se lo
+      // pondría en cero. Ese campo solo lo mueve el root.
+      allow create: if administraCliente(
+          get(/databases/$(database)/documents/projects/$(request.resource.data.projectId)).data.clientId)
+        && !('monthlyPrice' in request.resource.data);
+      allow update: if administraCliente(
+          get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.clientId)
+        && administraCliente(
+          get(/databases/$(database)/documents/projects/$(request.resource.data.projectId)).data.clientId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['monthlyPrice']);
+      // Y tampoco puede borrar un repo que TENGA precio propio: borrarlo y
+      // recrearlo con el mismo id (que es determinista, `owner__repo`) era la
+      // forma de tirar el `monthlyPrice` y caer al default, más barato.
+      allow delete: if administraCliente(
+          get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.clientId)
+        && !('monthlyPrice' in resource.data);
     }
 
     // Mapeo Anthropic account_id → GitHub login (para costos por contribuidor).

@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjects, useRepos, useAccessibleRepoIds } from "@/hooks/useProjectsRepos";
-import { useClients } from "@/hooks/useClients";
+import { useClients, useClientScope } from "@/hooks/useClients";
 import { clientDisplayName } from "@/lib/firestoreClients";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { hasFailingDeploy, type RepoRef, type RepoStatus } from "@/lib/github";
@@ -32,11 +32,11 @@ export function ResumenPage() {
   const perms = resolvePermissions(appUser);
   const navigate = useNavigate();
 
-  const { data: allProjects = [], isLoading: loadingProjects } = useProjects();
+  const { isLoading: loadingProjects } = useProjects();
   const { data: allRepos = [], isLoading: loadingRepos } = useRepos();
   // Nombre del cliente dueño de cada proyecto, para ubicarlo de un vistazo
   // cuando el dashboard atiende a varias empresas.
-  const { data: clients = [] } = useClients();
+  const { data: clients = [] } = useClients(appUser);
   const clientById = useMemo(
     () => new Map(clients.map((c) => [c.id, clientDisplayName(c)])),
     [clients],
@@ -55,13 +55,9 @@ export function ResumenPage() {
     return allRepos.filter((r) => ok.has(r.id));
   }, [allRepos, accessibleIds, isRoot, appUser?.githubToken]);
 
-  // Proyectos visibles según acceso del usuario.
-  const projects = useMemo(() => {
-    if (isRoot) return allProjects;
-    const ids = appUser?.projectIds;
-    if (!ids || ids.length === 0) return allProjects;
-    return allProjects.filter((p) => ids.includes(p.id));
-  }, [allProjects, isRoot, appUser?.projectIds]);
+  // Proyectos visibles: mismo criterio que CI/CD — el administrador de empresa
+  // ve los de sus empresas, el viewer los que tenga asignados.
+  const { visibleProjects: projects } = useClientScope(appUser);
 
   const repoRefs: RepoRef[] = useMemo(
     () => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })),

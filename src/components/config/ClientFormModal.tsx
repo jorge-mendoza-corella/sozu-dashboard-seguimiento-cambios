@@ -100,9 +100,10 @@ const STATUS_LABEL: Record<ClientStatus, string> = {
 };
 
 export function ClientFormModal({ clientId, onClose }: { clientId: string | null; onClose: () => void }) {
+  const { appUser } = useAuth();
   // El formulario de edición se siembra con los datos fiscales, que viven en el
   // doc privado del cliente: hay que leerlos con la query de billing.
-  const { data: clients = [], isLoading } = useClientsBilling();
+  const { data: clients = [], isLoading } = useClientsBilling(appUser);
   const client = clientId ? clients.find((c) => c.id === clientId) : undefined;
 
   // Al editar hay que esperar el cliente antes de sembrar el estado local: si

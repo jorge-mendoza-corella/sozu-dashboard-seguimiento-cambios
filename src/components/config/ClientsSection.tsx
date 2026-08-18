@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SelectNative } from "@/components/ui/select-native";
+import { useAuth } from "@/hooks/useAuth";
 import { useClientsBilling } from "@/hooks/useClients";
 import { useProjects } from "@/hooks/useProjectsRepos";
 import { isFacturable } from "@/lib/billing";
@@ -29,9 +30,10 @@ const STATUS_VARIANT: Record<ClientStatus, "success" | "destructive" | "secondar
 
 export function ClientsSection() {
   const qc = useQueryClient();
+  const { appUser } = useAuth();
   // Los datos fiscales viven en el doc privado del cliente, así que el badge
   // "Sin datos fiscales" necesita la lectura con billing (solo superusers).
-  const { data: clients = [], isLoading } = useClientsBilling();
+  const { data: clients = [], isLoading } = useClientsBilling(appUser);
   const { data: projects = [] } = useProjects();
 
   const [busy, setBusy] = useState<string | null>(null);

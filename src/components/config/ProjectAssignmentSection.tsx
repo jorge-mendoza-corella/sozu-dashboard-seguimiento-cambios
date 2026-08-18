@@ -269,11 +269,11 @@ export function ProjectAssignmentSection() {
   const qc = useQueryClient();
   // Las tarifas viven en el doc privado del cliente, así que aquí hace falta la
   // lectura de administración y no la pública de la navegación.
-  const { data: clients = [], isLoading: cargandoClientes } = useClientsBilling();
+  const { data: clients = [], isLoading: cargandoClientes } = useClientsBilling(appUser);
   const { data: projects = [], isLoading: cargandoProyectos } = useProjects();
   const { data: repos = [], isLoading: cargandoRepos } = useRepos();
   const { data: settings = DEFAULT_BILLING_SETTINGS, isLoading: cargandoSettings } = useBillingSettings();
-  const { overview } = useBillingOverview();
+  const { overview } = useBillingOverview(appUser);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");

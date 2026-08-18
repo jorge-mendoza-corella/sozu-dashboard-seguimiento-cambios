@@ -1,4 +1,5 @@
 import { addClient, getClients, setClientFeatures, type Client } from "./firestoreClients";
+import { seedGlobalWhatsappDefaults } from "./notificationSettings";
 import { addProject, getProjects, renameProject, setProjectClient, setProjectIsApp } from "./firestoreProjects";
 
 // ---------------------------------------------------------------------------
@@ -26,6 +27,8 @@ export interface SeedReport {
   proyectosCreados: string[];
   proyectosRenombrados: string[];
   proyectosAsignados: string[];
+  /** Se llenó la config global de WhatsApp con los valores que traía el CI. */
+  notificacionesSembradas: boolean;
 }
 
 const norm = (s: string) => s.trim().toLowerCase();
@@ -36,7 +39,13 @@ export async function seedSaasStructure(email: string): Promise<SeedReport> {
     proyectosCreados: [],
     proyectosRenombrados: [],
     proyectosAsignados: [],
+    notificacionesSembradas: false,
   };
+
+  // Las notificaciones de WhatsApp dejaron de estar cableadas en el YAML: si la
+  // config global queda vacía, los workflows fallan por falta de webhook. Se
+  // siembran los valores que ya usaban (la apikey sigue capturándose a mano).
+  report.notificacionesSembradas = await seedGlobalWhatsappDefaults(email);
 
   // --- Clientes -------------------------------------------------------------
   let clientes = await getClients();
