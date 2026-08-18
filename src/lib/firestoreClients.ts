@@ -4,6 +4,7 @@ import {
   query, where, deleteField,
 } from "firebase/firestore";
 import { SUPERUSER_EMAIL, type AppUser } from "./firestoreUsers";
+import type { ClientBranding } from "./branding";
 
 /** Admin global: el root y cualquier `superuser`. Son los que ven todo. */
 const esAdminGlobalUser = (u: AppUser | null) =>
@@ -117,6 +118,10 @@ export interface Client {
   billing?: ClientBilling;
   features?: ClientFeatures;
   facturapiCustomerId?: string; // se llena cuando se sincroniza con Facturapi (fase 2)
+  // Marca con la que esa empresa ve la herramienta (white label). Vive en el doc
+  // raíz porque la necesita cualquiera que pertenezca a la empresa, y no hay
+  // nada secreto en un logo.
+  branding?: ClientBranding;
   createdBy: string;
   createdAt: unknown;
   updatedAt?: unknown;

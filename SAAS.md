@@ -87,6 +87,34 @@ corte para que esconder no sea la única defensa:
 > toda comprobación exige además que ambas listas traigan algo. Sin ese guardia,
 > cualquier usuario autenticado podía escribir los docs legacy sin empresa.
 
+## White label
+
+Cada empresa ve la herramienta con su marca: nombre del producto, logo, favicon,
+color y una frase. Vive en `clients/{id}.branding` —doc raíz, porque lo necesita
+cualquiera que pertenezca a la empresa, y un logo no es secreto— y lo edita el
+root o el administrador de esa empresa (las reglas le permiten esa llave y nada
+más del documento, con `hasOnly(['branding'])`).
+
+El color se aplica pisando las variables de shadcn (`--primary`, `--ring`) en el
+elemento raíz, así que tiñe toda la interfaz sin tocar un componente. El texto
+sobre el color se calcula por luminancia (WCAG): con una marca clara, el blanco
+de siempre sería ilegible.
+
+`resolveBranding` aplica la marca **solo cuando el usuario ve una única empresa
+con marca**. Quien administra varias —o el equipo interno, que ve todas— se queda
+con la del proveedor: pintarle la marca de una haría creer que está viendo nada
+más esa cuenta.
+
+### El login, por dominio
+
+La pantalla de entrada no sabe quién está entrando, así que su marca no puede
+salir del usuario. El root la publica por dominio en `public_branding/{hostname}`
+y el login la lee sin sesión. Es la **única** colección con `allow read: if true`,
+y por eso solo lleva nombre, logo, color y el id del cliente.
+
+Sin doc para ese host, el login se queda con la marca del proveedor. Un cliente
+con su propio dominio apuntado al hosting ve su marca desde la puerta.
+
 ## Notificaciones de WhatsApp
 
 Los avisos de PR y de deploy salen por un webhook de n8n. Antes había una sola
@@ -114,7 +142,8 @@ instancia, el webhook, la apikey y el número que recibe los avisos administrati
 
 | Ruta | Contenido | Reglas |
 | --- | --- | --- |
-| `clients/{id}` | identidad y features contratadas | lee cualquier usuario registrado; escribe solo el root |
+| `clients/{id}` | identidad, features y marca | lo lee quien pertenece a esa empresa; escribe el root (su marca, también su administrador) |
+| `public_branding/{hostname}` | marca del login por dominio | **lectura pública**; escribe solo el root |
 | `clients/{id}/private/billing` | datos fiscales y tarifas | lee solo superusers; escribe solo el root |
 | `settings/billing` | defaults globales y metadatos de Facturapi | lee cualquier usuario registrado; escribe solo el root |
 | `secrets/facturapi` | la API key de Facturapi | `allow read: if false` — no se lee desde el navegador |

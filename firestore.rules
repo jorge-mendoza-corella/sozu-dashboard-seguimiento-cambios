@@ -49,6 +49,28 @@ service cloud.firestore {
         && lista.hasOnly(mias);
     }
 
+    // La marca la escribe el administrador de la empresa, así que su FORMA se
+    // valida aquí y no solo en el navegador: `hasOnly(['branding'])` acota la
+    // llave, pero no el valor. Un `appName` numérico reventaba el render de todo
+    // ese tenant —y el del admin global, que pinta todas las empresas juntas—, y
+    // un logo embebido sin tope dejaba el doc en 1 MB, que se baja en cada página.
+    function marcaValida(data) {
+      return !('branding' in data) || (
+        data.branding is map
+        && (!('appName' in data.branding)
+            || (data.branding.appName is string && data.branding.appName.size() <= 40))
+        && (!('tagline' in data.branding)
+            || (data.branding.tagline is string && data.branding.tagline.size() <= 90))
+        && (!('logoUrl' in data.branding)
+            || (data.branding.logoUrl is string && data.branding.logoUrl.size() <= 204800))
+        && (!('faviconUrl' in data.branding)
+            || (data.branding.faviconUrl is string && data.branding.faviconUrl.size() <= 204800))
+        && (!('primaryColor' in data.branding)
+            || (data.branding.primaryColor is string && data.branding.primaryColor.size() <= 9))
+        && (!('hideVendorBrand' in data.branding) || data.branding.hideVendorBrand is bool)
+      );
+    }
+
     // ¿El usuario pertenece a esa empresa? (empleado o administrador de ella)
     function perteneceA(clientId) {
       return request.auth != null
@@ -158,6 +180,19 @@ service cloud.firestore {
       allow write: if esRootVerificado();
     }
 
+    // Marca por dominio, para pintar el login ANTES de que haya sesión: ahí no
+    // se sabe quién entra, así que la lectura tiene que ser abierta. Por eso el
+    // doc solo lleva nombre, logo, color y el id del cliente — nada sensible.
+    // La publica el root, que es quien sabe qué dominio es de qué empresa.
+    match /public_branding/{hostname} {
+      // `get` abierto —el login lo necesita sin sesión—, pero `list` cerrado: con
+      // el listado abierto, cualquiera desde fuera se llevaba la cartera completa
+      // de clientes (dominios, nombres, logos e ids) con un solo getDocs.
+      allow get: if true;
+      allow list: if false;
+      allow write: if esRootVerificado();
+    }
+
     // Clientes del SaaS (empresa o persona que paga). El doc raíz solo trae
     // identidad y features contratadas: eso lo lee cualquier usuario registrado
     // porque la navegación necesita el nombre del cliente y su link de avances,
@@ -178,7 +213,18 @@ service cloud.firestore {
       // fallan abierto (conservan el acceso previo con la URL default), así que
       // no se le rompe nada.
       allow read: if esSuperuser() || administraCliente(id) || perteneceA(id);
-      allow write: if esRootVerificado();
+      // create/update por separado del delete: en un borrado `request.resource`
+      // no existe, y validar su forma habría hecho fallar el borrado de clientes.
+      allow create, update: if esRootVerificado() && marcaValida(request.resource.data);
+      allow delete: if esRootVerificado();
+
+      // White label: el administrador de una empresa maneja SU marca (nombre,
+      // logo, color), y el admin global la de cualquiera. Solo esa llave del
+      // documento —con `hasOnly` no se cuela de paso un cambio de estatus, de
+      // features o de razón social— y con la forma validada.
+      allow update: if (administraCliente(id) || esSuperuser())
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['branding'])
+        && marcaValida(request.resource.data);
 
       // Datos fiscales, tarifas y configuración de notificaciones de la empresa.
       // Los lee un superuser, o el administrador de ESA empresa. `whatsappSecret`

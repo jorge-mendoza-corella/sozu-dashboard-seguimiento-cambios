@@ -1,21 +1,46 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
+import { usePublicBranding, useApplyBranding } from "@/hooks/useBranding";
+import { VENDOR_BRANDING } from "@/lib/branding";
 import { Activity } from "lucide-react";
 
 export function LoginPage() {
   const { login, status } = useAuth();
+  // Aquí todavía no hay sesión, así que no se sabe de qué empresa es quien
+  // entra: la marca se resuelve por el dominio del que se abrió el dashboard.
+  const { data: marca, isLoading } = usePublicBranding();
+  // Mientras la consulta va, no se pinta la marca del proveedor para no
+  // parpadear; los contenedores mantienen su alto y el layout no salta.
+  const appName = marca?.appName ?? (isLoading ? "" : VENDOR_BRANDING.appName);
+  const tagline = marca ? marca.tagline : isLoading ? "" : VENDOR_BRANDING.tagline;
+  const logoUrl = marca?.logoUrl;
+  const [logoRoto, setLogoRoto] = useState(false);
+  useApplyBranding({ appName, primaryColor: marca?.primaryColor, faviconUrl: logoUrl });
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 p-4">
       <Card className="w-full max-w-sm shadow-2xl">
         <CardHeader className="text-center pb-2">
-          <div className="flex justify-center mb-4">
-            <div className="rounded-full bg-primary/10 p-4">
-              <Activity className="h-10 w-10 text-primary" />
-            </div>
+          <div className="flex min-h-[72px] items-center justify-center mb-4">
+            {logoUrl && !logoRoto ? (
+              <img
+                src={logoUrl}
+                alt={appName}
+                className="max-h-[72px] max-w-[200px] object-contain"
+                // Un logo que ya no responde no debe dejar el login sin imagen:
+                // al fallar se vuelve al icono de siempre.
+                onError={() => setLogoRoto(true)}
+              />
+            ) : (
+              <div className="rounded-full bg-primary/10 p-4">
+                <Activity className="h-10 w-10 text-primary" />
+              </div>
+            )}
           </div>
-          <CardTitle className="text-2xl">SOZU Dashboard</CardTitle>
-          <p className="text-sm text-muted-foreground pt-1">Seguimiento de cambios y CI/CD</p>
+          <CardTitle className="text-2xl min-h-8">{appName}</CardTitle>
+          <p className="text-sm text-muted-foreground pt-1 min-h-5">{tagline}</p>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 pt-4">
           {status === "unauthorized" && (

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Settings, Building2, FolderTree, Receipt, Coins, Sparkles, Loader2, MessageSquare,
+  Settings, Building2, FolderTree, Receipt, Coins, Sparkles, Loader2, MessageSquare, Palette,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,18 +14,21 @@ import { ProjectAssignmentSection } from "@/components/config/ProjectAssignmentS
 import { PricingFeaturesSection } from "@/components/config/PricingFeaturesSection";
 import { FacturapiSection } from "@/components/config/FacturapiSection";
 import { NotificationsSection } from "@/components/config/NotificationsSection";
+import { BrandingSection } from "@/components/config/BrandingSection";
 import { useClientScope } from "@/hooks/useClients";
 
 /**
  * `soloGlobal` marca lo que es del dueño del SaaS: dar de alta clientes, mover
  * tarifas y facturar. Un administrador de empresa entra a esta pantalla, pero
- * solo a lo suyo — hoy, las notificaciones de sus empresas.
+ * solo a lo suyo: los avisos de sus empresas y la marca con la que las ve.
  */
 const TABS = [
   { value: "clientes", label: "Clientes", icon: Building2, soloGlobal: true },
   { value: "estructura", label: "Proyectos y repos", icon: FolderTree, soloGlobal: true },
   { value: "precios", label: "Precios y features", icon: Coins, soloGlobal: true },
   { value: "notificaciones", label: "Notificaciones", icon: MessageSquare, soloGlobal: false },
+  // La marca es de la empresa: su administrador la maneja igual que sus avisos.
+  { value: "marca", label: "Marca", icon: Palette, soloGlobal: false },
   { value: "facturacion", label: "Facturación", icon: Receipt, soloGlobal: true },
 ] as const;
 
@@ -90,6 +93,9 @@ export function ConfiguracionPage() {
         )}
         <TabsContent value="notificaciones">
           <NotificationsSection />
+        </TabsContent>
+        <TabsContent value="marca">
+          <BrandingSection />
         </TabsContent>
       </Tabs>
     </div>

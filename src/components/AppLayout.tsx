@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Activity, GitBranch, Users, GitCommit, LogOut, LayoutDashboard, HardHat, ExternalLink,
@@ -5,6 +6,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { useBranding, useApplyBranding } from "@/hooks/useBranding";
+import { VENDOR_BRANDING } from "@/lib/branding";
 import { useAvancesAccess, AVANCES_URL_DEFAULT } from "@/hooks/useClients";
 import { SUPERUSER_EMAIL, canAdminister } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
@@ -40,6 +43,14 @@ export function AppLayout({ children }: Props) {
       adminGlobal: isRoot || appUser?.role === "superuser",
     }),
   );
+  // Marca de la empresa del usuario (o la del proveedor): tiñe la interfaz,
+  // el título de la pestaña y el favicon.
+  const branding = useBranding(appUser);
+  useApplyBranding(branding);
+  const [logoRoto, setLogoRoto] = useState(false);
+  // La firma del proveedor solo aparece cuando la marca es de una empresa y esa
+  // empresa no pidió esconderla.
+  const muestraFirmaProveedor = branding.clientId !== null && !branding.hideVendorBrand;
   // Ver avances es una feature que se contrata por cliente: si ninguno de los
   // clientes del usuario la tiene prendida, el link no aparece.
   const avances = useAvancesAccess(appUser);
@@ -54,8 +65,19 @@ export function AppLayout({ children }: Props) {
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
         <div className="flex h-14 items-center gap-4 px-6">
           <Link to="/" className="flex items-center gap-2 font-bold text-primary no-underline">
-            <Activity className="h-5 w-5" />
-            SOZU Tracker
+            {branding.logoUrl && !logoRoto ? (
+              <img
+                src={branding.logoUrl}
+                alt={branding.appName}
+                className="h-6 max-w-[140px] object-contain"
+                // Un logo cuya URL ya no existe dejaría la barra sin identidad:
+                // si la imagen falla se vuelve al icono de siempre.
+                onError={() => setLogoRoto(true)}
+              />
+            ) : (
+              <Activity className="h-5 w-5" />
+            )}
+            {branding.appName}
           </Link>
           <nav className="flex items-center gap-1 ml-2">
             {navItems.map(({ to, label, icon: Icon }) => (
@@ -107,9 +129,10 @@ export function AppLayout({ children }: Props) {
       </header>
       <main className="flex-1">{children}</main>
       {/* En móvil el header va justo de espacio y esconde versión y correo:
-          se muestran al pie, que ahí no compiten con la navegación. */}
-      <footer className="border-t px-6 py-3 md:hidden">
-        <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-center text-[10px] text-muted-foreground/70">
+          se muestran al pie, que ahí no compiten con la navegación. Con marca de
+          empresa el pie se ve siempre, porque ahí va la firma del proveedor. */}
+      <footer className={cn("border-t px-6 py-3", !muestraFirmaProveedor && "md:hidden")}>
+        <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-center text-[10px] text-muted-foreground/70 md:hidden">
           <span className="font-mono" title="Versión desplegada (se genera en cada deploy)">
             v{__APP_BUILD__}
           </span>
@@ -120,6 +143,11 @@ export function AppLayout({ children }: Props) {
             </>
           )}
         </p>
+        {muestraFirmaProveedor && (
+          <p className="text-center text-[10px] text-muted-foreground/70">
+            operado con {VENDOR_BRANDING.appName}
+          </p>
+        )}
       </footer>
       {/* Avisos de builds y publicaciones de apps, en cualquier pestaña. */}
       <BuildNotifier />
