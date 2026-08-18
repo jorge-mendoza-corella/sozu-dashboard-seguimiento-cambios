@@ -171,6 +171,24 @@ Los workflows resuelven la empresa desde el repo:
 Si el repo no está dado de alta o su proyecto no tiene cliente, usan el default
 global y lo dicen en el log: un repo sin asignar sigue notificando como antes.
 
+### Fin de build (Android e iOS)
+
+El aviso de "tu build terminó" dependía del `codemagic.yaml` de cada repo de app:
+el dashboard le inyectaba `WA_PHONE` y el propio workflow mandaba el mensaje al
+final. Eso dejaba fuera justo el caso que importa —el build que revienta antes de
+llegar a ese paso—, y un build de iOS falló sin avisarle a nadie.
+
+Ahora avisa `ci/codemagic_builds_notify.py`, programado cada 5 minutos: le
+pregunta a Codemagic cómo terminó cada build y manda el WhatsApp él mismo, con
+éxito o con fallo, sin depender de que el build llegue vivo a ningún paso.
+
+Lo único que ese sync no puede deducir es quién lo disparó: el dashboard lo deja
+al lanzarlo en `buildNotifications/{buildId}`, que además sirve de marca de
+idempotencia. Desde el navegador ese doc solo se CREA — marcarlo como notificado
+es cosa del sync, porque si no cualquiera podría dar por avisado un fallo del que
+nadie se enteró. Un build lanzado desde Codemagic directo también avisa: sin doc
+previo, el sync lo crea y manda el mensaje al teléfono administrativo.
+
 Los teléfonos de los contribuidores no viven aquí: siguen en
 `contributors/{login}.telefonoWhatsapp`. Lo que se configura por empresa es la
 instancia, el webhook, la apikey y el número que recibe los avisos administrativos.

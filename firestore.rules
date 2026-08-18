@@ -140,6 +140,21 @@ service cloud.firestore {
       allow write: if esRootVerificado();
     }
 
+    // Builds disparados desde el dashboard, para avisar por WhatsApp cuando
+    // terminan. El navegador solo CREA el registro (a quién avisarle); quien lo
+    // marca como notificado es el sync con cuenta de servicio. Si desde aquí se
+    // pudiera actualizar, cualquiera marcaría como avisado un build del que no
+    // se avisó, y el fallo se perdería en silencio — que es justo el bug que
+    // este registro viene a arreglar.
+    match /buildNotifications/{buildId} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow create: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email))
+        && request.resource.data.notified == false;
+      allow update, delete: if false;
+    }
+
     // Estado de los tracks de Google Play por package. Solo lo escribe el
     // workflow programado (service account, que ignora estas reglas).
     match /playTracks/{pkg} {

@@ -16,6 +16,7 @@ import {
 } from "@/lib/codemagic";
 import { useAuth } from "@/hooks/useAuth";
 import { getAllContributorPhones } from "@/lib/firestoreContributors";
+import { registerBuildForNotification } from "@/lib/buildNotifications";
 import {
   getProjectCredentialsMeta, setPlayServiceAccountForProject, setAppStoreConnectForProject,
 } from "@/lib/storeCredentials";
@@ -818,16 +819,37 @@ export function AppBuildsPanel({ appId, perms, project }: {
       // Package Android configurado en el dashboard → env var del build/promote.
       // Se pasa solo si tiene valor; el gradle/codemagic.yaml tienen fallback.
       const pkg = project?.androidPackage?.trim();
-      // Teléfono de quien lanza, para que el workflow avise por WhatsApp al
-      // terminar: un build tarda ~10 min y nadie se queda mirando la pestaña.
+      // Teléfono de quien lanza, para avisarle por WhatsApp cuando termine: un
+      // build tarda ~10 min y nadie se queda mirando la pestaña. Va por dos
+      // vías: la variable de entorno que usa el propio workflow, y el registro
+      // en Firestore que lee el sync — que es el que avisa aunque el build
+      // reviente antes de llegar a su paso de notificación.
       const telefono = appUser?.githubLogin ? (await getAllContributorPhones())[appUser.githubLogin] : undefined;
+      // Ya NO se inyecta `WA_PHONE`: el aviso lo manda el sync desde fuera del
+      // build. Si se siguiera pasando, los `codemagic.yaml` que aún notifican al
+      // final mandarían un segundo mensaje en cada build exitoso — y seguirían
+      // sin mandar nada en los que fallan, que es lo que se vino a arreglar.
       const mergedEnv: Record<string, string> = {
         ...(pkg ? { ANDROID_PACKAGE_NAME: pkg } : {}),
-        ...(telefono ? { WA_PHONE: telefono, WA_ACTOR: appUser?.githubLogin ?? "" } : {}),
         ...envVars,
       };
       const buildId = await startBuild(appId, workflowId, effectiveBranch, mergedEnv);
       setPendingWorkflows((p) => ({ ...p, [workflowId]: { id: buildId, t: Date.now() } }));
+      // Deja dicho a quién avisarle cuando termine. No se espera ni se muestra
+      // error: el build ya salió, y sin este registro el sync igual avisa al
+      // teléfono administrativo de la empresa.
+      if (project) {
+        void registerBuildForNotification({
+          buildId,
+          projectId: project.id,
+          appId,
+          workflowId,
+          branch: effectiveBranch,
+          actorLogin: appUser?.githubLogin,
+          actorPhone: telefono,
+          actorEmail: appUser?.email,
+        });
+      }
       await refresh();
     } catch (e) {
       setPendingWorkflows((p) => {
