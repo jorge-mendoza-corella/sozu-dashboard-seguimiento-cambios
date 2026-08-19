@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { ImpersonationProvider } from "@/components/ImpersonationProvider";
-import { canAdminister, isRootAdmin } from "@/lib/firestoreUsers";
+import { isRootAdmin } from "@/lib/firestoreUsers";
 import { setSessionGithubAuth } from "@/lib/github";
 import { AppLayout } from "@/components/AppLayout";
 import { GithubTokenGate } from "@/components/GithubTokenGate";
@@ -42,7 +42,6 @@ function AppRoutes() {
   // Contribuidores y Usuarios: solo el superusuario raíz (jorge.mendoza@sozu.com).
   // (Bloqueado también por URL directa.)
   const isRoot = isRootAdmin(appUser);
-  const puedeAdministrar = canAdminister(appUser);
   const esAdminGlobal = isRoot || appUser?.role === "superuser";
 
   // Gate obligatorio: sin API key de GitHub no se puede usar nada (root exento).
@@ -68,7 +67,7 @@ function AppRoutes() {
             Configuración no: son del dueño del servicio y solo las abre el
             admin global. Las reglas de Firestore repiten el corte, así que
             esconder no es la única defensa. */}
-        <Route path="/users" element={puedeAdministrar ? <UsersPage /> : <Navigate to="/" replace />} />
+        <Route path="/users" element={esAdminGlobal ? <UsersPage /> : <Navigate to="/" replace />} />
         {/* Negocio expone tarifas y datos fiscales de toda la cartera: es del
             admin global, no del administrador de empresa. */}
         <Route path="/negocio" element={esAdminGlobal ? <NegocioPage /> : <Navigate to="/" replace />} />

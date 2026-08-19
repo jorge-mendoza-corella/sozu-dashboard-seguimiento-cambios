@@ -27,7 +27,11 @@ const NAV_ITEMS = [
   // siquiera le dejan leer su `private/billing`.
   { to: "/negocio", label: "Negocio", icon: TrendingUp, show: (v: NavVisibility) => v.adminGlobal },
   { to: "/contributors", label: "Contribuidores", icon: GitCommit, show: (v: NavVisibility) => v.root },
-  { to: "/users", label: "Usuarios", icon: Users, show: (v: NavVisibility) => v.admin },
+  // Usuarios vuelve a ser del admin global. El administrador de empresa ya sabe
+  // gestionar a sus viewers —el código y las reglas están—, pero se deja apagado
+  // hasta decidirlo: abrirlo ahora le pinta pantallas nuevas a cuentas que
+  // llevan meses viendo otra cosa.
+  { to: "/users", label: "Usuarios", icon: Users, show: (v: NavVisibility) => v.adminGlobal },
   // Negocio y Configuración son del dueño del servicio: tarifas, datos fiscales,
   // clientes y llaves. Un administrador de empresa no las ve — y el root
   // tampoco mientras esté "viendo como" una empresa, que es justo el punto.

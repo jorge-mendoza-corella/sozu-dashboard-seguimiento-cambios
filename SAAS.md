@@ -160,7 +160,7 @@ número. Ahora es **por empresa o nada** — no hay default global:
 
 | Ruta | Contenido |
 | --- | --- |
-| `clients/{id}/private/notifications` | instancia, webhook, teléfono y `enabled` |
+| `clients/{id}/private/notifications` | instancia, webhook y `enabled` |
 | `clients/{id}/private/whatsappSecret` | apikey (`allow read: if false`) |
 
 No existe `settings/notifications` ni `secrets/whatsapp`, y esa ausencia es la
@@ -197,9 +197,11 @@ es cosa del sync, porque si no cualquiera podría dar por avisado un fallo del q
 nadie se enteró. Un build lanzado desde Codemagic directo también avisa: sin doc
 previo, el sync lo crea y manda el mensaje al teléfono administrativo.
 
-Los teléfonos de los contribuidores no viven aquí: siguen en
-`contributors/{login}.telefonoWhatsapp`. Lo que se configura por empresa es la
-instancia, el webhook, la apikey y el número que recibe los avisos administrativos.
+**A quién le llega no se configura**: los avisos van a las personas. Al autor o
+a quien disparó el build, y al **aprobador del proyecto** —de
+`projects/{id}.approverEmail`, resolviendo su teléfono por
+`users/{email}.githubLogin` → `contributors/{login}.telefonoWhatsapp`—. Lo que se
+configura por empresa es por dónde salen: instancia, webhook y apikey.
 
 ## Colecciones nuevas en Firestore
 

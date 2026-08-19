@@ -35,11 +35,11 @@ const fechaLarga = (iso: string) =>
   new Date(iso).toLocaleString("es-MX", { dateStyle: "long", timeStyle: "short" });
 
 /**
- * Los campos que se pueden configurar, con su etiqueta y su ayuda.
+ * Los campos de texto que se configuran por empresa.
  *
- * La distinción que más se presta a confusión: la instancia es el número DESDE
- * el que sale el mensaje, y el teléfono administrativo es uno de los números a
- * los que LLEGA. No son lo mismo ni se sustituyen.
+ * Ya no hay teléfono que capturar: los avisos van a quien disparó el cambio y
+ * al aprobador del proyecto, y sus números salen de Contribuidores. Un número
+ * suelto aquí se quedaba viejo en cuanto cambiaba el responsable.
  */
 const CAMPOS = {
   instance: {
@@ -51,13 +51,6 @@ const CAMPOS = {
     label: "Webhook de n8n",
     placeholder: "https://n8n.sozu.com/webhook/whatsapp",
     ayuda: "Tiene que ser https://: la apikey viaja en el header.",
-  },
-  adminPhone: {
-    label: "Teléfono que recibe los avisos",
-    placeholder: "+5217221514185",
-    ayuda:
-      "A dónde llegan los avisos de PRs y de builds, además de a quien los disparó. " +
-      "No es el número desde el que se envía: ese es la instancia. Formato con lada: +5217221514185.",
   },
 } as const;
 
@@ -281,8 +274,6 @@ export function NotificationsSection() {
                       nunca se muestra de vuelta: solo se sobrescribe.
                     </span>
                   </label>
-
-                  {campoCliente(c.id, "adminPhone", propia)}
                 </div>
 
                 {/* Interruptor de la empresa */}
