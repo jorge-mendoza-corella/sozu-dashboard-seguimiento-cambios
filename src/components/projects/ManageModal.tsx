@@ -1,21 +1,21 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { X, Loader2, Trash2, Plus, FolderGit2, Pencil, Check, Smartphone, Globe } from "lucide-react";
+import { X, Loader2, Trash2, Plus, FolderGit2, Pencil, Check, Smartphone, Globe, AlertTriangle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
 import { cn } from "@/lib/utils";
 import {
   addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel, setProjectIsApp, setProjectCodemagicApp, setProjectApprover, setProjectNotifyAuthors, setProjectAndroidPackage,
-  setProjectIosBundleId, setRepoFrontUrl,
+  setProjectIosBundleId, setRepoFrontUrl, renameRepoDoc,
 } from "@/lib/firestoreProjects";
 import { listRepoContributors } from "@/lib/github";
-import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
+import { useProjects, useRepos, useRepoRenames } from "@/hooks/useProjectsRepos";
 import { useCodemagicApps } from "@/hooks/useCodemagic";
 import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
-import { getVisibleUsers, SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { getVisibleUsers, SUPERUSER_EMAIL, isRootAdmin } from "@/lib/firestoreUsers";
 import { checkRepoAccess } from "@/lib/githubAuth";
 import {
   getGoogleFirebaseToken, listFirebaseProjects, listProjectPackages,
@@ -28,6 +28,17 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
   const { data: projects = [] } = useProjects();
   const { data: repos = [] } = useRepos();
   const { data: cmApps = [] } = useCodemagicApps();
+  // Este modal solo lo abre el root (DashboardPage lo esconde detrás de
+  // `isRoot`), y arreglar el nombre de un repo cambia el id de su doc: se
+  // vuelve a verificar aquí antes de ofrecer el botón.
+  const esRoot = isRootAdmin(appUser);
+  // Renombres hechos en GitHub. Necesita SU token: sin token no se le pregunta
+  // nada a GitHub y no habría nada que detectar (ver useRepoChecks).
+  const { data: renames } = useRepoRenames(
+    repos,
+    esRoot ? appUser?.githubToken ?? null : null,
+    appUser?.githubLogin ?? null,
+  );
   // Candidatos a aprobador: usuarios con API key de GitHub registrada.
   const { data: allUsers = [] } = useQuery({
     // Un administrador de empresa no puede barrer la colección de usuarios (las
@@ -137,6 +148,16 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
     Promise.all([
       qc.invalidateQueries({ queryKey: ["repos"] }),
       qc.invalidateQueries({ queryKey: ["github-status"] }),
+    ]);
+
+  // Tras aplicar un renombre cambia el id del doc: además de los repos y su
+  // estado en GitHub hay que rehacer los chequeos, que son los que traen el
+  // aviso de renombre (si no, seguiría marcado con el nombre viejo).
+  const refreshTrasRenombre = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: ["repos"] }),
+      qc.invalidateQueries({ queryKey: ["github-status"] }),
+      qc.invalidateQueries({ queryKey: ["repo-checks"] }),
     ]);
 
   /** Asigna el aprobador validando que su cuenta de GitHub tenga acceso push a los repos del proyecto. */
@@ -471,6 +492,7 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
           <div className="mt-2 space-y-1.5">
             {repos.map((r) => {
               const isEditingRepo = editingRepo?.id === r.id;
+              const renombrado = renames?.get(r.id);
               const saveLabel = () =>
                 run(`lbl-${r.id}`, () => setRepoLabel(r.id, editingRepo!.label), refreshRepos).then(() =>
                   setEditingRepo(null),
@@ -513,6 +535,43 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                     />
                     {busy === `front-${r.id}` && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                   </div>
+                  {/* Renombrado en GitHub: el alta quedó con el nombre viejo y
+                      el repo puede desaparecer de las tarjetas sin aviso. El
+                      botón mueve el doc al id nuevo (`${owner}__${repo}`). */}
+                  {renombrado && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded border border-amber-300 bg-amber-50 px-1.5 py-1 dark:border-amber-700/50 dark:bg-amber-950/40">
+                      <AlertTriangle className="h-3 w-3 shrink-0 text-amber-600 dark:text-amber-400" />
+                      <span
+                        className="text-[11px] text-amber-800 dark:text-amber-300"
+                        title="Mientras el dashboard tenga el nombre viejo puede dejar de ver el repo: GitHub redirige el nombre anterior, pero deja de hacerlo si alguien crea otro repo con ese nombre."
+                      >
+                        renombrado en GitHub →{" "}
+                        <span className="font-mono font-semibold">
+                          {renombrado.owner}/{renombrado.repo}
+                        </span>
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 border-amber-400 px-2 text-[11px] text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/40"
+                        disabled={busy === `mvname-${r.id}`}
+                        title="Dar de alta el repo con su nombre nuevo conservando su configuración"
+                        onClick={() =>
+                          run(
+                            `mvname-${r.id}`,
+                            () => renameRepoDoc(r.id, renombrado.owner, renombrado.repo),
+                            refreshTrasRenombre,
+                          )
+                        }
+                      >
+                        {busy === `mvname-${r.id}` ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          "Actualizar nombre"
+                        )}
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 {isEditingRepo ? (
                   <Button size="icon" variant="ghost" className="h-7 w-7" disabled={busy === `lbl-${r.id}`} onClick={saveLabel}>

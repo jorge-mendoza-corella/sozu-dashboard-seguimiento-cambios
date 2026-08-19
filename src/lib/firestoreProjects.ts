@@ -256,6 +256,32 @@ export async function setRepoMonthlyPrice(id: string, price: number | null) {
   });
 }
 
+/**
+ * Aplica un renombre hecho en GitHub (`owner/repo` nuevos) al repo dado de alta.
+ *
+ * No es un update: el id del documento ES `${owner}__${repo}`, y Firestore no
+ * puede cambiarle el id a un doc ni moverlo. Por eso se crea uno nuevo con el id
+ * nuevo copiando TODOS los campos (label, projectId, order, addedBy, createdAt,
+ * frontUrl, monthlyPrice…) y recién después se borra el viejo: si se borrara
+ * primero y algo fallara, el repo se perdería del dashboard.
+ */
+export async function renameRepoDoc(id: string, owner: string, repo: string): Promise<void> {
+  const nuevoId = repoDocId(owner, repo);
+  if (nuevoId === id) return; // ya está con el nombre nuevo
+  const viejo = await getDoc(doc(db, "repos", id));
+  if (!viejo.exists()) throw new Error("Ese repositorio ya no está dado de alta.");
+  const nuevoRef = doc(db, "repos", nuevoId);
+  // Nunca pisar un doc existente: sería borrar la configuración de OTRO repo.
+  if ((await getDoc(nuevoRef)).exists()) {
+    throw new Error(
+      `Ya hay un repositorio dado de alta como ${owner}/${repo}. Revisa ese duplicado (o elimínalo) antes de aplicar el renombre.`,
+    );
+  }
+  const datos = viejo.data() as Omit<MonitoredRepo, "id">;
+  await setDoc(nuevoRef, { ...datos, owner, repo });
+  await deleteDoc(viejo.ref);
+}
+
 export async function removeRepo(id: string) {
   await deleteDoc(doc(db, "repos", id));
 }

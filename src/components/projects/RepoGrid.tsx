@@ -20,6 +20,8 @@ interface Props {
   notifyAuthors?: string[];
   /** Versión que sirve cada front, por id de repo (`owner__repo`). */
   frontVersions?: Record<string, FrontVersion>;
+  /** Repos renombrados en GitHub, por id de repo: se avisa en su tarjeta. */
+  renames?: Map<string, { owner: string; repo: string }>;
   /** Proyecto app: identificadores de tienda, para las versiones publicadas. */
   androidPackage?: string;
   iosBundleId?: string;
@@ -29,7 +31,7 @@ interface Props {
 
 const keyOf = (r: MonitoredRepo) => `${r.owner}/${r.repo}`;
 
-export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontVersions = {}, androidPackage, iosBundleId, onRefetch, onReorder }: Props) {
+export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontVersions = {}, renames, androidPackage, iosBundleId, onRefetch, onReorder }: Props) {
   const [items, setItems] = useState<MonitoredRepo[]>(repos);
   const dragFrom = useRef<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -97,6 +99,7 @@ export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canRe
               notifyAuthors={notifyAuthors}
               frontUrl={r.frontUrl}
               frontVersion={frontVersions[r.id] ?? null}
+              renamedTo={renames?.get(r.id) ?? null}
               // Las tiendas solo aplican al repo que publica el front de la app.
               androidPackage={r.frontUrl ? androidPackage : undefined}
               iosBundleId={r.frontUrl ? iosBundleId : undefined}

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, GitBranch, GitPullRequest, Rocket, ArrowUpCircle,
@@ -10,6 +10,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useProjects, useRepos, useAccessibleRepoIds } from "@/hooks/useProjectsRepos";
 import { useClients, useClientScope } from "@/hooks/useClients";
 import { clientDisplayName } from "@/lib/firestoreClients";
+import { EmpresaSelector } from "@/components/EmpresaSelector";
+import { empresasDeProyectos } from "@/lib/empresas";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { hasFailingDeploy, type RepoRef, type RepoStatus } from "@/lib/github";
 import { isRootAdmin, resolvePermissions } from "@/lib/firestoreUsers";
@@ -57,7 +59,22 @@ export function ResumenPage() {
 
   // Proyectos visibles: mismo criterio que CI/CD — el administrador de empresa
   // ve los de sus empresas, el viewer los que tenga asignados.
-  const { visibleProjects: projects } = useClientScope(appUser);
+  const { visibleProjects: todosLosProyectos } = useClientScope(appUser);
+
+  // Mismo filtro que en CI/CD: con varias empresas a la vista, lo primero es
+  // poder pararse en una. La barra se esconde sola cuando solo hay una.
+  const [empresaActiva, setEmpresaActiva] = useState<string | null>(null);
+  const empresas = useMemo(
+    () => empresasDeProyectos(todosLosProyectos, clients),
+    [todosLosProyectos, clients],
+  );
+  const projects = useMemo(
+    () =>
+      empresaActiva === null
+        ? todosLosProyectos
+        : todosLosProyectos.filter((p) => (p.clientId ?? "") === empresaActiva),
+    [todosLosProyectos, empresaActiva],
+  );
 
   const repoRefs: RepoRef[] = useMemo(
     () => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })),
@@ -134,6 +151,13 @@ export function ResumenPage() {
           <p>No hay proyectos visibles.</p>
         </div>
       ) : (
+        <>
+        <EmpresaSelector
+          empresas={empresas}
+          activa={empresaActiva}
+          onChange={setEmpresaActiva}
+          totalProyectos={todosLosProyectos.length}
+        />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {projects.map((p) => {
             const mt = metricsByProject.get(p.id);
@@ -260,6 +284,7 @@ export function ResumenPage() {
             );
           })}
         </div>
+        </>
       )}
     </div>
   );

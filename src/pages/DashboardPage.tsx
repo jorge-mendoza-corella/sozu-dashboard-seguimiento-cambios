@@ -8,9 +8,11 @@ import { AppBuildsPanel } from "@/components/codemagic/AppBuildsPanel";
 import { ActiveBuildChips } from "@/components/codemagic/ActiveBuildChips";
 import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
-import { useProjects, useRepos, useAccessibleRepoIds } from "@/hooks/useProjectsRepos";
+import { useProjects, useRepos, useAccessibleRepoIds, useRepoRenames } from "@/hooks/useProjectsRepos";
 import { useCanPublishApps, useClientScope, useClients } from "@/hooks/useClients";
 import { clientDisplayName } from "@/lib/firestoreClients";
+import { EmpresaSelector } from "@/components/EmpresaSelector";
+import { empresasDeProyectos } from "@/lib/empresas";
 import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
@@ -60,6 +62,15 @@ export function DashboardPage() {
     isRootAdmin(appUser) ? null : appUser?.githubToken ?? null,
     appUser?.githubLogin ?? null,
   );
+  // Repos renombrados en GitHub. Va con el token del usuario tal cual —incluido
+  // el root, que aquí SÍ lo necesita—: sin token no hay a quién preguntarle, y
+  // un repo renombrado se quedaría invisible como pasó con el de Vectis.
+  const { data: renames } = useRepoRenames(
+    allRepos,
+    appUser?.githubToken ?? null,
+    appUser?.githubLogin ?? null,
+  );
+
   const repos = useMemo(() => {
     if (isRootAdmin(appUser) || !appUser?.githubToken) return allRepos;
     if (!accessibleIds) return []; // aún verificando accesos: no mostrar de más
@@ -112,8 +123,24 @@ export function DashboardPage() {
   // Proyectos visibles: el admin global ve todos, el administrador de empresa
   // ve los de SUS empresas (aunque no estén en su `projectIds`: son suyos por
   // pertenecer a la empresa) y el viewer sigue con el criterio de siempre.
-  const { visibleProjects: projects } = useClientScope(appUser);
+  const { visibleProjects: todosLosProyectos } = useClientScope(appUser);
   const { data: clients = [] } = useClients(appUser);
+
+  // Filtro por empresa. Con varias empresas a la vista, moverse entre ellas es
+  // la primera decisión que se toma aquí: sin esto hay que leer siete pestañas
+  // mezcladas para encontrar la de un cliente.
+  const [empresaActiva, setEmpresaActiva] = useState<string | null>(null);
+  const empresas = useMemo(
+    () => empresasDeProyectos(todosLosProyectos, clients),
+    [todosLosProyectos, clients],
+  );
+  const projects = useMemo(
+    () =>
+      empresaActiva === null
+        ? todosLosProyectos
+        : todosLosProyectos.filter((p) => (p.clientId ?? "") === empresaActiva),
+    [todosLosProyectos, empresaActiva],
+  );
 
   // Proyectos agrupados por empresa. La etiqueta solo aparece cuando el usuario
   // ve más de una: con una sola, nombrarla en cada fila es ruido.
@@ -307,7 +334,7 @@ export function DashboardPage() {
           <div className="flex h-48 items-center justify-center text-muted-foreground">
             <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Cargando proyectos…
           </div>
-        ) : projects.length === 0 ? (
+        ) : todosLosProyectos.length === 0 ? (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <FolderGit2 className="h-8 w-8" />
             <p>No hay proyectos todavía.</p>
@@ -318,6 +345,18 @@ export function DashboardPage() {
             )}
           </div>
         ) : (
+          <>
+          <EmpresaSelector
+            empresas={empresas}
+            activa={empresaActiva}
+            onChange={setEmpresaActiva}
+            totalProyectos={todosLosProyectos.length}
+          />
+          {projects.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              Esa empresa todavía no tiene proyectos.
+            </p>
+          ) : (
           <Tabs
             value={activeProject}
             onValueChange={(v) => {
@@ -466,6 +505,7 @@ export function DashboardPage() {
                         selfLogin={isRoot ? null : appUser?.githubLogin ?? null}
                         notifyAuthors={p.notifyAuthors ?? []}
                         frontVersions={frontVersions}
+                        renames={renames}
                         androidPackage={p.isApp ? p.androidPackage : undefined}
                         iosBundleId={p.isApp ? p.iosBundleId : undefined}
                         onRefetch={() => refetch()}
@@ -477,6 +517,8 @@ export function DashboardPage() {
               );
             })}
           </Tabs>
+          )}
+          </>
         )}
       </div>
 
