@@ -14,7 +14,7 @@ import {
   PLATFORMS, WORKFLOW_LABELS, SYNC_TESTERS_WORKFLOW, getBuild, failedStepName,
   type CodemagicBuild, type PlatformDef,
 } from "@/lib/codemagic";
-import { getAppStoreStatus, buildStateLabel } from "@/lib/appStoreStatus";
+import { getAppStoreStatus, buildStateLabel, versionStateInfo } from "@/lib/appStoreStatus";
 import { useAuth } from "@/hooks/useAuth";
 import { getAllContributorPhones } from "@/lib/firestoreContributors";
 import { registerBuildForNotification } from "@/lib/buildNotifications";
@@ -339,7 +339,10 @@ function PlatformRow({
   estaBusy: (key: string) => boolean;
   pendingWorkflows: Record<string, { id: string; t: number }>;
   onRequestStart: (workflowId: string, key: string, opts?: { askNotes?: boolean; label?: string }) => void;
-  /** Modo simple: Construir + un solo botón que publica directo en la tienda. */
+  /**
+   * Modo simple: Construir + un solo botón que publica directo en la tienda.
+   * No aplica a las plataformas con `tresEtapas` (ver `modoSimpleAqui`).
+   */
   simple: boolean;
   project?: Project;
 }) {
@@ -411,9 +414,27 @@ function PlatformRow({
     }
   };
 
+  // ¿La versión ya está enviada? `promotedCurrent` no sirve para saberlo: compara
+  // el commit del run de promoción con el HEAD de la rama, y promover no va del
+  // commit sino del BINARIO que ya está en Apple. Con main avanzado desde la
+  // publicación -lo normal: se sigue trabajando mientras Apple revisa- decía "no
+  // promovido" teniendo la versión en revisión, y el botón quedaba clicable.
+  //
+  // La respuesta la da el estado de la versión en App Store Connect. Se reusa
+  // `versionStateInfo`, que ya agrupa los ~15 estados de Apple en cuatro tonos:
+  //   running  esperando revisión / en revisión / procesando / aprobada  -> no tocar
+  //   success  publicada                                                -> no tocar
+  //   draft    sin enviar / falta compliance / retirada                 -> se puede enviar
+  //   halted   rechazada / binario inválido                             -> HAY que reenviar
+  const versionAsc = appStore?.versions?.[0];
+  const estadoAsc = versionAsc ? versionStateInfo(versionAsc.state) : null;
+  const yaEnviada = estadoAsc?.tone === "running" || estadoAsc?.tone === "success";
+
   const promoteDisabledReason =
     promoteInProgress ? "Envío a la store en curso" :
     promotedCurrent ? "Este código ya fue enviado a la store" :
+    gateApple && yaEnviada
+      ? `La versión ${versionAsc?.version ?? "—"} ya está en la tienda: ${estadoAsc?.label}.` :
     gateApple && !appStore ? "Aún sin datos de App Store Connect: pulsa \"comprobar ahora\"" :
     gateApple && !ultimoSubido ? "App Store Connect no reporta ningún binario subido todavía" :
     gateApple && !binarioListo
@@ -423,6 +444,20 @@ function PlatformRow({
   const buildKey = `${platform.key}-build`;
   const publishKey = `${platform.key}-publish`;
   const promoteKey = `${platform.key}-promote`;
+
+  // ---------------------------------------------------------------------------
+  // El modo simple NO aplica a iOS, aunque el proyecto esté en simple.
+  //
+  // Enruta a `ios-store`, que sube el binario y en el MISMO run intenta mandarlo
+  // a revisión. Apple tarda minutos en procesar el .ipa, así que en ese momento
+  // el build nuevo casi nunca está listo y el envío falla. No es un fallo que se
+  // arregle: es lo que ese workflow hace por diseño.
+  //
+  // En Android sí funciona: `android-store` publica directo a producción y Play
+  // no mete esa espera. Por eso el toggle sigue existiendo -sirve a quien solo
+  // publica Android- pero iOS lo ignora y siempre da sus tres etapas.
+  // ---------------------------------------------------------------------------
+  const modoSimpleAqui = simple && !platform.tresEtapas;
 
   // Modo simple: un workflow que construye y publica directo en la tienda
   // (sin Play interno / TestFlight de por medio).
@@ -510,7 +545,7 @@ function PlatformRow({
             )}
             {buildInProgress ? "Construyendo…" : "Construir"}
           </Button>
-          {simple ? (
+          {modoSimpleAqui ? (
             // Un solo clic: construye y publica en la tienda pública.
             <Button
               size="sm"
@@ -546,14 +581,16 @@ function PlatformRow({
           )}
         </>
       )}
-      {(buildDisabledReason || (simple && storeDisabledReason)) && (
+      {(buildDisabledReason || (modoSimpleAqui && storeDisabledReason)) && (
         <span className="w-full text-[10px] text-muted-foreground sm:w-auto">
           {buildDisabledReason ?? storeDisabledReason}
         </span>
       )}
-      {/* El motivo del gate de Apple va escrito, no solo en el tooltip: es una
-          espera de minutos y el usuario necesita saber que no se rompió nada. */}
-      {!simple && platform.tresEtapas && perms.buildApp && promoteDisabledReason && !promotedCurrent && (
+      {/* El motivo por el que el boton final esta gris va ESCRITO, no solo en el
+          tooltip. Sin `!promotedCurrent`: ese caso tambien deshabilita el boton, y
+          dejarlo fuera era justo lo que hacia que a veces no saliera ningun texto
+          y el boton pareciera roto sin explicacion. */}
+      {platform.tresEtapas && perms.buildApp && promoteDisabledReason && (
         <span className="flex w-full items-center gap-1.5 text-[10px] text-muted-foreground">
           <Clock className="h-3 w-3 shrink-0" />
           <span>{promoteDisabledReason}</span>
@@ -1092,8 +1129,8 @@ export function AppBuildsPanel({ appId, perms, project }: {
               className="rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted"
               title={
                 simple
-                  ? "Modo simple: construir y publicar directo en la tienda. Clic para mostrar el flujo por etapas (Play interno / TestFlight y testers)."
-                  : "Modo avanzado: flujo por etapas con canales de prueba. Clic para volver al flujo de un solo paso."
+                  ? "Modo simple: Android construye y publica directo en la tienda. iOS siempre va por etapas. Clic para mostrar el flujo por etapas tambien en Android."
+                  : "Modo avanzado: flujo por etapas con canales de prueba en las dos plataformas. Clic para que Android publique en un solo paso (iOS no cambia)."
               }
             >
               modo: <span className="font-semibold">{simple ? "simple" : "avanzado"}</span>
