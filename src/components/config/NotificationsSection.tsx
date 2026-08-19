@@ -10,7 +10,7 @@ import { useClientScope } from "@/hooks/useClients";
 import { useWhatsappByClient } from "@/hooks/useNotifications";
 import { clientDisplayName } from "@/lib/firestoreClients";
 import {
-  setClientWhatsapp, setWhatsappApiKey,
+  setClientWhatsapp, setWhatsappApiKey, maskApiKey,
   type ClientWhatsappConfig, type ResolvedWhatsapp, type WhatsappConfig,
 } from "@/lib/notificationSettings";
 
@@ -206,6 +206,10 @@ export function NotificationsSection() {
           const keyApiKey = `key-${c.id}`;
           const keyEnabled = `en-${c.id}`;
           const apiKeyEnCaptura = apiKeys[c.id] ?? "";
+          // Lo único de la llave que se puede volver a mostrar: la pista que se
+          // guardó al escribirla. Sin pista (llaves anteriores a ese campo) el
+          // placeholder se queda con el texto de siempre.
+          const enmascarada = maskApiKey(propia);
           // El pill solo se puede PRENDER con la configuración completa: dejar
           // prender avisos que la capa de datos va a saltarse igual sería
           // prometer algo que no pasa. Apagar nunca se bloquea — el camino de
@@ -243,7 +247,9 @@ export function NotificationsSection() {
                   {campoCliente(c.id, "webhookUrl", propia)}
 
                   <label className="block">
-                    <span className="text-[11px] font-medium text-muted-foreground">Apikey</span>
+                    <span className="text-[11px] font-medium text-muted-foreground">
+                      Apikey del webhook n8n
+                    </span>
                     <div className="mt-1 flex items-center gap-2">
                       <input
                         type="password"
@@ -252,8 +258,15 @@ export function NotificationsSection() {
                         autoCorrect="off"
                         autoComplete="off"
                         className="h-9 w-full rounded-md border bg-background px-2 font-mono text-xs"
-                        placeholder="apikey del webhook de n8n"
-                        title="Se escribe y ya: las reglas prohíben leerla desde el navegador, así que no se puede mostrar de vuelta."
+                        // Con una guardada, el placeholder muestra sus primeros
+                        // caracteres y el resto en asteriscos: alcanza para
+                        // reconocer cuál está puesta sin poder reconstruirla.
+                        placeholder={enmascarada ?? "apikey del webhook de n8n"}
+                        title={
+                          enmascarada
+                            ? `Guardada: ${enmascarada}. Escribe una nueva para reemplazarla; la actual no se puede leer de vuelta.`
+                            : "Se escribe y ya: las reglas prohíben leerla desde el navegador, así que no se puede mostrar de vuelta."
+                        }
                         value={apiKeyEnCaptura}
                         disabled={busy === keyApiKey}
                         onKeyDown={(e) => {

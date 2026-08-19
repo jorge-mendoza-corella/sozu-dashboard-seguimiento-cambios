@@ -42,6 +42,17 @@ export interface WhatsappConfig {
   enabled: boolean;
   apiKeySetAt: string | null;
   apiKeySetBy: string | null;
+  /**
+   * Primeros caracteres de la apikey, para poder mostrarla enmascarada.
+   *
+   * La llave completa no se puede leer desde el navegador —la regla lo prohíbe—
+   * así que sin esta pista la pantalla no tendría NADA que enseñar: solo "hay
+   * una guardada". Cuatro caracteres alcanzan para reconocer cuál es y no para
+   * reconstruirla.
+   */
+  apiKeyHint: string | null;
+  /** Largo de la apikey, para pintar los asteriscos que faltan. */
+  apiKeyLength: number | null;
   updatedAt: string | null;
   updatedBy: string | null;
 }
@@ -56,6 +67,8 @@ export const EMPTY_WHATSAPP: WhatsappConfig = {
   enabled: true,
   apiKeySetAt: null,
   apiKeySetBy: null,
+  apiKeyHint: null,
+  apiKeyLength: null,
   updatedAt: null,
   updatedBy: null,
 };
@@ -77,6 +90,8 @@ function parse(d: Record<string, unknown> | undefined): WhatsappConfig {
     enabled: d.enabled !== false, // ausente = prendido
     apiKeySetAt: iso(d.apiKeySetAt),
     apiKeySetBy: typeof d.apiKeySetBy === "string" ? d.apiKeySetBy : null,
+    apiKeyHint: typeof d.apiKeyHint === "string" ? d.apiKeyHint : null,
+    apiKeyLength: typeof d.apiKeyLength === "number" ? d.apiKeyLength : null,
     updatedAt: iso(d.updatedAt),
     updatedBy: typeof d.updatedBy === "string" ? d.updatedBy : null,
   };
@@ -95,6 +110,17 @@ export async function getClientWhatsapp(clientId: string): Promise<WhatsappConfi
   } catch {
     return null;
   }
+}
+
+/**
+ * Apikey enmascarada: los primeros caracteres y el resto en asteriscos. Sin
+ * pista guardada (llaves anteriores a este campo) devuelve null y la pantalla
+ * se conforma con decir que hay una.
+ */
+export function maskApiKey(cfg: WhatsappConfig | null): string | null {
+  if (!cfg?.apiKeyHint) return null;
+  const largo = cfg.apiKeyLength ?? cfg.apiKeyHint.length + 8;
+  return cfg.apiKeyHint + "*".repeat(Math.max(4, largo - cfg.apiKeyHint.length));
 }
 
 export interface ResolvedWhatsapp {
@@ -211,6 +237,15 @@ export async function setWhatsappApiKey(apiKey: string, email: string, clientId:
   if (!limpia) throw new Error("Pega la apikey del webhook de n8n.");
   if (limpia.length < 8) throw new Error("Esa apikey se ve incompleta; cópiala entera.");
   await setDoc(SECRETO(clientId), { apiKey: limpia, updatedBy: email, updatedAt: new Date() });
-  const meta = { apiKeySetAt: new Date(), apiKeySetBy: email, updatedAt: new Date(), updatedBy: email };
+  // La pista va en el doc legible, no en el secreto: es lo único de la llave
+  // que la pantalla puede volver a mostrar.
+  const meta = {
+    apiKeySetAt: new Date(),
+    apiKeySetBy: email,
+    apiKeyHint: limpia.slice(0, 4),
+    apiKeyLength: limpia.length,
+    updatedAt: new Date(),
+    updatedBy: email,
+  };
   await setDoc(DEL_CLIENTE(clientId), meta, { merge: true });
 }
