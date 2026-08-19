@@ -108,6 +108,18 @@ export function adminClientIds(user: AppUser | null): string[] | null {
   return user.role === "client_admin" ? user.clientIds ?? [] : [];
 }
 
+/**
+ * Clave de caché del ALCANCE de un usuario, para los `queryKey` de react-query.
+ *
+ * No basta con el correo: al ver el dashboard como otra persona, el correo sigue
+ * siendo el del root y solo cambian el rol y las empresas. Con el correo como
+ * clave, la lista que ve el root y la que vería esa persona compartían entrada
+ * de caché — y el root terminaba viendo su propia lista completa desde dentro de
+ * la impersonación.
+ */
+export const scopeKeyOf = (user: AppUser | null) =>
+  user ? `${user.email}|${user.role}|${(user.clientIds ?? []).join(",")}` : "anon";
+
 /** Puede entrar a las pantallas de administración (Usuarios, Configuración). */
 export const canAdminister = (user: AppUser | null) =>
   !!user && (user.role === "superuser" || user.role === "client_admin");

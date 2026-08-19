@@ -15,7 +15,7 @@ import { useCodemagicApps } from "@/hooks/useCodemagic";
 import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
-import { getVisibleUsers, SUPERUSER_EMAIL, isRootAdmin } from "@/lib/firestoreUsers";
+import { getVisibleUsers, SUPERUSER_EMAIL, isRootAdmin , scopeKeyOf} from "@/lib/firestoreUsers";
 import { checkRepoAccess } from "@/lib/githubAuth";
 import {
   getGoogleFirebaseToken, listFirebaseProjects, listProjectPackages,
@@ -44,7 +44,7 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
     // Un administrador de empresa no puede barrer la colección de usuarios (las
     // reglas se lo niegan): pide solo los de sus empresas, que son justo los
     // candidatos a aprobador que le sirven.
-    queryKey: ["users-visible", appUser?.email ?? "anon"],
+    queryKey: ["users-visible", scopeKeyOf(appUser)],
     queryFn: () => getVisibleUsers(appUser),
     staleTime: 60 * 1000,
   });
