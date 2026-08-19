@@ -63,4 +63,5 @@ jobs:
           CODEMAGIC_TOKEN="$(secret DASHBOARD_CODEMAGIC_TOKEN)"
           export CODEMAGIC_TOKEN
 
+
           python ci/codemagic_builds_notify.py

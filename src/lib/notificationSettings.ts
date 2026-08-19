@@ -2,38 +2,31 @@ import { deleteField, doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
 
 // ---------------------------------------------------------------------------
-// Notificaciones de WhatsApp. Hoy los workflows de CI mandan todo por una sola
-// instancia de n8n con una sola apikey, hardcodeadas en el YAML: todas las
-// empresas comparten el mismo número. Esto lo vuelve configuración por cliente.
+// Notificaciones de WhatsApp, POR EMPRESA. Todo o nada: cada empresa manda por
+// su propia instancia, con su propia llave, o no se le manda nada.
 //
-// Dónde vive cada cosa y por qué:
-//   `settings/notifications`                default global (no secreto)
-//   `secrets/whatsapp`                      apikey default            (read: false)
-//   `clients/{id}/private/notifications`    config de la empresa
-//   `clients/{id}/private/whatsappSecret`   apikey de la empresa      (read: false)
+// Dónde vive cada cosa:
+//   `clients/{id}/private/notifications`    instancia, webhook y teléfono
+//   `clients/{id}/private/whatsappSecret`   apikey                    (read: false)
 //
-// La apikey de la empresa cuelga del propio cliente para que la regla la acote
-// sola: quien administra ese cliente la puede escribir, sin tener que derivar
-// permisos de un id de documento en la colección global de secretos.
+// No hay default global, y esa ausencia es deliberada: un global significa que
+// la empresa que todavía no configuró sus avisos los recibe por el número de
+// otra —el de quien lo haya puesto ahí—, y que su webhook podría acabar
+// llevándose una llave que no es suya. Sin nada que heredar, esos dos problemas
+// no existen. Un repo cuyo proyecto no tiene empresa asignada simplemente no
+// notifica, y los workflows lo dicen en el log.
 //
-// La apikey nunca se lee desde el navegador: se escribe y ya. Quien la consume
-// son los workflows, que entran a Firestore con cuenta de servicio y se saltan
-// las reglas. Lo único visible en el dashboard es cuándo y quién la guardó.
-//
-// Resolución en cascada, igual que los precios: lo que el cliente tenga puesto
-// gana; lo que deje vacío se hereda del default global.
+// La apikey cuelga del propio cliente para que la regla la acote sola, y nunca
+// se lee desde el navegador: se escribe y ya. Quien la consume son los
+// workflows, con cuenta de servicio. Lo visible aquí es cuándo y quién la dejó.
 // ---------------------------------------------------------------------------
 
-const GLOBAL = () => doc(db, "settings", "notifications");
 const DEL_CLIENTE = (clientId: string) => doc(db, "clients", clientId, "private", "notifications");
 
-/** Doc con la apikey: el del cliente, o el global si no se pasa cliente. */
-const SECRETO = (clientId?: string) =>
-  clientId
-    ? doc(db, "clients", clientId, "private", "whatsappSecret")
-    : doc(db, "secrets", "whatsapp");
+/** Doc con la apikey de la empresa. */
+const SECRETO = (clientId: string) => doc(db, "clients", clientId, "private", "whatsappSecret");
 
-/** Configuración de WhatsApp, tanto la global como la de una empresa. */
+/** Configuración de WhatsApp de una empresa. */
 export interface WhatsappConfig {
   /** Nombre de la instancia de WhatsApp en n8n (el `instanciaWA` del payload). */
   instance: string;
@@ -53,7 +46,7 @@ export interface WhatsappConfig {
   updatedBy: string | null;
 }
 
-/** Lo que una empresa puede sobrescribir. Vacío = hereda el global. */
+/** Lo que se puede escribir de la configuración. Vacío = borra el campo. */
 export type ClientWhatsappConfig = Partial<Pick<WhatsappConfig, "instance" | "webhookUrl" | "adminPhone" | "enabled">>;
 
 export const EMPTY_WHATSAPP: WhatsappConfig = {
@@ -91,11 +84,6 @@ function parse(d: Record<string, unknown> | undefined): WhatsappConfig {
 
 // --- Lectura ----------------------------------------------------------------
 
-export async function getGlobalWhatsapp(): Promise<WhatsappConfig> {
-  const snap = await getDoc(GLOBAL());
-  return parse(snap.exists() ? (snap.data() as Record<string, unknown>) : undefined);
-}
-
 /**
  * Config propia de una empresa. Devuelve `null` si nunca se configuró (hereda
  * todo) o si las reglas no dejan leerla.
@@ -114,58 +102,37 @@ export interface ResolvedWhatsapp {
   webhookUrl: string;
   adminPhone: string;
   enabled: boolean;
-  /** Qué campos salieron del default global en lugar de la empresa. */
-  heredado: { instance: boolean; webhookUrl: boolean; adminPhone: boolean };
-  /** La empresa tiene apikey propia; si no, se usa la global. */
+  /** Tiene apikey guardada. No se puede leer: solo consta que existe. */
   apiKeyPropia: boolean;
-  /** Le falta algo para poder mandar (instancia, webhook o apikey). */
+  /** Le falta algo para poder mandar: instancia, webhook o apikey. */
   incompleta: boolean;
-  /**
-   * Puso webhook propio pero no apikey propia. No se manda nada: sería la llave
-   * global viajando a una URL que puso el administrador de esa empresa.
-   */
-  webhookSinLlave: boolean;
+  /** Está completa Y prendida: es lo único que hace que salga un mensaje. */
+  puedeEnviar: boolean;
 }
 
 /**
- * Config efectiva de una empresa: lo suyo gana, lo vacío se hereda.
+ * Qué se usaría de verdad para notificar a esta empresa.
  *
- * El webhook y la apikey van EN PAREJA. Si una empresa pone webhook propio y no
- * apikey propia, el envío se bloquea: mandar ahí la llave global la entregaría
- * al dueño de esa URL, que podría usarla para escribir a nombre de cualquier
- * otra empresa. Heredar las dos del global sí es válido.
+ * Sin default global no hay cascada que resolver: o la empresa tiene sus tres
+ * datos, o no se le manda nada. Se conserva la función —en vez de leer los
+ * campos sueltos— porque `incompleta` y `puedeEnviar` son la misma cuenta que
+ * hacen los workflows, y conviene que se calcule en un solo lugar.
  */
-export function resolveWhatsapp(
-  global: WhatsappConfig,
-  propia: WhatsappConfig | null,
-): ResolvedWhatsapp {
-  const pick = (campo: "instance" | "webhookUrl" | "adminPhone") => {
-    const mio = propia?.[campo]?.trim();
-    return mio ? { valor: mio, heredado: false } : { valor: global[campo].trim(), heredado: true };
-  };
-  const instance = pick("instance");
-  const webhookUrl = pick("webhookUrl");
-  const adminPhone = pick("adminPhone");
+export function resolveWhatsapp(propia: WhatsappConfig | null): ResolvedWhatsapp {
+  const instance = propia?.instance.trim() ?? "";
+  const webhookUrl = propia?.webhookUrl.trim() ?? "";
+  const adminPhone = propia?.adminPhone.trim() ?? "";
   const apiKeyPropia = !!propia?.apiKeySetAt;
-  const webhookSinLlave = !webhookUrl.heredado && !apiKeyPropia;
+  const enabled = propia?.enabled ?? true;
+  const incompleta = !instance || !webhookUrl || !apiKeyPropia;
   return {
-    instance: instance.valor,
-    webhookUrl: webhookUrl.valor,
-    adminPhone: adminPhone.valor,
-    // Apagar la empresa manda; si no dijo nada, manda el global.
-    enabled: propia ? propia.enabled && global.enabled : global.enabled,
-    heredado: {
-      instance: instance.heredado,
-      webhookUrl: webhookUrl.heredado,
-      adminPhone: adminPhone.heredado,
-    },
+    instance,
+    webhookUrl,
+    adminPhone,
+    enabled,
     apiKeyPropia,
-    webhookSinLlave,
-    incompleta:
-      !instance.valor ||
-      !webhookUrl.valor ||
-      webhookSinLlave ||
-      !(apiKeyPropia || !!global.apiKeySetAt),
+    incompleta,
+    puedeEnviar: !incompleta && enabled,
   };
 }
 
@@ -198,39 +165,15 @@ const validar = (patch: ClientWhatsappConfig) => {
 /**
  * Valores con los que venían cableados los workflows antes de que esto fuera
  * configurable. No son secretos —la URL y el teléfono ya estaban en el YAML—,
- * así que se siembran para que la migración no deje a nadie sin avisos. Lo
- * único que hay que capturar a mano es la apikey.
+ * pero son **de Sozu**: esa instancia y ese número son suyos.
  */
-const DEFAULTS_HISTORICOS = {
+const CONFIG_HISTORICA_DE_SOZU = {
   instance: "Pruebas de todo",
   webhookUrl: "https://automatizacion-n8n.fbqqbe.easypanel.host/webhook/manda_notificacion",
   adminPhone: "+5217221514185",
 };
 
-/**
- * Deja la configuración global lista con lo que los workflows usaban antes.
- * Idempotente y no destructivo: solo llena los campos que estén vacíos, así que
- * no pisa nada de lo que ya se haya capturado.
- */
-export async function seedGlobalWhatsappDefaults(email: string): Promise<boolean> {
-  const actual = await getGlobalWhatsapp();
-  const patch: ClientWhatsappConfig = {};
-  if (!actual.instance.trim()) patch.instance = DEFAULTS_HISTORICOS.instance;
-  if (!actual.webhookUrl.trim()) patch.webhookUrl = DEFAULTS_HISTORICOS.webhookUrl;
-  if (!actual.adminPhone.trim()) patch.adminPhone = DEFAULTS_HISTORICOS.adminPhone;
-  if (Object.keys(patch).length === 0) return false;
-  await setGlobalWhatsapp(patch, email);
-  return true;
-}
-
-export async function setGlobalWhatsapp(patch: ClientWhatsappConfig, email: string) {
-  await setDoc(
-    GLOBAL(),
-    { ...validar(patch), updatedAt: new Date(), updatedBy: email },
-    { merge: true },
-  );
-}
-
+/** Guarda la configuración (no secreta) de una empresa. */
 export async function setClientWhatsapp(clientId: string, patch: ClientWhatsappConfig, email: string) {
   await setDoc(
     DEL_CLIENTE(clientId),
@@ -240,29 +183,34 @@ export async function setClientWhatsapp(clientId: string, patch: ClientWhatsappC
 }
 
 /**
- * Guarda la apikey del webhook. `clientId` undefined = la default global.
- * Solo se escribe: las reglas prohíben leer `secrets/` desde el navegador, así
- * que la metadata de "cuándo se guardó" va aparte, en el doc de config.
+ * Siembra en la EMPRESA indicada la configuración que los workflows traían
+ * cableada. Va al cliente porque es suya: esa instancia y ese número son de
+ * Sozu, y ninguna otra empresa debería mandar por ahí.
+ *
+ * Idempotente y no destructivo: solo llena los campos vacíos. La apikey no se
+ * siembra —es un secreto, se captura a mano en Configuración → Notificaciones—.
  */
-export async function setWhatsappApiKey(apiKey: string, email: string, clientId?: string) {
+export async function seedClientWhatsappDefaults(clientId: string, email: string): Promise<boolean> {
+  const actual = await getClientWhatsapp(clientId);
+  const patch: ClientWhatsappConfig = {};
+  if (!actual?.instance.trim()) patch.instance = CONFIG_HISTORICA_DE_SOZU.instance;
+  if (!actual?.webhookUrl.trim()) patch.webhookUrl = CONFIG_HISTORICA_DE_SOZU.webhookUrl;
+  if (!actual?.adminPhone.trim()) patch.adminPhone = CONFIG_HISTORICA_DE_SOZU.adminPhone;
+  if (Object.keys(patch).length === 0) return false;
+  await setClientWhatsapp(clientId, patch, email);
+  return true;
+}
+
+/**
+ * Guarda la apikey del webhook de una empresa. Solo se escribe: las reglas
+ * prohíben leerla desde el navegador, así que la metadata de "cuándo y quién"
+ * va aparte, en el doc de configuración.
+ */
+export async function setWhatsappApiKey(apiKey: string, email: string, clientId: string) {
   const limpia = apiKey.trim();
   if (!limpia) throw new Error("Pega la apikey del webhook de n8n.");
   if (limpia.length < 8) throw new Error("Esa apikey se ve incompleta; cópiala entera.");
   await setDoc(SECRETO(clientId), { apiKey: limpia, updatedBy: email, updatedAt: new Date() });
   const meta = { apiKeySetAt: new Date(), apiKeySetBy: email, updatedAt: new Date(), updatedBy: email };
-  await setDoc(clientId ? DEL_CLIENTE(clientId) : GLOBAL(), meta, { merge: true });
-}
-
-/**
- * Quita la apikey propia de una empresa para que vuelva a usar la global. No
- * borra el secreto (nadie puede leerlo para confirmar qué había): lo sobrescribe
- * vacío y limpia la metadata, que es lo que el workflow consulta.
- */
-export async function clearClientWhatsappApiKey(clientId: string, email: string) {
-  await setDoc(SECRETO(clientId), { apiKey: "", updatedBy: email, updatedAt: new Date() });
-  await setDoc(
-    DEL_CLIENTE(clientId),
-    { apiKeySetAt: deleteField(), apiKeySetBy: deleteField(), updatedAt: new Date(), updatedBy: email },
-    { merge: true },
-  );
+  await setDoc(DEL_CLIENTE(clientId), meta, { merge: true });
 }

@@ -152,10 +152,14 @@ export function UsersPage() {
 
   const refresh = async () => { await refetch(); };
 
-  /** Roles que este usuario puede asignar: el admin de empresa solo crea viewers. */
+  /**
+   * Roles asignables. `superuser` no está: el administrador global es uno solo
+   * —el superusuario raíz— y repartir ese rol es repartir el servicio entero.
+   * Quien ya lo tenga lo sigue mostrando, para poder bajarlo a otro rol.
+   */
   const rolesAsignables: UserRole[] = esAdminDeEmpresa
     ? ["viewer"]
-    : ["superuser", "client_admin", "viewer"];
+    : ["client_admin", "viewer"];
 
   /** Nombre comercial de la empresa; si no está a la vista, al menos su id. */
   const nombreEmpresa = (id: string) => {
@@ -232,11 +236,13 @@ export function UsersPage() {
     setBusy(u.email);
     setError("");
     try {
-      // Un administrador de empresa sin empresas no administra nada: se manda
-      // lo que ya tiene y, si está vacío, la capa de datos lo rechaza con su
-      // propio mensaje (en vez de dejar un rol a medio configurar).
       await setUserRole(u.email, role, role === "client_admin" ? u.clientIds ?? [] : undefined);
       await refresh();
+      // Queda a medio configurar: se abre su panel para que las empresas se
+      // asignen ahí mismo, en vez de dejarlo con un rol que no alcanza a nada.
+      if (role === "client_admin" && (u.clientIds ?? []).length === 0) {
+        setExpanded(u.email);
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error al cambiar el rol");
     } finally {
@@ -527,7 +533,14 @@ export function UsersPage() {
                       <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
                         <Building2 className="h-3 w-3 shrink-0" />
                         {userClients.length === 0 ? (
-                          <span className="text-amber-600 dark:text-amber-400">Sin empresa asignada</span>
+                          // Un administrador de empresa sin empresas quedó a medio
+                          // configurar: el rol ya está puesto pero todavía no manda
+                          // en nada. Se dice qué falta, no solo que falta.
+                          <span className="text-amber-600 dark:text-amber-400">
+                            {u.role === "client_admin"
+                              ? "Sin empresa asignada — no administra nada hasta que le marques una abajo"
+                              : "Sin empresa asignada"}
+                          </span>
                         ) : (
                           <span className="truncate">{userClients.map(nombreEmpresa).join(" · ")}</span>
                         )}

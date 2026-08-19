@@ -174,9 +174,11 @@ export async function removeUser(email: string) {
  */
 export async function setUserRole(email: string, role: UserRole, clientIds?: string[]) {
   if (email === SUPERUSER_EMAIL) throw new Error("No se puede cambiar el rol del superusuario raíz");
-  if (role === "client_admin" && (clientIds?.length ?? 0) === 0) {
-    throw new Error("Elige al menos una empresa para el administrador de empresa.");
-  }
+  // Un administrador de empresa sin empresas no administra nada, pero rechazar
+  // el cambio de rol dejaba un callejón sin salida: para asignarle empresas hay
+  // que verlo primero como administrador. Se permite el paso intermedio y la
+  // pantalla lo marca como pendiente hasta que tenga al menos una. Al DAR DE
+  // ALTA sí se exige, porque ahí ambas cosas se capturan de una vez.
   await setDoc(
     doc(db, "users", email),
     { role, ...(clientIds ? { clientIds } : {}) },

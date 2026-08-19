@@ -1,5 +1,5 @@
 import { addClient, getClients, setClientFeatures, type Client } from "./firestoreClients";
-import { seedGlobalWhatsappDefaults } from "./notificationSettings";
+import { seedClientWhatsappDefaults } from "./notificationSettings";
 import { addProject, getProjects, renameProject, setProjectClient, setProjectIsApp } from "./firestoreProjects";
 
 // ---------------------------------------------------------------------------
@@ -27,7 +27,7 @@ export interface SeedReport {
   proyectosCreados: string[];
   proyectosRenombrados: string[];
   proyectosAsignados: string[];
-  /** Se llenó la config global de WhatsApp con los valores que traía el CI. */
+  /** Se llenó la config de WhatsApp DE SOZU con los valores que traía el CI. */
   notificacionesSembradas: boolean;
 }
 
@@ -41,11 +41,6 @@ export async function seedSaasStructure(email: string): Promise<SeedReport> {
     proyectosAsignados: [],
     notificacionesSembradas: false,
   };
-
-  // Las notificaciones de WhatsApp dejaron de estar cableadas en el YAML: si la
-  // config global queda vacía, los workflows fallan por falta de webhook. Se
-  // siembran los valores que ya usaban (la apikey sigue capturándose a mano).
-  report.notificacionesSembradas = await seedGlobalWhatsappDefaults(email);
 
   // --- Clientes -------------------------------------------------------------
   let clientes = await getClients();
@@ -71,6 +66,20 @@ export async function seedSaasStructure(email: string): Promise<SeedReport> {
   // ya existía de antes (siembra parcial), se le prenden igual.
   if (!sozu.features?.publishApps || !sozu.features?.showAvances) {
     await setClientFeatures(sozu.id, { publishApps: true, showAvances: true });
+  }
+
+  // Notificaciones de WhatsApp: ya no hay default global, así que cada empresa
+  // necesita las suyas. Se siembran la instancia, el webhook y el teléfono que
+  // los workflows traían cableados; la apikey NO se siembra, es un secreto y se
+  // captura a mano en Configuración → Notificaciones.
+  //
+  // Vectis arranca con los mismos valores que Sozu porque hoy comparten la
+  // instancia de n8n. Es un punto de partida, no el destino: en cuanto Vectis
+  // tenga su propio número, se cambian ahí y las dos quedan de verdad separadas.
+  for (const empresa of ["Sozu", "Vectis"] as const) {
+    const c = buscarCliente(empresa);
+    if (!c) continue;
+    if (await seedClientWhatsappDefaults(c.id, email)) report.notificacionesSembradas = true;
   }
 
   // --- Proyectos de Sozu ----------------------------------------------------

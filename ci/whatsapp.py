@@ -2,30 +2,37 @@
 """
 Configuración y envío de WhatsApp (n8n) para los scripts de CI.
 
-La MISMA cascada que ya vive en bash en `ci-templates/notify-pr-dev.yml`
+La MISMA resolución que ya vive en bash en `ci-templates/notify-pr-dev.yml`
 (bloque `RESOLVER_WA`), reescrita en Python para los syncs que corren aquí. Se
 extrajo a su propio módulo porque el aviso de fin de build ya no lo manda el
 `codemagic.yaml` de cada repo de app —ese aviso se perdía cuando el build
 reventaba antes de llegar al paso de notificar— sino un sync programado, y no
-tiene sentido duplicar la cascada una tercera vez.
+tiene sentido duplicar esta lógica una tercera vez.
 
-Cascada de configuración (`resolve_for_project`): gana el campo que la EMPRESA
-tenga con valor; lo vacío o ausente se hereda del global.
+TODO ES POR EMPRESA O NO SE MANDA NADA. Ya no existe configuración global
+(`settings/notifications`, `secrets/whatsapp`) ni cascada que herede de ella,
+por dos razones concretas:
 
-  global   settings/notifications          → instance, webhookUrl, adminPhone, enabled
-           secrets/whatsapp                → apiKey
-  empresa  projects/{projectId}.clientId   → clientId de la empresa dueña
-           clients/{clientId}/private/notifications    → mismos campos
-           clients/{clientId}/private/whatsappSecret   → apiKey
+  · Con un default global, la empresa que TODAVÍA NO configuró sus avisos los
+    recibía por el número de OTRA empresa.
+  · Y si esa empresa alcanzaba a poner su propio `webhookUrl`, la llave global
+    terminaba viajando a una URL ajena: con ella podía mandar mensajes a
+    nombre de cualquiera.
 
-Dos reglas que no son negociables:
+Sin nada que heredar, los dos problemas desaparecen de raíz. Por eso también se
+borró la vieja comprobación de "webhook propio sin apikey propia": ya no hay
+llave global que se pueda filtrar, el webhook y la apikey siempre salen del
+mismo documento de la misma empresa.
 
-  · `enabled: false` en CUALQUIERA de los dos (global o empresa) apaga los
-    avisos de esa empresa. Apagar manda sobre heredar.
-  · El webhook y la apikey van EN PAREJA. Una empresa con webhook propio y sin
-    apikey propia NO recibe nada: mandarle la llave global a una URL que
-    capturó el administrador de esa empresa sería entregársela, y con ella
-    podría mandar mensajes a nombre de cualquier otra empresa.
+De dónde sale la configuración (`resolve_for_project`):
+
+  projects/{projectId}.clientId               → empresa dueña del proyecto
+  clients/{clientId}/private/notifications    → instance, webhookUrl,
+                                                adminPhone, enabled
+  clients/{clientId}/private/whatsappSecret   → apiKey
+
+Un proyecto sin empresa asignada simplemente no notifica, y el log lo dice: no
+es un error de CI, es una empresa sin configurar.
 
 La apikey nunca se imprime, ni siquiera enmascarada; los teléfonos solo salen
 al log por `enmascarar()`, con los últimos 4 dígitos.
@@ -33,6 +40,8 @@ al log por `enmascarar()`, con los últimos 4 dígitos.
 No es un script ejecutable: lo importa ci/codemagic_builds_notify.py.
 """
 from __future__ import annotations
+
+import os
 
 import re
 import time
@@ -45,7 +54,7 @@ TIMEOUT = 20
 INTENTOS = 3
 
 # Un sync recorre decenas de builds y varios caen en el mismo proyecto: sin
-# caché se releerían los mismos cuatro documentos de Firestore una vez por build.
+# caché se releerían los mismos documentos de Firestore una vez por build.
 _cache_config: dict[str, dict] = {}
 
 
@@ -82,11 +91,6 @@ def _prendido(fields: dict) -> bool:
     return bool(campo["booleanValue"])
 
 
-def _gana(propio: str, global_: str) -> str:
-    """Lo de la empresa si tiene valor; si no, lo heredado del global."""
-    return propio or global_
-
-
 # --- Teléfonos ----------------------------------------------------------------
 
 def normalizar_telefono(valor: str | None) -> str | None:
@@ -115,27 +119,26 @@ def enmascarar(telefono: str | None) -> str:
     return f"···{digitos[-4:]}" if len(digitos) >= 4 else "···"
 
 
-# --- Cascada de configuración -------------------------------------------------
+# --- Configuración de la empresa ----------------------------------------------
 
 def resolve_for_project(fs_base: str, token: str, project_id: str) -> dict:
-    """Configuración de WhatsApp que le toca al proyecto `project_id`.
+    """Configuración de WhatsApp de la EMPRESA dueña del proyecto `project_id`.
 
-    Devuelve siempre un dict (nunca levanta), con:
-      enabled      bool  — False si el global o la empresa apagaron los avisos
+    Sin empresa no hay configuración: no se hereda nada de ningún default
+    global, porque ese default mandaba los avisos de una empresa por el número
+    de otra (ver el encabezado del módulo). Devuelve siempre un dict (nunca
+    levanta), con:
+      enabled      bool  — False si la empresa apagó sus avisos
       puedeEnviar  bool  — False si falta algo para mandar, o está apagado
-      motivo       str   — por qué no se puede mandar (vacío si sí se puede)
+      motivo       str   — qué falta exactamente (vacío si sí se puede mandar)
       instance     str   — instancia de WhatsApp (`instanciaWA` del payload)
-      webhook      str   — URL de n8n
-      apikey       str   — llave del webhook (NO imprimir)
-      adminPhone   str   — teléfono administrativo de esa empresa, ya normalizado
+      webhook      str   — URL de n8n de la empresa
+      apikey       str   — llave de ese webhook (NO imprimir)
+      adminPhone   str   — teléfono administrativo de la empresa, normalizado
       clientId     str   — empresa dueña del proyecto ('' si no tiene)
     """
     if project_id in _cache_config:
         return _cache_config[project_id]
-
-    # --- Global (el default de todo el dashboard) ---
-    g_doc = _campos(fs_base, token, "settings/notifications")
-    g_key = _texto(_campos(fs_base, token, "secrets/whatsapp"), "apiKey")
 
     # --- Empresa dueña del proyecto ---
     client_id = _texto(_campos(fs_base, token, f"projects/{project_id}"), "clientId")
@@ -143,10 +146,11 @@ def resolve_for_project(fs_base: str, token: str, project_id: str) -> dict:
     c_key = ""
     if client_id:
         c_doc = _campos(fs_base, token, f"clients/{client_id}/private/notifications")
-        c_key = _texto(_campos(fs_base, token, f"clients/{client_id}/private/whatsappSecret"), "apiKey")
+        c_key = _texto(
+            _campos(fs_base, token, f"clients/{client_id}/private/whatsappSecret"), "apiKey"
+        )
 
-    c_webhook = _texto(c_doc, "webhookUrl")
-    admin_crudo = _gana(_texto(c_doc, "adminPhone"), _texto(g_doc, "adminPhone"))
+    admin_crudo = _texto(c_doc, "adminPhone")
     admin = normalizar_telefono(admin_crudo)
     if admin_crudo and not admin:
         # Se dice, pero no se tumba nada: el aviso puede seguir llegándole a
@@ -158,40 +162,43 @@ def resolve_for_project(fs_base: str, token: str, project_id: str) -> dict:
 
     cfg = {
         "clientId": client_id,
-        "instance": _gana(_texto(c_doc, "instance"), _texto(g_doc, "instance")),
-        "webhook": _gana(c_webhook, _texto(g_doc, "webhookUrl")),
-        "apikey": _gana(c_key, g_key),
+        "instance": _texto(c_doc, "instance"),
+        "webhook": _texto(c_doc, "webhookUrl"),
+        "apikey": c_key,
         "adminPhone": admin or "",
         "enabled": True,
         "puedeEnviar": False,
         "motivo": "",
     }
 
-    # Apagar manda: basta con que uno de los dos esté apagado.
-    if not _prendido(g_doc):
-        cfg["enabled"] = False
-        cfg["motivo"] = "Las notificaciones de WhatsApp están apagadas en la configuración global."
+    if not client_id:
+        # No es un error de CI: es un proyecto que nadie asignó a una empresa.
+        cfg["motivo"] = (
+            f"El proyecto '{project_id}' no tiene empresa asignada, y sin empresa no hay "
+            "a quién ni por dónde notificar. Asígnale una en el dashboard → Proyectos."
+        )
     elif not _prendido(c_doc):
         cfg["enabled"] = False
         cfg["motivo"] = f"La empresa '{client_id}' tiene apagadas las notificaciones de WhatsApp."
-
-    # El par webhook/apikey: o se hereda todo del global, o la empresa pone los dos.
-    elif c_webhook and not c_key:
-        cfg["motivo"] = (
-            f"La empresa '{client_id}' tiene webhook propio pero no apikey propia. No se manda "
-            "nada: la llave global no viaja a un webhook de cliente. Captura su apikey en el "
-            "dashboard → Configuración → Notificaciones."
-        )
-    elif not cfg["webhook"] or not cfg["apikey"]:
-        cfg["motivo"] = (
-            "Falta el webhook o la apikey de WhatsApp (ni la de la empresa ni la global). "
-            "Configúralos en el dashboard → Configuración → Notificaciones."
-        )
     else:
-        cfg["puedeEnviar"] = True
-        if not cfg["instance"]:
-            # No impide el envío, pero n8n puede rechazarlo: mejor decirlo.
-            print("⚠ Sin instancia de WhatsApp configurada; n8n puede rechazar el envío.")
+        # Se enumera lo que falta en lugar de un genérico: quien lee el log
+        # tiene que saber exactamente qué campo ir a capturar.
+        faltantes = [
+            nombre
+            for nombre, valor in (
+                ("instancia", cfg["instance"]),
+                ("webhook", cfg["webhook"]),
+                ("apikey", cfg["apikey"]),
+            )
+            if not valor
+        ]
+        if faltantes:
+            cfg["motivo"] = (
+                f"La empresa '{client_id}' no tiene {' ni '.join(faltantes)} de WhatsApp. "
+                "Captúralo en el dashboard → Configuración → Notificaciones."
+            )
+        else:
+            cfg["puedeEnviar"] = True
 
     _cache_config[project_id] = cfg
     return cfg
