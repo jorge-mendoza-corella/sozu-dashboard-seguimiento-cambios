@@ -112,10 +112,26 @@ export async function getAllUsers(): Promise<AppUser[]> {
  */
 export async function getUsersByClients(clientIds: string[]): Promise<AppUser[]> {
   if (clientIds.length === 0) return [];
-  // `array-contains-any` admite hasta 30 valores; nadie administra tantas.
-  const q = query(collection(db, "users"), where("clientIds", "array-contains-any", clientIds.slice(0, 30)));
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => d.data() as AppUser);
+  // Una consulta POR empresa, no un `array-contains-any` con todas.
+  //
+  // Las reglas exigen que la consulta se pueda demostrar por sí sola, y una
+  // condición con varios valores es justo la que el motor no siempre puede
+  // casar: la consulta entera se deniega y la lista sale vacía sin explicación.
+  // Además, así una empresa que falle no se lleva a las demás.
+  const porEmpresa = await Promise.all(
+    clientIds.map(async (id) => {
+      try {
+        const q = query(collection(db, "users"), where("clientIds", "array-contains", id));
+        return (await getDocs(q)).docs.map((d) => d.data() as AppUser);
+      } catch {
+        return [] as AppUser[];
+      }
+    }),
+  );
+  // Un usuario puede pertenecer a varias de sus empresas: se deduplica.
+  const porEmail = new Map<string, AppUser>();
+  for (const u of porEmpresa.flat()) porEmail.set(u.email, u);
+  return [...porEmail.values()];
 }
 
 /**
@@ -125,7 +141,14 @@ export async function getUsersByClients(clientIds: string[]): Promise<AppUser[]>
 export async function getVisibleUsers(user: AppUser | null): Promise<AppUser[]> {
   const empresas = adminClientIds(user);
   if (empresas === null) return getAllUsers();
-  return getUsersByClients(empresas);
+  const deSusEmpresas = await getUsersByClients(empresas);
+  // El propio usuario siempre entra: su doc se lee sin depender de ninguna
+  // consulta (las reglas permiten leerse a uno mismo), así que una lista vacía
+  // significa "no hay nadie más", no "algo falló al consultar".
+  if (user && !deSusEmpresas.some((u) => u.email === user.email)) {
+    return [user, ...deSusEmpresas];
+  }
+  return deSusEmpresas;
 }
 
 export async function addUser(

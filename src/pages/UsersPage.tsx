@@ -144,7 +144,7 @@ export function UsersPage() {
   // La lista depende de QUIÉN pregunta: un administrador de empresa solo ve a
   // los suyos. Por eso el email va en la clave, para que dos cuentas distintas
   // no se pisen la caché de react-query.
-  const { data: users = [], refetch } = useQuery({
+  const { data: users = [], refetch, error: errorLista } = useQuery({
     queryKey: ["users-all", appUser?.email ?? ""],
     queryFn: () => getVisibleUsers(appUser),
     enabled: !!appUser,
@@ -480,6 +480,13 @@ export function UsersPage() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Usuarios con acceso ({users.length})</CardTitle>
+          {/* Un fallo al listar se veía como "(0)": parecía que no había nadie,
+              cuando en realidad la consulta no se pudo hacer. */}
+          {errorLista != null && (
+            <p className="mt-1 text-xs text-destructive">
+              No se pudo leer la lista completa: {(errorLista as Error).message}
+            </p>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {users.map((u) => {
