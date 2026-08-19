@@ -443,22 +443,30 @@ export function UsersPage() {
    * "todas las suyas", así que al desmarcar la primera hay que materializar el
    * resto: si no, quitar una sola las prendería todas de golpe.
    */
-  const handleToggleAdminClient = async (u: AppUser, id: string) => {
-    const suyas = u.clientIds ?? [];
-    const actuales = (u.adminClientIds ?? []).length === 0 ? suyas : (u.adminClientIds ?? []);
-    const siguiente = actuales.includes(id)
-      ? actuales.filter((x) => x !== id)
-      : [...actuales, id];
+  const handleSetAdminClients = async (u: AppUser, ids: string[]) => {
     setBusy(u.email);
     setError("");
     try {
-      await setUserAdminClients(u.email, siguiente);
+      await setUserAdminClients(u.email, ids);
       await refresh();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Error al actualizar qué empresas administra");
+      setError(e instanceof Error ? e.message : "Error al actualizar qué empresas puede configurar");
     } finally {
       setBusy(null);
     }
+  };
+
+  /**
+   * Marcar una empresa desde el estado "todas las suyas" RESTRINGE a esa, no
+   * agrega sobre todas: quien toca una pill está acotando, no ampliando.
+   * Desmarcar la última vuelve a "todas", que es el default explícito de arriba.
+   */
+  const handleToggleAdminClient = (u: AppUser, id: string) => {
+    const actuales = u.adminClientIds ?? [];
+    const siguiente = actuales.includes(id)
+      ? actuales.filter((x) => x !== id)
+      : [...actuales, id];
+    return handleSetAdminClients(u, siguiente);
   };
 
   const handleToggleClient = async (u: AppUser, id: string) => {
@@ -900,24 +908,38 @@ export function UsersPage() {
                       <>
                         <p className="mb-2 mt-4 flex items-center gap-1 text-xs font-medium text-muted-foreground">
                           <Shield className="h-3.5 w-3.5" />
-                          De esas, cuáles administra
+                          Empresas que puede configurar
                           <span className="font-normal">
                             — las demás las ve en solo lectura
                           </span>
                         </p>
-                        <ClientPills
-                          clients={visibleClients.filter((c) => userClients.includes(c.id))}
-                          selected={(id) =>
-                            (u.adminClientIds ?? []).length === 0 || (u.adminClientIds ?? []).includes(id)
-                          }
-                          disabled={busy === u.email || soloLectura}
-                          onToggle={(id) => handleToggleAdminClient(u, id)}
-                        />
-                        {(u.adminClientIds ?? []).length === 0 && (
-                          <p className="mt-1 text-[11px] text-muted-foreground">
-                            Sin marcar ninguna en particular: administra todas las suyas.
-                          </p>
-                        )}
+                        {/* Lista vacía = puede configurar todas las suyas. Antes
+                            esas pills se pintaban como si estuvieran marcadas una
+                            por una, y eso se leía como una elección hecha a
+                            propósito: había que mirar el texto de abajo para
+                            entender que en realidad no había ninguna restricción.
+                            Ahora el estado "sin restringir" es su propia opción. */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={busy === u.email || soloLectura}
+                            onClick={() => handleSetAdminClients(u, [])}
+                            className={`rounded-full border px-2.5 py-1 text-xs transition-colors disabled:opacity-50 ${
+                              (u.adminClientIds ?? []).length === 0
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border text-muted-foreground hover:bg-muted"
+                            }`}
+                            title="Puede configurar todas las empresas a las que pertenece"
+                          >
+                            Todas las suyas
+                          </button>
+                          <ClientPills
+                            clients={visibleClients.filter((c) => userClients.includes(c.id))}
+                            selected={(id) => (u.adminClientIds ?? []).includes(id)}
+                            disabled={busy === u.email || soloLectura}
+                            onToggle={(id) => handleToggleAdminClient(u, id)}
+                          />
+                        </div>
                       </>
                     )}
 
