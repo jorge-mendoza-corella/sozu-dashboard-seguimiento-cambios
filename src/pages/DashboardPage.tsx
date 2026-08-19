@@ -9,7 +9,8 @@ import { ActiveBuildChips } from "@/components/codemagic/ActiveBuildChips";
 import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { useProjects, useRepos, useAccessibleRepoIds } from "@/hooks/useProjectsRepos";
-import { useCanPublishApps, useClientScope } from "@/hooks/useClients";
+import { useCanPublishApps, useClientScope, useClients } from "@/hooks/useClients";
+import { clientDisplayName } from "@/lib/firestoreClients";
 import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
@@ -112,6 +113,28 @@ export function DashboardPage() {
   // ve los de SUS empresas (aunque no estén en su `projectIds`: son suyos por
   // pertenecer a la empresa) y el viewer sigue con el criterio de siempre.
   const { visibleProjects: projects } = useClientScope(appUser);
+  const { data: clients = [] } = useClients(appUser);
+
+  // Proyectos agrupados por empresa. La etiqueta solo aparece cuando el usuario
+  // ve más de una: con una sola, nombrarla en cada fila es ruido.
+  const gruposDeProyectos = useMemo(() => {
+    const porCliente = new Map<string, typeof projects>();
+    for (const p of projects) {
+      const clave = p.clientId ?? "";
+      porCliente.set(clave, [...(porCliente.get(clave) ?? []), p]);
+    }
+    const variasEmpresas = porCliente.size > 1;
+    return [...porCliente.entries()].map(([clientId, proyectos]) => {
+      const cliente = clients.find((c) => c.id === clientId);
+      return {
+        clientId: clientId || null,
+        nombre: cliente ? clientDisplayName(cliente) : "Sin empresa",
+        color: cliente?.color ?? "#94a3b8",
+        proyectos,
+        mostrarEtiqueta: variasEmpresas,
+      };
+    });
+  }, [projects, clients]);
 
   const allRepoRefs: RepoRef[] = useMemo(
     () => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })),
@@ -303,45 +326,65 @@ export function DashboardPage() {
             }}
           >
             <TabsList className="mt-3 h-auto flex-wrap overflow-visible">
-              {projects.map((p) => {
-                const count = reposByProject.get(p.id)?.length ?? 0;
-                const alert = projectAlert.get(p.id) ?? null;
-                const alertTitle =
-                  alert === "failing" ? "Deploy fallando" :
-                  alert === "pending" ? "PRs abiertos" :
-                  alert === "devPending" ? "Dev por pasar a PRD" : "";
-                return (
-                  <div key={p.id} className="relative">
-                    {/* Flecha sobre el proyecto activo — fuera del trigger para
-                        que el overflow del efecto tab-alert no la recorte */}
-                    {activeProject === p.id && (
-                      <span className="pointer-events-none absolute -top-3 left-1/2 z-20 -translate-x-1/2 text-[10px] leading-none text-primary">
-                        ▼
-                      </span>
-                    )}
-                  <TabsTrigger
-                    value={p.id}
-                    title={alertTitle || undefined}
-                    className={cn(
-                      "gap-1.5",
-                      "data-[state=active]:font-bold data-[state=active]:text-primary",
-                      alert && `tab-alert tab-alert-${alert}`,
-                    )}
-                  >
-                    <span className="relative z-10 flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
-                      {p.name}
-                      {(p.isApp ?? false) && (
-                        <span className="inline-flex items-center gap-0.5 rounded bg-blue-100 px-1 py-0.5 text-[9px] font-bold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                          <Smartphone className="h-2.5 w-2.5" />APP
-                        </span>
-                      )}
-                      <span className="text-[10px] text-muted-foreground">({count})</span>
+              {/* Con una sola empresa las pestañas van sueltas, como siempre.
+                  Con varias se agrupan por empresa: si no, los proyectos de dos
+                  clientes distintos se mezclan en una fila y no hay forma de
+                  saber de quién es cada uno. */}
+              {gruposDeProyectos.map((g) => (
+                <div
+                  key={g.clientId ?? "sin-empresa"}
+                  className={cn(
+                    "flex items-center gap-1",
+                    g.mostrarEtiqueta && "rounded-lg border border-dashed px-2 py-1",
+                  )}
+                >
+                  {g.mostrarEtiqueta && (
+                    <span className="mr-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
+                      {g.nombre}
                     </span>
-                  </TabsTrigger>
-                  </div>
-                );
-              })}
+                  )}
+                  {g.proyectos.map((p) => {
+                    const count = reposByProject.get(p.id)?.length ?? 0;
+                    const alert = projectAlert.get(p.id) ?? null;
+                    const alertTitle =
+                      alert === "failing" ? "Deploy fallando" :
+                      alert === "pending" ? "PRs abiertos" :
+                      alert === "devPending" ? "Dev por pasar a PRD" : "";
+                    return (
+                      <div key={p.id} className="relative">
+                        {/* Flecha sobre el proyecto activo — fuera del trigger para
+                            que el overflow del efecto tab-alert no la recorte */}
+                        {activeProject === p.id && (
+                          <span className="pointer-events-none absolute -top-3 left-1/2 z-20 -translate-x-1/2 text-[10px] leading-none text-primary">
+                            ▼
+                          </span>
+                        )}
+                        <TabsTrigger
+                          value={p.id}
+                          title={alertTitle || undefined}
+                          className={cn(
+                            "gap-1.5",
+                            "data-[state=active]:font-bold data-[state=active]:text-primary",
+                            alert && `tab-alert tab-alert-${alert}`,
+                          )}
+                        >
+                          <span className="relative z-10 flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+                            {p.name}
+                            {(p.isApp ?? false) && (
+                              <span className="inline-flex items-center gap-0.5 rounded bg-blue-100 px-1 py-0.5 text-[9px] font-bold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                                <Smartphone className="h-2.5 w-2.5" />APP
+                              </span>
+                            )}
+                            <span className="text-[10px] text-muted-foreground">({count})</span>
+                          </span>
+                        </TabsTrigger>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
             </TabsList>
 
             {projects.map((p) => {
