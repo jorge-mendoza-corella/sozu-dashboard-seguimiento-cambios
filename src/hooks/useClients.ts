@@ -94,28 +94,36 @@ export function useClientScope(appUser: AppUser | null) {
       ? clients
       : clients.filter((c) => empresas!.includes(c.id));
 
-    // El admin de empresa ve TODOS los proyectos de sus empresas, aunque no
-    // estén en su `projectIds`: es su empresa, no una asignación puntual.
+    // Los proyectos se acotan en dos pasos, y los dos importan:
+    //   1. la EMPRESA — nadie ve proyectos de una empresa que no es suya;
+    //   2. la asignación — `projectIds` marca cuáles de esa empresa le tocan.
+    //
+    // El paso 2 aplica también al administrador de empresa: tener a Sozu no es
+    // lo mismo que trabajar en sus cuatro proyectos, y marcarle uno solo tiene
+    // que significar uno solo. `projectIds` vacío = todos los de sus empresas,
+    // que es lo que conserva a las cuentas que nunca lo configuraron.
+    const suyas = appUser?.clientIds ?? [];
+    const asignados = appUser?.projectIds ?? [];
     const visibleProjects = esAdminGlobal
       ? projects
-      : esAdminDeEmpresa
-        ? projects.filter((p) => p.clientId && empresas!.includes(p.clientId))
-        : (() => {
-            // Viewer: sus proyectos asignados, pero acotados a las empresas a
-            // las que pertenece. Sin ese cruce, un `projectIds` con ids de otra
-            // empresa —que un administrador de empresa puede escribir— le
-            // abriría proyectos ajenos.
-            const ids = appUser?.projectIds;
-            const suyas = appUser?.clientIds ?? [];
-            const base = !ids || ids.length === 0 ? projects : projects.filter((p) => ids.includes(p.id));
-            return suyas.length === 0
-              ? base // legacy sin empresa: se conserva el criterio de siempre
-              : base.filter((p) => p.clientId && suyas.includes(p.clientId));
-          })();
+      : (() => {
+          const deSusEmpresas =
+            suyas.length === 0
+              ? projects // legacy sin empresa: se conserva el criterio de siempre
+              : projects.filter((p) => p.clientId && suyas.includes(p.clientId));
+          return asignados.length === 0
+            ? deSusEmpresas
+            : deSusEmpresas.filter((p) => asignados.includes(p.id));
+        })();
 
     return {
       esAdminGlobal,
       esAdminDeEmpresa,
+      /**
+       * Repos asignados. `null` = todos los de sus proyectos visibles; es el
+       * default y el que conserva a quien nunca bajó a ese detalle.
+       */
+      repoIds: (appUser?.repoIds?.length ?? 0) > 0 ? new Set(appUser!.repoIds) : null,
       /** Ids de las empresas que administra; null = todas. */
       clientIds: empresas,
       visibleClients,

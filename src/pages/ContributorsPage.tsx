@@ -15,9 +15,22 @@ import { GroupsModal } from "@/components/contributors/GroupsModal";
 import { useRepos } from "@/hooks/useProjectsRepos";
 import { useCommitActivity } from "@/hooks/useCommitActivity";
 import { useContributorGroups } from "@/hooks/useContributorGroups";
+import { useClients, useClientScope } from "@/hooks/useClients";
+import { clientDisplayName } from "@/lib/firestoreClients";
+import { isRootAdmin } from "@/lib/firestoreUsers";
 import { BAR_COLORS } from "@/lib/colors";
 
 const TEL_REGEX = /^\d{10}$/;
+
+/** Color de los proyectos sin empresa asignada (el mismo de `empresas.ts`). */
+const COLOR_SIN_EMPRESA = "#94a3b8";
+
+/** Empresa dueña de alguno de los repos en los que aparece un contribuidor. */
+interface EmpresaTag {
+  id: string;
+  nombre: string;
+  color: string;
+}
 
 export interface RepoMetrics30 {
   repo: string;
@@ -26,16 +39,32 @@ export interface RepoMetrics30 {
   prs: number;
 }
 
+/** Punto de color + nombre de la empresa, como en el selector de empresas. */
+function EmpresaChip({ empresa }: { empresa: EmpresaTag }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground"
+      title={`Aparece en repos de ${empresa.nombre}`}
+    >
+      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: empresa.color }} />
+      {empresa.nombre}
+    </span>
+  );
+}
+
 function DetailModal({
   contributor,
   telefonoActual,
   metrics30,
+  empresas,
   onClose,
   onSaved,
 }: {
   contributor: Contributor;
   telefonoActual?: string;
   metrics30: RepoMetrics30[] | null; // null = aún cargando
+  /** Empresas del contribuidor; vacío cuando el usuario solo ve una. */
+  empresas: EmpresaTag[];
   onClose: () => void;
   onSaved: (login: string, telefono: string) => void;
 }) {
@@ -44,6 +73,11 @@ function DetailModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [ok, setOk] = useState(false);
+
+  // Las reglas de Firestore solo dejan ESCRIBIR `contributors/{login}` al root.
+  // Un administrador de empresa puede leer el teléfono, pero si lo dejáramos
+  // intentar guardarlo la única respuesta sería un permission-denied.
+  const puedeEditarTelefono = isRootAdmin(appUser);
 
   const maxCommits = Math.max(...contributor.repos.map((r) => r.contributions), 1);
 
@@ -97,6 +131,13 @@ function DetailModal({
                 {contributor.totalContributions.toLocaleString()} commits ·{" "}
                 {contributor.repos.length} repos
               </p>
+              {empresas.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  {empresas.map((e) => (
+                    <EmpresaChip key={e.id || "sin-empresa"} empresa={e} />
+                  ))}
+                </div>
+              )}
             </div>
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
               <X className="h-4 w-4" />
@@ -186,16 +227,22 @@ function DetailModal({
               <input
                 inputMode="numeric"
                 maxLength={10}
-                className="flex-1 px-3 py-2 text-sm border rounded-md bg-background"
-                placeholder="10 dígitos"
+                disabled={!puedeEditarTelefono}
+                className="flex-1 px-3 py-2 text-sm border rounded-md bg-background disabled:cursor-not-allowed disabled:opacity-60"
+                placeholder={puedeEditarTelefono ? "10 dígitos" : "Sin teléfono registrado"}
                 value={telefono}
                 onChange={(e) => setTelefono(e.target.value.replace(/\D/g, ""))}
                 onKeyDown={(e) => e.key === "Enter" && handleSave()}
               />
-              <Button onClick={handleSave} disabled={saving} size="sm">
+              <Button onClick={handleSave} disabled={saving || !puedeEditarTelefono} size="sm">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : ok ? <Check className="h-4 w-4" /> : "Guardar"}
               </Button>
             </div>
+            {!puedeEditarTelefono && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                El teléfono lo actualiza el administrador global.
+              </p>
+            )}
             {error && <p className="text-xs text-destructive mt-2">{error}</p>}
           </div>
         </CardContent>
@@ -220,10 +267,76 @@ export function ContributorsPage() {
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-  const { data: repos = [] } = useRepos();
+  const { appUser } = useAuth();
+  const { esAdminGlobal, visibleProjects, visibleProjectIds, repoIds } = useClientScope(appUser);
+  const { data: clients = [] } = useClients(appUser);
+  const { data: allRepos = [] } = useRepos();
+
+  // Repos que este usuario tiene derecho a ver. Acotar AQUÍ es lo que acota la
+  // pantalla entera: de estos repos salen los contribuidores, la actividad de
+  // 30 días y los logins que se ofrecen para agrupar. El admin global sigue
+  // viendo todos, tal cual antes.
+  const repos = useMemo(() => {
+    if (esAdminGlobal) return allRepos;
+    const deSusProyectos = allRepos.filter((r) => visibleProjectIds.has(r.projectId));
+    return repoIds ? deSusProyectos.filter((r) => repoIds.has(r.id)) : deSusProyectos;
+  }, [allRepos, esAdminGlobal, visibleProjectIds, repoIds]);
+
   const repoRefs = useMemo(() => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })), [repos]);
   const { data: activity } = useCommitActivity(repoRefs, 30);
   const { data: groups = [] } = useContributorGroups();
+
+  // Los grupos y la analítica ejecutiva se calculan sobre TODOS los repos del
+  // servicio, así que solo tienen sentido para el admin global. Para un
+  // administrador de empresa se esconden en vez de mostrarle números ajenos.
+  const verHerramientasGlobales = esAdminGlobal;
+  // Sin la barra de vistas no hay forma de cambiarla: la lista se queda plana.
+  const vista = verHerramientasGlobales ? view : "flat";
+
+  // Empresa(s) dueñas de cada repo, por LABEL: es lo que guarda `Contributor`
+  // (no el id del doc), y es el puente contribuidor → repo → proyecto → empresa.
+  const empresasPorRepoLabel = useMemo(() => {
+    const empresaDelProyecto = new Map(visibleProjects.map((p) => [p.id, p.clientId ?? ""]));
+    const m = new Map<string, Set<string>>();
+    for (const r of repos) {
+      const empresa = empresaDelProyecto.get(r.projectId);
+      if (empresa === undefined) continue; // repo de un proyecto que no ve
+      const set = m.get(r.label) ?? new Set<string>();
+      set.add(empresa);
+      m.set(r.label, set);
+    }
+    return m;
+  }, [repos, visibleProjects]);
+
+  // Con una sola empresa a la vista, etiquetarla en cada fila sería repetir lo
+  // mismo tantas veces como contribuidores haya.
+  const mostrarEmpresas = useMemo(() => {
+    const ids = new Set<string>();
+    for (const set of empresasPorRepoLabel.values()) for (const id of set) ids.add(id);
+    return ids.size > 1;
+  }, [empresasPorRepoLabel]);
+
+  const empresaPorId = useMemo(
+    () => new Map(clients.map((c) => [c.id, { nombre: clientDisplayName(c), color: c.color }])),
+    [clients],
+  );
+
+  /** Empresas en cuyos repos aparece ese contribuidor. */
+  const empresasDe = useCallback(
+    (c: Contributor): EmpresaTag[] => {
+      if (!mostrarEmpresas) return [];
+      const ids = new Set<string>();
+      for (const r of c.repos) for (const id of empresasPorRepoLabel.get(r.repo) ?? []) ids.add(id);
+      return [...ids]
+        .map((id) => ({
+          id,
+          nombre: empresaPorId.get(id)?.nombre ?? "Sin empresa",
+          color: empresaPorId.get(id)?.color ?? COLOR_SIN_EMPRESA,
+        }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre));
+    },
+    [mostrarEmpresas, empresasPorRepoLabel, empresaPorId],
+  );
 
   // Métricas 30d (dev/main/PRs por repo) del contribuidor seleccionado.
   const metrics30 = useMemo<RepoMetrics30[] | null>(() => {
@@ -300,7 +413,9 @@ export function ContributorsPage() {
         <div>
           <h1 className="text-2xl font-bold">Contribuidores</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Contribuidores de GitHub agregados de todos los repositorios monitoreados
+            {esAdminGlobal
+              ? "Contribuidores de GitHub agregados de todos los repositorios monitoreados"
+              : "Contribuidores de GitHub que participan en los repositorios de tus empresas"}
           </p>
         </div>
       </div>
@@ -308,7 +423,7 @@ export function ContributorsPage() {
       <Tabs defaultValue="lista">
         <TabsList>
           <TabsTrigger value="lista">Contribuidores</TabsTrigger>
-          <TabsTrigger value="analitica">Analítica ejecutiva</TabsTrigger>
+          {verHerramientasGlobales && <TabsTrigger value="analitica">Analítica ejecutiva</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="lista">
@@ -324,20 +439,22 @@ export function ContributorsPage() {
             </div>
           ) : (
             <>
-              {/* Toolbar: vista + gestión de grupos */}
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <Button variant={view === "flat" ? "default" : "outline"} size="sm" onClick={() => setView("flat")}>
-                  <LayoutGrid className="mr-1.5 h-4 w-4" /> Individual
-                </Button>
-                <Button variant={view === "grouped" ? "default" : "outline"} size="sm" onClick={() => setView("grouped")}>
-                  <Layers className="mr-1.5 h-4 w-4" /> Agrupado
-                </Button>
-                <Button variant="outline" size="sm" className="ml-auto" onClick={() => setShowGroups(true)}>
-                  <Settings2 className="mr-1.5 h-4 w-4" /> Gestionar grupos
-                </Button>
-              </div>
+              {/* Toolbar: vista + gestión de grupos (solo admin global) */}
+              {verHerramientasGlobales && (
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  <Button variant={vista === "flat" ? "default" : "outline"} size="sm" onClick={() => setView("flat")}>
+                    <LayoutGrid className="mr-1.5 h-4 w-4" /> Individual
+                  </Button>
+                  <Button variant={vista === "grouped" ? "default" : "outline"} size="sm" onClick={() => setView("grouped")}>
+                    <Layers className="mr-1.5 h-4 w-4" /> Agrupado
+                  </Button>
+                  <Button variant="outline" size="sm" className="ml-auto" onClick={() => setShowGroups(true)}>
+                    <Settings2 className="mr-1.5 h-4 w-4" /> Gestionar grupos
+                  </Button>
+                </div>
+              )}
 
-              {view === "grouped" && (
+              {vista === "grouped" && (
                 <div className="mb-6 space-y-4">
                   {groups.length === 0 && (
                     <p className="text-sm text-muted-foreground">
@@ -448,6 +565,13 @@ export function ContributorsPage() {
                                       {c.repos.length} repos
                                     </span>
                                   </div>
+                                  {empresasDe(c).length > 0 && (
+                                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                      {empresasDe(c).map((e) => (
+                                        <EmpresaChip key={e.id || "sin-empresa"} empresa={e} />
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               </CardContent>
                             </Card>
@@ -459,7 +583,15 @@ export function ContributorsPage() {
                 </div>
               )}
 
-              {view === "flat" && (
+              {/* Al acotar por empresa la lista puede quedar vacía; decirlo es
+                  mejor que dejar la pantalla en blanco sin explicación. */}
+              {!esAdminGlobal && contributors.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  No hay contribuidores en los repositorios de tus empresas.
+                </p>
+              )}
+
+              {vista === "flat" && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {contributors.map((c) => (
                     <Card
@@ -488,6 +620,9 @@ export function ContributorsPage() {
                                 {phones[c.login]}
                               </Badge>
                             )}
+                            {empresasDe(c).map((e) => (
+                              <EmpresaChip key={e.id || "sin-empresa"} empresa={e} />
+                            ))}
                             {(groupsByLogin.get(c.login) ?? []).map((g) => (
                               <span
                                 key={g.name}
@@ -509,9 +644,11 @@ export function ContributorsPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="analitica">
-          <ContributorsAnalytics />
-        </TabsContent>
+        {verHerramientasGlobales && (
+          <TabsContent value="analitica">
+            <ContributorsAnalytics />
+          </TabsContent>
+        )}
 
       </Tabs>
 
@@ -520,6 +657,7 @@ export function ContributorsPage() {
           contributor={selected}
           telefonoActual={phones[selected.login]}
           metrics30={metrics30}
+          empresas={empresasDe(selected)}
           onClose={() => setSelected(null)}
           onSaved={handleSaved}
         />

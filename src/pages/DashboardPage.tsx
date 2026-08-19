@@ -56,7 +56,7 @@ export function DashboardPage() {
   const { data: allRepos = [], isLoading: loadingRepos } = useRepos();
   // El alcance se resuelve antes que los repos: de él depende si hay que filtrar
   // por colaboración en GitHub o no.
-  const { visibleProjects: todosLosProyectos, esAdminGlobal, esAdminDeEmpresa } =
+  const { visibleProjects: todosLosProyectos, esAdminGlobal, esAdminDeEmpresa, repoIds: reposAsignados } =
     useClientScope(appUser);
 
   // Visibilidad por repo según la cuenta de GitHub del usuario (su API key): si
@@ -82,11 +82,14 @@ export function DashboardPage() {
   );
 
   const repos = useMemo(() => {
-    if (!filtraPorGitHub || !appUser?.githubToken) return allRepos;
+    // Primero lo asignado en el dashboard —el permiso más fino, repo por repo—
+    // y encima, solo para viewers, lo que su cuenta de GitHub alcanza.
+    const asignados = reposAsignados ? allRepos.filter((r) => reposAsignados.has(r.id)) : allRepos;
+    if (!filtraPorGitHub || !appUser?.githubToken) return asignados;
     if (!accessibleIds) return []; // aún verificando accesos: no mostrar de más
     const ok = new Set(accessibleIds);
-    return allRepos.filter((r) => ok.has(r.id));
-  }, [allRepos, accessibleIds, filtraPorGitHub, appUser?.githubToken]);
+    return asignados.filter((r) => ok.has(r.id));
+  }, [allRepos, accessibleIds, filtraPorGitHub, appUser?.githubToken, reposAsignados]);
 
   // Aprobadores por proyecto: el token del usuario configurado como aprobador
   // firma las reviews. Solo los admins pueden leer la colección users (rules);

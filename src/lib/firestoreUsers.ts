@@ -8,19 +8,25 @@ export const SUPERUSER_EMAIL = "jorge.mendoza@sozu.com";
 /**
  * - `superuser`  administrador global del servicio (ve y toca todo).
  * - `client_admin` administrador de una o varias EMPRESAS: manda dentro de sus
- *   clientes (proyectos, usuarios, notificaciones) y no ve al resto.
- * - `viewer` usuario operativo, acotado a los proyectos que se le asignen.
+ *   clientes (proyectos, usuarios, contribuidores, notificaciones) y no ve al resto.
+ * - `developer` trabaja en los repos que se le asignen: solo Resumen y CI/CD.
+ * - `viewer` lo mismo que developer; se conserva porque hay cuentas con ese rol
+ *   guardado y cambiárselo por debajo sería moverles el acceso sin avisar.
  *
  * El superusuario raíz (`SUPERUSER_EMAIL`) sigue siendo un caso aparte: es el
  * único que puede crear clientes, mover tarifas y tocar datos fiscales.
  */
-export type UserRole = "superuser" | "client_admin" | "viewer";
+export type UserRole = "superuser" | "client_admin" | "developer" | "viewer";
 
 export const ROLE_LABEL: Record<UserRole, string> = {
   superuser: "Administrador global",
   client_admin: "Administrador de empresa",
+  developer: "Desarrollador",
   viewer: "Viewer",
 };
+
+/** Roles que solo operan (Resumen y CI/CD), sin pantallas de administración. */
+export const esRolOperativo = (rol: UserRole) => rol === "developer" || rol === "viewer";
 
 /** Permisos granulares de acciones CI/CD por usuario. */
 export interface CicdPermissions {
@@ -47,6 +53,12 @@ export interface AppUser {
    */
   clientIds?: string[];
   projectIds?: string[]; // proyectos a los que tiene acceso (vacío/undefined = legacy: todos)
+  /**
+   * Repos a los que tiene acceso, dentro de esos proyectos. Vacío/undefined =
+   * todos los del proyecto. Es el nivel más fino: un desarrollador puede estar
+   * en un proyecto y tocar solo un repo de los seis.
+   */
+  repoIds?: string[];
   permissions?: CicdPermissions; // undefined = legacy: admins todo, viewers nada
   githubToken?: string; // PAT personal de GitHub (obligatorio para operar; root exento)
   githubLogin?: string; // login de GitHub derivado del token (GET /user)
@@ -65,8 +77,8 @@ export function resolvePermissions(user: AppUser | null): CicdPermissions {
   if (isRootAdmin(user)) return ALL_PERMISSIONS;
   if (user.permissions) return { ...NO_PERMISSIONS, ...user.permissions };
   // Sin permisos explícitos: los administradores (globales o de empresa) los
-  // tienen todos dentro de lo que ven; el viewer, ninguno.
-  return user.role === "superuser" || user.role === "client_admin" ? ALL_PERMISSIONS : NO_PERMISSIONS;
+  // tienen todos dentro de lo que ven; quien solo opera, ninguno.
+  return esRolOperativo(user.role) ? NO_PERMISSIONS : ALL_PERMISSIONS;
 }
 
 /**
@@ -165,6 +177,7 @@ export async function addUser(
   githubToken?: string,
   githubLogin?: string,
   clientIds: string[] = [],
+  repoIds: string[] = [],
 ) {
   if (role === "client_admin" && clientIds.length === 0) {
     throw new Error("Un administrador de empresa necesita al menos una empresa asignada.");
@@ -175,6 +188,7 @@ export async function addUser(
     addedBy,
     clientIds,
     projectIds,
+    repoIds,
     permissions,
     ...(githubToken && githubLogin
       ? { githubToken, githubLogin, githubTokenUpdatedAt: serverTimestamp() }
@@ -223,6 +237,14 @@ export async function setUserRole(email: string, role: UserRole, clientIds?: str
     { role, ...(clientIds ? { clientIds } : {}) },
     { merge: true },
   );
+}
+
+/**
+ * Repos a los que tiene acceso. Lista vacía = todos los de sus proyectos, que
+ * es el comportamiento de siempre y el que conserva a quien nunca lo configuró.
+ */
+export async function setUserRepos(email: string, repoIds: string[]) {
+  await setDoc(doc(db, "users", email), { repoIds }, { merge: true });
 }
 
 /** Empresas a las que pertenece (o que administra) el usuario. */

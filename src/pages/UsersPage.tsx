@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  UserPlus, Trash2, Shield, Eye, Loader2, FolderGit2, ChevronDown, ChevronUp,
+  UserPlus, Trash2, Shield, Eye, Loader2, FolderGit2, ChevronDown, ChevronUp, GitBranch,
   GitPullRequest, UserCheck, GitMerge, Rocket, Smartphone, KeyRound, ExternalLink, Building2, Eye as EyeIcon,
 } from "lucide-react";
 import { validateGithubToken } from "@/lib/githubAuth";
@@ -12,7 +12,9 @@ import { SelectNative } from "@/components/ui/select-native";
 import { useAuth } from "@/hooks/useAuth";
 import { useImpersonation } from "@/hooks/useImpersonation";
 import { useClients, useClientScope } from "@/hooks/useClients";
+import { useRepos } from "@/hooks/useProjectsRepos";
 import { clientDisplayName, type Client } from "@/lib/firestoreClients";
+import type { MonitoredRepo, Project } from "@/lib/firestoreProjects";
 import {
   getVisibleUsers,
   addUser,
@@ -20,6 +22,7 @@ import {
   setUserRole,
   setUserClients,
   setUserProjects,
+  setUserRepos,
   setUserPermissions,
   setUserGithubToken,
   resolvePermissions,
@@ -80,6 +83,7 @@ function PermissionChips({
 const ROLE_ICON: Record<UserRole, React.ReactNode> = {
   superuser: <Shield className="h-3 w-3 mr-1" />,
   client_admin: <Building2 className="h-3 w-3 mr-1" />,
+  developer: <GitPullRequest className="h-3 w-3 mr-1" />,
   viewer: <Eye className="h-3 w-3 mr-1" />,
 };
 
@@ -123,6 +127,132 @@ function ClientPills({
   );
 }
 
+/**
+ * Proyectos (los de las empresas ya marcadas) y, desplegando cada uno, SUS repos.
+ *
+ * Dos niveles en el mismo bloque porque son la misma decisión: primero a qué
+ * proyecto entra y luego hasta dónde dentro de él. Un proyecto sin ningún repo
+ * marcado significa TODOS los suyos —es el comportamiento de siempre y el que
+ * hace que un repo nuevo del proyecto le llegue solo, sin volver a esta
+ * pantalla usuario por usuario—, así que se dice con esas palabras en la fila.
+ */
+function ProjectRepoPicker({
+  projects,
+  repos,
+  isProjectOn,
+  isRepoOn,
+  onToggleProject,
+  onToggleRepo,
+  disabled,
+  sinEmpresas,
+}: {
+  projects: Project[];
+  repos: MonitoredRepo[];
+  isProjectOn: (id: string) => boolean;
+  isRepoOn: (id: string) => boolean;
+  onToggleProject: (id: string) => void;
+  onToggleRepo: (id: string) => void;
+  disabled?: boolean;
+  sinEmpresas: boolean;
+}) {
+  const [abierto, setAbierto] = useState<string | null>(null);
+
+  // Sin empresa marcada no se listan proyectos: serían los de empresas que este
+  // usuario no tiene, y marcarlos no le daría acceso a nada.
+  if (sinEmpresas) {
+    return <p className="text-xs text-muted-foreground">Marca primero una empresa para elegir sus proyectos.</p>;
+  }
+  if (projects.length === 0) {
+    return <p className="text-xs text-muted-foreground">Esas empresas todavía no tienen proyectos.</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {projects.map((p) => {
+        const on = isProjectOn(p.id);
+        const suyos = repos.filter((r) => r.projectId === p.id);
+        const marcados = suyos.filter((r) => isRepoOn(r.id));
+        const desplegado = on && abierto === p.id;
+        return (
+          <div key={p.id}>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  onToggleProject(p.id);
+                  // Al marcarlo se abren sus repos: es la siguiente decisión y
+                  // así no queda escondida detrás de otro clic.
+                  setAbierto(on ? null : p.id);
+                }}
+                className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:opacity-50 ${
+                  on
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+                {p.name}
+              </button>
+              {on && (
+                <button
+                  type="button"
+                  onClick={() => setAbierto(desplegado ? null : p.id)}
+                  className="flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted"
+                  title="Elegir los repos de este proyecto"
+                >
+                  <GitBranch className="h-3 w-3" />
+                  {suyos.length === 0
+                    ? "sin repos"
+                    : marcados.length === 0
+                      ? "todos los repos"
+                      : `${marcados.length} de ${suyos.length} repos`}
+                  {desplegado ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                </button>
+              )}
+            </div>
+
+            {desplegado && (
+              <div className="mt-1.5 ml-2 border-l pl-3">
+                {suyos.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground">Este proyecto todavía no tiene repos dados de alta.</p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {suyos.map((r) => {
+                        const marcado = isRepoOn(r.id);
+                        return (
+                          <button
+                            key={r.id}
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => onToggleRepo(r.id)}
+                            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:opacity-50 ${
+                              marcado
+                                ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:border-emerald-700/60 dark:bg-emerald-950/30 dark:text-emerald-300"
+                                : "border-border text-muted-foreground hover:bg-muted"
+                            }`}
+                          >
+                            <GitBranch className="h-3 w-3" />
+                            {r.label || r.repo}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-muted-foreground">
+                      Sin ninguno marcado tiene acceso a <span className="font-medium">todos los repos</span> del proyecto.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function UsersPage() {
   const { appUser, realUser } = useAuth();
   // "Ver como": solo el root de verdad. Mientras impersona, `appUser` ya no es
@@ -135,10 +265,18 @@ export function UsersPage() {
   // empresas y SUS proyectos, así que las listas de la pantalla salen de aquí
   // (para un administrador global `visibleProjects` son todos los proyectos).
   const { esAdminDeEmpresa, visibleClients, visibleProjects: projects } = useClientScope(appUser);
+  const { data: allRepos = [] } = useRepos();
+  // Repos repartibles: solo los de los proyectos que este administrador ve. Un
+  // administrador de empresa no puede asignar el repo de una empresa ajena.
+  const repos = useMemo(
+    () => allRepos.filter((r) => projects.some((p) => p.id === r.projectId)),
+    [allRepos, projects],
+  );
   const [newEmail, setNewEmail] = useState("");
-  const [newRole, setNewRole] = useState<UserRole>("viewer");
+  const [newRole, setNewRole] = useState<UserRole>("developer");
   const [newClients, setNewClients] = useState<Set<string>>(new Set());
   const [newProjects, setNewProjects] = useState<Set<string>>(new Set());
+  const [newRepos, setNewRepos] = useState<Set<string>>(new Set());
   const [newPerms, setNewPerms] = useState<CicdPermissions>({ ...NO_PERMISSIONS });
   const [newToken, setNewToken] = useState("");
   // Edición de la API key de un usuario existente (solo root)
@@ -165,8 +303,13 @@ export function UsersPage() {
    * Quien ya lo tenga lo sigue mostrando, para poder bajarlo a otro rol.
    */
   const rolesAsignables: UserRole[] = esAdminDeEmpresa
-    ? ["viewer"]
-    : ["client_admin", "viewer"];
+    ? ["developer", "viewer"]
+    : ["client_admin", "developer", "viewer"];
+
+  // Rol que se enviará al dar de alta: "Desarrollador" viene preseleccionado
+  // porque es el alta habitual, pero un administrador de empresa solo reparte
+  // viewers —así el `select` y lo que se guarda nunca se contradicen—.
+  const rolAlta: UserRole = rolesAsignables.includes(newRole) ? newRole : rolesAsignables[0];
 
   /** Nombre comercial de la empresa; si no está a la vista, al menos su id. */
   const nombreEmpresa = (id: string) => {
@@ -174,20 +317,53 @@ export function UsersPage() {
     return c ? clientDisplayName(c) : id;
   };
 
-  const toggleNew = (id: string) =>
-    setNewProjects((prev) => {
-      const n = new Set(prev);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
+  /** Proyectos de esas empresas, siempre dentro de lo que el administrador ve. */
+  const proyectosDe = (clientIds: string[]) =>
+    projects.filter((p) => p.clientId && clientIds.includes(p.clientId));
 
-  const toggleNewClient = (id: string) =>
-    setNewClients((prev) => {
-      const n = new Set(prev);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
+  /** Ids de los repos que cuelgan de esos proyectos. */
+  const reposDe = (projectIds: Set<string>) =>
+    repos.filter((r) => projectIds.has(r.projectId)).map((r) => r.id);
+
+  /** Proyectos ofrecidos en el alta: solo los de las empresas ya marcadas. */
+  const proyectosAlta = proyectosDe([...newClients]);
+
+  const toggleNew = (id: string) => {
+    const n = new Set(newProjects);
+    if (n.has(id)) {
+      n.delete(id);
+      // Los repos marcados de ese proyecto se van con él: sin el proyecto no
+      // dan acceso a nada y quedarían guardados como un permiso fantasma.
+      const huerfanos = new Set(reposDe(new Set([id])));
+      setNewRepos(new Set([...newRepos].filter((rid) => !huerfanos.has(rid))));
+    } else n.add(id);
+    setNewProjects(n);
+  };
+
+  const toggleNewRepo = (id: string) => {
+    const n = new Set(newRepos);
+    if (n.has(id)) n.delete(id);
+    else n.add(id);
+    setNewRepos(n);
+  };
+
+  const toggleNewClient = (id: string) => {
+    const n = new Set(newClients);
+    if (!n.has(id)) {
+      n.add(id);
+      setNewClients(n);
+      return;
+    }
+    n.delete(id);
+    // Al desmarcar la empresa se van con ella sus proyectos (y los repos de
+    // esos proyectos): dejar seleccionado un proyecto de una empresa que el
+    // usuario ya no tiene es dejar un permiso fantasma.
+    const huerfanos = new Set(projects.filter((p) => p.clientId === id).map((p) => p.id));
+    const reposHuerfanos = new Set(reposDe(huerfanos));
+    setNewClients(n);
+    setNewProjects(new Set([...newProjects].filter((pid) => !huerfanos.has(pid))));
+    setNewRepos(new Set([...newRepos].filter((rid) => !reposHuerfanos.has(rid))));
+  };
 
   const handleAdd = async () => {
     if (!newEmail.trim() || newProjects.size === 0 || !newToken.trim()) return;
@@ -201,14 +377,17 @@ export function UsersPage() {
         return;
       }
       await addUser(
-        newEmail.trim().toLowerCase(), appUser!.email, newRole, [...newProjects], newPerms,
+        newEmail.trim().toLowerCase(), appUser!.email, rolAlta, [...newProjects], newPerms,
         newToken.trim(), v.login, [...newClients],
+        // Repos: vacío = todos los de sus proyectos, que es el default de siempre.
+        [...newRepos],
       );
       await refresh();
       setNewEmail("");
-      setNewRole("viewer");
+      setNewRole("developer");
       setNewClients(new Set());
       setNewProjects(new Set());
+      setNewRepos(new Set());
       setNewPerms({ ...NO_PERMISSIONS });
       setNewToken("");
     } catch (e: unknown) {
@@ -259,7 +438,8 @@ export function UsersPage() {
 
   const handleToggleClient = async (u: AppUser, id: string) => {
     const current = new Set(u.clientIds ?? []);
-    if (current.has(id)) current.delete(id);
+    const quitando = current.has(id);
+    if (quitando) current.delete(id);
     else current.add(id);
     setBusy(u.email);
     setError("");
@@ -275,7 +455,22 @@ export function UsersPage() {
       if (esAdminDeEmpresa && current.size === 0) {
         throw new Error("Deja al menos una de tus empresas: si lo sacas de todas, dejas de poder administrarlo.");
       }
+      // Al quitarle una empresa se limpia lo que colgaba de ella: un proyecto
+      // (o un repo) de una empresa que ya no es suya es un permiso fantasma,
+      // se ve marcado en la pantalla y no le da acceso a nada.
+      const huerfanos = new Set(projects.filter((p) => p.clientId === id).map((p) => p.id));
+      const reposHuerfanos = new Set(reposDe(huerfanos));
+      const proyectosQuedan = (u.projectIds ?? []).filter((pid) => !huerfanos.has(pid));
+      const limpiaProyectos = quitando && (u.projectIds ?? []).length !== proyectosQuedan.length;
+      if (limpiaProyectos && proyectosQuedan.length === 0) {
+        throw new Error("Se quedaría sin proyectos: márcale otra empresa y sus proyectos antes de quitarle esta.");
+      }
       await setUserClients(u.email, [...current]);
+      if (limpiaProyectos) {
+        await setUserProjects(u.email, proyectosQuedan);
+        const reposQuedan = (u.repoIds ?? []).filter((rid) => !reposHuerfanos.has(rid));
+        if (reposQuedan.length !== (u.repoIds ?? []).length) await setUserRepos(u.email, reposQuedan);
+      }
       await refresh();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error al actualizar empresas");
@@ -285,8 +480,12 @@ export function UsersPage() {
   };
 
   const handleToggleProject = async (u: AppUser, id: string) => {
-    const current = new Set(u.projectIds ?? projects.map((p) => p.id));
-    current.has(id) ? current.delete(id) : current.add(id);
+    // El default de un usuario sin `projectIds` son todos los proyectos de SUS
+    // empresas, no todos los que ve el administrador.
+    const current = new Set(u.projectIds ?? proyectosDe(u.clientIds ?? []).map((p) => p.id));
+    const quitando = current.has(id);
+    if (quitando) current.delete(id);
+    else current.add(id);
     if (current.size === 0) {
       setError("El usuario debe tener al menos un proyecto.");
       return;
@@ -295,9 +494,33 @@ export function UsersPage() {
     setError("");
     try {
       await setUserProjects(u.email, [...current]);
+      // Sin el proyecto, sus repos marcados no significan nada: se van con él.
+      if (quitando) {
+        const huerfanos = new Set(reposDe(new Set([id])));
+        const quedan = (u.repoIds ?? []).filter((rid) => !huerfanos.has(rid));
+        if (quedan.length !== (u.repoIds ?? []).length) await setUserRepos(u.email, quedan);
+      }
       await refresh();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error al actualizar proyectos");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleToggleRepo = async (u: AppUser, repoId: string) => {
+    const current = new Set(u.repoIds ?? []);
+    if (current.has(repoId)) current.delete(repoId);
+    else current.add(repoId);
+    setBusy(u.email);
+    setError("");
+    try {
+      // Se guarda la lista tal cual, sin expandirla: vacía = todos los repos de
+      // sus proyectos, y así un repo nuevo del proyecto le llega solo.
+      await setUserRepos(u.email, [...current]);
+      await refresh();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error al actualizar repos");
     } finally {
       setBusy(null);
     }
@@ -371,7 +594,7 @@ export function UsersPage() {
               value={newEmail}
               onChange={(e) => setNewEmail(e.target.value)}
             />
-            <SelectNative className="w-56" value={newRole} onChange={(e) => setNewRole(e.target.value as UserRole)}>
+            <SelectNative className="w-56" value={rolAlta} onChange={(e) => setNewRole(e.target.value as UserRole)}>
               {rolesAsignables.map((r) => (
                 <option key={r} value={r}>{ROLE_LABEL[r]}</option>
               ))}
@@ -422,7 +645,7 @@ export function UsersPage() {
           <div className="mt-3">
             <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
               <Building2 className="h-3.5 w-3.5" />
-              {newRole === "client_admin"
+              {rolAlta === "client_admin"
                 ? "Empresas que administrará (al menos una)"
                 : "Empresas a las que pertenece"}
             </p>
@@ -431,42 +654,27 @@ export function UsersPage() {
               selected={(id) => newClients.has(id)}
               onToggle={toggleNewClient}
             />
-            {newRole === "client_admin" && (
+            {rolAlta === "client_admin" && (
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Mandará dentro de esas empresas: sus proyectos, sus repos, sus viewers y sus notificaciones. No verá otras empresas, ni tarifas, ni datos fiscales.
               </p>
             )}
           </div>
 
-          {/* Proyectos del nuevo usuario */}
+          {/* Proyectos del nuevo usuario (solo los de las empresas marcadas) y sus repos */}
           <div className="mt-3">
             <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
-              <FolderGit2 className="h-3.5 w-3.5" /> Proyectos (mínimo 1)
+              <FolderGit2 className="h-3.5 w-3.5" /> Proyectos (mínimo 1) y sus repos
             </p>
-            {projects.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No hay proyectos todavía.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {projects.map((p) => {
-                  const on = newProjects.has(p.id);
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => toggleNew(p.id)}
-                      className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                        on
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border text-muted-foreground hover:bg-muted"
-                      }`}
-                    >
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
-                      {p.name}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <ProjectRepoPicker
+              projects={proyectosAlta}
+              repos={repos}
+              sinEmpresas={newClients.size === 0}
+              isProjectOn={(id) => newProjects.has(id)}
+              isRepoOn={(id) => newRepos.has(id)}
+              onToggleProject={toggleNew}
+              onToggleRepo={toggleNewRepo}
+            />
           </div>
 
           {/* Permisos CI/CD del nuevo usuario */}
@@ -525,6 +733,9 @@ export function UsersPage() {
             const soloLectura = !!bloqueoAdminEmpresa;
             const userProjects = u.projectIds ?? [];
             const userClients = u.clientIds ?? [];
+            // Lo que se le puede ofrecer a ESTE usuario: los proyectos de las
+            // empresas que tiene marcadas (y nada de otras empresas).
+            const proyectosUsuario = proyectosDe(userClients);
             const isOpen = expanded === u.email;
             return (
               <div key={u.email} className="border-b last:border-0">
@@ -570,7 +781,7 @@ export function UsersPage() {
                         title="Proyectos y permisos"
                       >
                         <FolderGit2 className="h-3.5 w-3.5" />
-                        {userProjects.length || projects.length} proyectos · permisos
+                        {userProjects.length || proyectosUsuario.length} proyectos · permisos
                         {isOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                       </button>
                     )}
@@ -656,29 +867,20 @@ export function UsersPage() {
                     />
 
                     <p className="mb-2 mt-4 text-xs text-muted-foreground">
-                      Marca los proyectos a los que <span className="font-medium">{u.email}</span> tiene acceso (mínimo 1).
+                      Marca los proyectos a los que <span className="font-medium">{u.email}</span> tiene acceso (mínimo 1) y, dentro de cada uno, sus repos.
                     </p>
-                    <div className="flex flex-wrap gap-2">
-                      {projects.map((p) => {
-                        const on = (u.projectIds ?? projects.map((x) => x.id)).includes(p.id);
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            disabled={busy === u.email || soloLectura}
-                            onClick={() => handleToggleProject(u, p.id)}
-                            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:opacity-50 ${
-                              on
-                                ? "border-primary bg-primary/10 text-primary"
-                                : "border-border text-muted-foreground hover:bg-muted"
-                            }`}
-                          >
-                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
-                            {p.name}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <ProjectRepoPicker
+                      projects={proyectosUsuario}
+                      repos={repos}
+                      sinEmpresas={userClients.length === 0}
+                      // Sin `projectIds` guardados el usuario es legacy: tiene
+                      // todos los proyectos de sus empresas.
+                      isProjectOn={(id) => (u.projectIds ?? proyectosUsuario.map((x) => x.id)).includes(id)}
+                      isRepoOn={(id) => (u.repoIds ?? []).includes(id)}
+                      onToggleProject={(id) => handleToggleProject(u, id)}
+                      onToggleRepo={(id) => handleToggleRepo(u, id)}
+                      disabled={busy === u.email || soloLectura}
+                    />
                     {u.projectIds === undefined && (
                       <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
                         Este usuario aún no tiene proyectos asignados (acceso a todos por compatibilidad). Marca al menos uno para restringirlo.
