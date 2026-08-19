@@ -8,11 +8,16 @@ Corre en GitHub Actions (ver .github/workflows/play-tracks-sync.yml):
   2. Por cada package consulta la Play Developer API (edits.tracks.list).
   3. Escribe el resultado en Firestore `playTracks/{package}`.
 
+El service account se resuelve POR PROYECTO: cada app puede vivir en la cuenta
+de Play de otra empresa, así que una credencial única para todas devolvía 403 y
+dejaba las tiendas vacías. Orden: el doc privado del proyecto, luego el entorno,
+luego el global heredado (ver store_credentials.py).
+
 Variables de entorno:
   FIRESTORE_TOKEN   access token de GCP (cuenta de Firebase) para Firestore REST
-  PLAY_SA_JSON      JSON del service account con acceso a Play Console. Si no
-                    viene, se usa el que el root haya dejado desde el dashboard
-                    (Firestore storeCredentials/play).
+  PLAY_SA_JSON      JSON del service account con acceso a Play Console. Solo es
+                    el respaldo de los proyectos que todavía no tienen el suyo
+                    guardado desde el dashboard.
   GCP_PROJECT       id del proyecto Firebase (default: sozu-admin-dev)
 
 La API de Play exige abrir un "edit" (transacción) incluso para leer tracks; el
@@ -30,7 +35,7 @@ from urllib.parse import quote
 import jwt  # PyJWT
 import requests
 
-from store_credentials import play_service_account
+from store_credentials import play_service_account_for
 
 GCP_PROJECT = os.environ.get("GCP_PROJECT", "sozu-admin-dev")
 FS_BASE = f"https://firestore.googleapis.com/v1/projects/{GCP_PROJECT}/databases/(default)/documents"
@@ -45,28 +50,52 @@ def fail(msg: str) -> None:
 
 # --- Auth Play ---------------------------------------------------------------
 
-def play_access_token(sa: dict) -> str:
-    """Token OAuth para la Play Developer API (flujo JWT bearer del service account)."""
+def play_access_token(sa: dict) -> tuple[str | None, str | None]:
+    """(token OAuth para la Play Developer API, error).
+
+    Flujo JWT bearer del service account. Devuelve el error en vez de cortar el
+    script: ahora cada app puede traer su propia credencial, y una mal pegada
+    solo debe romper esa app.
+    """
     now = int(time.time())
-    assertion = jwt.encode(
-        {
-            "iss": sa["client_email"],
-            "scope": PLAY_SCOPE,
-            "aud": sa["token_uri"],
-            "iat": now,
-            "exp": now + 3600,
-        },
-        sa["private_key"],
-        algorithm="RS256",
-    )
+    try:
+        assertion = jwt.encode(
+            {
+                "iss": sa["client_email"],
+                "scope": PLAY_SCOPE,
+                "aud": sa["token_uri"],
+                "iat": now,
+                "exp": now + 3600,
+            },
+            sa["private_key"],
+            algorithm="RS256",
+        )
+    except (KeyError, TypeError, ValueError, jwt.PyJWTError) as e:
+        # PyJWT levanta InvalidKeyError con un private_key que no es una llave RSA.
+        return None, (
+            f"El service account no sirve para firmar ({type(e).__name__}: {e}). "
+            "Vuelve a subir el JSON completo del service account."
+        )
     r = requests.post(
         sa["token_uri"],
         data={"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": assertion},
         timeout=30,
     )
     if r.status_code != 200:
-        fail(f"No se pudo obtener token de Play: {r.status_code} {r.text[:300]}")
-    return r.json()["access_token"]
+        return None, f"No se pudo obtener token de Play: {r.status_code} {r.text[:300]}"
+    return r.json()["access_token"], None
+
+
+def token_de(sa: dict, cache: dict[str, tuple[str | None, str | None]]) -> tuple[str | None, str | None]:
+    """Token de Play cacheado por `client_email`.
+
+    Varias apps suelen compartir el mismo service account (la misma cuenta de
+    Play): sin caché se pediría un token por app, y el resultado sería idéntico.
+    """
+    email = sa.get("client_email") or "?"
+    if email not in cache:
+        cache[email] = play_access_token(sa)
+    return cache[email]
 
 
 # --- Firestore ---------------------------------------------------------------
@@ -149,29 +178,49 @@ def main() -> None:
     fs_token = os.environ.get("FIRESTORE_TOKEN", "").strip()
     if not fs_token:
         fail("Falta FIRESTORE_TOKEN.")
-    # Del entorno (Secret Manager) o, si no está, de lo que el root dejó en el
-    # dashboard: sin esto el sync callaba y las tiendas salían vacías.
-    raw_sa, origen = play_service_account(FS_BASE, fs_token)
-    if not raw_sa:
-        print(
-            "Sin service account de Play: créalo como secret DASHBOARD_PLAY_SERVICE_ACCOUNT "
-            "o subelo desde el dashboard (panel de la app > Cuenta de servicio de Play). "
-            "Nada que hacer."
-        )
-        return
-    print(f"· service account de Play tomado del {origen}")
-    try:
-        sa = json.loads(raw_sa)
-    except json.JSONDecodeError as e:
-        fail(f"PLAY_SA_JSON no es JSON válido ({e}). Debe ser el archivo completo del service account, desde '{{' hasta '}}'.")
 
     packages = list_android_packages(fs_token)
     if not packages:
         print("Ningún proyecto tiene Package Android configurado. Nada que sincronizar.")
         return
 
-    play_token = play_access_token(sa)
+    tokens: dict[str, tuple[str | None, str | None]] = {}
     for pkg, project_id in packages:
+        # La credencial es de ESTA app: la de su proyecto, o el respaldo del
+        # entorno / global mientras no la haya migrado nadie.
+        raw_sa, origen = play_service_account_for(FS_BASE, fs_token, project_id)
+        if not raw_sa:
+            error = (
+                f"El proyecto '{project_id}' no tiene service account de Play. Súbelo en el "
+                "dashboard (panel de la app > Cuenta de servicio de Play) con una cuenta "
+                "invitada en la Play Console de esa empresa."
+            )
+            write_tracks_doc(fs_token, pkg, project_id, None, error)
+            print(f"⚠ {pkg}: {error}")
+            continue
+
+        sa = None
+        try:
+            cargado = json.loads(raw_sa)
+            sa = cargado if isinstance(cargado, dict) else None
+        except json.JSONDecodeError:
+            pass
+        if sa is None:
+            error = (
+                f"El service account de Play del proyecto '{project_id}' no es un JSON de "
+                "service account. Debe ser el archivo completo, desde '{' hasta '}'."
+            )
+            write_tracks_doc(fs_token, pkg, project_id, None, error)
+            print(f"⚠ {pkg}: {error}")
+            continue
+
+        play_token, error = token_de(sa, tokens)
+        if error:
+            write_tracks_doc(fs_token, pkg, project_id, None, error)
+            print(f"⚠ {pkg}: {error}")
+            continue
+
+        print(f"· {pkg}: service account del {origen} ({sa.get('client_email', '?')})")
         tracks, error = fetch_tracks(play_token, pkg, sa.get("client_email", "?"))
         write_tracks_doc(fs_token, pkg, project_id, tracks, error)
         if error:

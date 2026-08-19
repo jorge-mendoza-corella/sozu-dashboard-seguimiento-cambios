@@ -88,28 +88,99 @@ jobs:
         continue-on-error: true
         env:
           ENVIRONMENT: DEV
-          N8N_WEBHOOK: https://automatizacion-n8n.fbqqbe.easypanel.host/webhook/manda_notificacion
-          N8N_APIKEY: 80FA62E3FD0C-4477-8B31-8A2CD6AF7B57
+          FIRESTORE_PROJECT: sozu-admin-dev
         run: |
           ACTOR="${{ github.actor }}"
-          # El service account ya está autenticado (paso "Authenticate to Google Cloud").
+          # El service account ya está autenticado (paso "Authenticate to Google Cloud"),
+          # así que aquí no hace falta firmar el JWT a mano como en
+          # ci-templates/notify-pr-dev.yml.
           ACCESS_TOKEN="$(gcloud auth print-access-token)"
+
+          # --- Helpers de lectura por REST (el token del service account ignora
+          # las reglas de seguridad) --------------------------------------------
+          FS="https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT}/databases/(default)/documents"
+          leer() { curl -s --max-time 20 -H "Authorization: Bearer $ACCESS_TOKEN" "${FS}/$1"; }
+          campo() { printf '%s' "$1" | jq -r --arg f "$2" '.fields[$f].stringValue // empty'; }
+          # `enabled` ausente = prendido. Ojo: `// empty` no sirve para booleanos
+          # (jq trata `false` como vacío), por eso se mira el tipo del campo.
+          prendido() { printf '%s' "$1" | jq -r 'if (.fields.enabled | type) == "object" then (.fields.enabled.booleanValue | tostring) else "" end'; }
+          gana() { if [ -n "$1" ]; then printf '%s' "$1"; else printf '%s' "$2"; fi; }
+
+          # --- Empresa dueña del repo ------------------------------------------
+          # repos/{owner__repo}.projectId -> projects/{projectId}.clientId
+          REPO_ID="${GITHUB_REPOSITORY/\//__}"
+          CLIENT_ID=""
+          PROJECT_ID="$(campo "$(leer "repos/${REPO_ID}")" projectId)"
+          if [ -z "$PROJECT_ID" ]; then
+            echo "El repo '${GITHUB_REPOSITORY}' no está dado de alta en el dashboard (repos/${REPO_ID}); se usa la configuración global."
+          else
+            CLIENT_ID="$(campo "$(leer "projects/${PROJECT_ID}")" clientId)"
+            if [ -z "$CLIENT_ID" ]; then
+              echo "El proyecto '${PROJECT_ID}' no tiene empresa asignada; se usa la configuración global."
+            else
+              echo "Empresa dueña del repo: '${CLIENT_ID}' (proyecto '${PROJECT_ID}')."
+            fi
+          fi
+
+          # --- Configuración global (default) y de la empresa -------------------
+          G_DOC="$(leer "settings/notifications")"
+          G_KEY="$(campo "$(leer "secrets/whatsapp")" apiKey)"
+          if [ -n "$G_KEY" ]; then echo "::add-mask::${G_KEY}"; fi
+          C_DOC=""
+          C_KEY=""
+          if [ -n "$CLIENT_ID" ]; then
+            C_DOC="$(leer "clients/${CLIENT_ID}/private/notifications")"
+            C_KEY="$(campo "$(leer "clients/${CLIENT_ID}/private/whatsappSecret")" apiKey)"
+            if [ -n "$C_KEY" ]; then echo "::add-mask::${C_KEY}"; fi
+          fi
+
+          # --- Cascada: lo de la empresa gana, lo vacío se hereda del global ----
+          WA_INSTANCE="$(gana "$(campo "$C_DOC" instance)" "$(campo "$G_DOC" instance)")"
+          C_WEBHOOK="$(campo "$C_DOC" webhookUrl)"
+          WA_WEBHOOK="$(gana "$C_WEBHOOK" "$(campo "$G_DOC" webhookUrl)")"
+          WA_APIKEY="$(gana "$C_KEY" "$G_KEY")"
+
+          # Webhook y apikey van en pareja: mandar la llave GLOBAL a un webhook
+          # que puso el administrador de una empresa se la entrega, y con ella
+          # podría notificar a nombre de cualquier otra. Se omite el aviso.
+          if [ -n "$C_WEBHOOK" ] && [ -z "$C_KEY" ]; then
+            echo "La empresa '${CLIENT_ID}' tiene webhook propio sin apikey propia; se omite la notificación (la llave global no viaja a un webhook de cliente)."
+            exit 0
+          fi
+
+          # Apagar manda: basta con que la empresa O el global estén apagados.
+          if [ "$(prendido "$G_DOC")" = "false" ]; then
+            echo "Las notificaciones de WhatsApp están apagadas en la configuración global; no se envía nada."
+            exit 0
+          fi
+          if [ "$(prendido "$C_DOC")" = "false" ]; then
+            echo "La empresa '${CLIENT_ID}' tiene apagadas las notificaciones de WhatsApp; no se envía nada."
+            exit 0
+          fi
+          if [ -z "$WA_WEBHOOK" ] || [ -z "$WA_APIKEY" ]; then
+            echo "Falta el webhook o la apikey de WhatsApp (ni la de la empresa ni la global); se omite la notificación. Configúralos en el dashboard: Configuración → Notificaciones."
+            exit 0
+          fi
+          if [ -z "$WA_INSTANCE" ]; then
+            echo "::warning::Sin instancia de WhatsApp configurada; n8n puede rechazar el envío."
+          fi
+
           # Teléfono (10 dígitos) guardado para este usuario de GitHub en Firestore.
           PHONE="$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-            "https://firestore.googleapis.com/v1/projects/sozu-admin-dev/databases/(default)/documents/contributors/${ACTOR}" \
+            "https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT}/databases/(default)/documents/contributors/${ACTOR}" \
             | jq -r '.fields.telefonoWhatsapp.stringValue // empty')"
           if [ -z "$PHONE" ]; then
             echo "Sin teléfono guardado para '$ACTOR' en contributors; se omite la notificación."
             exit 0
           fi
-          PAYLOAD="$(jq -n --arg tel "+521${PHONE}" \
+          PAYLOAD="$(jq -n --arg tel "+521${PHONE}" --arg inst "$WA_INSTANCE" \
             --arg msg "Ha quedado listo tu deploy en ${ENVIRONMENT} del repo ${GITHUB_REPOSITORY##*/}, puedes revisar" \
-            '{tipo:"wa",telefono:$tel,mensajeWA:$msg,instanciaWA:"Pruebas de todo"}')"
+            '{tipo:"wa",telefono:$tel,mensajeWA:$msg,instanciaWA:$inst}')"
           # Tres intentos: un webhook que no responde a la primera dejaba el
           # aviso perdido en silencio.
           for intento in 1 2 3; do
             CODE="$(curl -s -o /tmp/n8n.out -w '%{http_code}' --max-time 20 \
-              -X POST "$N8N_WEBHOOK" -H "apikey: $N8N_APIKEY" \
+              -X POST "$WA_WEBHOOK" -H "apikey: $WA_APIKEY" \
               -H "Content-Type: application/json" -d "$PAYLOAD" || echo 000)"
             case "$CODE" in 2*) echo "Notificado $ACTOR"; exit 0 ;; esac
             echo "Intento ${intento} falló (HTTP ${CODE}): $(cat /tmp/n8n.out)"

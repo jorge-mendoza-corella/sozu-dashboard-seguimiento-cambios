@@ -1,0 +1,66 @@
+name: Avisar builds de Codemagic (WhatsApp)
+
+# Manda el WhatsApp de "tu build terminó" —salga bien o salga mal— preguntándole
+# a Codemagic, en vez de depender de que el `codemagic.yaml` de cada repo de app
+# llegue vivo hasta su paso de notificar. Un build que revienta antes de ese paso
+# no avisaba a nadie; ya pasó con un build de Mac que falló en silencio.
+#
+# Cada 5 minutos: la ventana de LOOKBACK_MIN (3 h) es mucho más ancha que el
+# intervalo a propósito, para que una corrida perdida (runner caído, Codemagic
+# con 5xx) no se lleve el aviso con ella. Los repetidos los corta el registro
+# `buildNotifications/{buildId}` en Firestore.
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: codemagic-builds-notify
+  # Sin cancelar la corrida en curso: matarla a media notificación dejaría un
+  # build avisado a unos destinatarios y no a otros.
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_GCP_DEV }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install --quiet requests
+
+      - name: Avisar builds terminados
+        env:
+          GCP_PROJECT: sozu-admin-dev
+          LOOKBACK_MIN: "180"
+        run: |
+          # Token de la cuenta de Firebase (lee y escribe Firestore por REST).
+          FIRESTORE_TOKEN="$(gcloud auth print-access-token)"
+          export FIRESTORE_TOKEN
+          # Útil cuando falta un permiso: dice a quién hay que dárselo.
+          echo "Cuenta de servicio del sync: $(gcloud config get-value account 2>/dev/null)"
+
+          secret() {
+            # Devuelve vacío si el secret no existe: el script se salta solo.
+            gcloud secrets versions access latest --secret="$1" --project=sozu-admin-dev 2>/dev/null || true
+          }
+
+          # Si el secret todavía no existe, el script lo dice y termina bien: no
+          # tiene caso pintar de rojo este workflow cada 5 minutos hasta que se cree.
+          CODEMAGIC_TOKEN="$(secret DASHBOARD_CODEMAGIC_TOKEN)"
+          export CODEMAGIC_TOKEN
+
+          python ci/codemagic_builds_notify.py
