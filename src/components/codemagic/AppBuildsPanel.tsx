@@ -14,7 +14,7 @@ import {
   PLATFORMS, WORKFLOW_LABELS, SYNC_TESTERS_WORKFLOW, getBuild, failedStepName,
   type CodemagicBuild, type PlatformDef,
 } from "@/lib/codemagic";
-import { getAppStoreStatus, buildStateLabel } from "@/lib/appStoreStatus";
+import { getAppStoreStatus, buildStateLabel, versionStateInfo } from "@/lib/appStoreStatus";
 import { useAuth } from "@/hooks/useAuth";
 import { getAllContributorPhones } from "@/lib/firestoreContributors";
 import { registerBuildForNotification } from "@/lib/buildNotifications";
@@ -414,9 +414,27 @@ function PlatformRow({
     }
   };
 
+  // ¿La versión ya está enviada? `promotedCurrent` no sirve para saberlo: compara
+  // el commit del run de promoción con el HEAD de la rama, y promover no va del
+  // commit sino del BINARIO que ya está en Apple. Con main avanzado desde la
+  // publicación -lo normal: se sigue trabajando mientras Apple revisa- decía "no
+  // promovido" teniendo la versión en revisión, y el botón quedaba clicable.
+  //
+  // La respuesta la da el estado de la versión en App Store Connect. Se reusa
+  // `versionStateInfo`, que ya agrupa los ~15 estados de Apple en cuatro tonos:
+  //   running  esperando revisión / en revisión / procesando / aprobada  -> no tocar
+  //   success  publicada                                                -> no tocar
+  //   draft    sin enviar / falta compliance / retirada                 -> se puede enviar
+  //   halted   rechazada / binario inválido                             -> HAY que reenviar
+  const versionAsc = appStore?.versions?.[0];
+  const estadoAsc = versionAsc ? versionStateInfo(versionAsc.state) : null;
+  const yaEnviada = estadoAsc?.tone === "running" || estadoAsc?.tone === "success";
+
   const promoteDisabledReason =
     promoteInProgress ? "Envío a la store en curso" :
     promotedCurrent ? "Este código ya fue enviado a la store" :
+    gateApple && yaEnviada
+      ? `La versión ${versionAsc?.version ?? "—"} ya está en la tienda: ${estadoAsc?.label}.` :
     gateApple && !appStore ? "Aún sin datos de App Store Connect: pulsa \"comprobar ahora\"" :
     gateApple && !ultimoSubido ? "App Store Connect no reporta ningún binario subido todavía" :
     gateApple && !binarioListo
