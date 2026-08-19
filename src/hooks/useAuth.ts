@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { signInWithPopup, signOut, onAuthStateChanged, type User } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase";
 import { useQuery } from "@tanstack/react-query";
@@ -50,7 +50,14 @@ export function useAuth() {
     enabled: !!viendoComo && appUser?.email === SUPERUSER_EMAIL,
     staleTime: 60 * 1000,
   });
-  const efectivo = applyImpersonation(appUser, viendoComo ? suplantado : null);
+  // Memoizado a propósito: `applyImpersonation` arma un objeto nuevo, y este
+  // perfil es dependencia de casi todos los `useMemo` de la app. Sin estabilizar
+  // la identidad, cada render rehacía esos memos, `ContributorsPage` volvía a
+  // disparar su efecto de carga y la pantalla se quedaba cargando para siempre.
+  const efectivo = useMemo(
+    () => applyImpersonation(appUser, viendoComo ? suplantado : null),
+    [appUser, viendoComo, suplantado],
+  );
 
   return {
     firebaseUser,

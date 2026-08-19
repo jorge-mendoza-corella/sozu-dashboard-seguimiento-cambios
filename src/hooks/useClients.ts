@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getClientsFor, getClientsWithBilling, type Client } from "@/lib/firestoreClients";
 import { getBillingSettings, DEFAULT_BILLING_SETTINGS } from "@/lib/billingSettings";
 import { computeBillingOverview, type BillingOverview } from "@/lib/billing";
-import { isRootAdmin, adminClientIds, scopeKeyOf, type AppUser } from "@/lib/firestoreUsers";
+import { isRootAdmin, adminClientIds, editableClientIds, scopeKeyOf, type AppUser } from "@/lib/firestoreUsers";
 import { useProjects, useRepos } from "./useProjectsRepos";
 
 /**
@@ -87,6 +87,7 @@ export function useClientScope(appUser: AppUser | null) {
 
   return useMemo(() => {
     const empresas = adminClientIds(appUser); // null = ve todas
+    const editablesDelUsuario = editableClientIds(appUser);
     const esAdminGlobal = empresas === null;
     const esAdminDeEmpresa = !esAdminGlobal && (empresas?.length ?? 0) > 0;
 
@@ -124,8 +125,13 @@ export function useClientScope(appUser: AppUser | null) {
        * default y el que conserva a quien nunca bajó a ese detalle.
        */
       repoIds: (appUser?.repoIds?.length ?? 0) > 0 ? new Set(appUser!.repoIds) : null,
-      /** Ids de las empresas que administra; null = todas. */
+      /** Ids de las empresas que ve; null = todas. */
       clientIds: empresas,
+      /**
+       * De las que ve, cuáles puede EDITAR. null = todas (admin global). Es lo
+       * que separa "trabajo con Sozu" de "mando en Sozu".
+       */
+      editableClientIds: esAdminGlobal ? null : new Set(editablesDelUsuario),
       visibleClients,
       visibleProjects,
       visibleProjectIds: new Set(visibleProjects.map((p) => p.id)),

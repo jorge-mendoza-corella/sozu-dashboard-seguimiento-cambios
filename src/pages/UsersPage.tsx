@@ -21,6 +21,7 @@ import {
   removeUser,
   setUserRole,
   setUserClients,
+  setUserAdminClients,
   setUserProjects,
   setUserRepos,
   setUserPermissions,
@@ -432,6 +433,29 @@ export function UsersPage() {
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error al cambiar el rol");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /**
+   * Marca o desmarca una empresa como administrada. La lista vacía significa
+   * "todas las suyas", así que al desmarcar la primera hay que materializar el
+   * resto: si no, quitar una sola las prendería todas de golpe.
+   */
+  const handleToggleAdminClient = async (u: AppUser, id: string) => {
+    const suyas = u.clientIds ?? [];
+    const actuales = (u.adminClientIds ?? []).length === 0 ? suyas : (u.adminClientIds ?? []);
+    const siguiente = actuales.includes(id)
+      ? actuales.filter((x) => x !== id)
+      : [...actuales, id];
+    setBusy(u.email);
+    setError("");
+    try {
+      await setUserAdminClients(u.email, siguiente);
+      await refresh();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error al actualizar qué empresas administra");
     } finally {
       setBusy(null);
     }
@@ -859,7 +883,7 @@ export function UsersPage() {
                     {/* Empresas del usuario */}
                     <p className="mb-2 flex items-center gap-1 text-xs font-medium text-muted-foreground">
                       <Building2 className="h-3.5 w-3.5" />
-                      {u.role === "client_admin" ? "Empresas que administra (al menos una)" : "Empresas a las que pertenece"}
+                      Empresas a las que pertenece
                     </p>
                     <ClientPills
                       clients={visibleClients}
@@ -867,6 +891,35 @@ export function UsersPage() {
                       disabled={busy === u.email || soloLectura}
                       onToggle={(id) => handleToggleClient(u, id)}
                     />
+
+                    {/* De sus empresas, cuáles ADMINISTRA. Pertenecer no es
+                        mandar: alguien puede necesitar ver lo de una empresa y
+                        configurar solo la otra. Sin marcar ninguna administra
+                        todas las suyas, que es como funcionaba antes. */}
+                    {u.role === "client_admin" && userClients.length > 0 && (
+                      <>
+                        <p className="mb-2 mt-4 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                          <Shield className="h-3.5 w-3.5" />
+                          De esas, cuáles administra
+                          <span className="font-normal">
+                            — las demás las ve en solo lectura
+                          </span>
+                        </p>
+                        <ClientPills
+                          clients={visibleClients.filter((c) => userClients.includes(c.id))}
+                          selected={(id) =>
+                            (u.adminClientIds ?? []).length === 0 || (u.adminClientIds ?? []).includes(id)
+                          }
+                          disabled={busy === u.email || soloLectura}
+                          onToggle={(id) => handleToggleAdminClient(u, id)}
+                        />
+                        {(u.adminClientIds ?? []).length === 0 && (
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            Sin marcar ninguna en particular: administra todas las suyas.
+                          </p>
+                        )}
+                      </>
+                    )}
 
                     <p className="mb-2 mt-4 text-xs text-muted-foreground">
                       Marca los proyectos a los que <span className="font-medium">{u.email}</span> tiene acceso y, dentro de cada uno, sus repos. Sin marcar ninguno, ve todos los de sus empresas.
