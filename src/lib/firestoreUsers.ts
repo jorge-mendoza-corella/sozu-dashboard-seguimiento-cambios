@@ -159,10 +159,12 @@ export async function getVisibleUsers(user: AppUser | null): Promise<AppUser[]> 
   const empresas = adminClientIds(user);
   if (empresas === null) return getAllUsers();
   const deSusEmpresas = await getUsersByClients(empresas);
-  // El propio usuario siempre entra: su doc se lee sin depender de ninguna
-  // consulta (las reglas permiten leerse a uno mismo), así que una lista vacía
-  // significa "no hay nadie más", no "algo falló al consultar".
-  if (user && !deSusEmpresas.some((u) => u.email === user.email)) {
+  // El propio usuario entra si de verdad pertenece a alguna de esas empresas.
+  // La comprobación importa por la impersonación: el root conserva su correo
+  // mientras ve como otro, y sin esto se colaba a sí mismo en una lista donde
+  // esa persona no lo vería jamás.
+  const pertenece = (user?.clientIds ?? []).some((id) => empresas.includes(id));
+  if (user && pertenece && !deSusEmpresas.some((u) => u.email === user.email)) {
     return [user, ...deSusEmpresas];
   }
   return deSusEmpresas;
@@ -252,9 +254,16 @@ export async function setUserClients(email: string, clientIds: string[]) {
   await setDoc(doc(db, "users", email), { clientIds }, { merge: true });
 }
 
-/** Define a qué proyectos tiene acceso un usuario (mínimo 1). */
+/**
+ * Proyectos a los que tiene acceso. Lista vacía = todos los de sus empresas,
+ * igual que los demás niveles del alcance.
+ *
+ * Antes exigía al menos uno, y eso creaba un callejón sin salida real: a un
+ * usuario con una sola empresa y un solo proyecto de esa empresa no se le podía
+ * quitar la empresa (se quedaría sin proyectos) ni el proyecto (mínimo uno). Ni
+ * el root podía deshacerlo.
+ */
 export async function setUserProjects(email: string, projectIds: string[]) {
-  if (projectIds.length === 0) throw new Error("El usuario debe tener al menos un proyecto.");
   await setDoc(doc(db, "users", email), { projectIds }, { merge: true });
 }
 

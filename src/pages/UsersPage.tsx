@@ -462,9 +462,10 @@ export function UsersPage() {
       const reposHuerfanos = new Set(reposDe(huerfanos));
       const proyectosQuedan = (u.projectIds ?? []).filter((pid) => !huerfanos.has(pid));
       const limpiaProyectos = quitando && (u.projectIds ?? []).length !== proyectosQuedan.length;
-      if (limpiaProyectos && proyectosQuedan.length === 0) {
-        throw new Error("Se quedaría sin proyectos: márcale otra empresa y sus proyectos antes de quitarle esta.");
-      }
+      // Quedarse sin proyectos marcados es un estado válido: significa "todos los
+      // de sus empresas". Antes se abortaba el cambio, y eso armaba un callejón
+      // sin salida — a quien tiene una empresa y un solo proyecto de ella no se
+      // le podía quitar ni la empresa ni el proyecto, ni siendo root.
       await setUserClients(u.email, [...current]);
       if (limpiaProyectos) {
         await setUserProjects(u.email, proyectosQuedan);
@@ -569,7 +570,7 @@ export function UsersPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Gestión de Accesos</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Administra quién accede al dashboard, su rol, su empresa y a qué proyectos tiene acceso (mínimo 1).
+          Administra quién accede al dashboard, su rol, sus empresas y a qué proyectos y repos tiene acceso.
         </p>
         {esAdminDeEmpresa && (
           <p className="mt-1 text-xs text-muted-foreground">
@@ -664,7 +665,7 @@ export function UsersPage() {
           {/* Proyectos del nuevo usuario (solo los de las empresas marcadas) y sus repos */}
           <div className="mt-3">
             <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
-              <FolderGit2 className="h-3.5 w-3.5" /> Proyectos (mínimo 1) y sus repos
+              <FolderGit2 className="h-3.5 w-3.5" /> Proyectos y sus repos
             </p>
             <ProjectRepoPicker
               projects={proyectosAlta}
@@ -867,7 +868,7 @@ export function UsersPage() {
                     />
 
                     <p className="mb-2 mt-4 text-xs text-muted-foreground">
-                      Marca los proyectos a los que <span className="font-medium">{u.email}</span> tiene acceso (mínimo 1) y, dentro de cada uno, sus repos.
+                      Marca los proyectos a los que <span className="font-medium">{u.email}</span> tiene acceso y, dentro de cada uno, sus repos. Sin marcar ninguno, ve todos los de sus empresas.
                     </p>
                     <ProjectRepoPicker
                       projects={proyectosUsuario}
