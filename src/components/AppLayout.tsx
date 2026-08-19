@@ -26,16 +26,18 @@ const NAV_ITEMS = [
   // global. Un administrador de empresa no ve ni lo suyo aquí — las reglas ni
   // siquiera le dejan leer su `private/billing`.
   { to: "/negocio", label: "Negocio", icon: TrendingUp, show: (v: NavVisibility) => v.adminGlobal },
-  { to: "/contributors", label: "Contribuidores", icon: GitCommit, show: (v: NavVisibility) => v.root },
+  // Contribuidores y Usuarios los necesita también el administrador de empresa:
+  // son SU gente. Cada pantalla se acota sola a sus empresas.
+  { to: "/contributors", label: "Contribuidores", icon: GitCommit, show: (v: NavVisibility) => v.admin },
   // Usuarios vuelve a ser del admin global. El administrador de empresa ya sabe
   // gestionar a sus viewers —el código y las reglas están—, pero se deja apagado
   // hasta decidirlo: abrirlo ahora le pinta pantallas nuevas a cuentas que
   // llevan meses viendo otra cosa.
-  { to: "/users", label: "Usuarios", icon: Users, show: (v: NavVisibility) => v.adminGlobal },
-  // Negocio y Configuración son del dueño del servicio: tarifas, datos fiscales,
-  // clientes y llaves. Un administrador de empresa no las ve — y el root
-  // tampoco mientras esté "viendo como" una empresa, que es justo el punto.
-  { to: "/configuracion", label: "Configuración", icon: Settings, show: (v: NavVisibility) => v.adminGlobal },
+  { to: "/users", label: "Usuarios", icon: Users, show: (v: NavVisibility) => v.admin },
+  // Negocio sí es del dueño del servicio —tarifas y datos fiscales de la
+  // cartera— y no la ve nadie más. Configuración la comparten: el admin global
+  // ve todas las pestañas y el de empresa solo las suyas.
+  { to: "/configuracion", label: "Configuración", icon: Settings, show: (v: NavVisibility) => v.admin },
 ];
 
 interface Props { children: React.ReactNode }

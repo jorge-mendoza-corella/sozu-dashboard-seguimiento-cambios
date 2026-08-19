@@ -35,6 +35,13 @@ service cloud.firestore {
         ? perfil().clientIds : [];
     }
 
+    // Roles que un administrador de empresa puede repartir: los operativos, que
+    // solo entran a Resumen y CI/CD. `viewer` sigue en la lista porque hay
+    // cuentas con ese rol guardado desde antes de que existiera `developer`.
+    function esRolOperativo(rol) {
+      return rol == 'developer' || rol == 'viewer';
+    }
+
     // ¿Todas las empresas de `lista` son suyas? Las dos listas tienen que traer
     // algo: `[].hasOnly([])` es verdadero, y sin este guardia cualquier usuario
     // autenticado podría escribir los docs legacy que no tienen empresa.
@@ -100,17 +107,17 @@ service cloud.firestore {
       // empresas. No puede crear ni tocar administradores —ni ascender a nadie,
       // porque el rol resultante tiene que ser 'viewer'— ni sacar a un usuario
       // de su empresa hacia otra: `hasOnly` acota las dos puntas del cambio.
-      allow create: if request.resource.data.role == 'viewer'
+      allow create: if esRolOperativo(request.resource.data.role)
         && administraTodas(request.resource.data.clientIds)
         && email != 'jorge.mendoza@sozu.com';
 
-      allow update: if resource.data.role == 'viewer'
+      allow update: if esRolOperativo(resource.data.role)
         && administraTodas(resource.data.clientIds)
-        && request.resource.data.role == 'viewer'
+        && esRolOperativo(request.resource.data.role)
         && administraTodas(request.resource.data.clientIds)
         && email != 'jorge.mendoza@sozu.com';
 
-      allow delete: if resource.data.role == 'viewer'
+      allow delete: if esRolOperativo(resource.data.role)
         && administraTodas(resource.data.clientIds)
         && email != 'jorge.mendoza@sozu.com';
 

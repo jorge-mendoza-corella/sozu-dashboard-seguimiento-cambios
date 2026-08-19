@@ -51,7 +51,7 @@ export function ResumenPage() {
 
   // Proyectos visibles: mismo criterio que CI/CD — el administrador de empresa
   // ve los de sus empresas, el viewer los que tenga asignados.
-  const { visibleProjects: todosLosProyectos, esAdminGlobal, esAdminDeEmpresa } =
+  const { visibleProjects: todosLosProyectos, esAdminGlobal, esAdminDeEmpresa, repoIds: reposAsignados } =
     useClientScope(appUser);
 
   // Misma visibilidad que CI/CD: el filtro por colaboración en GitHub es SOLO
@@ -64,11 +64,14 @@ export function ResumenPage() {
     appUser?.githubLogin ?? null,
   );
   const repos = useMemo(() => {
-    if (!filtraPorGitHub || !appUser?.githubToken) return allRepos;
-    if (!accessibleIds) return [];
+    // Primero lo asignado en el dashboard —el permiso más fino, repo por repo—
+    // y encima, solo para viewers, lo que su cuenta de GitHub alcanza.
+    const asignados = reposAsignados ? allRepos.filter((r) => reposAsignados.has(r.id)) : allRepos;
+    if (!filtraPorGitHub || !appUser?.githubToken) return asignados;
+    if (!accessibleIds) return []; // aún verificando accesos: no mostrar de más
     const ok = new Set(accessibleIds);
-    return allRepos.filter((r) => ok.has(r.id));
-  }, [allRepos, accessibleIds, filtraPorGitHub, appUser?.githubToken]);
+    return asignados.filter((r) => ok.has(r.id));
+  }, [allRepos, accessibleIds, filtraPorGitHub, appUser?.githubToken, reposAsignados]);
 
   // Mismo filtro que en CI/CD: con varias empresas a la vista, lo primero es
   // poder pararse en una. La barra se esconde sola cuando solo hay una.
