@@ -53,13 +53,22 @@ export function DashboardPage() {
 
   const { data: allProjects = [], isLoading: loadingProjects } = useProjects();
   const { data: allRepos = [], isLoading: loadingRepos } = useRepos();
+  // El alcance se resuelve antes que los repos: de él depende si hay que filtrar
+  // por colaboración en GitHub o no.
+  const { visibleProjects: todosLosProyectos, esAdminGlobal, esAdminDeEmpresa } =
+    useClientScope(appUser);
 
-  // Visibilidad por repo según la cuenta de GitHub del usuario (su API key):
-  // si su cuenta no puede ver un repo en GitHub, tampoco lo ve aquí.
-  // Root/legacy (sin token de sesión) ve todos.
+  // Visibilidad por repo según la cuenta de GitHub del usuario (su API key): si
+  // su cuenta no puede ver un repo en GitHub, tampoco lo ve aquí.
+  //
+  // Ese filtro es SOLO para viewers. Un administrador —global o de empresa— ve
+  // todos los repos de los proyectos de su empresa: los proyectos son de la
+  // empresa, no de su cuenta de GitHub, y filtrarlos por colaboración dejaba a
+  // un administrador con un solo repo de seis y sin ninguna pista de por qué.
+  const filtraPorGitHub = !esAdminGlobal && !esAdminDeEmpresa;
   const { data: accessibleIds, isLoading: loadingAccess } = useAccessibleRepoIds(
     allRepos,
-    isRootAdmin(appUser) ? null : appUser?.githubToken ?? null,
+    filtraPorGitHub ? appUser?.githubToken ?? null : null,
     appUser?.githubLogin ?? null,
   );
   // Repos renombrados en GitHub. Va con el token del usuario tal cual —incluido
@@ -72,11 +81,11 @@ export function DashboardPage() {
   );
 
   const repos = useMemo(() => {
-    if (isRootAdmin(appUser) || !appUser?.githubToken) return allRepos;
+    if (!filtraPorGitHub || !appUser?.githubToken) return allRepos;
     if (!accessibleIds) return []; // aún verificando accesos: no mostrar de más
     const ok = new Set(accessibleIds);
     return allRepos.filter((r) => ok.has(r.id));
-  }, [allRepos, accessibleIds, appUser, appUser?.githubToken]);
+  }, [allRepos, accessibleIds, filtraPorGitHub, appUser?.githubToken]);
 
   // Aprobadores por proyecto: el token del usuario configurado como aprobador
   // firma las reviews. Solo los admins pueden leer la colección users (rules);
@@ -123,7 +132,6 @@ export function DashboardPage() {
   // Proyectos visibles: el admin global ve todos, el administrador de empresa
   // ve los de SUS empresas (aunque no estén en su `projectIds`: son suyos por
   // pertenecer a la empresa) y el viewer sigue con el criterio de siempre.
-  const { visibleProjects: todosLosProyectos } = useClientScope(appUser);
   const { data: clients = [] } = useClients(appUser);
 
   // Filtro por empresa. Con varias empresas a la vista, moverse entre ellas es
