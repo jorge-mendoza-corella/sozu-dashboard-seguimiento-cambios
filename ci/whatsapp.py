@@ -54,8 +54,8 @@ No es un script ejecutable: lo importa ci/codemagic_builds_notify.py.
 """
 from __future__ import annotations
 
+import json
 import os
-
 import re
 import time
 from urllib.parse import quote
@@ -283,6 +283,34 @@ def approver_phone(fs_base: str, token: str, project_id: str) -> tuple[str | Non
 
 # --- Envío --------------------------------------------------------------------
 
+def _falla_en_el_cuerpo(texto: str) -> str | None:
+    """El motivo del fallo si n8n lo reporta dentro de un 200, o None si salió bien.
+
+    El webhook contesta 200 aunque el mensaje NO se haya entregado: n8n acepta la
+    petición, y el fallo de la instancia de WhatsApp viaja en el cuerpo. Mirando
+    solo el código HTTP, el CI cantaba "Notificado" mientras Evolution respondía
+    `400 Connection Closed` —la sesión de WhatsApp caída— y nadie recibía nada
+    durante días sin una sola alarma. Ahora el cuerpo también decide.
+
+    Un cuerpo que no es JSON, o que no trae ninguna de las dos marcas, se toma
+    como éxito: n8n puede responder cualquier cosa y no vamos a inventar fallos.
+    """
+    try:
+        cuerpo = json.loads(texto)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(cuerpo, dict):
+        return None
+    if cuerpo.get("datos_validos") is False:
+        return str(cuerpo.get("error_validacion") or "n8n rechazó los datos")[:200]
+    error = cuerpo.get("error")
+    if not error:
+        return None
+    if isinstance(error, dict):
+        error = error.get("message") or error
+    return str(error)[:200]
+
+
 def send(cfg: dict, telefono: str, mensaje: str) -> tuple[bool, str]:
     """Manda un WhatsApp por el webhook de n8n. Devuelve (ok, detalle).
 
@@ -312,8 +340,12 @@ def send(cfg: dict, telefono: str, mensaje: str) -> tuple[bool, str]:
             ultimo = f"{type(e).__name__}: {e}"
         else:
             if 200 <= r.status_code < 300:
-                return True, f"HTTP {r.status_code}"
-            ultimo = f"HTTP {r.status_code} {r.text[:200]}"
+                falla = _falla_en_el_cuerpo(r.text)
+                if falla is None:
+                    return True, f"HTTP {r.status_code}"
+                ultimo = f"HTTP {r.status_code} pero n8n reportó: {falla}"
+            else:
+                ultimo = f"HTTP {r.status_code} {r.text[:200]}"
         if intento < INTENTOS:
             print(f"· intento {intento} para {enmascarar(telefono)} falló ({ultimo})")
             time.sleep(intento * 5)

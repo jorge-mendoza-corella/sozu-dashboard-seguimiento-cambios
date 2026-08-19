@@ -248,6 +248,29 @@ export async function addUser(
  * el propio usuario (gate de entrada) o el root desde Gestión de Accesos.
  */
 export async function setUserGithubToken(email: string, token: string, login: string) {
+  // Dos personas del dashboard no pueden compartir cuenta de GitHub: cada PR,
+  // aprobación y merge sale a nombre del login del token, así que el historial
+  // acabaría diciendo que alguien hizo lo que hizo otro. Además atrapa el
+  // accidente real que motivó esta guarda: pegar aquí el token que uno tenía a
+  // la mano —el de otro— y quedarse actuando como esa persona sin notarlo,
+  // hasta que GitHub contesta 404 porque esa cuenta no tiene escritura.
+  // Best-effort: quien registra su propia key desde el gate no siempre puede
+  // listar usuarios, y quedarse sin registrar token por no poder comprobar
+  // sería peor que la colisión que se está evitando.
+  let duenoPrevio: AppUser | undefined;
+  try {
+    duenoPrevio = (await getAllUsers()).find(
+      (u) => u.githubLogin === login && u.email !== email,
+    );
+  } catch {
+    duenoPrevio = undefined;
+  }
+  if (duenoPrevio) {
+    throw new Error(
+      `Esa API key es de la cuenta de GitHub @${login}, que ya está registrada para ${duenoPrevio.email}. ` +
+      "Usa una API key de tu propia cuenta.",
+    );
+  }
   await setDoc(
     doc(db, "users", email),
     { githubToken: token, githubLogin: login, githubTokenUpdatedAt: serverTimestamp() },
