@@ -14,8 +14,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
 import { getFrontVersions } from "@/lib/frontVersions";
-import { SUPERUSER_EMAIL,
-  isRootAdmin, resolvePermissions, getVisibleUsers } from "@/lib/firestoreUsers";
+import { isRootAdmin, resolvePermissions, getVisibleUsers } from "@/lib/firestoreUsers";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -57,15 +56,15 @@ export function DashboardPage() {
   // Root/legacy (sin token de sesión) ve todos.
   const { data: accessibleIds, isLoading: loadingAccess } = useAccessibleRepoIds(
     allRepos,
-    appUser?.email === SUPERUSER_EMAIL ? null : appUser?.githubToken ?? null,
+    isRootAdmin(appUser) ? null : appUser?.githubToken ?? null,
     appUser?.githubLogin ?? null,
   );
   const repos = useMemo(() => {
-    if (appUser?.email === SUPERUSER_EMAIL || !appUser?.githubToken) return allRepos;
+    if (isRootAdmin(appUser) || !appUser?.githubToken) return allRepos;
     if (!accessibleIds) return []; // aún verificando accesos: no mostrar de más
     const ok = new Set(accessibleIds);
     return allRepos.filter((r) => ok.has(r.id));
-  }, [allRepos, accessibleIds, appUser?.email, appUser?.githubToken]);
+  }, [allRepos, accessibleIds, appUser, appUser?.githubToken]);
 
   // Aprobadores por proyecto: el token del usuario configurado como aprobador
   // firma las reviews. Solo los admins pueden leer la colección users (rules);
