@@ -181,8 +181,9 @@ function SeedSection() {
                 )}
                 {report.notificacionesSembradas && (
                   <p>
-                    Notificaciones: se cargó la instancia, el webhook y el teléfono admin que
-                    traía el CI. Falta pegar la apikey en la pestaña Notificaciones.
+                    Notificaciones: la instancia, el webhook y el teléfono que traía el CI se
+                    cargaron en la empresa Sozu (son suyos, no del servicio). Falta pegar su
+                    apikey en la pestaña Notificaciones.
                   </p>
                 )}
               </>

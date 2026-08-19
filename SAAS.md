@@ -171,6 +171,13 @@ Los workflows resuelven la empresa desde el repo:
 Si el repo no está dado de alta o su proyecto no tiene cliente, usan el default
 global y lo dicen en el log: un repo sin asignar sigue notificando como antes.
 
+**El default global se deja vacío.** La instancia, el webhook y el teléfono que
+traían los workflows son de Sozu, así que la siembra los pone en la empresa Sozu
+y no en el global: ahí, cualquier empresa que todavía no configure sus avisos
+heredaría el número de Sozu y recibiría mensajes de una cuenta ajena. El global
+solo tiene sentido para repos aún sin empresa asignada, y para ese caso más vale
+que no llegue nada a que llegue al teléfono equivocado.
+
 ### Fin de build (Android e iOS)
 
 El aviso de "tu build terminó" dependía del `codemagic.yaml` de cada repo de app:

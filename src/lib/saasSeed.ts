@@ -1,5 +1,5 @@
 import { addClient, getClients, setClientFeatures, type Client } from "./firestoreClients";
-import { seedGlobalWhatsappDefaults } from "./notificationSettings";
+import { seedClientWhatsappDefaults } from "./notificationSettings";
 import { addProject, getProjects, renameProject, setProjectClient, setProjectIsApp } from "./firestoreProjects";
 
 // ---------------------------------------------------------------------------
@@ -27,7 +27,7 @@ export interface SeedReport {
   proyectosCreados: string[];
   proyectosRenombrados: string[];
   proyectosAsignados: string[];
-  /** Se llenó la config global de WhatsApp con los valores que traía el CI. */
+  /** Se llenó la config de WhatsApp DE SOZU con los valores que traía el CI. */
   notificacionesSembradas: boolean;
 }
 
@@ -41,11 +41,6 @@ export async function seedSaasStructure(email: string): Promise<SeedReport> {
     proyectosAsignados: [],
     notificacionesSembradas: false,
   };
-
-  // Las notificaciones de WhatsApp dejaron de estar cableadas en el YAML: si la
-  // config global queda vacía, los workflows fallan por falta de webhook. Se
-  // siembran los valores que ya usaban (la apikey sigue capturándose a mano).
-  report.notificacionesSembradas = await seedGlobalWhatsappDefaults(email);
 
   // --- Clientes -------------------------------------------------------------
   let clientes = await getClients();
@@ -72,6 +67,12 @@ export async function seedSaasStructure(email: string): Promise<SeedReport> {
   if (!sozu.features?.publishApps || !sozu.features?.showAvances) {
     await setClientFeatures(sozu.id, { publishApps: true, showAvances: true });
   }
+
+  // Las notificaciones de WhatsApp dejaron de estar cableadas en el YAML. La
+  // instancia y el teléfono que traían son de Sozu, así que se siembran en SU
+  // configuración —no en el default global, donde se los heredaría cualquier
+  // empresa sin configurar—. La apikey se captura a mano: es un secreto.
+  report.notificacionesSembradas = await seedClientWhatsappDefaults(sozu.id, email);
 
   // --- Proyectos de Sozu ----------------------------------------------------
   const proyectos = await getProjects();

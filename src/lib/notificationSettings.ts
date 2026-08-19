@@ -198,28 +198,36 @@ const validar = (patch: ClientWhatsappConfig) => {
 /**
  * Valores con los que venían cableados los workflows antes de que esto fuera
  * configurable. No son secretos —la URL y el teléfono ya estaban en el YAML—,
- * así que se siembran para que la migración no deje a nadie sin avisos. Lo
- * único que hay que capturar a mano es la apikey.
+ * pero son **de Sozu**: esa instancia y ese número son suyos.
  */
-const DEFAULTS_HISTORICOS = {
+const CONFIG_HISTORICA_DE_SOZU = {
   instance: "Pruebas de todo",
   webhookUrl: "https://automatizacion-n8n.fbqqbe.easypanel.host/webhook/manda_notificacion",
   adminPhone: "+5217221514185",
 };
 
 /**
- * Deja la configuración global lista con lo que los workflows usaban antes.
- * Idempotente y no destructivo: solo llena los campos que estén vacíos, así que
- * no pisa nada de lo que ya se haya capturado.
+ * Siembra en la EMPRESA indicada la configuración que los workflows traían
+ * cableada. Va al cliente, no al default global, y esa es toda la diferencia:
+ * en el global, cualquier empresa que todavía no configure sus avisos heredaría
+ * el número de Sozu y le llegarían mensajes de una cuenta que no es la suya —
+ * el mismo error que ya arrastraban las credenciales de tienda.
+ *
+ * El global se queda vacío a propósito: solo tiene sentido para repos que aún
+ * no tienen empresa asignada, y ahí más vale que no llegue nada a que llegue al
+ * teléfono equivocado.
+ *
+ * Idempotente y no destructivo: solo llena los campos vacíos. La apikey no se
+ * siembra —es un secreto, se captura a mano en Configuración → Notificaciones—.
  */
-export async function seedGlobalWhatsappDefaults(email: string): Promise<boolean> {
-  const actual = await getGlobalWhatsapp();
+export async function seedClientWhatsappDefaults(clientId: string, email: string): Promise<boolean> {
+  const actual = await getClientWhatsapp(clientId);
   const patch: ClientWhatsappConfig = {};
-  if (!actual.instance.trim()) patch.instance = DEFAULTS_HISTORICOS.instance;
-  if (!actual.webhookUrl.trim()) patch.webhookUrl = DEFAULTS_HISTORICOS.webhookUrl;
-  if (!actual.adminPhone.trim()) patch.adminPhone = DEFAULTS_HISTORICOS.adminPhone;
+  if (!actual?.instance.trim()) patch.instance = CONFIG_HISTORICA_DE_SOZU.instance;
+  if (!actual?.webhookUrl.trim()) patch.webhookUrl = CONFIG_HISTORICA_DE_SOZU.webhookUrl;
+  if (!actual?.adminPhone.trim()) patch.adminPhone = CONFIG_HISTORICA_DE_SOZU.adminPhone;
   if (Object.keys(patch).length === 0) return false;
-  await setGlobalWhatsapp(patch, email);
+  await setClientWhatsapp(clientId, patch, email);
   return true;
 }
 

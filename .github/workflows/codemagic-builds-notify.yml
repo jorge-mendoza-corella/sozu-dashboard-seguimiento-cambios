@@ -63,12 +63,5 @@ jobs:
           CODEMAGIC_TOKEN="$(secret DASHBOARD_CODEMAGIC_TOKEN)"
           export CODEMAGIC_TOKEN
 
-          # Respaldo del WhatsApp global mientras no se capture en el dashboard
-          # (Configuración → Notificaciones). Lo capturado ahí siempre gana.
-          WA_APIKEY="$(secret DASHBOARD_N8N_APIKEY)"
-          WA_WEBHOOK="$(secret DASHBOARD_N8N_WEBHOOK)"
-          WA_INSTANCE="$(secret DASHBOARD_WA_INSTANCE)"
-          WA_ADMIN="$(secret DASHBOARD_WA_ADMIN)"
-          export WA_APIKEY WA_WEBHOOK WA_INSTANCE WA_ADMIN
 
           python ci/codemagic_builds_notify.py
