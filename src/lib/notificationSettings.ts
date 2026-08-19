@@ -32,12 +32,6 @@ export interface WhatsappConfig {
   instance: string;
   /** Webhook de n8n al que se postea. */
   webhookUrl: string;
-  /**
-   * Número que recibe los avisos administrativos (PR abierto, PR cerrado).
-   * En E.164, con lada: `+5217221514185`. Los teléfonos de los contribuidores
-   * NO viven aquí: siguen en `contributors/{login}.telefonoWhatsapp`.
-   */
-  adminPhone: string;
   /** Apagado = no se manda nada para esa empresa. */
   enabled: boolean;
   apiKeySetAt: string | null;
@@ -58,12 +52,11 @@ export interface WhatsappConfig {
 }
 
 /** Lo que se puede escribir de la configuración. Vacío = borra el campo. */
-export type ClientWhatsappConfig = Partial<Pick<WhatsappConfig, "instance" | "webhookUrl" | "adminPhone" | "enabled">>;
+export type ClientWhatsappConfig = Partial<Pick<WhatsappConfig, "instance" | "webhookUrl" | "enabled">>;
 
 export const EMPTY_WHATSAPP: WhatsappConfig = {
   instance: "",
   webhookUrl: "",
-  adminPhone: "",
   enabled: true,
   apiKeySetAt: null,
   apiKeySetBy: null,
@@ -86,7 +79,6 @@ function parse(d: Record<string, unknown> | undefined): WhatsappConfig {
   return {
     instance: str(d.instance),
     webhookUrl: str(d.webhookUrl),
-    adminPhone: str(d.adminPhone),
     enabled: d.enabled !== false, // ausente = prendido
     apiKeySetAt: iso(d.apiKeySetAt),
     apiKeySetBy: typeof d.apiKeySetBy === "string" ? d.apiKeySetBy : null,
@@ -126,7 +118,6 @@ export function maskApiKey(cfg: WhatsappConfig | null): string | null {
 export interface ResolvedWhatsapp {
   instance: string;
   webhookUrl: string;
-  adminPhone: string;
   enabled: boolean;
   /** Tiene apikey guardada. No se puede leer: solo consta que existe. */
   apiKeyPropia: boolean;
@@ -147,14 +138,12 @@ export interface ResolvedWhatsapp {
 export function resolveWhatsapp(propia: WhatsappConfig | null): ResolvedWhatsapp {
   const instance = propia?.instance.trim() ?? "";
   const webhookUrl = propia?.webhookUrl.trim() ?? "";
-  const adminPhone = propia?.adminPhone.trim() ?? "";
   const apiKeyPropia = !!propia?.apiKeySetAt;
   const enabled = propia?.enabled ?? true;
   const incompleta = !instance || !webhookUrl || !apiKeyPropia;
   return {
     instance,
     webhookUrl,
-    adminPhone,
     enabled,
     apiKeyPropia,
     incompleta,
@@ -177,13 +166,6 @@ const validar = (patch: ClientWhatsappConfig) => {
     }
     limpio.webhookUrl = v ? v.replace(/\/+$/, "") : deleteField();
   }
-  if (patch.adminPhone !== undefined) {
-    const v = patch.adminPhone.replace(/[\s()-]/g, "");
-    if (v && !/^\+\d{11,15}$/.test(v)) {
-      throw new Error("El teléfono debe ir en formato internacional, con lada: +5217221514185.");
-    }
-    limpio.adminPhone = v || deleteField();
-  }
   if (patch.enabled !== undefined) limpio.enabled = patch.enabled;
   return limpio;
 };
@@ -196,7 +178,6 @@ const validar = (patch: ClientWhatsappConfig) => {
 const CONFIG_HISTORICA_DE_SOZU = {
   instance: "Pruebas de todo",
   webhookUrl: "https://automatizacion-n8n.fbqqbe.easypanel.host/webhook/manda_notificacion",
-  adminPhone: "+5217221514185",
 };
 
 /** Guarda la configuración (no secreta) de una empresa. */
@@ -221,7 +202,6 @@ export async function seedClientWhatsappDefaults(clientId: string, email: string
   const patch: ClientWhatsappConfig = {};
   if (!actual?.instance.trim()) patch.instance = CONFIG_HISTORICA_DE_SOZU.instance;
   if (!actual?.webhookUrl.trim()) patch.webhookUrl = CONFIG_HISTORICA_DE_SOZU.webhookUrl;
-  if (!actual?.adminPhone.trim()) patch.adminPhone = CONFIG_HISTORICA_DE_SOZU.adminPhone;
   if (Object.keys(patch).length === 0) return false;
   await setClientWhatsapp(clientId, patch, email);
   return true;

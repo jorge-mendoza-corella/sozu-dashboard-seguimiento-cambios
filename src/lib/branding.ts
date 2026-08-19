@@ -37,9 +37,17 @@ export interface ClientBranding {
 
 /** Marca del proveedor: la que ve el equipo interno y quien no tiene propia. */
 export const VENDOR_BRANDING: ClientBranding & { appName: string } = {
-  appName: "SOZU Tracker",
+  appName: "Tracker Cambios",
   tagline: "Seguimiento de cambios y despliegues",
 };
+
+/**
+ * Firma que se deja al pie cuando la herramienta va con la marca de un cliente.
+ * Es una frase aparte del nombre del producto a propósito: el cliente ve su
+ * propia marca arriba, y abajo quién la construyó, no otro nombre de producto
+ * que compita con el suyo.
+ */
+export const VENDOR_SIGNATURE = "Powered by Yorch";
 
 /** Tope del logo embebido: un doc de Firestore no puede pasar de 1 MB. */
 const MAX_LOGO_BYTES = 200 * 1024;

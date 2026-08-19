@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
 import { useBillingSettings } from "@/hooks/useClients";
-import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { isRootAdmin } from "@/lib/firestoreUsers";
 import {
   setFacturapiKey, setBillingSettings, DEFAULT_BILLING_SETTINGS, type FacturapiEnv,
 } from "@/lib/billingSettings";
@@ -36,7 +36,7 @@ export function FacturapiSection() {
   const { data: settings = DEFAULT_BILLING_SETTINGS } = useBillingSettings();
 
   // Solo el root escribe: la llave puede timbrar facturas reales en producción.
-  const esRoot = appUser?.email === SUPERUSER_EMAIL;
+  const esRoot = isRootAdmin(appUser);
 
   const [apiKey, setApiKey] = useState("");
   const [envDetectado, setEnvDetectado] = useState<FacturapiEnv | null>(null);

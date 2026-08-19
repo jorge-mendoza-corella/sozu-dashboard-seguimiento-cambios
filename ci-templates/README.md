@@ -19,13 +19,17 @@ es **por empresa o nada**: no hay default global.
 
 | Qué | Dónde |
 | --- | --- |
-| Instancia, webhook, teléfono que recibe, encendido | `clients/{clientId}/private/notifications` |
+| Instancia, webhook, encendido | `clients/{clientId}/private/notifications` |
 | Apikey del webhook | `clients/{clientId}/private/whatsappSecret.apiKey` |
 
 Campos: `instance` (el `instanciaWA` del payload; es el número **desde** el que
-sale el mensaje), `webhookUrl`, `adminPhone` (E.164, con lada: `+5217221514185`;
-es uno de los números a los que **llega**) y `enabled` (booleano; ausente =
-prendido).
+sale el mensaje), `webhookUrl` y `enabled` (booleano; ausente = prendido).
+
+**A quién le llega** no se configura aquí. Los avisos van a las personas: al
+autor o a quien disparó el cambio, y al **aprobador del proyecto**
+(`projects/{id}.approverEmail` → `users/{email}.githubLogin` →
+`contributors/{login}.telefonoWhatsapp`). Antes había un teléfono suelto por
+empresa y se quedaba viejo en cuanto cambiaba el responsable.
 
 ### Por qué no hay global
 
@@ -65,10 +69,10 @@ nunca aparece en los logs de Actions. **No la escribas en el YAML**: si ves un
 
 Archivo: [`notify-pr-dev.yml`](./notify-pr-dev.yml)
 
-- **Abierto hacia `dev`** → avisa al admin (`adminPhone` de la empresa, o el
-  global).
+- **Abierto hacia `dev`** → avisa al aprobador del proyecto, que es quien tiene
+  que revisarlo.
 - **Cerrado hacia `dev` o `main`** (con o sin merge) → avisa a cada autor real del
-  PR (teléfono en `contributors/{login}.telefonoWhatsapp`) y al admin.
+  PR (teléfono en `contributors/{login}.telefonoWhatsapp`) y al aprobador.
 
 Colócalo como `.github/workflows/notify-pr-dev.yml` en cada repo monitoreado:
 

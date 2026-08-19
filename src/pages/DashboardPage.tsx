@@ -14,7 +14,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
 import { getFrontVersions } from "@/lib/frontVersions";
-import { SUPERUSER_EMAIL, resolvePermissions, getVisibleUsers } from "@/lib/firestoreUsers";
+import { SUPERUSER_EMAIL,
+  isRootAdmin, resolvePermissions, getVisibleUsers } from "@/lib/firestoreUsers";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,7 +44,7 @@ function computeSummary(data: RepoStatus[]) {
 export function DashboardPage() {
   const { appUser } = useAuth();
   const isViewer = appUser?.role === "viewer";
-  const isRoot = appUser?.email === SUPERUSER_EMAIL; // solo jorge gestiona proyectos/repos
+  const isRoot = isRootAdmin(appUser); // solo jorge gestiona proyectos/repos
   const perms = resolvePermissions(appUser); // permisos CI/CD granulares del usuario
   const publishApps = useCanPublishApps(appUser); // publicar en tiendas: feature de pago del cliente
   const qc = useQueryClient();

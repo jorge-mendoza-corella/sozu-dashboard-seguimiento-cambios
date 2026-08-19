@@ -2,14 +2,15 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Activity, GitBranch, Users, GitCommit, LogOut, LayoutDashboard, HardHat, ExternalLink,
-  TrendingUp, Settings,
+  TrendingUp, Settings, Eye, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { useImpersonation } from "@/hooks/useImpersonation";
 import { useBranding, useApplyBranding } from "@/hooks/useBranding";
-import { VENDOR_BRANDING } from "@/lib/branding";
+import { VENDOR_SIGNATURE } from "@/lib/branding";
 import { useAvancesAccess, AVANCES_URL_DEFAULT } from "@/hooks/useClients";
-import { SUPERUSER_EMAIL, canAdminister } from "@/lib/firestoreUsers";
+import { canAdminister, isRootAdmin } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
 import { AvancesDraftBadge } from "@/components/AvancesDraftBadge";
 import { BuildNotifier } from "@/components/codemagic/BuildNotifier";
@@ -26,16 +27,29 @@ const NAV_ITEMS = [
   // siquiera le dejan leer su `private/billing`.
   { to: "/negocio", label: "Negocio", icon: TrendingUp, show: (v: NavVisibility) => v.adminGlobal },
   { to: "/contributors", label: "Contribuidores", icon: GitCommit, show: (v: NavVisibility) => v.root },
-  { to: "/users", label: "Usuarios", icon: Users, show: (v: NavVisibility) => v.admin },
-  { to: "/configuracion", label: "Configuración", icon: Settings, show: (v: NavVisibility) => v.admin },
+  // Usuarios vuelve a ser del admin global. El administrador de empresa ya sabe
+  // gestionar a sus viewers —el código y las reglas están—, pero se deja apagado
+  // hasta decidirlo: abrirlo ahora le pinta pantallas nuevas a cuentas que
+  // llevan meses viendo otra cosa.
+  { to: "/users", label: "Usuarios", icon: Users, show: (v: NavVisibility) => v.adminGlobal },
+  // Negocio y Configuración son del dueño del servicio: tarifas, datos fiscales,
+  // clientes y llaves. Un administrador de empresa no las ve — y el root
+  // tampoco mientras esté "viendo como" una empresa, que es justo el punto.
+  { to: "/configuracion", label: "Configuración", icon: Settings, show: (v: NavVisibility) => v.adminGlobal },
 ];
 
 interface Props { children: React.ReactNode }
 
 export function AppLayout({ children }: Props) {
-  const { appUser, logout } = useAuth();
+  const { appUser, realUser, logout } = useAuth();
+  // Impersonación: el perfil ya viene cambiado desde `useAuth`, así que aquí
+  // solo hace falta el aviso y la salida. Se muestra SIEMPRE mientras dure: sin
+  // él es fácil creer que algo funciona para el cliente cuando en realidad
+  // funcionó porque las reglas siguen viendo al root.
+  const { clientId: viendoComo, salir } = useImpersonation();
+  const impersonando = !!viendoComo && appUser?.role === "client_admin";
   const { pathname } = useLocation();
-  const isRoot = appUser?.email === SUPERUSER_EMAIL;
+  const isRoot = isRootAdmin(appUser);
   const navItems = NAV_ITEMS.filter((i) =>
     i.show({
       root: isRoot,
@@ -61,6 +75,20 @@ export function AppLayout({ children }: Props) {
 
   return (
     <div className="min-h-screen flex flex-col">
+      {impersonando && (
+        <div className="flex flex-wrap items-center justify-center gap-2 bg-amber-400 px-4 py-1.5 text-[11px] font-semibold text-amber-950">
+          <Eye className="h-3.5 w-3.5" />
+          Estás viendo el dashboard como {branding.clientName ?? "esta empresa"}. Lo que hagas se
+          sigue guardando como {realUser?.email}.
+          <button
+            type="button"
+            onClick={salir}
+            className="ml-1 inline-flex items-center gap-1 rounded-full bg-amber-950/10 px-2 py-0.5 font-bold hover:bg-amber-950/20"
+          >
+            <X className="h-3 w-3" /> Salir
+          </button>
+        </div>
+      )}
       {/* Top nav */}
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
         <div className="flex h-14 items-center gap-4 px-6">
@@ -145,7 +173,7 @@ export function AppLayout({ children }: Props) {
         </p>
         {muestraFirmaProveedor && (
           <p className="text-center text-[10px] text-muted-foreground/70">
-            operado con {VENDOR_BRANDING.appName}
+            {VENDOR_SIGNATURE}
           </p>
         )}
       </footer>

@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SelectNative } from "@/components/ui/select-native";
 import { useAuth } from "@/hooks/useAuth";
-import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { isRootAdmin } from "@/lib/firestoreUsers";
 import { useAnthropicCosts } from "@/hooks/useAnthropicCosts";
 import { type AnthropicOrgUser, type ContributorCostEntry } from "@/lib/anthropicAdmin";
 import { setMapping, deleteMapping } from "@/lib/firestoreAnthropicMapping";
@@ -259,7 +259,7 @@ function MappingModal({
 
 export function CostsAnalytics() {
   const { appUser } = useAuth();
-  const isRoot = appUser?.email === SUPERUSER_EMAIL;
+  const isRoot = isRootAdmin(appUser);
   const qc = useQueryClient();
 
   const [windowDays, setWindowDays] = useState(30);

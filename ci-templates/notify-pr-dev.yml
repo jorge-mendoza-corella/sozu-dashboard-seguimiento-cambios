@@ -1,7 +1,17 @@
 # Notifica por WhatsApp sobre PRs:
-#   - Abierto hacia `dev`  -> avisa al admin (comportamiento original).
+#   - Abierto hacia `dev`  -> avisa al APROBADOR del proyecto.
 #   - Cerrado (con o sin merge) hacia `dev` o `main` -> avisa al AUTOR del PR
-#     (teléfono en Firestore contributors/{login}.telefonoWhatsapp) y al admin.
+#     (teléfono en Firestore contributors/{login}.telefonoWhatsapp) y también al
+#     APROBADOR del proyecto.
+#
+# Ese destinatario ERA un "teléfono administrativo" (`adminPhone`) capturado a
+# mano en la configuración de la empresa, y se eliminó: era un número suelto que
+# había que mantener aparte y que se quedaba viejo en cuanto cambiaba el
+# responsable, así que el aviso acababa llegándole a quien ya no revisaba nada.
+# Ahora le llega al APROBADOR del proyecto —el que tiene que revisar ese PR—,
+# que ya está configurado en el dashboard (Proyectos y repos) y cuyo teléfono
+# sale de Contribuidores, igual que el de los autores: un solo lugar donde
+# mantenerlo.
 #
 # Colocar este archivo como `.github/workflows/notify-pr-dev.yml` en CADA repo
 # monitoreado:
@@ -13,19 +23,20 @@
 #   - jorgeIMendoza/sozu-mcp
 #   - sozu-com/server-stp
 #
-# La instancia, el webhook, la apikey y el teléfono del admin YA NO se escriben
-# aquí: salen ÚNICAMENTE de la configuración de la EMPRESA dueña del repo
-# (dashboard → Configuración → Notificaciones). No hay default global ni
-# herencia: o la empresa está configurada, o no se manda nada. Ver el bloque
-# `RESOLVER_WA` de abajo y `ci-templates/README.md`.
+# La instancia, el webhook y la apikey YA NO se escriben aquí: salen ÚNICAMENTE
+# de la configuración de la EMPRESA dueña del repo (dashboard → Configuración →
+# Notificaciones). No hay default global ni herencia: o la empresa está
+# configurada, o no se manda nada. Ver el bloque `RESOLVER_WA` de abajo y
+# `ci-templates/README.md`.
 #
-# El aviso al admin y el aviso a los autores van en JOBS SEPARADOS, y ninguno
-# usa actions del marketplace: el 2026-08-06 un "Service Unavailable" al
+# El aviso al aprobador y el aviso a los autores van en JOBS SEPARADOS, y
+# ninguno usa actions del marketplace: el 2026-08-06 un "Service Unavailable" al
 # resolver `google-github-actions/auth` tumbó el job entero en la fase de setup
 # (antes de cualquier step, así que `continue-on-error` no sirvió de nada) y el
 # merge a dev de un PR no notificó a nadie. Ahora el token de Google se pide
 # firmando un JWT con openssl — solo curl, jq y openssl, ya presentes en el
-# runner — y un fallo al resolver teléfonos no puede impedir el aviso al admin.
+# runner — y un fallo al resolver los teléfonos de los autores no puede impedir
+# el aviso al aprobador.
 
 name: Notificar PR (WhatsApp)
 
@@ -45,17 +56,20 @@ env:
   # una composite action) para escribirlo UNA sola vez y correrlo en los tres
   # jobs con `bash -c "$RESOLVER_WA"`, sin agregar actions de terceros ni
   # dependencias entre jobs: cada job sigue resolviendo lo suyo por su cuenta y
-  # el aviso al admin no depende de nadie más.
+  # el aviso al aprobador no depende de nadie más.
   #
   # Exporta a $GITHUB_ENV:
-  #   WA_INSTANCE  instancia de WhatsApp en n8n (el `instanciaWA` del payload)
-  #   WA_WEBHOOK   webhook de n8n al que se postea
-  #   WA_APIKEY    apikey del webhook (enmascarada con ::add-mask:: al leerla)
-  #   WA_ADMIN     teléfono que recibe los avisos administrativos (E.164)
-  #   WA_ENABLED   "true" solo si la empresa está configurada Y no apagó los
-  #                avisos; con cualquier otro valor NO se manda nada
-  #   WA_MOTIVO    por qué no se manda, para que el step de envío lo imprima
-  #   WA_GCP_TOKEN access token de Google, para reusarlo en el mismo job
+  #   WA_INSTANCE   instancia de WhatsApp en n8n (el `instanciaWA` del payload)
+  #   WA_WEBHOOK    webhook de n8n al que se postea
+  #   WA_APIKEY     apikey del webhook (enmascarada con ::add-mask:: al leerla)
+  #   WA_APROBADOR  teléfono del aprobador del proyecto (E.164). Sustituye al
+  #                 viejo WA_ADMIN, que salía de un `adminPhone` capturado a
+  #                 mano por empresa: ya no existe ese "admin"
+  #   WA_APROBADOR_MOTIVO  qué falta para tener aprobador, si no se pudo resolver
+  #   WA_ENABLED    "true" solo si la empresa está configurada Y no apagó los
+  #                 avisos; con cualquier otro valor NO se manda nada
+  #   WA_MOTIVO     por qué no se manda, para que el step de envío lo imprima
+  #   WA_GCP_TOKEN  access token de Google, para reusarlo en el mismo job
   #
   # TODO ES POR EMPRESA O NO SE MANDA NADA: se lee la empresa dueña del repo y
   # solo sus documentos. Ya no hay `settings/notifications` ni `secrets/whatsapp`
@@ -141,8 +155,75 @@ env:
 
     WA_INSTANCE="$(campo "$C_DOC" instance)"
     WA_WEBHOOK="$(campo "$C_DOC" webhookUrl)"
-    WA_ADMIN="$(campo "$C_DOC" adminPhone)"
     WA_APIKEY="$C_KEY"
+
+    # --- Aprobador del proyecto (a quién le llegan los avisos) ---------------
+    # Aquí vivía `WA_ADMIN="$(campo "$C_DOC" adminPhone)"`. Ese teléfono
+    # administrativo se eliminó: era un número suelto, capturado a mano por
+    # empresa, que se quedaba viejo en cuanto cambiaba el responsable. Ahora el
+    # aviso le llega a quien tiene que revisar el PR —el aprobador del
+    # proyecto—, que ya está configurado en el dashboard y cuyo teléfono sale de
+    # Contribuidores, igual que el de los autores. Un solo lugar que mantener.
+    #
+    #   projects/{projectId}.approverEmail    -> correo del aprobador
+    #   users/{email}.githubLogin             -> su login de GitHub
+    #   contributors/{login}.telefonoWhatsapp -> su teléfono (10 dígitos -> +521)
+    #
+    # Si falta cualquiera de los tres eslabones no se manda ese aviso y se dice
+    # exactamente qué falta y dónde capturarlo: es un pendiente de configuración
+    # del dashboard, no un error de CI.
+
+    # El id de `users` es el correo (lleva '@' y '.'), así que se escapa antes
+    # de meterlo en la ruta REST.
+    urlenc() { jq -rn --arg v "$1" '$v|@uri'; }
+    # Mismo criterio que `normalizar_telefono` de ci/whatsapp.py: 10 dígitos
+    # como se guardan en Contribuidores -> +521; internacional que ya trae '+'
+    # se respeta; cualquier otra cosa (extensiones, números a medias, texto) se
+    # descarta, porque mandársela a n8n solo produce un fallo silencioso.
+    # Ojo con el orden en `tr -d`: el '-' va al final o define un rango.
+    normalizar() {
+      LIMPIO="$(printf '%s' "$1" | tr -d ' ().-' | tr -d '\r\n')"
+      SOLO="${LIMPIO#+}"
+      case "$SOLO" in ''|*[!0-9]*) return 0 ;; esac
+      if [ "$LIMPIO" != "$SOLO" ]; then
+        if [ "${#SOLO}" -ge 8 ] && [ "${#SOLO}" -le 15 ]; then printf '+%s' "$SOLO"; fi
+      elif [ "${#SOLO}" -eq 10 ]; then
+        printf '+521%s' "$SOLO"
+      fi
+    }
+    # Al log nunca sale un teléfono completo: solo los últimos 4 dígitos.
+    enmascarar() { printf '···%s' "$(printf '%s' "$1" | tr -cd '0-9' | tail -c 4)"; }
+
+    WA_APROBADOR=""
+    WA_APROBADOR_MOTIVO=""
+    if [ -z "$PROJECT_ID" ]; then
+      WA_APROBADOR_MOTIVO="el repo '${GITHUB_REPOSITORY}' no está dado de alta en el dashboard (repos/${REPO_ID}), así que no se sabe de qué proyecto es."
+    else
+      APROBADOR_EMAIL="$(campo "$(leer "projects/${PROJECT_ID}")" approverEmail)"
+      if [ -z "$APROBADOR_EMAIL" ]; then
+        WA_APROBADOR_MOTIVO="el proyecto '${PROJECT_ID}' no tiene aprobador configurado. Asígnalo en el dashboard → Proyectos y repos."
+      else
+        APROBADOR_LOGIN="$(campo "$(leer "users/$(urlenc "$APROBADOR_EMAIL")")" githubLogin)"
+        if [ -z "$APROBADOR_LOGIN" ]; then
+          WA_APROBADOR_MOTIVO="el aprobador ${APROBADOR_EMAIL} no tiene login de GitHub. Que capture su token personal de GitHub en el dashboard (de ahí se deriva su login)."
+        else
+          APROBADOR_TEL="$(campo "$(leer "contributors/$(urlenc "$APROBADOR_LOGIN")")" telefonoWhatsapp)"
+          if [ -z "$APROBADOR_TEL" ]; then
+            WA_APROBADOR_MOTIVO="el contribuidor ${APROBADOR_LOGIN} no tiene teléfono. Captúralo en el dashboard → Contribuidores."
+          else
+            WA_APROBADOR="$(normalizar "$APROBADOR_TEL")"
+            if [ -z "$WA_APROBADOR" ]; then
+              WA_APROBADOR_MOTIVO="el teléfono del contribuidor ${APROBADOR_LOGIN} ($(enmascarar "$APROBADOR_TEL")) no tiene un formato válido: deben ser 10 dígitos o un número internacional con '+'. Corrígelo en el dashboard → Contribuidores."
+            else
+              echo "Aprobador del proyecto '${PROJECT_ID}': ${APROBADOR_LOGIN} ($(enmascarar "$WA_APROBADOR"))."
+            fi
+          fi
+        fi
+      fi
+    fi
+    if [ -z "$WA_APROBADOR" ]; then
+      echo "No se avisará al aprobador porque ${WA_APROBADOR_MOTIVO}"
+    fi
 
     # `enabled: false` de la empresa apaga sus avisos; ausente = prendido.
     WA_ENABLED=true
@@ -170,7 +251,8 @@ env:
     exportar WA_INSTANCE "$WA_INSTANCE"
     exportar WA_WEBHOOK  "$WA_WEBHOOK"
     exportar WA_APIKEY   "$WA_APIKEY"
-    exportar WA_ADMIN    "$WA_ADMIN"
+    exportar WA_APROBADOR "$WA_APROBADOR"
+    exportar WA_APROBADOR_MOTIVO "$WA_APROBADOR_MOTIVO"
     exportar WA_ENABLED  "$WA_ENABLED"
     exportar WA_MOTIVO   "$WA_MOTIVO"
     exportar WA_GCP_TOKEN "$ACCESS_TOKEN"
@@ -196,7 +278,7 @@ jobs:
           SA_JSON: ${{ secrets.FIREBASE_GCP_DEV }}
         run: bash -c "$RESOLVER_WA"
 
-      - name: Enviar WhatsApp (admin)
+      - name: Enviar WhatsApp (aprobador del proyecto)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUM: ${{ github.event.number }}
@@ -210,8 +292,11 @@ jobs:
             echo "No se envía nada. ${WA_MOTIVO:-Notificaciones de WhatsApp no configuradas para esta empresa.}"
             exit 0
           fi
-          if [ -z "$WA_ADMIN" ]; then
-            echo "La empresa no tiene teléfono administrativo configurado (dashboard → Configuración → Notificaciones); no se envía el aviso al admin."
+          # Sin aprobador resuelto no hay a quién avisar. Tampoco es un error de
+          # CI: es un pendiente de captura en el dashboard, y pintar el check en
+          # rojo por eso no ayuda a nadie a arreglarlo.
+          if [ -z "$WA_APROBADOR" ]; then
+            echo "No se envía el aviso al aprobador porque ${WA_APROBADOR_MOTIVO:-no se pudo resolver el aprobador del proyecto.}"
             exit 0
           fi
           # Detectar TODOS los autores reales desde el body (una línea
@@ -224,7 +309,7 @@ jobs:
             | grep -oP '(?<=<!-- pr_author: )[\w.-]+(?= -->)' 2>/dev/null | sort -u | paste -sd ', ' || true)"
           AUTOR="${AUTORES:-$ACTOR}"
           MSG="Hay un PR para DEV del repo: ${REPO_NAME}, cambios de: ${AUTOR}"
-          PAYLOAD="$(jq -n --arg tel "$WA_ADMIN" --arg msg "$MSG" --arg inst "$WA_INSTANCE" \
+          PAYLOAD="$(jq -n --arg tel "$WA_APROBADOR" --arg msg "$MSG" --arg inst "$WA_INSTANCE" \
             '{tipo:"wa",telefono:$tel,mensajeWA:$msg,instanciaWA:$inst}')"
           # Reintentos: si n8n no responde a la primera, el aviso se pierde sin
           # dejar rastro. Tres intentos y el job falla si ninguno entra.
@@ -232,15 +317,15 @@ jobs:
             CODE="$(curl -s -o /tmp/n8n.out -w '%{http_code}' --max-time 20 \
               -X POST "$WA_WEBHOOK" -H "apikey: $WA_APIKEY" \
               -H "Content-Type: application/json" -d "$PAYLOAD" || echo 000)"
-            case "$CODE" in 2*) echo "Notificado admin"; exit 0 ;; esac
+            case "$CODE" in 2*) echo "Notificado el aprobador del proyecto"; exit 0 ;; esac
             echo "Intento ${intento} falló (HTTP ${CODE}): $(cat /tmp/n8n.out)"
             sleep $((intento * 5))
           done
-          echo "::error::No se pudo notificar al admin tras 3 intentos"
+          echo "::error::No se pudo notificar al aprobador tras 3 intentos"
           exit 1
 
-  notify-cerrado-admin:
-    # PR cerrado (mergeado o no) hacia dev o main -> avisa al admin.
+  notify-cerrado-aprobador:
+    # PR cerrado (mergeado o no) hacia dev o main -> avisa al aprobador.
     # Job aparte y sin dependencias: es el aviso que nunca debe perderse.
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
@@ -251,7 +336,7 @@ jobs:
           SA_JSON: ${{ secrets.FIREBASE_GCP_DEV }}
         run: bash -c "$RESOLVER_WA"
 
-      - name: Enviar WhatsApp (admin)
+      - name: Enviar WhatsApp (aprobador del proyecto)
         env:
           PR_NUM: ${{ github.event.number }}
           MERGED: ${{ github.event.pull_request.merged }}
@@ -265,8 +350,10 @@ jobs:
             echo "No se envía nada. ${WA_MOTIVO:-Notificaciones de WhatsApp no configuradas para esta empresa.}"
             exit 0
           fi
-          if [ -z "$WA_ADMIN" ]; then
-            echo "La empresa no tiene teléfono administrativo configurado (dashboard → Configuración → Notificaciones); no se envía el aviso al admin."
+          # Sin aprobador resuelto no hay a quién avisar; se dice qué falta y se
+          # sale en verde (es configuración pendiente, no una falla del CI).
+          if [ -z "$WA_APROBADOR" ]; then
+            echo "No se envía el aviso al aprobador porque ${WA_APROBADOR_MOTIVO:-no se pudo resolver el aprobador del proyecto.}"
             exit 0
           fi
           if [ "$MERGED" = "true" ]; then
@@ -274,17 +361,17 @@ jobs:
           else
             MSG="El PR #${PR_NUM} del repo ${REPO} (hacia ${BASE}) fue CERRADO sin merge por ${CERRADO_POR}"
           fi
-          PAYLOAD="$(jq -n --arg tel "$WA_ADMIN" --arg msg "$MSG" --arg inst "$WA_INSTANCE" \
+          PAYLOAD="$(jq -n --arg tel "$WA_APROBADOR" --arg msg "$MSG" --arg inst "$WA_INSTANCE" \
             '{tipo:"wa",telefono:$tel,mensajeWA:$msg,instanciaWA:$inst}')"
           for intento in 1 2 3; do
             CODE="$(curl -s -o /tmp/n8n.out -w '%{http_code}' --max-time 20 \
               -X POST "$WA_WEBHOOK" -H "apikey: $WA_APIKEY" \
               -H "Content-Type: application/json" -d "$PAYLOAD" || echo 000)"
-            case "$CODE" in 2*) echo "Notificado admin"; exit 0 ;; esac
+            case "$CODE" in 2*) echo "Notificado el aprobador del proyecto"; exit 0 ;; esac
             echo "Intento ${intento} falló (HTTP ${CODE}): $(cat /tmp/n8n.out)"
             sleep $((intento * 5))
           done
-          echo "::error::No se pudo notificar al admin tras 3 intentos"
+          echo "::error::No se pudo notificar al aprobador tras 3 intentos"
           exit 1
 
   notify-cerrado-autores:

@@ -11,10 +11,11 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useClients, useClientScope } from "@/hooks/useClients";
 import { usePublicBranding } from "@/hooks/useBranding";
-import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { isRootAdmin } from "@/lib/firestoreUsers";
 import { clientDisplayName, type Client } from "@/lib/firestoreClients";
 import {
   foregroundForHex, brandTriplet, setClientBranding, setPublicBranding, VENDOR_BRANDING,
+  VENDOR_SIGNATURE,
   type ClientBranding, type PublicBranding,
 } from "@/lib/branding";
 
@@ -107,7 +108,7 @@ export function BrandingSection() {
   const { isLoading } = useClients(appUser);
   // La marca por dominio la publica solo el root: es quien sabe qué dominio es
   // de qué empresa, y ese doc lo lee cualquiera sin sesión.
-  const esRoot = appUser?.email === SUPERUSER_EMAIL;
+  const esRoot = isRootAdmin(appUser);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -426,15 +427,18 @@ export function BrandingSection() {
               )}
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <Badge>Al día</Badge>
-              <Button size="sm">Publicar</Button>
+              {/* Muestras: no hacen nada, están para ver el color de marca
+                  aplicado a un badge y a un botón reales. */}
+              <span className="text-[10px] text-muted-foreground">así se verán:</span>
+              <Badge>Ejemplo</Badge>
+              <Button size="sm">Botón</Button>
             </div>
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground">
             {b.hideVendorBrand ? (
               "Sin firma en el pie."
             ) : (
-              <>Hecho con {VENDOR_BRANDING.appName}</>
+              <>{VENDOR_SIGNATURE}</>
             )}
           </p>
         </div>
@@ -579,7 +583,7 @@ export function BrandingSection() {
                     Ocultar la firma del proveedor
                   </button>
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    Prendido = el pie no menciona a {VENDOR_BRANDING.appName}. Para el cliente la
+                    Prendido = el pie no muestra «{VENDOR_SIGNATURE}». Para el cliente la
                     herramienta se ve completamente suya.
                   </p>
                 </div>

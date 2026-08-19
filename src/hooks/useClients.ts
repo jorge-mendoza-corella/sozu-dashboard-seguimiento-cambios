@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getClientsFor, getClientsWithBilling, type Client } from "@/lib/firestoreClients";
 import { getBillingSettings, DEFAULT_BILLING_SETTINGS } from "@/lib/billingSettings";
 import { computeBillingOverview, type BillingOverview } from "@/lib/billing";
-import { SUPERUSER_EMAIL, adminClientIds, type AppUser } from "@/lib/firestoreUsers";
+import { isRootAdmin, adminClientIds, type AppUser } from "@/lib/firestoreUsers";
 import { useProjects, useRepos } from "./useProjectsRepos";
 
 /**
@@ -134,7 +134,7 @@ export interface PublishAppsFeature {
 
 export function useCanPublishApps(appUser: AppUser | null): PublishAppsFeature {
   const { data: clients, isLoading } = useClients(appUser);
-  const esRoot = appUser?.email === SUPERUSER_EMAIL;
+  const esRoot = isRootAdmin(appUser);
   return useMemo(() => {
     // Mientras la lista no llegue (o si falló), no se apaga nada: apagar el
     // deploy de todos por un fetch lento sería peor que dejarlo pasar.
@@ -184,7 +184,7 @@ export function useAvancesAccess(appUser: AppUser | null): AvancesAccess {
     if (isLoading || !clients) return { allowed: true, url: AVANCES_URL_DEFAULT, clients: [] };
 
     const conAvances = clients.filter((c) => c.features?.showAvances);
-    if (appUser.email === SUPERUSER_EMAIL) {
+    if (isRootAdmin(appUser)) {
       return { allowed: true, url: AVANCES_URL_DEFAULT, clients: conAvances };
     }
 
