@@ -34,6 +34,7 @@ import {
   type AppUser,
   type UserRole,
   type CicdPermissions,
+  scopeKeyOf,
 } from "@/lib/firestoreUsers";
 
 const PERMISSION_DEFS: { key: keyof CicdPermissions; label: string; icon: React.ReactNode }[] = [
@@ -290,7 +291,7 @@ export function UsersPage() {
   // los suyos. Por eso el email va en la clave, para que dos cuentas distintas
   // no se pisen la caché de react-query.
   const { data: users = [], refetch, error: errorLista } = useQuery({
-    queryKey: ["users-all", appUser?.email ?? ""],
+    queryKey: ["users-all", scopeKeyOf(appUser)],
     queryFn: () => getVisibleUsers(appUser),
     enabled: !!appUser,
   });

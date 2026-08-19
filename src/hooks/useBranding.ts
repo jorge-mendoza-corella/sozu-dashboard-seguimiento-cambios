@@ -6,6 +6,7 @@ import {
 } from "@/lib/branding";
 import { adminClientIds, type AppUser } from "@/lib/firestoreUsers";
 import { useClients } from "./useClients";
+import { useEmpresaActiva } from "./useEmpresaActiva";
 
 /**
  * Marca activa para este usuario: la de su empresa si tiene una sola con marca,
@@ -14,10 +15,13 @@ import { useClients } from "./useClients";
  */
 export function useBranding(appUser: AppUser | null): ResolvedBranding {
   const { data: clients } = useClients(appUser);
-  // El admin global ve todas las empresas: si hubiera una sola con marca, se
-  // habría llevado la marca de ese cliente por todo el dashboard.
+  // El admin global ve todas las empresas: sin una elegida a propósito, ninguna
+  // marca de cliente puede reclamar el encabezado.
   const esAdminGlobal = adminClientIds(appUser) === null;
-  return clients ? resolveBranding(clients, esAdminGlobal) : VENDOR_RESOLVED;
+  // La empresa elegida en la barra de Resumen/CI/CD manda sobre la marca: es la
+  // señal más explícita de "estoy trabajando en esta empresa".
+  const { empresa } = useEmpresaActiva();
+  return clients ? resolveBranding(clients, esAdminGlobal, empresa) : VENDOR_RESOLVED;
 }
 
 /**

@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getClientsFor, getClientsWithBilling, type Client } from "@/lib/firestoreClients";
 import { getBillingSettings, DEFAULT_BILLING_SETTINGS } from "@/lib/billingSettings";
 import { computeBillingOverview, type BillingOverview } from "@/lib/billing";
-import { isRootAdmin, adminClientIds, type AppUser } from "@/lib/firestoreUsers";
+import { isRootAdmin, adminClientIds, scopeKeyOf, type AppUser } from "@/lib/firestoreUsers";
 import { useProjects, useRepos } from "./useProjectsRepos";
 
 /**
@@ -14,7 +14,7 @@ import { useProjects, useRepos } from "./useProjectsRepos";
  */
 export function useClients(appUser: AppUser | null) {
   return useQuery({
-    queryKey: ["clients", appUser?.email ?? "anon"],
+    queryKey: ["clients", scopeKeyOf(appUser)],
     queryFn: () => getClientsFor(appUser),
     enabled: !!appUser,
     staleTime: 60 * 1000,
@@ -28,7 +28,7 @@ export function useClients(appUser: AppUser | null) {
  */
 export function useClientsBilling(appUser: AppUser | null) {
   return useQuery({
-    queryKey: ["clients", appUser?.email ?? "anon", "billing"],
+    queryKey: ["clients", scopeKeyOf(appUser), "billing"],
     queryFn: () => getClientsWithBilling(appUser),
     enabled: !!appUser,
     staleTime: 60 * 1000,

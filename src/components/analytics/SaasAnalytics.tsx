@@ -13,7 +13,7 @@ import { Bar, Line, Doughnut } from "react-chartjs-2";
 import { Card, CardContent } from "@/components/ui/card";
 import { useBillingOverview } from "@/hooks/useClients";
 import { useProjects } from "@/hooks/useProjectsRepos";
-import { getVisibleUsers } from "@/lib/firestoreUsers";
+import { getVisibleUsers , scopeKeyOf} from "@/lib/firestoreUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { formatMoney, formatMixed, type ClientBillingSummary } from "@/lib/billing";
 import type { Currency } from "@/lib/firestoreClients";
@@ -58,7 +58,7 @@ export function SaasAnalytics() {
   const { overview, isLoading: cargandoCobro } = useBillingOverview(appUser);
   const { data: projects = [], isLoading: cargandoProyectos } = useProjects();
   const { data: users = [], isLoading: cargandoUsuarios } = useQuery({
-    queryKey: ["users-visible", appUser?.email ?? "anon"],
+    queryKey: ["users-visible", scopeKeyOf(appUser)],
     queryFn: () => getVisibleUsers(appUser),
     staleTime: 60_000,
   });

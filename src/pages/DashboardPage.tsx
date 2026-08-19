@@ -18,7 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
 import { getFrontVersions } from "@/lib/frontVersions";
-import { isRootAdmin, resolvePermissions, getVisibleUsers } from "@/lib/firestoreUsers";
+import { isRootAdmin, resolvePermissions, getVisibleUsers , scopeKeyOf} from "@/lib/firestoreUsers";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -99,7 +99,7 @@ export function DashboardPage() {
     // global, los de sus empresas para un administrador de empresa. El catch se
     // queda para los viewers, que no pueden leer la colección y se quedan con el
     // fallback de tokens legacy en vez de ver la pantalla rota.
-    queryKey: ["users-visible", appUser?.email ?? "anon"],
+    queryKey: ["users-visible", scopeKeyOf(appUser)],
     queryFn: () => getVisibleUsers(appUser).catch(() => []),
     staleTime: 60 * 1000,
   });

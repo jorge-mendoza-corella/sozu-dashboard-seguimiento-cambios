@@ -188,19 +188,33 @@ const imagen = (v: unknown): string | undefined => {
 };
 
 /**
- * Marca a aplicar según las empresas que el usuario ve.
+ * Marca a aplicar.
  *
- * Con UNA sola empresa con marca, esa gana. Con varias —un administrador de
- * varias empresas— se queda la del proveedor: pintarle la marca de una de ellas
- * haría creer que está viendo solo esa cuenta. `esAdminGlobal` fuerza lo mismo
- * para el equipo interno: con un único cliente white-label en la base, el root
- * habría terminado navegando el dashboard entero con la marca de ese cliente.
+ * Manda la EMPRESA SELECCIONADA en la barra de Resumen/CI/CD: elegir una empresa
+ * es decir "estoy trabajando en esta", y la marca la sigue. Sin selección, la
+ * marca es la del proveedor salvo que el usuario vea una sola empresa, donde no
+ * hay ambigüedad posible.
+ *
+ * Antes bastaba con que UNA de sus empresas tuviera marca configurada para
+ * pintarla: alguien con Vectis y Sozu veía la marca de Sozu por el solo hecho de
+ * que Vectis todavía no tenía la suya, y eso se lee como "estoy en Sozu".
+ *
+ * `esAdminGlobal` no cambia nada por sí solo: el equipo interno ve la marca del
+ * proveedor hasta que elige una empresa a propósito.
  */
-export function resolveBranding(clients: Client[], esAdminGlobal = false): ResolvedBranding {
-  if (esAdminGlobal) return VENDOR_RESOLVED;
-  const conMarca = clients.filter((c) => !!c.branding && Object.keys(c.branding).length > 0);
-  if (conMarca.length !== 1) return VENDOR_RESOLVED;
-  const c = conMarca[0];
+export function resolveBranding(
+  clients: Client[],
+  esAdminGlobal = false,
+  empresaSeleccionada: string | null = null,
+): ResolvedBranding {
+  const elegida = empresaSeleccionada
+    ? clients.find((x) => x.id === empresaSeleccionada)
+    : undefined;
+  // Sin selección: solo se adopta una marca cuando el usuario ve exactamente una
+  // empresa; con varias, cuál sería es una adivinanza.
+  const unica = !esAdminGlobal && clients.length === 1 ? clients[0] : undefined;
+  const c = elegida ?? unica;
+  if (!c?.branding || Object.keys(c.branding).length === 0) return VENDOR_RESOLVED;
   const b = c.branding as Record<string, unknown>;
   const logoUrl = imagen(b.logoUrl);
   const color = texto(b.primaryColor, 9);
