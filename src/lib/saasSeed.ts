@@ -68,11 +68,19 @@ export async function seedSaasStructure(email: string): Promise<SeedReport> {
     await setClientFeatures(sozu.id, { publishApps: true, showAvances: true });
   }
 
-  // Las notificaciones de WhatsApp dejaron de estar cableadas en el YAML. La
-  // instancia y el teléfono que traían son de Sozu, así que se siembran en SU
-  // configuración —no en el default global, donde se los heredaría cualquier
-  // empresa sin configurar—. La apikey se captura a mano: es un secreto.
-  report.notificacionesSembradas = await seedClientWhatsappDefaults(sozu.id, email);
+  // Notificaciones de WhatsApp: ya no hay default global, así que cada empresa
+  // necesita las suyas. Se siembran la instancia, el webhook y el teléfono que
+  // los workflows traían cableados; la apikey NO se siembra, es un secreto y se
+  // captura a mano en Configuración → Notificaciones.
+  //
+  // Vectis arranca con los mismos valores que Sozu porque hoy comparten la
+  // instancia de n8n. Es un punto de partida, no el destino: en cuanto Vectis
+  // tenga su propio número, se cambian ahí y las dos quedan de verdad separadas.
+  for (const empresa of ["Sozu", "Vectis"] as const) {
+    const c = buscarCliente(empresa);
+    if (!c) continue;
+    if (await seedClientWhatsappDefaults(c.id, email)) report.notificacionesSembradas = true;
+  }
 
   // --- Proyectos de Sozu ----------------------------------------------------
   const proyectos = await getProjects();
