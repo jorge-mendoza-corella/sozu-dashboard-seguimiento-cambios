@@ -26,9 +26,10 @@ const TABS = [
   { value: "clientes", label: "Clientes", icon: Building2, soloGlobal: true },
   { value: "estructura", label: "Proyectos y repos", icon: FolderTree, soloGlobal: true },
   { value: "precios", label: "Precios y features", icon: Coins, soloGlobal: true },
-  { value: "notificaciones", label: "Notificaciones", icon: MessageSquare, soloGlobal: false },
-  // La marca es de la empresa: su administrador la maneja igual que sus avisos.
+  // La marca va primero: es lo que el cliente ve, y lo primero que quiere dejar
+  // puesto. Los avisos vienen después.
   { value: "marca", label: "Marca", icon: Palette, soloGlobal: false },
+  { value: "notificaciones", label: "Notificaciones", icon: MessageSquare, soloGlobal: false },
   { value: "facturacion", label: "Facturación", icon: Receipt, soloGlobal: true },
 ] as const;
 
@@ -64,7 +65,7 @@ export function ConfiguracionPage() {
           (App.tsx redirige al resto), y prometer lectura con todos los botones
           activos era peor que no prometer nada. Si algún día se abre a los
           Administradores, hay que deshabilitar los controles de verdad. */}
-      <Tabs defaultValue={tabs[0]?.value ?? "notificaciones"}>
+      <Tabs defaultValue={tabs[0]?.value ?? "marca"}>
         <TabsList className="flex-wrap">
           {tabs.map(({ value, label, icon: Icon }) => (
             <TabsTrigger key={value} value={value} className="gap-1.5">
