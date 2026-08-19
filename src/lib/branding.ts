@@ -199,20 +199,28 @@ const imagen = (v: unknown): string | undefined => {
  * pintarla: alguien con Vectis y Sozu veía la marca de Sozu por el solo hecho de
  * que Vectis todavía no tenía la suya, y eso se lee como "estoy en Sozu".
  *
- * `esAdminGlobal` no cambia nada por sí solo: el equipo interno ve la marca del
- * proveedor hasta que elige una empresa a propósito.
+ * El ADMIN GLOBAL es la excepción: nunca adopta la marca de un cliente, ni
+ * eligiendo empresa. Elegir Sozu en la barra es filtrar qué repos mira, no
+ * cambiar de bando —el dueño del servicio no trabaja "dentro" de un cliente—, y
+ * ver el logo ajeno en su propia herramienta se lee como que se le coló la
+ * sesión de alguien más. Para ver de verdad la marca de una empresa está "ver
+ * como" un usuario suyo: ahí el perfil efectivo ya no es admin global y la marca
+ * se aplica entera, que es justo lo que se quiere revisar.
  */
 export function resolveBranding(
   clients: Client[],
   esAdminGlobal = false,
   empresaSeleccionada: string | null = null,
 ): ResolvedBranding {
+  // El dueño del servicio conserva SU marca siempre: el selector de empresa
+  // filtra datos, no identidad.
+  if (esAdminGlobal) return VENDOR_RESOLVED;
   const elegida = empresaSeleccionada
     ? clients.find((x) => x.id === empresaSeleccionada)
     : undefined;
   // Sin selección: solo se adopta una marca cuando el usuario ve exactamente una
   // empresa; con varias, cuál sería es una adivinanza.
-  const unica = !esAdminGlobal && clients.length === 1 ? clients[0] : undefined;
+  const unica = clients.length === 1 ? clients[0] : undefined;
   const c = elegida ?? unica;
   if (!c?.branding || Object.keys(c.branding).length === 0) return VENDOR_RESOLVED;
   const b = c.branding as Record<string, unknown>;
