@@ -156,27 +156,28 @@ dos.
 
 Los avisos de PR y de deploy salen por un webhook de n8n. Antes había una sola
 instancia y una sola apikey escritas en el YAML: todas las empresas compartían
-número. Ahora se configura por empresa, con la misma cascada que los precios —lo
-que la empresa tenga puesto gana, lo que deje vacío se hereda del global:
+número. Ahora es **por empresa o nada** — no hay default global:
 
 | Ruta | Contenido |
 | --- | --- |
-| `settings/notifications` | instancia, webhook, teléfono admin y `enabled` por defecto |
-| `secrets/whatsapp` | apikey por defecto (`allow read: if false`) |
-| `clients/{id}/private/notifications` | lo mismo, para esa empresa |
-| `clients/{id}/private/whatsappSecret` | apikey de la empresa (no la lee nadie desde el navegador) |
+| `clients/{id}/private/notifications` | instancia, webhook, teléfono y `enabled` |
+| `clients/{id}/private/whatsappSecret` | apikey (`allow read: if false`) |
+
+No existe `settings/notifications` ni `secrets/whatsapp`, y esa ausencia es la
+decisión: con un default global, la empresa que todavía no configuró sus avisos
+los recibía por el número de otra, y su webhook podía acabar llevándose una llave
+que no era suya. Sin nada que heredar, esos dos problemas no existen.
 
 Los workflows resuelven la empresa desde el repo:
 `repos/{owner}__{repo}.projectId` → `projects/{id}.clientId` → config del cliente.
-Si el repo no está dado de alta o su proyecto no tiene cliente, usan el default
-global y lo dicen en el log: un repo sin asignar sigue notificando como antes.
+Si el repo no está dado de alta, o su proyecto no tiene empresa, o la empresa no
+tiene sus datos, **no se manda nada** y el log dice exactamente qué falta. Eso no
+falla el job: una empresa sin configurar es un pendiente del dashboard, no una
+avería del CI.
 
-**El default global se deja vacío.** La instancia, el webhook y el teléfono que
-traían los workflows son de Sozu, así que la siembra los pone en la empresa Sozu
-y no en el global: ahí, cualquier empresa que todavía no configure sus avisos
-heredaría el número de Sozu y recibiría mensajes de una cuenta ajena. El global
-solo tiene sentido para repos aún sin empresa asignada, y para ese caso más vale
-que no llegue nada a que llegue al teléfono equivocado.
+La instancia, el webhook y el teléfono que traían los workflows son de Sozu, así
+que la siembra los pone en la empresa Sozu (y en Vectis, que hoy comparte la
+instancia). La apikey no se siembra: es un secreto y se captura a mano.
 
 ### Fin de build (Android e iOS)
 
