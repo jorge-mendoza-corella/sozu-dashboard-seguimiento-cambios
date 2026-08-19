@@ -14,22 +14,25 @@ default global como respaldo.
 
 ## 0. De dónde sale la configuración
 
-Todo se configura desde el dashboard, en **Configuración → Notificaciones**:
-el default global y, por empresa, lo que quiera sobrescribir.
+Todo se configura desde el dashboard, en **Configuración → Notificaciones**, y
+es **por empresa o nada**: no hay default global.
 
-| Qué | Global | Por empresa |
-| --- | --- | --- |
-| Instancia, webhook, teléfono del admin, encendido | `settings/notifications` | `clients/{clientId}/private/notifications` |
-| Apikey del webhook | `secrets/whatsapp.apiKey` | `clients/{clientId}/private/whatsappSecret.apiKey` |
+| Qué | Dónde |
+| --- | --- |
+| Instancia, webhook, teléfono que recibe, encendido | `clients/{clientId}/private/notifications` |
+| Apikey del webhook | `clients/{clientId}/private/whatsappSecret.apiKey` |
 
-Campos: `instance` (el `instanciaWA` del payload), `webhookUrl`, `adminPhone`
-(E.164, con lada: `+5217221514185`) y `enabled` (booleano; ausente = prendido).
+Campos: `instance` (el `instanciaWA` del payload; es el número **desde** el que
+sale el mensaje), `webhookUrl`, `adminPhone` (E.164, con lada: `+5217221514185`;
+es uno de los números a los que **llega**) y `enabled` (booleano; ausente =
+prendido).
 
-### Cascada
+### Por qué no hay global
 
-- Campo por campo: **el que la empresa tenga con valor gana**; el que esté vacío
-  o ausente se hereda del global. Lo mismo con la apikey (si la empresa no tiene
-  la suya, se usa la global).
+Con un default global, la empresa que todavía no configuró sus avisos los
+recibía por el número de otra, y su webhook podía acabar llevándose una llave que
+no era suya. Sin nada que heredar, esos dos problemas no existen: o la empresa
+tiene instancia, webhook y apikey, o no se le manda nada.
 - `enabled: false` en la empresa **o** en el global ⇒ no se manda nada. El job
   lo dice en el log y **termina en éxito**: apagar no es un error.
 - Si al final falta el webhook o la apikey (ni la de la empresa ni la global):
@@ -133,8 +136,8 @@ falta o n8n no responde, el deploy —que ya quedó publicado— no se marca en 
         run: |
           ACCESS_TOKEN="$(gcloud auth print-access-token)"
           # repos/{owner__repo}.projectId -> projects/{projectId}.clientId, y de
-          # ahí clients/{clientId}/private/{notifications,whatsappSecret};
-          # lo vacío se hereda de settings/notifications y secrets/whatsapp.
+          # ahí clients/{clientId}/private/{notifications,whatsappSecret}.
+          # Sin empresa configurada no se manda nada y se dice por qué.
           # ... (ver el archivo completo)
           curl -s -X POST "$WA_WEBHOOK" \
             -H "apikey: $WA_APIKEY" \

@@ -273,7 +273,11 @@ def procesar_build(fs_token: str, cm_build: dict, proyecto: dict, resultado: str
         print(f"· {etiqueta}: {cfg['motivo']} No se envía nada.")
         return
     if not cfg["puedeEnviar"]:
-        print(f"::error::{etiqueta}: {cfg['motivo']}")
+        # Aviso normal, no `::error::`: una empresa que todavía no capturó sus
+        # datos de WhatsApp es un pendiente de configuración, no una falla del
+        # CI. Con anotación roja, cada corrida marcaba el workflow en rojo por
+        # algo que el dashboard resuelve en un minuto.
+        print(f"⚠ {etiqueta}: {cfg['motivo']} No se envía nada.")
         return
 
     # Destinatarios: quien lo disparó desde el dashboard y el administrativo de
