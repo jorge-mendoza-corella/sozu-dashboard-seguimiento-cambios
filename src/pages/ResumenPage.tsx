@@ -44,22 +44,26 @@ export function ResumenPage() {
     [clients],
   );
 
-  // Misma visibilidad que CI/CD: repos donde su cuenta GitHub es colaboradora.
+  // Proyectos visibles: mismo criterio que CI/CD — el administrador de empresa
+  // ve los de sus empresas, el viewer los que tenga asignados.
+  const { visibleProjects: todosLosProyectos, esAdminGlobal, esAdminDeEmpresa } =
+    useClientScope(appUser);
+
+  // Misma visibilidad que CI/CD: el filtro por colaboración en GitHub es SOLO
+  // para viewers. Los proyectos son de la empresa, no de la cuenta de GitHub de
+  // su administrador, así que a un administrador no se le esconde ningún repo.
+  const filtraPorGitHub = !esAdminGlobal && !esAdminDeEmpresa;
   const { data: accessibleIds } = useAccessibleRepoIds(
     allRepos,
-    isRoot ? null : appUser?.githubToken ?? null,
+    filtraPorGitHub ? appUser?.githubToken ?? null : null,
     appUser?.githubLogin ?? null,
   );
   const repos = useMemo(() => {
-    if (isRoot || !appUser?.githubToken) return allRepos;
+    if (!filtraPorGitHub || !appUser?.githubToken) return allRepos;
     if (!accessibleIds) return [];
     const ok = new Set(accessibleIds);
     return allRepos.filter((r) => ok.has(r.id));
-  }, [allRepos, accessibleIds, isRoot, appUser?.githubToken]);
-
-  // Proyectos visibles: mismo criterio que CI/CD — el administrador de empresa
-  // ve los de sus empresas, el viewer los que tenga asignados.
-  const { visibleProjects: todosLosProyectos } = useClientScope(appUser);
+  }, [allRepos, accessibleIds, filtraPorGitHub, appUser?.githubToken]);
 
   // Mismo filtro que en CI/CD: con varias empresas a la vista, lo primero es
   // poder pararse en una. La barra se esconde sola cuando solo hay una.
