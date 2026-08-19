@@ -1,14 +1,9 @@
-import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import {
-  Settings, Building2, FolderTree, Receipt, Coins, Sparkles, Loader2, MessageSquare, Palette,
+  Settings, Building2, FolderTree, Receipt, Coins, MessageSquare, Palette,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
 import { isRootAdmin } from "@/lib/firestoreUsers";
-import { seedSaasStructure, type SeedReport } from "@/lib/saasSeed";
 import { ClientsSection } from "@/components/config/ClientsSection";
 import { ProjectAssignmentSection } from "@/components/config/ProjectAssignmentSection";
 import { PricingFeaturesSection } from "@/components/config/PricingFeaturesSection";
@@ -79,7 +74,6 @@ export function ConfiguracionPage() {
           <>
             <TabsContent value="clientes">
               <ClientsSection />
-              <SeedSection />
             </TabsContent>
             <TabsContent value="estructura">
               <ProjectAssignmentSection />
@@ -100,98 +94,5 @@ export function ConfiguracionPage() {
         </TabsContent>
       </Tabs>
     </div>
-  );
-}
-
-/**
- * Siembra la estructura con la que arranca la operación (Vectis, Sozu, Monocolo
- * y Mutuo, más los proyectos de Sozu). Es idempotente, así que el botón se puede
- * apretar de nuevo sin duplicar nada: solo completa lo que falte.
- */
-function SeedSection() {
-  const { appUser } = useAuth();
-  const qc = useQueryClient();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [report, setReport] = useState<SeedReport | null>(null);
-
-  const sembrar = async () => {
-    setBusy(true);
-    setError("");
-    setReport(null);
-    try {
-      const r = await seedSaasStructure(appUser!.email);
-      setReport(r);
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["clients"] }),
-        qc.invalidateQueries({ queryKey: ["projects"] }),
-      ]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo sembrar la estructura inicial");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const nada =
-    report &&
-    report.clientesCreados.length === 0 &&
-    report.proyectosCreados.length === 0 &&
-    report.proyectosRenombrados.length === 0 &&
-    report.proyectosAsignados.length === 0 &&
-    !report.notificacionesSembradas;
-
-  return (
-    <Card className="mt-6">
-      <CardContent className="p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="flex items-center gap-2 text-sm font-semibold">
-              <Sparkles className="h-4 w-4 text-violet-500" /> Estructura inicial
-            </h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Crea los clientes Vectis, Sozu, Monocolo y Mutuo, renombra el proyecto histórico
-              SOZU a «Admin» y da de alta Landings, Sozu Clientes APP y Sozu Agentes APP bajo
-              el cliente Sozu. Se puede correr varias veces: solo agrega lo que falte.
-            </p>
-          </div>
-          <Button size="sm" variant="outline" disabled={busy} onClick={sembrar}>
-            {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1.5 h-4 w-4" />}
-            {busy ? "Sembrando…" : "Sembrar"}
-          </Button>
-        </div>
-
-        {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
-        {report && (
-          <div className="mt-3 space-y-1 rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
-            {nada ? (
-              <p>Ya estaba todo: no hubo nada que crear.</p>
-            ) : (
-              <>
-                {report.clientesCreados.length > 0 && (
-                  <p>Clientes creados: {report.clientesCreados.join(", ")}</p>
-                )}
-                {report.proyectosCreados.length > 0 && (
-                  <p>Proyectos creados: {report.proyectosCreados.join(", ")}</p>
-                )}
-                {report.proyectosRenombrados.length > 0 && (
-                  <p>Renombrados: {report.proyectosRenombrados.join(" · ")}</p>
-                )}
-                {report.proyectosAsignados.length > 0 && (
-                  <p>Asignados al cliente Sozu: {report.proyectosAsignados.join(", ")}</p>
-                )}
-                {report.notificacionesSembradas && (
-                  <p>
-                    Notificaciones: la instancia, el webhook y el teléfono que traía el CI se
-                    cargaron en la empresa Sozu (son suyos, no del servicio). Falta pegar su
-                    apikey en la pestaña Notificaciones.
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
   );
 }

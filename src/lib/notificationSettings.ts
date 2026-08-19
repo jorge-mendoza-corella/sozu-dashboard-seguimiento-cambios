@@ -170,15 +170,6 @@ const validar = (patch: ClientWhatsappConfig) => {
   return limpio;
 };
 
-/**
- * Valores con los que venían cableados los workflows antes de que esto fuera
- * configurable. No son secretos —la URL y el teléfono ya estaban en el YAML—,
- * pero son **de Sozu**: esa instancia y ese número son suyos.
- */
-const CONFIG_HISTORICA_DE_SOZU = {
-  instance: "Pruebas de todo",
-  webhookUrl: "https://automatizacion-n8n.fbqqbe.easypanel.host/webhook/manda_notificacion",
-};
 
 /** Guarda la configuración (no secreta) de una empresa. */
 export async function setClientWhatsapp(clientId: string, patch: ClientWhatsappConfig, email: string) {
@@ -187,24 +178,6 @@ export async function setClientWhatsapp(clientId: string, patch: ClientWhatsappC
     { ...validar(patch), updatedAt: new Date(), updatedBy: email },
     { merge: true },
   );
-}
-
-/**
- * Siembra en la EMPRESA indicada la configuración que los workflows traían
- * cableada. Va al cliente porque es suya: esa instancia y ese número son de
- * Sozu, y ninguna otra empresa debería mandar por ahí.
- *
- * Idempotente y no destructivo: solo llena los campos vacíos. La apikey no se
- * siembra —es un secreto, se captura a mano en Configuración → Notificaciones—.
- */
-export async function seedClientWhatsappDefaults(clientId: string, email: string): Promise<boolean> {
-  const actual = await getClientWhatsapp(clientId);
-  const patch: ClientWhatsappConfig = {};
-  if (!actual?.instance.trim()) patch.instance = CONFIG_HISTORICA_DE_SOZU.instance;
-  if (!actual?.webhookUrl.trim()) patch.webhookUrl = CONFIG_HISTORICA_DE_SOZU.webhookUrl;
-  if (Object.keys(patch).length === 0) return false;
-  await setClientWhatsapp(clientId, patch, email);
-  return true;
 }
 
 /**

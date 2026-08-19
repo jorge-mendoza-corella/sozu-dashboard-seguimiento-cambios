@@ -26,6 +26,37 @@ export const getSessionLogin = () => sessionLogin;
 /** Octokit con el que se ejecutan las acciones del usuario actual. */
 const actor = () => sessionOctokit ?? octokit;
 
+/**
+ * Traduce los 403/404 de GitHub en acciones de escritura (merge, cerrar PR).
+ *
+ * GitHub contesta **404 en vez de 403** cuando el token no tiene permiso de
+ * escritura: no revela la existencia de lo que no puedes tocar. Ese "Not Found"
+ * pelón llegaba tal cual a la tarjeta de CI/CD y se leía como "el PR ya no
+ * existe", cuando el PR estaba ahí, aprobado y mergeable — el que no alcanzaba
+ * era el token. Se consulta qué puede hacer de verdad la cuenta que actúa para
+ * decirlo con todas sus letras; si resulta que sí puede escribir, el 404 es de
+ * otra cosa y el error original se deja intacto.
+ */
+async function errorDeEscritura(err: unknown, owner: string, repo: string, accion: string): Promise<unknown> {
+  const status = (err as { status?: number }).status;
+  if (status !== 403 && status !== 404) return err;
+
+  const quien = sessionLogin ? `@${sessionLogin}` : "el token de entorno del dashboard";
+  let alcance = "no tiene permiso de escritura en";
+  try {
+    const { data } = await actor().repos.get({ owner, repo });
+    if (data.permissions?.push) return err;
+  } catch {
+    alcance = "ni siquiera puede ver";
+  }
+
+  return new Error(
+    `GitHub responde ${status} al ${accion}: ${quien} ${alcance} ${owner}/${repo}. ` +
+    "Un 404 aquí significa \"sin permiso\", no \"no existe\": el PR sigue abierto. " +
+    "Registra una API key de GitHub (token classic con scope \"repo\") de una cuenta con acceso de escritura al repo.",
+  );
+}
+
 /** Credenciales del aprobador configurado para un proyecto. */
 export interface ApproverAuth {
   token: string;
@@ -614,7 +645,11 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
 
 /** Cierra un PR sin hacer merge (como el usuario de la sesión). */
 export async function closePR(owner: string, repo: string, pullNumber: number): Promise<void> {
-  await actor().pulls.update({ owner, repo, pull_number: pullNumber, state: "closed" });
+  try {
+    await actor().pulls.update({ owner, repo, pull_number: pullNumber, state: "closed" });
+  } catch (err) {
+    throw await errorDeEscritura(err, owner, repo, "cerrar el PR");
+  }
 }
 
 export async function mergePR(
@@ -623,12 +658,16 @@ export async function mergePR(
   pullNumber: number,
   mergeMethod: "merge" | "squash" | "rebase" = "merge",
 ): Promise<void> {
-  await actor().pulls.merge({
-    owner,
-    repo,
-    pull_number: pullNumber,
-    merge_method: mergeMethod,
-  });
+  try {
+    await actor().pulls.merge({
+      owner,
+      repo,
+      pull_number: pullNumber,
+      merge_method: mergeMethod,
+    });
+  } catch (err) {
+    throw await errorDeEscritura(err, owner, repo, "mergear");
+  }
 }
 
 // Para ramas no-producción: aprueba y hace merge (bypass de branch protection).
@@ -673,9 +712,13 @@ export async function mergeWithBypass(
   const auths = [...codeOwnerAuths, ...(approver ? [approver] : [])];
   await ensureCodeOwnerApproval(owner, repo, pullNumber, prAuthor, auths);
 
-  await actor().pulls.merge({
-    owner, repo, pull_number: pullNumber, merge_method: "merge",
-  });
+  try {
+    await actor().pulls.merge({
+      owner, repo, pull_number: pullNumber, merge_method: "merge",
+    });
+  } catch (err) {
+    throw await errorDeEscritura(err, owner, repo, "mergear");
+  }
 }
 
 export async function createPR(
