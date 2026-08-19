@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, GitBranch, GitPullRequest, Rocket, ArrowUpCircle,
@@ -11,6 +11,7 @@ import { useProjects, useRepos, useAccessibleRepoIds } from "@/hooks/useProjects
 import { useClients, useClientScope } from "@/hooks/useClients";
 import { clientDisplayName } from "@/lib/firestoreClients";
 import { EmpresaSelector } from "@/components/EmpresaSelector";
+import { useEmpresaActiva } from "@/hooks/useEmpresaActiva";
 import { empresasDeProyectos } from "@/lib/empresas";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { hasFailingDeploy, type RepoRef, type RepoStatus } from "@/lib/github";
@@ -43,6 +44,10 @@ export function ResumenPage() {
     () => new Map(clients.map((c) => [c.id, clientDisplayName(c)])),
     [clients],
   );
+  const colorPorCliente = useMemo(
+    () => new Map(clients.map((c) => [c.id, c.color])),
+    [clients],
+  );
 
   // Proyectos visibles: mismo criterio que CI/CD — el administrador de empresa
   // ve los de sus empresas, el viewer los que tenga asignados.
@@ -67,7 +72,7 @@ export function ResumenPage() {
 
   // Mismo filtro que en CI/CD: con varias empresas a la vista, lo primero es
   // poder pararse en una. La barra se esconde sola cuando solo hay una.
-  const [empresaActiva, setEmpresaActiva] = useState<string | null>(null);
+  const { empresa: empresaActiva, elegir: setEmpresaActiva } = useEmpresaActiva();
   const empresas = useMemo(
     () => empresasDeProyectos(todosLosProyectos, clients),
     [todosLosProyectos, clients],
@@ -120,6 +125,29 @@ export function ResumenPage() {
     return m;
   }, [projects, repos, statusByKey, perms.viewOthers, appUser?.githubLogin, isRoot]);
 
+  // Tarjetas agrupadas por empresa, con el estado de cada una resumido en su
+  // encabezado. El encabezado se calla cuando solo hay una empresa a la vista.
+  const gruposVisibles = useMemo(() => {
+    const porCliente = new Map<string, typeof projects>();
+    for (const p of projects) {
+      const clave = p.clientId ?? "";
+      porCliente.set(clave, [...(porCliente.get(clave) ?? []), p]);
+    }
+    const varias = porCliente.size > 1;
+    return [...porCliente.entries()].map(([clientId, proyectos]) => {
+      const metricas = proyectos.map((p) => metricsByProject.get(p.id));
+      return {
+        clientId: clientId || null,
+        nombre: clientId ? clientById.get(clientId) ?? "Empresa desconocida" : "Sin empresa",
+        color: colorPorCliente.get(clientId) ?? "#94a3b8",
+        proyectos,
+        mostrarEncabezado: varias,
+        fallando: metricas.filter((m) => (m?.fallando ?? 0) > 0).length,
+        pendientes: metricas.filter((m) => (m?.devPendiente ?? 0) > 0 || (m?.prsAbiertos ?? 0) > 0).length,
+      };
+    });
+  }, [projects, metricsByProject, clientById, colorPorCliente]);
+
   const busy = loadingProjects || loadingRepos;
 
   return (
@@ -162,8 +190,39 @@ export function ResumenPage() {
           onChange={setEmpresaActiva}
           totalProyectos={todosLosProyectos.length}
         />
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {projects.map((p) => {
+        {gruposVisibles.map((g) => (
+          <section key={g.clientId ?? "sin-empresa"} className="mb-6 last:mb-0">
+            {/* Encabezado por empresa: con cuatro clientes en una sola grilla no
+                había forma de leer la cartera de un vistazo, y el nombre de la
+                empresa era una línea chica debajo de cada proyecto. */}
+            {g.mostrarEncabezado && (
+              <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-b pb-1.5">
+                <span className="flex items-center gap-2 text-sm font-bold">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: g.color }} />
+                  {g.nombre}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {g.proyectos.length} proyecto{g.proyectos.length === 1 ? "" : "s"}
+                </span>
+                {g.pendientes > 0 && (
+                  <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                    {g.pendientes} con trabajo pendiente
+                  </span>
+                )}
+                {g.fallando > 0 && (
+                  <span className="text-xs font-medium text-red-600 dark:text-red-400">
+                    {g.fallando} con deploys fallando
+                  </span>
+                )}
+                {g.pendientes === 0 && g.fallando === 0 && (
+                  <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    todo en orden
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {g.proyectos.map((p) => {
             const mt = metricsByProject.get(p.id);
             const ok = mt && mt.fallando === 0 && mt.devPendiente === 0 && mt.prsAbiertos === 0;
             return (
@@ -198,18 +257,14 @@ export function ResumenPage() {
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </div>
 
-                  {/* Cliente al que pertenece el proyecto. Sin cliente, el
-                      proyecto no se le cobra a nadie: se marca en ámbar. */}
-                  <p className={cn(
-                    "-mt-2 mb-3 truncate text-[11px]",
-                    p.clientId && clientById.has(p.clientId)
-                      ? "text-muted-foreground"
-                      : "text-amber-600 dark:text-amber-400",
-                  )}>
-                    {p.clientId && clientById.has(p.clientId)
-                      ? clientById.get(p.clientId)
-                      : "Sin cliente asignado"}
-                  </p>
+                  {/* La empresa ya está en el encabezado del grupo: repetirla en
+                      cada tarjeta era ruido. Solo se dice cuando FALTA, que es
+                      lo que hay que arreglar (ese proyecto no se le cobra a nadie). */}
+                  {!(p.clientId && clientById.has(p.clientId)) && (
+                    <p className="-mt-2 mb-3 truncate text-[11px] text-amber-600 dark:text-amber-400">
+                      Sin cliente asignado
+                    </p>
+                  )}
 
                   {!mt || waitingData ? (
                     <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
@@ -287,7 +342,9 @@ export function ResumenPage() {
               </Card>
             );
           })}
-        </div>
+            </div>
+          </section>
+        ))}
         </>
       )}
     </div>
