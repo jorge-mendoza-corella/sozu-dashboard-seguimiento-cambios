@@ -3,12 +3,15 @@ import {
   doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs, serverTimestamp,
   query, where, deleteField,
 } from "firebase/firestore";
-import { SUPERUSER_EMAIL, type AppUser } from "./firestoreUsers";
+import type { AppUser } from "./firestoreUsers";
 import type { ClientBranding } from "./branding";
 
-/** Admin global: el root y cualquier `superuser`. Son los que ven todo. */
-const esAdminGlobalUser = (u: AppUser | null) =>
-  !!u && (u.email === SUPERUSER_EMAIL || u.role === "superuser");
+/**
+ * Admin global: quien tiene el rol `superuser`. Se mira el ROL y no el correo
+ * porque el root, mientras ve el dashboard como otra persona, conserva su correo
+ * — y por correo se le seguían listando los clientes de todas las empresas.
+ */
+const esAdminGlobalUser = (u: AppUser | null) => u?.role === "superuser";
 
 // ---------------------------------------------------------------------------
 // Clientes del SaaS: la empresa o persona que paga el servicio. Un cliente

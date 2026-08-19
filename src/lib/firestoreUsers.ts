@@ -59,7 +59,10 @@ export interface AppUser {
  */
 export function resolvePermissions(user: AppUser | null): CicdPermissions {
   if (!user) return NO_PERMISSIONS;
-  if (user.email === SUPERUSER_EMAIL) return ALL_PERMISSIONS;
+  // Por ROL, no por correo: mientras el root ve el dashboard como otra persona
+  // conserva su correo, y compararlo le devolvía todos los permisos —con eso la
+  // simulación mostraba botones que esa persona no tiene—.
+  if (isRootAdmin(user)) return ALL_PERMISSIONS;
   if (user.permissions) return { ...NO_PERMISSIONS, ...user.permissions };
   // Sin permisos explícitos: los administradores (globales o de empresa) los
   // tienen todos dentro de lo que ven; el viewer, ninguno.
@@ -80,20 +83,22 @@ export const isRootAdmin = (user: AppUser | null) =>
 /** ¿Administra la empresa indicada? (el root administra todas) */
 export function isAdminOfClient(user: AppUser | null, clientId: string | undefined): boolean {
   if (!user || !clientId) return false;
-  if (user.email === SUPERUSER_EMAIL || user.role === "superuser") return true;
+  if (user.role === "superuser") return true;
   return user.role === "client_admin" && (user.clientIds ?? []).includes(clientId);
 }
 
 /** Empresas que administra. El root/superuser devuelve null = todas. */
 export function adminClientIds(user: AppUser | null): string[] | null {
   if (!user) return [];
-  if (user.email === SUPERUSER_EMAIL || user.role === "superuser") return null;
+  // Mismo criterio: el rol manda. Con el correo, el root impersonando seguía
+  // saliendo como admin global y veía TODOS los proyectos de TODAS las empresas.
+  if (user.role === "superuser") return null;
   return user.role === "client_admin" ? user.clientIds ?? [] : [];
 }
 
 /** Puede entrar a las pantallas de administración (Usuarios, Configuración). */
 export const canAdminister = (user: AppUser | null) =>
-  !!user && (user.email === SUPERUSER_EMAIL || user.role === "superuser" || user.role === "client_admin");
+  !!user && (user.role === "superuser" || user.role === "client_admin");
 
 export async function getUserByEmail(email: string): Promise<AppUser | null> {
   const snap = await getDoc(doc(db, "users", email));
