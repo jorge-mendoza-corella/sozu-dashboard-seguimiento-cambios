@@ -70,6 +70,7 @@ Archivo: [`notify-pr-dev.yml`](./notify-pr-dev.yml)
 Colócalo como `.github/workflows/notify-pr-dev.yml` en cada repo monitoreado:
 
 - `jorgeIMendoza/sozu-cliente-app`
+- `jorgeIMendoza/sozu-agente-app`
 - `jorgeIMendoza/sozu-admin`
 - `jorgeIMendoza/sozu-supabase-migrations`
 - `jorgeIMendoza/sozu-edge-functions`

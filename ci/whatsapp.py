@@ -34,6 +34,8 @@ No es un script ejecutable: lo importa ci/codemagic_builds_notify.py.
 """
 from __future__ import annotations
 
+import os
+
 import re
 import time
 
@@ -136,6 +138,19 @@ def resolve_for_project(fs_base: str, token: str, project_id: str) -> dict:
     # --- Global (el default de todo el dashboard) ---
     g_doc = _campos(fs_base, token, "settings/notifications")
     g_key = _texto(_campos(fs_base, token, "secrets/whatsapp"), "apiKey")
+
+    # Respaldo por entorno para el global. Los avisos vivieron años con la
+    # instancia y la apikey escritas en el YAML; mientras nadie las captura en el
+    # dashboard, esto deja que se pongan como secret y los avisos no se caigan en
+    # el intervalo. Lo del dashboard SIEMPRE gana: si no, un secret viejo taparía
+    # lo que alguien acaba de configurar.
+    for campo, var in (("instance", "WA_INSTANCE"), ("webhookUrl", "WA_WEBHOOK"), ("adminPhone", "WA_ADMIN")):
+        if not _texto(g_doc, campo):
+            del_entorno = os.environ.get(var, "").strip()
+            if del_entorno:
+                g_doc[campo] = {"stringValue": del_entorno}
+    if not g_key:
+        g_key = os.environ.get("WA_APIKEY", "").strip()
 
     # --- Empresa dueña del proyecto ---
     client_id = _texto(_campos(fs_base, token, f"projects/{project_id}"), "clientId")
