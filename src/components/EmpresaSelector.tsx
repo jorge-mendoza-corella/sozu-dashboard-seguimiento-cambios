@@ -22,37 +22,41 @@ interface Props {
 export function EmpresaSelector({ empresas, activa, onChange, totalProyectos }: Props) {
   if (empresas.length < 2) return null;
 
-  const chip = (activo: boolean, color?: string) =>
+  // Control segmentado: es UN eje con opciones excluyentes, no una lista de
+  // filtros sueltos. Antes eran chips independientes y competían visualmente con
+  // las pestañas de proyecto, que están un nivel más abajo.
+  const opcion = (activo: boolean) =>
     cn(
-      "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+      "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
       activo
-        ? "border-primary bg-primary/10 text-primary"
-        : "border-border text-muted-foreground hover:bg-muted",
-      color && "pl-2",
+        ? "bg-background text-foreground shadow-sm"
+        : "text-muted-foreground hover:text-foreground",
     );
 
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-1.5">
-      <span className="mr-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        <Building2 className="h-3.5 w-3.5" /> Empresa
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <Building2 className="h-4 w-4" /> Empresa
       </span>
-      <button type="button" className={chip(activa === null)} onClick={() => onChange(null)}>
-        Todas
-        <span className="text-[10px] opacity-70">({totalProyectos})</span>
-      </button>
-      {empresas.map((e) => (
-        <button
-          key={e.id || "sin-empresa"}
-          type="button"
-          className={chip(activa === e.id, e.color)}
-          onClick={() => onChange(e.id)}
-          title={`Ver solo los proyectos de ${e.nombre}`}
-        >
-          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: e.color }} />
-          {e.nombre}
-          <span className="text-[10px] opacity-70">({e.proyectos})</span>
+      <div className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-muted p-1">
+        <button type="button" className={opcion(activa === null)} onClick={() => onChange(null)}>
+          Todas
+          <span className="text-[11px] opacity-60">{totalProyectos}</span>
         </button>
-      ))}
+        {empresas.map((e) => (
+          <button
+            key={e.id || "sin-empresa"}
+            type="button"
+            className={opcion(activa === e.id)}
+            onClick={() => onChange(e.id)}
+            title={`Ver solo lo de ${e.nombre}`}
+          >
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: e.color }} />
+            {e.nombre}
+            <span className="text-[11px] opacity-60">{e.proyectos}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { useProjects, useRepos, useAccessibleRepoIds, useRepoRenames } from "@/h
 import { useCanPublishApps, useClientScope, useClients } from "@/hooks/useClients";
 import { clientDisplayName } from "@/lib/firestoreClients";
 import { EmpresaSelector } from "@/components/EmpresaSelector";
+import { useEmpresaActiva } from "@/hooks/useEmpresaActiva";
 import { empresasDeProyectos } from "@/lib/empresas";
 import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
@@ -137,7 +138,7 @@ export function DashboardPage() {
   // Filtro por empresa. Con varias empresas a la vista, moverse entre ellas es
   // la primera decisión que se toma aquí: sin esto hay que leer siete pestañas
   // mezcladas para encontrar la de un cliente.
-  const [empresaActiva, setEmpresaActiva] = useState<string | null>(null);
+  const { empresa: empresaActiva, elegir: setEmpresaActiva } = useEmpresaActiva();
   const empresas = useMemo(
     () => empresasDeProyectos(todosLosProyectos, clients),
     [todosLosProyectos, clients],
@@ -372,7 +373,7 @@ export function DashboardPage() {
               setProjectView("repos"); // al cambiar de proyecto, volver a la vista de repos
             }}
           >
-            <TabsList className="mt-3 h-auto flex-wrap overflow-visible">
+            <TabsList className="mt-1 h-auto flex-col items-stretch gap-1 overflow-visible bg-transparent p-0">
               {/* Con una sola empresa las pestañas van sueltas, como siempre.
                   Con varias se agrupan por empresa: si no, los proyectos de dos
                   clientes distintos se mezclan en una fila y no hay forma de
@@ -380,15 +381,15 @@ export function DashboardPage() {
               {gruposDeProyectos.map((g) => (
                 <div
                   key={g.clientId ?? "sin-empresa"}
-                  className={cn(
-                    "flex items-center gap-1",
-                    g.mostrarEtiqueta && "rounded-lg border border-dashed px-2 py-1",
-                  )}
+                  className="flex flex-wrap items-center gap-1 rounded-md bg-muted/40 p-1"
                 >
+                  {/* Una fila por empresa, con su nombre a la izquierda: antes
+                      la empresa iba dentro de la misma línea de pestañas y los
+                      dos niveles de jerarquía se leían como uno solo. */}
                   {g.mostrarEtiqueta && (
-                    <span className="mr-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: g.color }} />
-                      {g.nombre}
+                    <span className="mr-2 flex w-24 shrink-0 items-center gap-1.5 pl-1 text-[11px] font-semibold text-muted-foreground">
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: g.color }} />
+                      <span className="truncate" title={g.nombre}>{g.nombre}</span>
                     </span>
                   )}
                   {g.proyectos.map((p) => {
