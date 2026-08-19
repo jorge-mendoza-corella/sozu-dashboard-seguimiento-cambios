@@ -586,9 +586,11 @@ function PlatformRow({
           {buildDisabledReason ?? storeDisabledReason}
         </span>
       )}
-      {/* El motivo del gate de Apple va escrito, no solo en el tooltip: es una
-          espera de minutos y el usuario necesita saber que no se rompió nada. */}
-      {platform.tresEtapas && perms.buildApp && promoteDisabledReason && !promotedCurrent && (
+      {/* El motivo por el que el boton final esta gris va ESCRITO, no solo en el
+          tooltip. Sin `!promotedCurrent`: ese caso tambien deshabilita el boton, y
+          dejarlo fuera era justo lo que hacia que a veces no saliera ningun texto
+          y el boton pareciera roto sin explicacion. */}
+      {platform.tresEtapas && perms.buildApp && promoteDisabledReason && (
         <span className="flex w-full items-center gap-1.5 text-[10px] text-muted-foreground">
           <Clock className="h-3 w-3 shrink-0" />
           <span>{promoteDisabledReason}</span>
