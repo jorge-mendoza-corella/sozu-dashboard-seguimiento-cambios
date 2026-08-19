@@ -226,14 +226,18 @@ cifrada**: la consola de Firebase y cualquier cuenta de servicio del proyecto
 `sk_live_` eso significa poder timbrar CFDI reales, así que la fase 2 debe moverla
 a Secret Manager, igual que las credenciales de tienda.
 
-## Estructura inicial
+## Alta de clientes y proyectos
 
-Configuración → Clientes → "Sembrar" corre `seedSaasStructure`
-(`src/lib/saasSeed.ts`): crea Vectis, Sozu, Monocolo y Mutuo, renombra el
-proyecto histórico `SOZU` a **Admin** y da de alta Landings, Sozu Clientes APP y
-Sozu Agentes APP bajo el cliente Sozu, que arranca con las dos features
-prendidas (es la casa: ya publica apps y ve los avances). Es idempotente: se
-puede correr de nuevo y solo completa lo que falte.
+Configuración → **Clientes**: se crean ahí, y el chip de proyectos de cada uno
+despliega los suyos para renombrarlos, marcarlos como app, sacarlos de la empresa
+o dar de alta uno nuevo. La pestaña **Proyectos y repos** es la misma estructura
+vista al revés —todos los proyectos con sus repos y sus precios— y es donde se
+mueven los repos entre proyectos.
+
+Hubo un botón "Sembrar" que creaba de golpe los cuatro clientes iniciales y los
+proyectos de Sozu. Se quitó al terminar la migración: existía para llegar a este
+estado, y dejarlo invitaba a re-sembrar sobre una estructura que ya se administra
+a mano.
 
 ## Facturapi — qué falta (fase 2)
 
