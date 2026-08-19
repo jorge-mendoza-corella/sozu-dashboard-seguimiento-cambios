@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { signInWithPopup, signOut, onAuthStateChanged, type User } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase";
-import { getUserByEmail, seedSuperuser, type AppUser } from "@/lib/firestoreUsers";
+import { useQuery } from "@tanstack/react-query";
+import { getUserByEmail, seedSuperuser, SUPERUSER_EMAIL, type AppUser } from "@/lib/firestoreUsers";
 import { applyImpersonation, useImpersonation } from "./useImpersonation";
 
 type AuthState = "loading" | "unauthenticated" | "unauthorized" | "authorized";
@@ -36,19 +37,26 @@ export function useAuth() {
   const login = () => signInWithPopup(auth, googleProvider);
   const logout = () => signOut(auth);
 
-  // "Ver como" una empresa: el perfil que sale de aquí es el que usan TODAS las
-  // pantallas, así que aplicando la impersonación en este punto el recorte por
-  // empresa, la marca y los menús se acomodan solos. `realUser` queda expuesto
-  // para lo que necesite saber quién es de verdad (el banner, y el propio
-  // selector de impersonación).
-  const { clientId: impersonando } = useImpersonation();
-  const efectivo = applyImpersonation(appUser, impersonando);
+  // "Ver como" un usuario: el perfil que sale de aquí es el que usan TODAS las
+  // pantallas, así que aplicando la impersonación en este punto el recorte, la
+  // marca y los menús se acomodan solos. `realUser` queda expuesto para lo que
+  // necesite saber quién es de verdad (el banner y el propio selector).
+  const { email: viendoComo } = useImpersonation();
+  // El doc del suplantado se pide aparte: solo el root puede leer usuarios
+  // ajenos, y si la lectura falla se sigue viendo como uno mismo.
+  const { data: suplantado } = useQuery({
+    queryKey: ["impersonado", viendoComo],
+    queryFn: () => getUserByEmail(viendoComo!).catch(() => null),
+    enabled: !!viendoComo && appUser?.email === SUPERUSER_EMAIL,
+    staleTime: 60 * 1000,
+  });
+  const efectivo = applyImpersonation(appUser, viendoComo ? suplantado : null);
 
   return {
     firebaseUser,
     appUser: efectivo,
     realUser: appUser,
-    impersonando: efectivo !== appUser ? impersonando : null,
+    impersonando: efectivo !== appUser ? viendoComo : null,
     status,
     login,
     logout,

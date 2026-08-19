@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   UserPlus, Trash2, Shield, Eye, Loader2, FolderGit2, ChevronDown, ChevronUp,
-  GitPullRequest, UserCheck, GitMerge, Rocket, Smartphone, KeyRound, ExternalLink, Building2,
+  GitPullRequest, UserCheck, GitMerge, Rocket, Smartphone, KeyRound, ExternalLink, Building2, Eye as EyeIcon,
 } from "lucide-react";
 import { validateGithubToken } from "@/lib/githubAuth";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SelectNative } from "@/components/ui/select-native";
 import { useAuth } from "@/hooks/useAuth";
+import { useImpersonation } from "@/hooks/useImpersonation";
 import { useClients, useClientScope } from "@/hooks/useClients";
 import { clientDisplayName, type Client } from "@/lib/firestoreClients";
 import {
@@ -23,6 +24,7 @@ import {
   setUserGithubToken,
   resolvePermissions,
   canAdminister,
+  isRootAdmin,
   ROLE_LABEL,
   NO_PERMISSIONS,
   SUPERUSER_EMAIL,
@@ -122,7 +124,12 @@ function ClientPills({
 }
 
 export function UsersPage() {
-  const { appUser } = useAuth();
+  const { appUser, realUser } = useAuth();
+  // "Ver como": solo el root de verdad. Mientras impersona, `appUser` ya no es
+  // root, así que el botón desaparece — de ahí no se salta a otra persona sin
+  // volver a ser uno mismo primero.
+  const esRootReal = isRootAdmin(realUser);
+  const { ver: verComo } = useImpersonation();
   const { data: allClients = [] } = useClients(appUser);
   // El alcance manda: un administrador de empresa solo puede asignar SUS
   // empresas y SUS proyectos, así que las listas de la pantalla salen de aquí
@@ -566,6 +573,20 @@ export function UsersPage() {
                         {userProjects.length || projects.length} proyectos · permisos
                         {isOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                       </button>
+                    )}
+
+                    {/* Ver como esa persona: es la forma de reproducir un "yo no
+                        veo nada" sin pedirle su contraseña. */}
+                    {esRootReal && !isSelf && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        title={`Ver el dashboard como ${u.email}: su rol, sus empresas, sus proyectos y sus permisos`}
+                        onClick={() => verComo(u.email)}
+                      >
+                        <EyeIcon className="h-3.5 w-3.5" />
+                      </Button>
                     )}
 
                     {editable ? (

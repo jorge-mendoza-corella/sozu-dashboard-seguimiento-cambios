@@ -46,8 +46,8 @@ export function AppLayout({ children }: Props) {
   // solo hace falta el aviso y la salida. Se muestra SIEMPRE mientras dure: sin
   // él es fácil creer que algo funciona para el cliente cuando en realidad
   // funcionó porque las reglas siguen viendo al root.
-  const { clientId: viendoComo, salir } = useImpersonation();
-  const impersonando = !!viendoComo && appUser?.role === "client_admin";
+  const { email: viendoComo, salir } = useImpersonation();
+  const impersonando = !!viendoComo && appUser?.email === realUser?.email && appUser !== realUser;
   const { pathname } = useLocation();
   const isRoot = isRootAdmin(appUser);
   const navItems = NAV_ITEMS.filter((i) =>
@@ -78,8 +78,8 @@ export function AppLayout({ children }: Props) {
       {impersonando && (
         <div className="flex flex-wrap items-center justify-center gap-2 bg-amber-400 px-4 py-1.5 text-[11px] font-semibold text-amber-950">
           <Eye className="h-3.5 w-3.5" />
-          Estás viendo el dashboard como {branding.clientName ?? "esta empresa"}. Lo que hagas se
-          sigue guardando como {realUser?.email}.
+          Estás viendo el dashboard como {viendoComo}. Lo que hagas se sigue guardando
+          como {realUser?.email}, y las reglas siguen viéndote como tú.
           <button
             type="button"
             onClick={salir}
