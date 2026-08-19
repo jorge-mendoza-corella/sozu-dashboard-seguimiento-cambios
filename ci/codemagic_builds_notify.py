@@ -18,7 +18,7 @@ Qué hace, por proyecto:
   1. Lee de Firestore los proyectos con `codemagicAppId`.
   2. Pide a Codemagic los builds recientes de esa app.
   3. De los builds TERMINADOS dentro de la ventana, avisa a quien lo disparó
-     desde el dashboard y al teléfono administrativo de esa empresa.
+     desde el dashboard y al APROBADOR del proyecto.
   4. Marca el build como avisado en `buildNotifications/{buildId}`.
 
 Idempotencia — `buildNotifications/{buildId}`:
@@ -50,7 +50,13 @@ from urllib.parse import quote
 
 import requests
 
-from whatsapp import enmascarar, normalizar_telefono, resolve_for_project, send
+from whatsapp import (
+    approver_phone,
+    enmascarar,
+    normalizar_telefono,
+    resolve_for_project,
+    send,
+)
 
 GCP_PROJECT = os.environ.get("GCP_PROJECT", "sozu-admin-dev")
 FS_BASE = f"https://firestore.googleapis.com/v1/projects/{GCP_PROJECT}/databases/(default)/documents"
@@ -280,21 +286,33 @@ def procesar_build(fs_token: str, cm_build: dict, proyecto: dict, resultado: str
         print(f"⚠ {etiqueta}: {cfg['motivo']} No se envía nada.")
         return
 
-    # Destinatarios: quien lo disparó desde el dashboard y el administrativo de
-    # la empresa. Si son el mismo número, un solo mensaje.
+    # Destinatarios: quien lo disparó desde el dashboard y el APROBADOR del
+    # proyecto. Si son el mismo número, un solo mensaje.
+    #
+    # El segundo destinatario era el teléfono administrativo de la empresa, un
+    # número suelto que se capturaba a mano y se quedaba viejo en cuanto
+    # cambiaba el responsable. Ahora el aviso le llega a quien de verdad tiene
+    # que revisar ese proyecto, con el teléfono que ya vive en Contribuidores.
     destinos: list[str] = []
     actor = normalizar_telefono(_texto(campos, "actorPhone"))
     actor_crudo = _texto(campos, "actorPhone")
     if actor_crudo and not actor:
         print(f"⚠ {etiqueta}: el teléfono de quien disparó el build no tiene formato válido; se omite.")
-    for tel in (actor, cfg["adminPhone"]):
+
+    aprobador, falta = approver_phone(FS_BASE, fs_token, project_id)
+    if not aprobador:
+        # No se manda ese aviso, pero el de quien disparó el build sigue en pie:
+        # un aprobador sin capturar no puede dejar mudo al resto.
+        print(f"⚠ {etiqueta}: no se avisa al aprobador porque {falta}")
+
+    for tel in (actor, aprobador):
         if tel and tel not in destinos:
             destinos.append(tel)
 
     if not destinos:
         print(
             f"⚠ {etiqueta}: nadie a quien avisar (ni teléfono de quien lo disparó ni "
-            "administrativo de la empresa). Se marca como avisado para no reintentarlo cada corrida."
+            "aprobador del proyecto). Se marca como avisado para no reintentarlo cada corrida."
         )
         cerrar_registro(
             fs_token, build_id, status=status, telefonos=[], nuevo=nuevo,

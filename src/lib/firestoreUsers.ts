@@ -66,6 +66,17 @@ export function resolvePermissions(user: AppUser | null): CicdPermissions {
   return user.role === "superuser" || user.role === "client_admin" ? ALL_PERMISSIONS : NO_PERMISSIONS;
 }
 
+/**
+ * ¿Es el superusuario raíz operando como él mismo?
+ *
+ * Mira el rol además del correo, y esa es la parte que importa: cuando el root
+ * usa "ver como" una empresa, su perfil en memoria pasa a `client_admin` sin
+ * cambiar de correo. Comparar solo el correo dejaría toda la interfaz de root
+ * encendida durante la impersonación, y la simulación no serviría de nada.
+ */
+export const isRootAdmin = (user: AppUser | null) =>
+  !!user && user.email === SUPERUSER_EMAIL && user.role === "superuser";
+
 /** ¿Administra la empresa indicada? (el root administra todas) */
 export function isAdminOfClient(user: AppUser | null, clientId: string | undefined): boolean {
   if (!user || !clientId) return false;

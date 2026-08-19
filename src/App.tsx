@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { SUPERUSER_EMAIL, canAdminister } from "@/lib/firestoreUsers";
+import { ImpersonationProvider } from "@/components/ImpersonationProvider";
+import { canAdminister, isRootAdmin } from "@/lib/firestoreUsers";
 import { setSessionGithubAuth } from "@/lib/github";
 import { AppLayout } from "@/components/AppLayout";
 import { GithubTokenGate } from "@/components/GithubTokenGate";
@@ -40,7 +41,7 @@ function AppRoutes() {
 
   // Contribuidores y Usuarios: solo el superusuario raíz (jorge.mendoza@sozu.com).
   // (Bloqueado también por URL directa.)
-  const isRoot = appUser?.email === SUPERUSER_EMAIL;
+  const isRoot = isRootAdmin(appUser);
   const puedeAdministrar = canAdminister(appUser);
   const esAdminGlobal = isRoot || appUser?.role === "superuser";
 
@@ -63,13 +64,15 @@ function AppRoutes() {
         <Route path="/contributors" element={isRoot ? <ContributorsPage /> : <Navigate to="/" replace />} />
         {/* Usuarios, Negocio y Configuración las abre cualquier administrador:
             el global ve todo el servicio y el de empresa solo sus clientes
-            (cada pantalla se recorta sola con `useClientScope`). Las reglas de
-            Firestore repiten el corte, así que esconder no es la única defensa. */}
+            (cada pantalla se recorta sola con `useClientScope`). Negocio y
+            Configuración no: son del dueño del servicio y solo las abre el
+            admin global. Las reglas de Firestore repiten el corte, así que
+            esconder no es la única defensa. */}
         <Route path="/users" element={puedeAdministrar ? <UsersPage /> : <Navigate to="/" replace />} />
         {/* Negocio expone tarifas y datos fiscales de toda la cartera: es del
             admin global, no del administrador de empresa. */}
         <Route path="/negocio" element={esAdminGlobal ? <NegocioPage /> : <Navigate to="/" replace />} />
-        <Route path="/configuracion" element={puedeAdministrar ? <ConfiguracionPage /> : <Navigate to="/" replace />} />
+        <Route path="/configuracion" element={esAdminGlobal ? <ConfiguracionPage /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppLayout>
@@ -79,9 +82,13 @@ function AppRoutes() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
+      {/* Por encima de todo: `useAuth` lee de aquí para devolver el perfil con
+          el que se está viendo el dashboard. */}
+      <ImpersonationProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </ImpersonationProvider>
     </QueryClientProvider>
   );
 }

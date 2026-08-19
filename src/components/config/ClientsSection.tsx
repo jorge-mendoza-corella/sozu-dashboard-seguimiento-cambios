@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, Plus, Pencil, Trash2, Users, AlertTriangle, FolderGit2,
+  Loader2, Plus, Pencil, Trash2, Users, AlertTriangle, FolderGit2, Eye,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SelectNative } from "@/components/ui/select-native";
 import { useAuth } from "@/hooks/useAuth";
+import { useImpersonation } from "@/hooks/useImpersonation";
+import { isRootAdmin } from "@/lib/firestoreUsers";
 import { useClientsBilling } from "@/hooks/useClients";
 import { useProjects } from "@/hooks/useProjectsRepos";
 import { isFacturable } from "@/lib/billing";
@@ -30,7 +32,11 @@ const STATUS_VARIANT: Record<ClientStatus, "success" | "destructive" | "secondar
 
 export function ClientsSection() {
   const qc = useQueryClient();
-  const { appUser } = useAuth();
+  const { appUser, realUser } = useAuth();
+  // "Ver como": solo el root, y solo cuando NO está ya viendo como alguien
+  // —desde dentro de una empresa la lista ya viene recortada a esa sola—.
+  const esRoot = isRootAdmin(realUser ?? appUser);
+  const { ver } = useImpersonation();
   // Los datos fiscales viven en el doc privado del cliente, así que el badge
   // "Sin datos fiscales" necesita la lectura con billing (solo superusers).
   const { data: clients = [], isLoading } = useClientsBilling(appUser);
@@ -153,6 +159,17 @@ export function ClientsSection() {
                     ))}
                   </SelectNative>
                   {busy === `st-${c.id}` && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                  {esRoot && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      title={`Ver el dashboard como ${clientDisplayName(c)}: su marca, sus proyectos y solo sus pantallas`}
+                      onClick={() => ver(c.id)}
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                   <Button
                     size="icon"
                     variant="ghost"

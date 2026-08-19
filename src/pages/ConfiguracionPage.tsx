@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
-import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { isRootAdmin } from "@/lib/firestoreUsers";
 import { seedSaasStructure, type SeedReport } from "@/lib/saasSeed";
 import { ClientsSection } from "@/components/config/ClientsSection";
 import { ProjectAssignmentSection } from "@/components/config/ProjectAssignmentSection";
@@ -39,7 +39,7 @@ const TABS = [
  */
 export function ConfiguracionPage() {
   const { appUser } = useAuth();
-  const isRoot = appUser?.email === SUPERUSER_EMAIL;
+  const isRoot = isRootAdmin(appUser);
   const { esAdminGlobal } = useClientScope(appUser);
   // Las pestañas "globales" escriben clientes, tarifas y la llave de Facturapi,
   // y esas escrituras las reglas se las reservan al root. Mostrárselas a un

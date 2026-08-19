@@ -27,12 +27,25 @@ mismo documento de la misma empresa.
 De dónde sale la configuración (`resolve_for_project`):
 
   projects/{projectId}.clientId               → empresa dueña del proyecto
-  clients/{clientId}/private/notifications    → instance, webhookUrl,
-                                                adminPhone, enabled
+  clients/{clientId}/private/notifications    → instance, webhookUrl, enabled
   clients/{clientId}/private/whatsappSecret   → apiKey
 
 Un proyecto sin empresa asignada simplemente no notifica, y el log lo dice: no
 es un error de CI, es una empresa sin configurar.
+
+A QUIÉN SE LE AVISA "de parte de la empresa" (`approver_phone`):
+
+  projects/{projectId}.approverEmail          → quién aprueba los PRs
+  users/{email}.githubLogin                   → su login de GitHub
+  contributors/{login}.telefonoWhatsapp       → su teléfono
+
+Ese segundo destinatario ERA un `adminPhone` capturado a mano en la
+configuración de la empresa, y se eliminó: era un número suelto que había que
+mantener a mano y que se quedaba viejo en cuanto cambiaba el responsable —el
+aviso seguía llegándole a quien ya no revisaba nada—. Ahora le llega al
+APROBADOR del proyecto, que es justamente quien tiene que revisar el PR, ya está
+configurado en el dashboard (Proyectos y repos) y su teléfono sale de
+Contribuidores, igual que el de los autores: un solo lugar donde mantenerlo.
 
 La apikey nunca se imprime, ni siquiera enmascarada; los teléfonos solo salen
 al log por `enmascarar()`, con los últimos 4 dígitos.
@@ -45,6 +58,7 @@ import os
 
 import re
 import time
+from urllib.parse import quote
 
 import requests
 
@@ -56,6 +70,9 @@ INTENTOS = 3
 # Un sync recorre decenas de builds y varios caen en el mismo proyecto: sin
 # caché se releerían los mismos documentos de Firestore una vez por build.
 _cache_config: dict[str, dict] = {}
+# Lo mismo para el aprobador, que además cuesta TRES lecturas encadenadas
+# (proyecto → usuario → contribuidor) por cada build del mismo proyecto.
+_cache_aprobador: dict[str, tuple[str | None, str]] = {}
 
 
 # --- Lectura de Firestore -----------------------------------------------------
@@ -134,8 +151,11 @@ def resolve_for_project(fs_base: str, token: str, project_id: str) -> dict:
       instance     str   — instancia de WhatsApp (`instanciaWA` del payload)
       webhook      str   — URL de n8n de la empresa
       apikey       str   — llave de ese webhook (NO imprimir)
-      adminPhone   str   — teléfono administrativo de la empresa, normalizado
       clientId     str   — empresa dueña del proyecto ('' si no tiene)
+
+    Ya NO devuelve `adminPhone`: ese campo desapareció del modelo. El segundo
+    destinatario de los avisos es ahora el aprobador del proyecto, que se
+    resuelve aparte con `approver_phone()` — ver el encabezado del módulo.
     """
     if project_id in _cache_config:
         return _cache_config[project_id]
@@ -150,22 +170,11 @@ def resolve_for_project(fs_base: str, token: str, project_id: str) -> dict:
             _campos(fs_base, token, f"clients/{client_id}/private/whatsappSecret"), "apiKey"
         )
 
-    admin_crudo = _texto(c_doc, "adminPhone")
-    admin = normalizar_telefono(admin_crudo)
-    if admin_crudo and not admin:
-        # Se dice, pero no se tumba nada: el aviso puede seguir llegándole a
-        # quien disparó el build aunque el administrativo esté mal capturado.
-        print(
-            f"⚠ El teléfono administrativo configurado ({enmascarar(admin_crudo)}) no tiene un "
-            "formato válido: deben ser 10 dígitos o un número internacional con '+'."
-        )
-
     cfg = {
         "clientId": client_id,
         "instance": _texto(c_doc, "instance"),
         "webhook": _texto(c_doc, "webhookUrl"),
         "apikey": c_key,
-        "adminPhone": admin or "",
         "enabled": True,
         "puedeEnviar": False,
         "motivo": "",
@@ -202,6 +211,74 @@ def resolve_for_project(fs_base: str, token: str, project_id: str) -> dict:
 
     _cache_config[project_id] = cfg
     return cfg
+
+
+# --- Aprobador del proyecto ---------------------------------------------------
+
+def approver_phone(fs_base: str, token: str, project_id: str) -> tuple[str | None, str]:
+    """Teléfono del APROBADOR del proyecto: `(telefono_normalizado, motivo)`.
+
+    Sustituye al viejo `adminPhone` que se capturaba a mano por empresa. El
+    aviso le llega así a quien tiene que revisar el PR, y no a un número suelto
+    que hay que mantener aparte y que se queda viejo en cuanto cambia el
+    responsable. Además el teléfono sale del MISMO lugar que el de los autores
+    (Contribuidores), así que solo hay un sitio donde mantenerlo.
+
+    La cadena, leída por REST con el token del service account (que ignora las
+    reglas de seguridad):
+
+      projects/{projectId}.approverEmail    → correo del aprobador
+      users/{email}.githubLogin             → su login de GitHub
+      contributors/{login}.telefonoWhatsapp → su teléfono (10 dígitos → +521)
+
+    Si falta cualquiera de los tres eslabones se devuelve `(None, motivo)` con
+    el texto exacto de qué falta y dónde configurarlo: no es un error de CI, es
+    un pendiente de captura en el dashboard, y quien lea el log tiene que poder
+    resolverlo sin adivinar. Nunca levanta.
+    """
+    if project_id in _cache_aprobador:
+        return _cache_aprobador[project_id]
+
+    def _resolver() -> tuple[str | None, str]:
+        correo = _texto(_campos(fs_base, token, f"projects/{project_id}"), "approverEmail")
+        if not correo:
+            return None, (
+                f"el proyecto '{project_id}' no tiene aprobador configurado. "
+                "Asígnalo en el dashboard → Proyectos y repos."
+            )
+
+        # El id del documento es el propio correo: lleva '@' y '.', así que se
+        # escapa antes de meterlo en la ruta REST.
+        login = _texto(
+            _campos(fs_base, token, f"users/{quote(correo, safe='')}"), "githubLogin"
+        )
+        if not login:
+            return None, (
+                f"el aprobador {correo} no tiene login de GitHub. Que capture su token "
+                "personal de GitHub en el dashboard (de ahí se deriva su login)."
+            )
+
+        crudo = _texto(
+            _campos(fs_base, token, f"contributors/{quote(login, safe='')}"),
+            "telefonoWhatsapp",
+        )
+        if not crudo:
+            return None, (
+                f"el contribuidor {login} no tiene teléfono. Captúralo en el dashboard "
+                "→ Contribuidores."
+            )
+        telefono = normalizar_telefono(crudo)
+        if not telefono:
+            return None, (
+                f"el teléfono del contribuidor {login} ({enmascarar(crudo)}) no tiene un "
+                "formato válido: deben ser 10 dígitos o un número internacional con '+'. "
+                "Corrígelo en el dashboard → Contribuidores."
+            )
+        return telefono, ""
+
+    resultado = _resolver()
+    _cache_aprobador[project_id] = resultado
+    return resultado
 
 
 # --- Envío --------------------------------------------------------------------

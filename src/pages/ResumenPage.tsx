@@ -12,7 +12,7 @@ import { useClients, useClientScope } from "@/hooks/useClients";
 import { clientDisplayName } from "@/lib/firestoreClients";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { hasFailingDeploy, type RepoRef, type RepoStatus } from "@/lib/github";
-import { SUPERUSER_EMAIL, resolvePermissions } from "@/lib/firestoreUsers";
+import { isRootAdmin, resolvePermissions } from "@/lib/firestoreUsers";
 import { cn } from "@/lib/utils";
 import { ActiveBuildChips } from "@/components/codemagic/ActiveBuildChips";
 
@@ -28,7 +28,7 @@ interface ProjectMetrics {
 
 export function ResumenPage() {
   const { appUser } = useAuth();
-  const isRoot = appUser?.email === SUPERUSER_EMAIL;
+  const isRoot = isRootAdmin(appUser);
   const perms = resolvePermissions(appUser);
   const navigate = useNavigate();
 

@@ -21,7 +21,7 @@ import { registerBuildForNotification } from "@/lib/buildNotifications";
 import {
   getProjectCredentialsMeta, setPlayServiceAccountForProject, setAppStoreConnectForProject,
 } from "@/lib/storeCredentials";
-import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { isRootAdmin } from "@/lib/firestoreUsers";
 import {
   setProjectKeystoreUploaded, setProjectDeployMode, setProjectPlayCredentialsUploaded,
 } from "@/lib/firestoreProjects";
@@ -696,7 +696,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
   // seguras en Codemagic (grupo android_signing_custom) — cifradas, solo
   // los builds las leen. Nunca pasa por Firestore ni queda legible.
   const { appUser } = useAuth();
-  const isRoot = appUser?.email === SUPERUSER_EMAIL;
+  const isRoot = isRootAdmin(appUser);
   const [ksOpen, setKsOpen] = useState(false);
   const [ksBusy, setKsBusy] = useState(false);
   const [ksError, setKsError] = useState("");
