@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjects, useRepos, useAccessibleRepoIds } from "@/hooks/useProjectsRepos";
-import { useClients, useClientScope } from "@/hooks/useClients";
+import { useClients, useClientScope, reposAsignadosAlUsuario } from "@/hooks/useClients";
 import { clientDisplayName } from "@/lib/firestoreClients";
 import { EmpresaSelector } from "@/components/EmpresaSelector";
 import { useEmpresaActiva } from "@/hooks/useEmpresaActiva";
@@ -64,9 +64,10 @@ export function ResumenPage() {
     appUser?.githubLogin ?? null,
   );
   const repos = useMemo(() => {
-    // Primero lo asignado en el dashboard —el permiso más fino, repo por repo—
-    // y encima, solo para viewers, lo que su cuenta de GitHub alcanza.
-    const asignados = reposAsignados ? allRepos.filter((r) => reposAsignados.has(r.id)) : allRepos;
+    // Primero lo asignado en el dashboard —el permiso más fino, repo por repo,
+    // interpretado proyecto por proyecto— y encima, solo para viewers, lo que su
+    // cuenta de GitHub alcanza.
+    const asignados = reposAsignadosAlUsuario(allRepos, reposAsignados);
     if (!filtraPorGitHub || !appUser?.githubToken) return asignados;
     if (!accessibleIds) return []; // aún verificando accesos: no mostrar de más
     const ok = new Set(accessibleIds);

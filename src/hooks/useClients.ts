@@ -139,6 +139,28 @@ export function useClientScope(appUser: AppUser | null) {
   }, [appUser, clients, projects]);
 }
 
+/**
+ * Recorta los repos a los que el usuario tiene asignados, PROYECTO POR PROYECTO.
+ *
+ * `repoIds` es una sola lista, pero la pantalla que la llena promete otra cosa:
+ * "sin marcar ninguno en ESTE proyecto, ve todos los de ESTE proyecto". Tratada
+ * como lista global, marcar un repo de Admin dejaba a la persona sin ver los
+ * repos de sus otros proyectos —donde no había marcado nada— y el proyecto salía
+ * en cero sin explicación.
+ *
+ * Así que la marca se interpreta por proyecto: el que tiene alguna, se acota a
+ * esas; el que no tiene ninguna, se queda completo.
+ */
+export function reposAsignadosAlUsuario<T extends { id: string; projectId: string }>(
+  repos: T[],
+  repoIds: Set<string> | null,
+): T[] {
+  if (!repoIds || repoIds.size === 0) return repos;
+  const proyectosConMarca = new Set<string>();
+  for (const r of repos) if (repoIds.has(r.id)) proyectosConMarca.add(r.projectId);
+  return repos.filter((r) => (proyectosConMarca.has(r.projectId) ? repoIds.has(r.id) : true));
+}
+
 export interface PublishAppsFeature {
   /** ¿El cliente de ese proyecto tiene la publicación contratada? */
   contratada: (clientId: string | undefined) => boolean;

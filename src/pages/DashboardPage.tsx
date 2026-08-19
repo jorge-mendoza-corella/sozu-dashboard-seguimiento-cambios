@@ -9,7 +9,7 @@ import { ActiveBuildChips } from "@/components/codemagic/ActiveBuildChips";
 import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { useProjects, useRepos, useAccessibleRepoIds, useRepoRenames } from "@/hooks/useProjectsRepos";
-import { useCanPublishApps, useClientScope, useClients } from "@/hooks/useClients";
+import { useCanPublishApps, useClientScope, useClients, reposAsignadosAlUsuario } from "@/hooks/useClients";
 import { clientDisplayName } from "@/lib/firestoreClients";
 import { EmpresaSelector } from "@/components/EmpresaSelector";
 import { useEmpresaActiva } from "@/hooks/useEmpresaActiva";
@@ -82,9 +82,10 @@ export function DashboardPage() {
   );
 
   const repos = useMemo(() => {
-    // Primero lo asignado en el dashboard —el permiso más fino, repo por repo—
-    // y encima, solo para viewers, lo que su cuenta de GitHub alcanza.
-    const asignados = reposAsignados ? allRepos.filter((r) => reposAsignados.has(r.id)) : allRepos;
+    // Primero lo asignado en el dashboard —el permiso más fino, repo por repo,
+    // interpretado proyecto por proyecto— y encima, solo para viewers, lo que su
+    // cuenta de GitHub alcanza.
+    const asignados = reposAsignadosAlUsuario(allRepos, reposAsignados);
     if (!filtraPorGitHub || !appUser?.githubToken) return asignados;
     if (!accessibleIds) return []; // aún verificando accesos: no mostrar de más
     const ok = new Set(accessibleIds);
