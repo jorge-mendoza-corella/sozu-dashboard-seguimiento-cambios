@@ -42,6 +42,14 @@ export interface PlatformDef {
   promoteLabel: string;
   /** Modo simple: construye y publica directo en la tienda, en un solo paso. */
   storeDirectWorkflowId: string;
+  /**
+   * Muestra los tres pasos a la vez en vez de sustituir el de pruebas por el
+   * final. Solo iOS: ahi TestFlight es una etapa real (es la unica forma de
+   * instalar el .ipa sin Mac) y Apple tarda minutos en procesar el binario
+   * entre una y otra. En Android el track interno es opcional y el paso de
+   * pruebas no aporta una espera que haya que ver en pantalla.
+   */
+  tresEtapas: boolean;
 }
 
 export const PLATFORMS: PlatformDef[] = [
@@ -51,6 +59,7 @@ export const PLATFORMS: PlatformDef[] = [
     publishWorkflowId: "android-publish", storeLabel: "Play interno",
     promoteWorkflowId: "android-production", promoteLabel: "Play Store",
     storeDirectWorkflowId: "android-store",
+    tresEtapas: false,
   },
   {
     key: "ios", label: "iOS",
@@ -58,6 +67,7 @@ export const PLATFORMS: PlatformDef[] = [
     publishWorkflowId: "ios-publish", storeLabel: "TestFlight",
     promoteWorkflowId: "ios-appstore", promoteLabel: "App Store",
     storeDirectWorkflowId: "ios-store",
+    tresEtapas: true,
   },
 ];
 
@@ -100,6 +110,13 @@ export interface CodemagicBuild {
   version?: string;
   index?: number; // número de build
   commit?: { hash?: string; sha?: string; commitMessage?: string };
+  /** Pasos del build. Solo viene en el detalle (`/builds/{id}`), no en la lista. */
+  buildActions?: CodemagicBuildAction[];
+}
+
+export interface CodemagicBuildAction {
+  name?: string;
+  status?: string;
 }
 
 /** Hash del commit construido en el build (la API varía el nombre del campo). */
@@ -168,6 +185,28 @@ export async function startBuild(
 
 export async function cancelBuild(buildId: string): Promise<void> {
   await request(`/builds/${buildId}/cancel`, { method: "POST" });
+}
+
+/**
+ * Detalle de un build. Trae `buildActions` (los pasos), que la lista de
+ * `/builds?appId=` no incluye: es la unica forma de saber DONDE fallo.
+ */
+export async function getBuild(buildId: string): Promise<CodemagicBuild> {
+  const data = await request<{ build: CodemagicBuild }>(`/builds/${buildId}`);
+  const b = data.build;
+  return { ...b, workflowId: b.fileWorkflowId ?? b.workflowId };
+}
+
+/**
+ * Nombre del paso que tumbó el build, o null si no se puede saber.
+ * Tolerante a propósito: si la API cambia la forma de `buildActions`, la UI
+ * cae al "falló" de siempre en vez de romperse.
+ */
+export function failedStepName(build?: CodemagicBuild | null): string | null {
+  const fallido = build?.buildActions?.find(
+    (a) => a.status === "failed" || a.status === "timeout" || a.status === "error",
+  );
+  return fallido?.name?.trim() || null;
 }
 
 export const buildUrl = (appId: string, buildId: string) =>

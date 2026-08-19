@@ -11,9 +11,10 @@ import { useCodemagicApps, useCodemagicBuilds, useBranchHead, useActiveDeploy } 
 import {
   startBuild, cancelBuild, buildStatusInfo, buildUrl, buildCommitSha, appRepo,
   formatBuildDate, uploadAndroidKeystore, uploadPlayServiceAccount, PLAY_CREDENTIALS_VAR,
-  PLATFORMS, WORKFLOW_LABELS, SYNC_TESTERS_WORKFLOW,
+  PLATFORMS, WORKFLOW_LABELS, SYNC_TESTERS_WORKFLOW, getBuild, failedStepName,
   type CodemagicBuild, type PlatformDef,
 } from "@/lib/codemagic";
+import { getAppStoreStatus, buildStateLabel } from "@/lib/appStoreStatus";
 import { useAuth } from "@/hooks/useAuth";
 import { getAllContributorPhones } from "@/lib/firestoreContributors";
 import { registerBuildForNotification } from "@/lib/buildNotifications";
@@ -48,6 +49,31 @@ function duration(b: CodemagicBuild): string | null {
 
 const isSuccess = (b: CodemagicBuild) => buildStatusInfo(b.status).tone === "success";
 const isRunning = (b: CodemagicBuild) => buildStatusInfo(b.status).isRunning;
+
+/**
+ * Paso que tumbó un build fallido. La lista de `/builds` no trae los pasos, así
+ * que se pide el detalle: "falló" a secas no distingue un test roto de un envío
+ * a revisión rechazado, y son problemas de dueños distintos.
+ */
+function PasoQueFallo({ buildId }: { buildId: string }) {
+  const { data } = useQuery({
+    queryKey: ["codemagic-build", buildId],
+    queryFn: () => getBuild(buildId),
+    // Un build terminado ya no cambia: se pide una vez y se queda en caché.
+    staleTime: 60 * 60_000,
+    retry: false,
+  });
+  const paso = failedStepName(data);
+  if (!paso) return null;
+  return (
+    <span
+      className="font-medium text-red-700 dark:text-red-300"
+      title={`El build murió en el paso "${paso}". Abre el build para ver el log de ese paso.`}
+    >
+      en: {paso}
+    </span>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Tracks de prueba con link de invitación configurable. Google/Apple NO
@@ -302,6 +328,7 @@ const PLAT_META: Record<Plat, { label: string; cls: string }> = {
 /** Fila de una plataforma: construir artefacto y, si ya existe, enviarlo a la store. */
 function PlatformRow({
   platform, branch, builds, headSha, deployActive, perms, estaBusy, pendingWorkflows, onRequestStart, simple,
+  project,
 }: {
   platform: PlatformDef;
   branch: string;
@@ -314,6 +341,7 @@ function PlatformRow({
   onRequestStart: (workflowId: string, key: string, opts?: { askNotes?: boolean; label?: string }) => void;
   /** Modo simple: Construir + un solo botón que publica directo en la tienda. */
   simple: boolean;
+  project?: Project;
 }) {
   const forBranch = (wf: string) => builds.filter((b) => b.workflowId === wf && b.branch === branch);
   const buildRuns = forBranch(platform.buildWorkflowId);
@@ -344,11 +372,53 @@ function PlatformRow({
 
   const publishDisabledReason =
     publishInProgress ? "Publicación en curso" :
-    !canPublish ? `Primero construye el artefacto ${platform.label} del código actual` : null;
+    !canPublish ? `Primero construye el artefacto ${platform.label} del código actual` :
+    // Con las tres etapas a la vista el botón sigue en pantalla después de
+    // publicar, así que hay que decir que ya está hecho o invita a repetirlo.
+    publishedCurrent ? `Este código ya está en ${platform.storeLabel}` : null;
+
+  // ---------------------------------------------------------------------------
+  // iOS: el binario que se va a promover tiene que estar PROCESADO en Apple.
+  //
+  // Apple tarda minutos en procesar un .ipa recien subido. Si se manda a
+  // revision antes, el workflow no encuentra el build nuevo y aborta (asi esta
+  // el guard en codemagic.yaml). Aqui el boton se habilita solo cuando App
+  // Store Connect ya reporta ese build como VALID.
+  //
+  // El dato lo vuelca a Firestore un sync programado cada 15 min, asi que
+  // puede venir atrasado: de ahi el "comprobar ahora", que dispara el sync.
+  // Sin el, el boton podria quedarse gris un cuarto de hora despues de que
+  // Apple ya termino, que seria peor que no tener gate.
+  // ---------------------------------------------------------------------------
+  const gateApple = platform.tresEtapas && !!project?.iosBundleId;
+  const { data: appStore, isFetching: appStoreFetching } = useQuery({
+    queryKey: ["appstore-status", project?.iosBundleId],
+    queryFn: () => getAppStoreStatus(project!.iosBundleId!),
+    enabled: gateApple,
+    refetchInterval: 60_000,
+  });
+  const ultimoSubido = appStore?.builds?.[0];
+  const binarioListo = ultimoSubido?.processingState === "VALID";
+  const [pidiendoSync, setPidiendoSync] = useState(false);
+  const comprobarAhora = async () => {
+    setPidiendoSync(true);
+    try {
+      await triggerPlayTracksSync();
+    } catch {
+      /* best-effort: el cron llega igual, y el estado se ve en la card de abajo */
+    } finally {
+      setPidiendoSync(false);
+    }
+  };
 
   const promoteDisabledReason =
     promoteInProgress ? "Envío a la store en curso" :
-    promotedCurrent ? "Este código ya fue enviado a la store" : null;
+    promotedCurrent ? "Este código ya fue enviado a la store" :
+    gateApple && !appStore ? "Aún sin datos de App Store Connect: pulsa \"comprobar ahora\"" :
+    gateApple && !ultimoSubido ? "App Store Connect no reporta ningún binario subido todavía" :
+    gateApple && !binarioListo
+      ? `Apple sigue procesando el build ${ultimoSubido?.version ?? "—"} (${buildStateLabel(ultimoSubido?.processingState)}). Suele tardar entre 10 y 30 min.`
+      : null;
 
   const buildKey = `${platform.key}-build`;
   const publishKey = `${platform.key}-publish`;
@@ -371,6 +441,43 @@ function PlatformRow({
     deployActive ? "Espera: hay un deploy web en curso" :
     !canPublish ? `Primero construye el artefacto ${platform.label} del código actual` :
     storeSentCurrent ? "Este código ya se envió a la tienda" : null;
+
+  // Los dos botones del flujo por etapas, como variables: con `tresEtapas` se
+  // pintan los dos a la vez y sin él se alternan, pero el JSX es el mismo.
+  const botonPruebas = (
+    <Button
+      size="sm"
+      title={publishDisabledReason ?? `Construir y enviar a ${platform.storeLabel}`}
+      disabled={!!publishDisabledReason || estaBusy(publishKey)}
+      onClick={() => onRequestStart(platform.publishWorkflowId, publishKey, { label: `Enviar a ${platform.storeLabel}` })}
+    >
+      {publishInProgress || estaBusy(publishKey) ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+      ) : publishedCurrent ? (
+        <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+      ) : (
+        <Upload className="h-3.5 w-3.5 mr-1.5" />
+      )}
+      {publishInProgress ? "Publicando…" : platform.storeLabel}
+    </Button>
+  );
+
+  const botonTienda = (
+    <Button
+      size="sm"
+      className="bg-emerald-600 hover:bg-emerald-700 text-white"
+      title={promoteDisabledReason ?? `Enviar a ${platform.promoteLabel} (pide comentario de la versión)`}
+      disabled={!!promoteDisabledReason || estaBusy(promoteKey)}
+      onClick={() => onRequestStart(platform.promoteWorkflowId, promoteKey, { askNotes: true, label: `Enviar a ${platform.promoteLabel}` })}
+    >
+      {promoteInProgress || estaBusy(promoteKey) ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+      ) : (
+        <Rocket className="h-3.5 w-3.5 mr-1.5" />
+      )}
+      {promoteInProgress ? "Enviando…" : platform.promoteLabel}
+    </Button>
+  );
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2.5">
@@ -421,42 +528,51 @@ function PlatformRow({
               )}
               {storeInProgress ? "Publicando…" : platform.promoteLabel}
             </Button>
+          ) : platform.tresEtapas ? (
+            // iOS: las tres etapas a la vista. TestFlight no es un paso que se
+            // salte (es la unica forma de instalar el .ipa sin Mac), y entre
+            // subirlo y poder mandarlo a revision hay una espera de Apple que
+            // conviene ver en pantalla en vez de adivinar.
+            <>
+              {botonPruebas}
+              {botonTienda}
+            </>
           ) : !publishedCurrent ? (
-            <Button
-              size="sm"
-              title={publishDisabledReason ?? `Construir y enviar a ${platform.storeLabel}`}
-              disabled={!!publishDisabledReason || estaBusy(publishKey)}
-              onClick={() => onRequestStart(platform.publishWorkflowId, publishKey, { label: `Enviar a ${platform.storeLabel}` })}
-            >
-              {publishInProgress || estaBusy(publishKey) ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-              ) : (
-                <Upload className="h-3.5 w-3.5 mr-1.5" />
-              )}
-              {publishInProgress ? "Publicando…" : platform.storeLabel}
-            </Button>
+
+            botonPruebas
           ) : (
-            // Ya pasó por la store de pruebas: paso final hacia la store pública.
-            <Button
-              size="sm"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              title={promoteDisabledReason ?? `Enviar a ${platform.promoteLabel} (pide comentario de la versión)`}
-              disabled={!!promoteDisabledReason || estaBusy(promoteKey)}
-              onClick={() => onRequestStart(platform.promoteWorkflowId, promoteKey, { askNotes: true, label: `Enviar a ${platform.promoteLabel}` })}
-            >
-              {promoteInProgress || estaBusy(promoteKey) ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-              ) : (
-                <Rocket className="h-3.5 w-3.5 mr-1.5" />
-              )}
-              {promoteInProgress ? "Enviando…" : platform.promoteLabel}
-            </Button>
+            botonTienda
+
           )}
         </>
       )}
       {(buildDisabledReason || (simple && storeDisabledReason)) && (
         <span className="w-full text-[10px] text-muted-foreground sm:w-auto">
           {buildDisabledReason ?? storeDisabledReason}
+        </span>
+      )}
+      {/* El motivo del gate de Apple va escrito, no solo en el tooltip: es una
+          espera de minutos y el usuario necesita saber que no se rompió nada. */}
+      {!simple && platform.tresEtapas && perms.buildApp && promoteDisabledReason && !promotedCurrent && (
+        <span className="flex w-full items-center gap-1.5 text-[10px] text-muted-foreground">
+          <Clock className="h-3 w-3 shrink-0" />
+          <span>{promoteDisabledReason}</span>
+          {gateApple && (
+            <button
+              type="button"
+              onClick={comprobarAhora}
+              disabled={pidiendoSync || appStoreFetching}
+              className="underline underline-offset-2 hover:text-foreground disabled:opacity-50"
+              title="Pide a Apple el estado ahora, sin esperar al sync de cada 15 min"
+            >
+              {pidiendoSync || appStoreFetching ? "comprobando…" : "comprobar ahora"}
+            </button>
+          )}
+          {appStore?.updatedAt && (
+            <span className="text-muted-foreground/70">
+              · estado de {formatDistanceToNow(appStore.updatedAt)}
+            </span>
+          )}
         </span>
       )}
     </div>
@@ -1030,6 +1146,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
               pendingWorkflows={pendingWorkflows}
               onRequestStart={requestStart}
               simple={simple}
+              project={project}
             />
           ))}
         </div>
@@ -1372,6 +1489,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
                     {PLAT_META[plat].label}
                   </span>
                   {wfName && <span className="font-medium">{wfName}</span>}
+                  {info.tone === "failed" && <PasoQueFallo buildId={b._id} />}
                   <span className="flex items-center gap-1 text-muted-foreground">
                     <GitBranch className="h-3 w-3" />{b.branch}
                   </span>
