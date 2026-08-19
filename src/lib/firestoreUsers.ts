@@ -1,11 +1,26 @@
 import { db } from "./firebase";
 import {
-  doc, getDoc, setDoc, deleteDoc, collection, getDocs, serverTimestamp,
+  doc, getDoc, setDoc, deleteDoc, collection, getDocs, serverTimestamp, query, where,
 } from "firebase/firestore";
 
 export const SUPERUSER_EMAIL = "jorge.mendoza@sozu.com";
 
-export type UserRole = "superuser" | "viewer";
+/**
+ * - `superuser`  administrador global del servicio (ve y toca todo).
+ * - `client_admin` administrador de una o varias EMPRESAS: manda dentro de sus
+ *   clientes (proyectos, usuarios, notificaciones) y no ve al resto.
+ * - `viewer` usuario operativo, acotado a los proyectos que se le asignen.
+ *
+ * El superusuario raíz (`SUPERUSER_EMAIL`) sigue siendo un caso aparte: es el
+ * único que puede crear clientes, mover tarifas y tocar datos fiscales.
+ */
+export type UserRole = "superuser" | "client_admin" | "viewer";
+
+export const ROLE_LABEL: Record<UserRole, string> = {
+  superuser: "Administrador global",
+  client_admin: "Administrador de empresa",
+  viewer: "Viewer",
+};
 
 /** Permisos granulares de acciones CI/CD por usuario. */
 export interface CicdPermissions {
@@ -25,6 +40,12 @@ export interface AppUser {
   role: UserRole;
   addedBy: string;
   createdAt: unknown;
+  /**
+   * Empresas (clientes) a las que pertenece el usuario. Para un `client_admin`
+   * son las empresas que administra; para un viewer, la empresa de la que es
+   * empleado. Vacío = legacy, sin empresa asignada.
+   */
+  clientIds?: string[];
   projectIds?: string[]; // proyectos a los que tiene acceso (vacío/undefined = legacy: todos)
   permissions?: CicdPermissions; // undefined = legacy: admins todo, viewers nada
   githubToken?: string; // PAT personal de GitHub (obligatorio para operar; root exento)
@@ -40,8 +61,28 @@ export function resolvePermissions(user: AppUser | null): CicdPermissions {
   if (!user) return NO_PERMISSIONS;
   if (user.email === SUPERUSER_EMAIL) return ALL_PERMISSIONS;
   if (user.permissions) return { ...NO_PERMISSIONS, ...user.permissions };
-  return user.role === "superuser" ? ALL_PERMISSIONS : NO_PERMISSIONS;
+  // Sin permisos explícitos: los administradores (globales o de empresa) los
+  // tienen todos dentro de lo que ven; el viewer, ninguno.
+  return user.role === "superuser" || user.role === "client_admin" ? ALL_PERMISSIONS : NO_PERMISSIONS;
 }
+
+/** ¿Administra la empresa indicada? (el root administra todas) */
+export function isAdminOfClient(user: AppUser | null, clientId: string | undefined): boolean {
+  if (!user || !clientId) return false;
+  if (user.email === SUPERUSER_EMAIL || user.role === "superuser") return true;
+  return user.role === "client_admin" && (user.clientIds ?? []).includes(clientId);
+}
+
+/** Empresas que administra. El root/superuser devuelve null = todas. */
+export function adminClientIds(user: AppUser | null): string[] | null {
+  if (!user) return [];
+  if (user.email === SUPERUSER_EMAIL || user.role === "superuser") return null;
+  return user.role === "client_admin" ? user.clientIds ?? [] : [];
+}
+
+/** Puede entrar a las pantallas de administración (Usuarios, Configuración). */
+export const canAdminister = (user: AppUser | null) =>
+  !!user && (user.email === SUPERUSER_EMAIL || user.role === "superuser" || user.role === "client_admin");
 
 export async function getUserByEmail(email: string): Promise<AppUser | null> {
   const snap = await getDoc(doc(db, "users", email));
@@ -53,6 +94,29 @@ export async function getAllUsers(): Promise<AppUser[]> {
   return snap.docs.map((d) => d.data() as AppUser);
 }
 
+/**
+ * Usuarios de las empresas indicadas. Es la lectura que hace un administrador
+ * de empresa: las reglas no le dejan barrer toda la colección, y la consulta
+ * tiene que venir filtrada para que se la autoricen.
+ */
+export async function getUsersByClients(clientIds: string[]): Promise<AppUser[]> {
+  if (clientIds.length === 0) return [];
+  // `array-contains-any` admite hasta 30 valores; nadie administra tantas.
+  const q = query(collection(db, "users"), where("clientIds", "array-contains-any", clientIds.slice(0, 30)));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => d.data() as AppUser);
+}
+
+/**
+ * Los usuarios que este usuario puede ver: todos si es admin global, los de sus
+ * empresas si es administrador de empresa, y nadie más en cualquier otro caso.
+ */
+export async function getVisibleUsers(user: AppUser | null): Promise<AppUser[]> {
+  const empresas = adminClientIds(user);
+  if (empresas === null) return getAllUsers();
+  return getUsersByClients(empresas);
+}
+
 export async function addUser(
   email: string,
   addedBy: string,
@@ -61,11 +125,16 @@ export async function addUser(
   permissions: CicdPermissions = NO_PERMISSIONS,
   githubToken?: string,
   githubLogin?: string,
+  clientIds: string[] = [],
 ) {
+  if (role === "client_admin" && clientIds.length === 0) {
+    throw new Error("Un administrador de empresa necesita al menos una empresa asignada.");
+  }
   await setDoc(doc(db, "users", email), {
     email,
     role,
     addedBy,
+    clientIds,
     projectIds,
     permissions,
     ...(githubToken && githubLogin
@@ -98,10 +167,26 @@ export async function removeUser(email: string) {
   await deleteDoc(doc(db, "users", email));
 }
 
-/** Cambia el rol de un usuario existente (promover a Administrador o degradar a Viewer). */
-export async function setUserRole(email: string, role: UserRole) {
+/**
+ * Cambia el rol de un usuario existente. Un administrador de empresa sin
+ * empresas no administra nada, así que el rol y las empresas se guardan juntos
+ * cuando hace falta.
+ */
+export async function setUserRole(email: string, role: UserRole, clientIds?: string[]) {
   if (email === SUPERUSER_EMAIL) throw new Error("No se puede cambiar el rol del superusuario raíz");
-  await setDoc(doc(db, "users", email), { role }, { merge: true });
+  if (role === "client_admin" && (clientIds?.length ?? 0) === 0) {
+    throw new Error("Elige al menos una empresa para el administrador de empresa.");
+  }
+  await setDoc(
+    doc(db, "users", email),
+    { role, ...(clientIds ? { clientIds } : {}) },
+    { merge: true },
+  );
+}
+
+/** Empresas a las que pertenece (o que administra) el usuario. */
+export async function setUserClients(email: string, clientIds: string[]) {
+  await setDoc(doc(db, "users", email), { clientIds }, { merge: true });
 }
 
 /** Define a qué proyectos tiene acceso un usuario (mínimo 1). */

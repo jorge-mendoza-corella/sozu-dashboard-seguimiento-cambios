@@ -17,8 +17,9 @@ import {
 import { getAppStoreStatus, buildStateLabel } from "@/lib/appStoreStatus";
 import { useAuth } from "@/hooks/useAuth";
 import { getAllContributorPhones } from "@/lib/firestoreContributors";
+import { registerBuildForNotification } from "@/lib/buildNotifications";
 import {
-  getStoreCredentialsMeta, setPlayServiceAccountForSync, setAppStoreConnectForSync,
+  getProjectCredentialsMeta, setPlayServiceAccountForProject, setAppStoreConnectForProject,
 } from "@/lib/storeCredentials";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import {
@@ -142,14 +143,15 @@ const BUILD_PHASES = [
 
 /** Card destacada de un build en curso: fases, cronómetro y progreso estimado. */
 function ActiveBuildCard({
-  b, wfName, avgMs, appId, canCancel, busy, onCancel,
+  b, wfName, avgMs, appId, canCancel, estaBusy, onCancel,
 }: {
   b: CodemagicBuild;
   wfName: string;
   avgMs: number | null;
   appId: string;
   canCancel: boolean;
-  busy: string | null;
+  /** Predicado por clave: cada acción lleva su propio estado, no uno compartido. */
+  estaBusy: (key: string) => boolean;
   onCancel: (id: string) => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
@@ -158,12 +160,21 @@ function ActiveBuildCard({
     return () => clearInterval(t);
   }, []);
 
-  const startedIso = b.startedAt ?? b.createdAt;
-  const elapsedMs = startedIso ? Math.max(0, now - new Date(startedIso).getTime()) : 0;
+  // Un build que Codemagic todavía no arranca (espera turno de máquina) NO
+  // tiene `startedAt`. Antes se caía a `createdAt`, así que el cronómetro y la
+  // barra corrían durante la cola: un build encolado llegaba a "85%" sin haber
+  // empezado, y al liberarse la máquina —justo cuando terminaba el build de la
+  // otra plataforma— aparecía `startedAt`, el tiempo se recalculaba desde el
+  // arranque real y la barra caía a cero. Parecía que el build se había
+  // reiniciado solo; en realidad recién empezaba.
+  const enCola = !b.startedAt;
+  const referenciaIso = b.startedAt ?? b.createdAt;
+  const elapsedMs = referenciaIso ? Math.max(0, now - new Date(referenciaIso).getTime()) : 0;
   const mm = Math.floor(elapsedMs / 60000);
   const ss = String(Math.floor(elapsedMs / 1000) % 60).padStart(2, "0");
-  // Progreso estimado contra el promedio de builds exitosos del mismo workflow.
-  const pct = avgMs ? Math.min(96, Math.round((elapsedMs / avgMs) * 100)) : null;
+  // El progreso estimado solo tiene sentido con el build corriendo: en cola no
+  // se estima nada, se dice que está esperando.
+  const pct = !enCola && avgMs ? Math.min(96, Math.round((elapsedMs / avgMs) * 100)) : null;
 
   // "initializing" ocurre antes de "queued"; otros estados intermedios
   // desconocidos se asumen en plena construcción.
@@ -222,14 +233,25 @@ function ActiveBuildCard({
           <GitBranch className="h-3 w-3" />{b.branch}
         </span>
         <span className="flex-1" />
-        <span className={cn("font-mono text-sm font-semibold tabular-nums", theme.timer)}>
+        <span className={cn("font-mono text-sm font-semibold tabular-nums", enCola ? "text-muted-foreground" : theme.timer)}>
           {mm}:{ss}
         </span>
-        {avgMs && (
+        {enCola ? (
+          <span
+            className="text-[10px] font-medium text-amber-600 dark:text-amber-400"
+            title={
+              "Codemagic todavía no le asigna máquina. El cronómetro cuenta la espera, no el build: " +
+              "cuando arranque de verdad, el tiempo empieza de cero. Cuántos builds corren a la vez " +
+              "depende del plan de Codemagic, no del dashboard."
+            }
+          >
+            en cola · aún no arranca
+          </span>
+        ) : avgMs ? (
           <span className="text-[10px] text-muted-foreground">
             / ~{Math.round(avgMs / 60000)}m típico
           </span>
-        )}
+        ) : null}
         <a
           href={buildUrl(appId, b._id)}
           target="_blank"
@@ -242,11 +264,11 @@ function ActiveBuildCard({
         {canCancel && (
           <button
             type="button"
-            disabled={busy === b._id}
+            disabled={estaBusy(b._id)}
             onClick={() => onCancel(b._id)}
             className="flex items-center gap-1 rounded-md border border-red-200 px-2 py-1 text-xs text-destructive hover:bg-red-50 disabled:opacity-50 dark:border-red-900/50 dark:hover:bg-red-950/30"
           >
-            {busy === b._id ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />}
+            {estaBusy(b._id) ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />}
             Cancelar
           </button>
         )}
@@ -305,7 +327,7 @@ const PLAT_META: Record<Plat, { label: string; cls: string }> = {
 
 /** Fila de una plataforma: construir artefacto y, si ya existe, enviarlo a la store. */
 function PlatformRow({
-  platform, branch, builds, headSha, deployActive, perms, busy, pendingWorkflows, onRequestStart, simple,
+  platform, branch, builds, headSha, deployActive, perms, estaBusy, pendingWorkflows, onRequestStart, simple,
   project,
 }: {
   platform: PlatformDef;
@@ -314,7 +336,7 @@ function PlatformRow({
   headSha: string | null | undefined;
   deployActive: boolean;
   perms: CicdPermissions;
-  busy: string | null;
+  estaBusy: (key: string) => boolean;
   pendingWorkflows: Record<string, { id: string; t: number }>;
   onRequestStart: (workflowId: string, key: string, opts?: { askNotes?: boolean; label?: string }) => void;
   /** Modo simple: Construir + un solo botón que publica directo en la tienda. */
@@ -426,10 +448,10 @@ function PlatformRow({
     <Button
       size="sm"
       title={publishDisabledReason ?? `Construir y enviar a ${platform.storeLabel}`}
-      disabled={!!publishDisabledReason || busy === publishKey}
+      disabled={!!publishDisabledReason || estaBusy(publishKey)}
       onClick={() => onRequestStart(platform.publishWorkflowId, publishKey, { label: `Enviar a ${platform.storeLabel}` })}
     >
-      {publishInProgress || busy === publishKey ? (
+      {publishInProgress || estaBusy(publishKey) ? (
         <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
       ) : publishedCurrent ? (
         <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
@@ -445,10 +467,10 @@ function PlatformRow({
       size="sm"
       className="bg-emerald-600 hover:bg-emerald-700 text-white"
       title={promoteDisabledReason ?? `Enviar a ${platform.promoteLabel} (pide comentario de la versión)`}
-      disabled={!!promoteDisabledReason || busy === promoteKey}
+      disabled={!!promoteDisabledReason || estaBusy(promoteKey)}
       onClick={() => onRequestStart(platform.promoteWorkflowId, promoteKey, { askNotes: true, label: `Enviar a ${platform.promoteLabel}` })}
     >
-      {promoteInProgress || busy === promoteKey ? (
+      {promoteInProgress || estaBusy(promoteKey) ? (
         <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
       ) : (
         <Rocket className="h-3.5 w-3.5 mr-1.5" />
@@ -478,10 +500,10 @@ function PlatformRow({
             size="sm"
             variant="outline"
             title={buildDisabledReason ?? `Construir artefacto ${platform.label} (${branch})`}
-            disabled={!!buildDisabledReason || busy === buildKey}
+            disabled={!!buildDisabledReason || estaBusy(buildKey)}
             onClick={() => onRequestStart(platform.buildWorkflowId, buildKey, { label: `Construir ${platform.label}` })}
           >
-            {buildInProgress || busy === buildKey ? (
+            {buildInProgress || estaBusy(buildKey) ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
             ) : (
               <Play className="h-3.5 w-3.5 mr-1.5" />
@@ -494,12 +516,12 @@ function PlatformRow({
               size="sm"
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
               title={storeDisabledReason ?? `Publicar directo en ${platform.promoteLabel} (pide comentario de la versión)`}
-              disabled={!!storeDisabledReason || busy === storeKey}
+              disabled={!!storeDisabledReason || estaBusy(storeKey)}
               onClick={() => onRequestStart(platform.storeDirectWorkflowId, storeKey, {
                 askNotes: true, label: `Publicar en ${platform.promoteLabel}`,
               })}
             >
-              {storeInProgress || busy === storeKey ? (
+              {storeInProgress || estaBusy(storeKey) ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
               ) : (
                 <Rocket className="h-3.5 w-3.5 mr-1.5" />
@@ -516,9 +538,11 @@ function PlatformRow({
               {botonTienda}
             </>
           ) : !publishedCurrent ? (
+
             botonPruebas
           ) : (
             botonTienda
+
           )}
         </>
       )}
@@ -590,7 +614,19 @@ export function AppBuildsPanel({ appId, perms, project }: {
   const { data: headSha } = useBranchHead(repo?.owner, repo?.repo, effectiveBranch);
   const { data: deployActive = false } = useActiveDeploy(repo?.owner, repo?.repo);
 
-  const [busy, setBusy] = useState<string | null>(null);
+  // Acciones en vuelo, por clave. Antes era un solo string: con Android e iOS
+  // trabajando a la vez, la primera acción que terminaba ponía `busy` en null y
+  // le apagaba el spinner a la otra, que seguía corriendo. Un conjunto mantiene
+  // cada plataforma con su propio estado.
+  const [busyKeys, setBusyKeys] = useState<Set<string>>(() => new Set());
+  const marcarBusy = (key: string, activo: boolean) =>
+    setBusyKeys((prev) => {
+      const next = new Set(prev);
+      if (activo) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  const estaBusy = (key: string | null) => !!key && busyKeys.has(key);
   const [error, setError] = useState("");
   const [showAll, setShowAll] = useState(false);
   // Modo simple (default): Construir + publicar directo a la tienda. El modo
@@ -710,14 +746,24 @@ export function AppBuildsPanel({ appId, perms, project }: {
     setSaError("");
     try {
       await uploadPlayServiceAccount(appId, saJson);
-      // El mismo JSON le sirve al sync que lee los tracks de Play: sin esto
-      // había que crear el secret en Secret Manager a mano y, mientras faltara,
-      // las versiones de tienda salían vacías en las cards.
+      // El mismo JSON le sirve al sync que lee los tracks de Play de ESTA app:
+      // sin esto había que crear el secret en Secret Manager a mano y, mientras
+      // faltara, las versiones de tienda salían vacías en las cards.
       let falloElSync: string | null = null;
-      if (appUser?.email) {
+      if (!project) {
+        // Sin proyecto no hay dónde guardar: las credenciales viven en
+        // `projects/{id}/private`, así que se avisa en vez de perderlas en silencio.
+        falloElSync = "esta app no está ligada a un proyecto del dashboard";
+      } else if (!appUser?.email) {
+        // Sin sesión identificada no hay a quién atribuir el cambio. Antes esta
+        // rama no existía y el guardado se saltaba en silencio: la subida a
+        // Codemagic salía bien y el estado de tiendas se quedaba vacío sin que
+        // nadie supiera por qué.
+        falloElSync = "no se pudo identificar tu sesión; vuelve a entrar";
+      } else {
         try {
-          await setPlayServiceAccountForSync(saJson, appUser.email);
-          await qc.invalidateQueries({ queryKey: ["store-credentials-meta"] });
+          await setPlayServiceAccountForProject(project.id, saJson, appUser.email);
+          await qc.invalidateQueries({ queryKey: ["project-credentials-meta", project.id] });
         } catch (e) {
           // Que falle esto no invalida la subida a Codemagic, que es lo que
           // permite publicar. Pero el modal NO se cierra: cerrarlo dejaba el
@@ -732,8 +778,8 @@ export function AppBuildsPanel({ appId, perms, project }: {
       }
       if (falloElSync) {
         setSaError(
-          `Guardado en Codemagic para publicar, pero NO para el estado de tiendas: ${falloElSync}. ` +
-          "Las versiones de tienda seguirán vacías hasta que esto funcione.",
+          `Guardado en Codemagic para publicar, pero NO para el estado de tiendas de esta app: ${falloElSync}. ` +
+          "Las versiones de tienda de esta app seguirán vacías hasta que esto funcione.",
         );
         return;
       }
@@ -746,24 +792,29 @@ export function AppBuildsPanel({ appId, perms, project }: {
     }
   };
 
-  // Llave de App Store Connect: la usa el sync para leer el estado en iOS
-  // (versión a la venta, revisión, builds). Solo el root puede guardarla.
+  // Llave de App Store Connect de esta app: la usa el sync para leer su estado
+  // en iOS (versión a la venta, revisión, builds). Solo el root puede guardarla.
   const [ascOpen, setAscOpen] = useState(false);
   const [ascBusy, setAscBusy] = useState(false);
   const [ascError, setAscError] = useState("");
   const [asc, setAsc] = useState({ keyId: "", issuerId: "", privateKey: "" });
   const { data: credsMeta } = useQuery({
-    queryKey: ["store-credentials-meta"],
-    queryFn: () => getStoreCredentialsMeta().catch(() => null),
+    queryKey: ["project-credentials-meta", project?.id],
+    queryFn: () => getProjectCredentialsMeta(project!.id).catch(() => null),
+    enabled: !!project,
     staleTime: 60_000,
   });
 
   const handleSaveAsc = async () => {
+    if (!project) {
+      setAscError("Esta app no está ligada a un proyecto del dashboard: no hay dónde guardar la llave.");
+      return;
+    }
     setAscBusy(true);
     setAscError("");
     try {
-      await setAppStoreConnectForSync(asc, appUser!.email);
-      await qc.invalidateQueries({ queryKey: ["store-credentials-meta"] });
+      await setAppStoreConnectForProject(project.id, asc, appUser!.email);
+      await qc.invalidateQueries({ queryKey: ["project-credentials-meta", project.id] });
       setAscOpen(false);
       setAsc({ keyId: "", issuerId: "", privateKey: "" });
     } catch (e) {
@@ -908,7 +959,19 @@ export function AppBuildsPanel({ appId, perms, project }: {
   };
 
   const doStart = async (workflowId: string, key: string, envVars?: Record<string, string>) => {
-    setBusy(key);
+    // Guardia contra el disparo doble: si ese workflow ya tiene un build vivo
+    // —corriendo o esperando turno de máquina— lanzar otro no lo adelanta, solo
+    // encola trabajo repetido y confunde cuál es cuál. Cada plataforma sigue
+    // siendo independiente: esto solo mira SU workflow.
+    const yaVivo = builds.some((b) => b.workflowId === workflowId && isRunning(b));
+    if (yaVivo || pendingWorkflows[workflowId] !== undefined) {
+      setError(
+        `${WORKFLOW_LABELS[workflowId] ?? workflowId} ya tiene un build en curso o en cola. ` +
+        "Espera a que termine o cancélalo antes de lanzar otro.",
+      );
+      return;
+    }
+    marcarBusy(key, true);
     setError("");
     // Bloqueo optimista INMEDIATO (id temporal); se sustituye por el buildId
     // real cuando la API responde, o se revierte si el POST falla.
@@ -917,16 +980,37 @@ export function AppBuildsPanel({ appId, perms, project }: {
       // Package Android configurado en el dashboard → env var del build/promote.
       // Se pasa solo si tiene valor; el gradle/codemagic.yaml tienen fallback.
       const pkg = project?.androidPackage?.trim();
-      // Teléfono de quien lanza, para que el workflow avise por WhatsApp al
-      // terminar: un build tarda ~10 min y nadie se queda mirando la pestaña.
+      // Teléfono de quien lanza, para avisarle por WhatsApp cuando termine: un
+      // build tarda ~10 min y nadie se queda mirando la pestaña. Va por dos
+      // vías: la variable de entorno que usa el propio workflow, y el registro
+      // en Firestore que lee el sync — que es el que avisa aunque el build
+      // reviente antes de llegar a su paso de notificación.
       const telefono = appUser?.githubLogin ? (await getAllContributorPhones())[appUser.githubLogin] : undefined;
+      // Ya NO se inyecta `WA_PHONE`: el aviso lo manda el sync desde fuera del
+      // build. Si se siguiera pasando, los `codemagic.yaml` que aún notifican al
+      // final mandarían un segundo mensaje en cada build exitoso — y seguirían
+      // sin mandar nada en los que fallan, que es lo que se vino a arreglar.
       const mergedEnv: Record<string, string> = {
         ...(pkg ? { ANDROID_PACKAGE_NAME: pkg } : {}),
-        ...(telefono ? { WA_PHONE: telefono, WA_ACTOR: appUser?.githubLogin ?? "" } : {}),
         ...envVars,
       };
       const buildId = await startBuild(appId, workflowId, effectiveBranch, mergedEnv);
       setPendingWorkflows((p) => ({ ...p, [workflowId]: { id: buildId, t: Date.now() } }));
+      // Deja dicho a quién avisarle cuando termine. No se espera ni se muestra
+      // error: el build ya salió, y sin este registro el sync igual avisa al
+      // teléfono administrativo de la empresa.
+      if (project) {
+        void registerBuildForNotification({
+          buildId,
+          projectId: project.id,
+          appId,
+          workflowId,
+          branch: effectiveBranch,
+          actorLogin: appUser?.githubLogin,
+          actorPhone: telefono,
+          actorEmail: appUser?.email,
+        });
+      }
       await refresh();
     } catch (e) {
       setPendingWorkflows((p) => {
@@ -936,7 +1020,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
       });
       setError(e instanceof Error ? e.message : "Error al iniciar el build");
     } finally {
-      setBusy(null);
+      marcarBusy(key, false);
     }
   };
 
@@ -958,7 +1042,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
   };
 
   const doCancel = async (buildId: string) => {
-    setBusy(buildId);
+    marcarBusy(buildId, true);
     setError("");
     try {
       await cancelBuild(buildId);
@@ -966,7 +1050,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al cancelar el build");
     } finally {
-      setBusy(null);
+      marcarBusy(buildId, false);
     }
   };
 
@@ -1058,7 +1142,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
               headSha={headSha}
               deployActive={deployActive}
               perms={perms}
-              busy={busy}
+              estaBusy={estaBusy}
               pendingWorkflows={pendingWorkflows}
               onRequestStart={requestStart}
               simple={simple}
@@ -1100,7 +1184,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
                   avgMs={avgDurationByWorkflow.get(b.workflowId) ?? null}
                   appId={appId}
                   canCancel={perms.buildApp}
-                  busy={busy}
+                  estaBusy={estaBusy}
                   onCancel={(id) => requestCancel(id, wfName)}
                 />
               );
@@ -1114,7 +1198,13 @@ export function AppBuildsPanel({ appId, perms, project }: {
         {isRoot && project && (
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-dashed px-3 py-2">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Credenciales Android
+              Credenciales de esta app
+            </span>
+            {/* El por qué de que sean por app: la cuenta de tienda es de la
+                empresa dueña de cada app, no del dashboard. */}
+            <span className="w-full text-[10px] text-muted-foreground/70">
+              Cada app publica con su propia cuenta de tienda: estas credenciales son solo de este
+              proyecto y no se comparten con las demás apps del dashboard.
             </span>
             <span className="flex items-center gap-1">
               <span className="text-[10px] text-muted-foreground/70">
@@ -1134,7 +1224,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
             </span>
             <span className="flex items-center gap-1">
               <span className="text-[10px] text-muted-foreground/70">
-                Cuenta de servicio de Play:{" "}
+                Cuenta de servicio de Play de esta app:{" "}
                 {project.playCredentialsUploadedAt
                   ? `subida hace ${formatDistanceToNow(project.playCredentialsUploadedAt)}`
                   : "sin subir"}
@@ -1143,14 +1233,14 @@ export function AppBuildsPanel({ appId, perms, project }: {
                 type="button"
                 onClick={() => { setSaError(""); setSaOpen(true); }}
                 className="text-[10px] text-muted-foreground underline hover:text-foreground"
-                title="JSON del service account de Play Console — sin esto Codemagic no puede publicar en Google Play"
+                title="JSON del service account de Play Console de esta app — sin esto Codemagic no puede publicarla en Google Play"
               >
                 {project.playCredentialsUploadedAt ? "actualizar" : "subir"}
               </button>
             </span>
             {!project.playCredentialsUploadedAt && (
               <span className="text-[10px] text-amber-600 dark:text-amber-400">
-                Falta la cuenta de servicio: la publicación a Play fallará.
+                Falta la cuenta de servicio de esta app: su publicación a Play fallará.
               </span>
             )}
             {/* El mismo JSON tiene que quedar guardado para el sync, y eso es
@@ -1158,14 +1248,15 @@ export function AppBuildsPanel({ appId, perms, project }: {
                 faltaba, salvo leer el log del workflow. */}
             {isRoot && project.playCredentialsUploadedAt && !credsMeta?.playUpdatedAt && (
               <span className="text-[10px] text-amber-600 dark:text-amber-400">
-                La cuenta de servicio está en Codemagic pero no guardada para leer
-                las versiones de tienda: vuelve a subirla (recarga antes la página).
+                La cuenta de servicio está en Codemagic pero no guardada para leer las versiones
+                de tienda de esta app: vuelve a subir la de ESTA app (recarga antes la página).
               </span>
             )}
             {isRoot && credsMeta?.playUpdatedAt && (
               <span className="text-[10px] text-muted-foreground/70">
-                Versiones de tienda: leyendo Play desde hace{" "}
-                {formatDistanceToNow(credsMeta.playUpdatedAt)}
+                Service account de Play de esta app · guardado el{" "}
+                {formatBuildDate(credsMeta.playUpdatedAt)}
+                {credsMeta.playUpdatedBy ? ` por ${credsMeta.playUpdatedBy}` : ""}
               </span>
             )}
             {/* Llave de App Store Connect: solo la usa el sync que lee el estado
@@ -1173,16 +1264,17 @@ export function AppBuildsPanel({ appId, perms, project }: {
             {isRoot && project.iosBundleId && (
               <span className="flex items-center gap-1">
                 <span className="text-[10px] text-muted-foreground/70">
-                  Llave de App Store Connect:{" "}
+                  Llave de App Store Connect de esta app:{" "}
                   {credsMeta?.ascUpdatedAt
-                    ? `guardada hace ${formatDistanceToNow(credsMeta.ascUpdatedAt)}`
+                    ? `guardada el ${formatBuildDate(credsMeta.ascUpdatedAt)}` +
+                      (credsMeta.ascUpdatedBy ? ` por ${credsMeta.ascUpdatedBy}` : "")
                     : "sin guardar"}
                 </span>
                 <button
                   type="button"
                   onClick={() => { setAscError(""); setAscOpen(true); }}
                   className="text-[10px] text-muted-foreground underline hover:text-foreground"
-                  title="Key ID, Issuer ID y .p8 de la App Store Connect API — sin esto el dashboard no puede leer el estado en iOS"
+                  title="Key ID, Issuer ID y .p8 de la App Store Connect API de esta app — sin esto el dashboard no puede leer su estado en iOS"
                 >
                   {credsMeta?.ascUpdatedAt ? "actualizar" : "guardar"}
                 </button>
@@ -1190,7 +1282,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
             )}
             {isRoot && project.iosBundleId && !credsMeta?.ascUpdatedAt && (
               <span className="text-[10px] text-amber-600 dark:text-amber-400">
-                Sin la llave de App Store Connect no se puede mostrar la versión de iOS.
+                Sin la llave de App Store Connect de esta app no se puede mostrar su versión de iOS.
               </span>
             )}
           </div>
@@ -1481,12 +1573,12 @@ export function AppBuildsPanel({ appId, perms, project }: {
                   {info.isRunning && perms.buildApp && (
                     <button
                       type="button"
-                      disabled={busy === b._id}
+                      disabled={estaBusy(b._id)}
                       onClick={() => requestCancel(b._id, wfName || "build")}
                       className="flex items-center gap-1 text-destructive hover:opacity-80 disabled:opacity-50"
                       title="Cancelar build"
                     >
-                      {busy === b._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                      {estaBusy(b._id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
                     </button>
                   )}
                 </div>
@@ -1594,15 +1686,16 @@ export function AppBuildsPanel({ appId, perms, project }: {
             >
               <h3 className="flex items-center gap-2 text-base font-semibold">
                 <Upload className="h-4 w-4 text-lime-600" />
-                Cuenta de servicio de Google Play
+                Cuenta de servicio de Google Play de esta app
               </h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                Pega el JSON completo del service account (Play Console → Setup → API access).
-                Se guarda como la variable cifrada{" "}
+                Pega el JSON completo del service account de ESTA app (Play Console → Setup →
+                API access). Se guarda como la variable cifrada{" "}
                 <span className="font-mono text-[11px] text-foreground">{PLAY_CREDENTIALS_VAR}</span>{" "}
                 en el grupo <span className="font-mono text-[11px] text-foreground">android_signing_custom</span>,
                 que es de donde la lee el build. Ponerla en otro grupo es lo que produce el error
-                "Expecting value: line 1 column 1".
+                "Expecting value: line 1 column 1". Queda guardada solo para esta app: las demás
+                usan la cuenta de tienda de su propia empresa.
               </p>
               <textarea
                 className="mt-3 h-44 w-full rounded-md border bg-background px-3 py-2 font-mono text-[11px]"
@@ -1637,12 +1730,12 @@ export function AppBuildsPanel({ appId, perms, project }: {
             >
               <h3 className="flex items-center gap-2 text-base font-semibold">
                 <Upload className="h-4 w-4 text-sky-600" />
-                Llave de App Store Connect
+                Llave de App Store Connect de esta app
               </h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                De App Store Connect → Users and Access → Integrations → App Store Connect API.
-                Con permiso de lectura basta: solo se consulta el estado de la app (versión a la
-                venta, revisión y builds) para mostrarlo en el dashboard.
+                De la cuenta de App Store Connect de ESTA app → Users and Access → Integrations →
+                App Store Connect API. Con permiso de lectura basta: solo se consulta su estado
+                (versión a la venta, revisión y builds) para mostrarlo en el dashboard.
               </p>
               <div className="mt-3 grid gap-2">
                 <input

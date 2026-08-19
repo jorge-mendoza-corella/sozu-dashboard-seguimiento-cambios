@@ -15,6 +15,9 @@ export interface Project {
   order: number;
   createdBy: string;
   createdAt: unknown;
+  // Cliente (empresa/persona) dueño del proyecto. Sin él el proyecto no se le
+  // cobra a nadie: la configuración lo marca como "sin cliente".
+  clientId?: string;
   seeded?: boolean; // ya se sembraron los repos por defecto (no volver a auto-agregar)
   isApp?: boolean;  // marca el proyecto como una app móvil/app
   codemagicAppId?: string; // app de Codemagic vinculada (builds desde el dashboard)
@@ -26,7 +29,14 @@ export interface Project {
   approverEmail?: string; // usuario del dashboard que aprueba los PRs del proyecto (usa SU token de GitHub)
   notifyAuthors?: string[]; // logins de GitHub seleccionables como autor extra al crear PR (por proyecto)
   androidKeystoreUploadedAt?: string; // ISO — última subida del keystore Android vía dashboard
-  playCredentialsUploadedAt?: string; // ISO — última subida del service account de Play vía dashboard
+  playCredentialsUploadedAt?: string; // ISO — última subida del service account de Play a Codemagic
+  // Credenciales de tienda PROPIAS de este proyecto (los secretos viven en
+  // `projects/{id}/private/*`, que el navegador no puede leer). Aquí solo queda
+  // el rastro visible de cuándo y quién las dejó.
+  playCredentialsUpdatedAt?: unknown;
+  playCredentialsUpdatedBy?: string;
+  ascCredentialsUpdatedAt?: unknown;
+  ascCredentialsUpdatedBy?: string;
   androidPackage?: string; // applicationId de Android (ej. com.sozu.clientes_app); se inyecta al build de Codemagic
   iosBundleId?: string; // bundle id de iOS (ej. com.sozu.sozuClienteApp); para leer el estado en App Store Connect
   // "simple" (default): construir y publicar directo en la tienda, en un clic.
@@ -47,6 +57,9 @@ export interface MonitoredRepo {
   // repo como front: la card muestra el link, el botón de copiar y la versión
   // que sirve ese sitio (la lee el sync en `frontVersions/{id}`).
   frontUrl?: string;
+  // Precio mensual fijado a ESTE repo. Es lo primero que mira el cobro; si no
+  // está, se usa la tarifa del cliente y luego el default global.
+  monthlyPrice?: number;
 }
 
 const PROJECT_COLORS = [
@@ -82,6 +95,13 @@ export async function addProject(name: string, addedBy: string): Promise<string>
 
 export async function renameProject(id: string, name: string) {
   await updateDoc(doc(db, "projects", id), { name: name.trim() });
+}
+
+/** Asigna el proyecto a un cliente (null = dejarlo sin cliente, no se cobra). */
+export async function setProjectClient(id: string, clientId: string | null) {
+  await updateDoc(doc(db, "projects", id), {
+    clientId: clientId ?? deleteField(),
+  });
 }
 
 export async function setProjectIsApp(id: string, isApp: boolean) {
@@ -220,6 +240,19 @@ export async function setRepoFrontUrl(id: string, url: string | null) {
   const limpia = url?.trim();
   await updateDoc(doc(db, "repos", id), {
     frontUrl: limpia ? limpia.replace(/\/+$/, "") : deleteField(),
+  });
+}
+
+/**
+ * Precio mensual propio de este repo. null = quitarlo y volver a la tarifa del
+ * cliente (o al default global si el cliente tampoco tiene una).
+ */
+export async function setRepoMonthlyPrice(id: string, price: number | null) {
+  if (price !== null && (!Number.isFinite(price) || price < 0)) {
+    throw new Error("El precio del repo debe ser un número mayor o igual a 0.");
+  }
+  await updateDoc(doc(db, "repos", id), {
+    monthlyPrice: price === null ? deleteField() : price,
   });
 }
 

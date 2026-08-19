@@ -9,11 +9,12 @@ import { ActiveBuildChips } from "@/components/codemagic/ActiveBuildChips";
 import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { useProjects, useRepos, useAccessibleRepoIds } from "@/hooks/useProjectsRepos";
+import { useCanPublishApps, useClientScope } from "@/hooks/useClients";
 import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
 import { getFrontVersions } from "@/lib/frontVersions";
-import { SUPERUSER_EMAIL, resolvePermissions, getAllUsers } from "@/lib/firestoreUsers";
+import { SUPERUSER_EMAIL, resolvePermissions, getVisibleUsers } from "@/lib/firestoreUsers";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +45,7 @@ export function DashboardPage() {
   const isViewer = appUser?.role === "viewer";
   const isRoot = appUser?.email === SUPERUSER_EMAIL; // solo jorge gestiona proyectos/repos
   const perms = resolvePermissions(appUser); // permisos CI/CD granulares del usuario
+  const publishApps = useCanPublishApps(appUser); // publicar en tiendas: feature de pago del cliente
   const qc = useQueryClient();
 
   const { data: allProjects = [], isLoading: loadingProjects } = useProjects();
@@ -68,8 +70,12 @@ export function DashboardPage() {
   // firma las reviews. Solo los admins pueden leer la colección users (rules);
   // para viewers el catch deja el mapa vacío y se usa el fallback legacy.
   const { data: allUsers = [] } = useQuery({
-    queryKey: ["users-all"],
-    queryFn: () => getAllUsers().catch(() => []),
+    // `getVisibleUsers` respeta lo que las reglas dejan leer: todo para un admin
+    // global, los de sus empresas para un administrador de empresa. El catch se
+    // queda para los viewers, que no pueden leer la colección y se quedan con el
+    // fallback de tokens legacy en vez de ver la pantalla rota.
+    queryKey: ["users-visible", appUser?.email ?? "anon"],
+    queryFn: () => getVisibleUsers(appUser).catch(() => []),
     staleTime: 60 * 1000,
   });
   const approverByProject = useMemo(() => {
@@ -102,14 +108,10 @@ export function DashboardPage() {
     [allUsers],
   );
 
-  // Proyectos visibles según el acceso del usuario (root ve todos; legacy sin
-  // projectIds = todos por compatibilidad).
-  const projects = useMemo(() => {
-    if (isRoot) return allProjects;
-    const ids = appUser?.projectIds;
-    if (!ids || ids.length === 0) return allProjects;
-    return allProjects.filter((p) => ids.includes(p.id));
-  }, [allProjects, isRoot, appUser?.projectIds]);
+  // Proyectos visibles: el admin global ve todos, el administrador de empresa
+  // ve los de SUS empresas (aunque no estén en su `projectIds`: son suyos por
+  // pertenecer a la empresa) y el viewer sigue con el criterio de siempre.
+  const { visibleProjects: projects } = useClientScope(appUser);
 
   const allRepoRefs: RepoRef[] = useMemo(
     () => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })),
@@ -345,11 +347,25 @@ export function DashboardPage() {
             {projects.map((p) => {
               const projectRepos = reposByProject.get(p.id) ?? [];
               // Sub-pestaña "Deploy App": solo proyectos APP vinculados a Codemagic
-              // y usuarios con el permiso buildApp.
-              const showDeployTab = !!p.isApp && !!p.codemagicAppId && isCodemagicConfigured && perms.buildApp;
+              // y usuarios con el permiso buildApp. Además, publicar apps es un
+              // costo extra que el cliente puede tener o no contratado.
+              const publicacionContratada = publishApps.contratada(p.clientId);
+              const showDeployTab =
+                !!p.isApp && !!p.codemagicAppId && isCodemagicConfigured && perms.buildApp &&
+                publishApps.puedePublicar(p.clientId);
               const view = showDeployTab ? projectView : "repos";
               return (
                 <TabsContent key={p.id} value={p.id}>
+                  {/* App con Codemagic listo pero sin la publicación contratada:
+                      se dice por qué, en lugar de esconder la pestaña sin más.
+                      El aviso lo ve cualquiera (el root además sigue pudiendo
+                      publicar, para no quedarse sin operar su propia app). */}
+                  {p.isApp && !!p.codemagicAppId && !publicacionContratada && (
+                    <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+                      El cliente de este proyecto no tiene contratada la publicación de apps
+                      (es un costo extra).{isRoot ? " Actívala en Configuración → Precios y features." : ""}
+                    </p>
+                  )}
                   {showDeployTab && (
                     <div className="mb-4 flex gap-1 border-b">
                       {([

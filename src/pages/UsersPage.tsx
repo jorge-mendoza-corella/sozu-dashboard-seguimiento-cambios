@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   UserPlus, Trash2, Shield, Eye, Loader2, FolderGit2, ChevronDown, ChevronUp,
-  GitPullRequest, UserCheck, GitMerge, Rocket, Smartphone, KeyRound, ExternalLink,
+  GitPullRequest, UserCheck, GitMerge, Rocket, Smartphone, KeyRound, ExternalLink, Building2,
 } from "lucide-react";
 import { validateGithubToken } from "@/lib/githubAuth";
 import { Button } from "@/components/ui/button";
@@ -9,16 +10,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SelectNative } from "@/components/ui/select-native";
 import { useAuth } from "@/hooks/useAuth";
-import { useProjects } from "@/hooks/useProjectsRepos";
+import { useClients, useClientScope } from "@/hooks/useClients";
+import { clientDisplayName, type Client } from "@/lib/firestoreClients";
 import {
-  getAllUsers,
+  getVisibleUsers,
   addUser,
   removeUser,
   setUserRole,
+  setUserClients,
   setUserProjects,
   setUserPermissions,
   setUserGithubToken,
   resolvePermissions,
+  canAdminister,
+  ROLE_LABEL,
   NO_PERMISSIONS,
   SUPERUSER_EMAIL,
   type AppUser,
@@ -69,12 +74,63 @@ function PermissionChips({
   );
 }
 
+/** Icono por rol, para que la fila se lea de un vistazo. */
+const ROLE_ICON: Record<UserRole, React.ReactNode> = {
+  superuser: <Shield className="h-3 w-3 mr-1" />,
+  client_admin: <Building2 className="h-3 w-3 mr-1" />,
+  viewer: <Eye className="h-3 w-3 mr-1" />,
+};
+
+/** Multiselector de empresas (mismo lenguaje visual que los chips de permisos). */
+function ClientPills({
+  clients,
+  selected,
+  disabled,
+  onToggle,
+}: {
+  clients: Client[];
+  selected: (id: string) => boolean;
+  disabled?: boolean;
+  onToggle: (id: string) => void;
+}) {
+  if (clients.length === 0) {
+    return <p className="text-xs text-muted-foreground">No hay empresas disponibles.</p>;
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      {clients.map((c) => {
+        const on = selected(c.id);
+        return (
+          <button
+            key={c.id}
+            type="button"
+            disabled={disabled}
+            onClick={() => onToggle(c.id)}
+            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:opacity-50 ${
+              on
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: c.color }} />
+            {clientDisplayName(c)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function UsersPage() {
   const { appUser } = useAuth();
-  const { data: projects = [] } = useProjects();
-  const [users, setUsers] = useState<AppUser[]>([]);
+  const { data: allClients = [] } = useClients(appUser);
+  // El alcance manda: un administrador de empresa solo puede asignar SUS
+  // empresas y SUS proyectos, así que las listas de la pantalla salen de aquí
+  // (para un administrador global `visibleProjects` son todos los proyectos).
+  const { esAdminDeEmpresa, visibleClients, visibleProjects: projects } = useClientScope(appUser);
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState<UserRole>("viewer");
+  const [newClients, setNewClients] = useState<Set<string>>(new Set());
   const [newProjects, setNewProjects] = useState<Set<string>>(new Set());
   const [newPerms, setNewPerms] = useState<CicdPermissions>({ ...NO_PERMISSIONS });
   const [newToken, setNewToken] = useState("");
@@ -85,18 +141,40 @@ export function UsersPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const isRoot = appUser?.email === SUPERUSER_EMAIL;
+  // La lista depende de QUIÉN pregunta: un administrador de empresa solo ve a
+  // los suyos. Por eso el email va en la clave, para que dos cuentas distintas
+  // no se pisen la caché de react-query.
+  const { data: users = [], refetch } = useQuery({
+    queryKey: ["users-all", appUser?.email ?? ""],
+    queryFn: () => getVisibleUsers(appUser),
+    enabled: !!appUser,
+  });
 
-  useEffect(() => {
-    getAllUsers().then(setUsers);
-  }, []);
+  const refresh = async () => { await refetch(); };
 
-  const refresh = async () => setUsers(await getAllUsers());
+  /** Roles que este usuario puede asignar: el admin de empresa solo crea viewers. */
+  const rolesAsignables: UserRole[] = esAdminDeEmpresa
+    ? ["viewer"]
+    : ["superuser", "client_admin", "viewer"];
+
+  /** Nombre comercial de la empresa; si no está a la vista, al menos su id. */
+  const nombreEmpresa = (id: string) => {
+    const c = allClients.find((x) => x.id === id);
+    return c ? clientDisplayName(c) : id;
+  };
 
   const toggleNew = (id: string) =>
     setNewProjects((prev) => {
       const n = new Set(prev);
       n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+
+  const toggleNewClient = (id: string) =>
+    setNewClients((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
       return n;
     });
 
@@ -113,11 +191,12 @@ export function UsersPage() {
       }
       await addUser(
         newEmail.trim().toLowerCase(), appUser!.email, newRole, [...newProjects], newPerms,
-        newToken.trim(), v.login,
+        newToken.trim(), v.login, [...newClients],
       );
       await refresh();
       setNewEmail("");
       setNewRole("viewer");
+      setNewClients(new Set());
       setNewProjects(new Set());
       setNewPerms({ ...NO_PERMISSIONS });
       setNewToken("");
@@ -149,14 +228,44 @@ export function UsersPage() {
     }
   };
 
-  const handleRole = async (email: string, role: UserRole) => {
-    setBusy(email);
+  const handleRole = async (u: AppUser, role: UserRole) => {
+    setBusy(u.email);
     setError("");
     try {
-      await setUserRole(email, role);
+      // Un administrador de empresa sin empresas no administra nada: se manda
+      // lo que ya tiene y, si está vacío, la capa de datos lo rechaza con su
+      // propio mensaje (en vez de dejar un rol a medio configurar).
+      await setUserRole(u.email, role, role === "client_admin" ? u.clientIds ?? [] : undefined);
       await refresh();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error al cambiar el rol");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleToggleClient = async (u: AppUser, id: string) => {
+    const current = new Set(u.clientIds ?? []);
+    if (current.has(id)) current.delete(id);
+    else current.add(id);
+    setBusy(u.email);
+    setError("");
+    try {
+      // Dejar sin empresas a un administrador de empresa lo dejaría sin nada que
+      // administrar, y las reglas tampoco lo permiten: se avisa antes de pegar.
+      if (u.role === "client_admin" && current.size === 0) {
+        throw new Error("Un administrador de empresa necesita al menos una empresa asignada.");
+      }
+      // Y un administrador de empresa no puede dejar a nadie sin empresa: las
+      // reglas exigen que el usuario siga cayendo dentro de las suyas, así que
+      // vaciarle la lista sería expulsarlo de su propio alcance (y fallaría).
+      if (esAdminDeEmpresa && current.size === 0) {
+        throw new Error("Deja al menos una de tus empresas: si lo sacas de todas, dejas de poder administrarlo.");
+      }
+      await setUserClients(u.email, [...current]);
+      await refresh();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error al actualizar empresas");
     } finally {
       setBusy(null);
     }
@@ -209,10 +318,12 @@ export function UsersPage() {
     }
   };
 
-  if (!isRoot) {
+  // Entran el administrador global y el administrador de empresa; este último
+  // solo verá y tocará a los viewers de sus empresas.
+  if (!canAdminister(appUser)) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Solo jorge.mendoza@sozu.com puede gestionar accesos.</p>
+        <p className="text-muted-foreground">Solo un administrador puede gestionar accesos.</p>
       </div>
     );
   }
@@ -222,8 +333,13 @@ export function UsersPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Gestión de Accesos</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Administra quién accede al dashboard, su rol y a qué proyectos tiene acceso (mínimo 1).
+          Administra quién accede al dashboard, su rol, su empresa y a qué proyectos tiene acceso (mínimo 1).
         </p>
+        {esAdminDeEmpresa && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Como administrador de empresa solo puedes dar de alta y gestionar <span className="font-medium">viewers</span> de tus empresas.
+          </p>
+        )}
       </div>
 
       {/* Add user */}
@@ -242,13 +358,21 @@ export function UsersPage() {
               value={newEmail}
               onChange={(e) => setNewEmail(e.target.value)}
             />
-            <SelectNative className="w-44" value={newRole} onChange={(e) => setNewRole(e.target.value as UserRole)}>
-              <option value="viewer">Viewer</option>
-              <option value="superuser">Administrador</option>
+            <SelectNative className="w-56" value={newRole} onChange={(e) => setNewRole(e.target.value as UserRole)}>
+              {rolesAsignables.map((r) => (
+                <option key={r} value={r}>{ROLE_LABEL[r]}</option>
+              ))}
             </SelectNative>
             <Button
               onClick={handleAdd}
-              disabled={loading || !newEmail.trim() || newProjects.size === 0 || !newToken.trim()}
+              // Un administrador de empresa DEBE marcar empresa: las reglas
+              // exigen que el usuario nuevo caiga dentro de las suyas, y sin
+              // ella el alta moría con un permission-denied después de haber
+              // validado el PAT contra GitHub.
+              disabled={
+                loading || !newEmail.trim() || newProjects.size === 0 || !newToken.trim() ||
+                (esAdminDeEmpresa && newClients.size === 0)
+              }
               size="sm"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Agregar"}
@@ -279,6 +403,26 @@ export function UsersPage() {
               </a>{" "}
               (token classic con scope <code className="rounded bg-muted px-1">repo</code>). Se valida contra GitHub al agregar.
             </p>
+          </div>
+
+          {/* Empresas del nuevo usuario: un viewer también pertenece a una. */}
+          <div className="mt-3">
+            <p className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+              <Building2 className="h-3.5 w-3.5" />
+              {newRole === "client_admin"
+                ? "Empresas que administrará (al menos una)"
+                : "Empresas a las que pertenece"}
+            </p>
+            <ClientPills
+              clients={visibleClients}
+              selected={(id) => newClients.has(id)}
+              onToggle={toggleNewClient}
+            />
+            {newRole === "client_admin" && (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Mandará dentro de esas empresas: sus proyectos, sus repos, sus viewers y sus notificaciones. No verá otras empresas, ni tarifas, ni datos fiscales.
+              </p>
+            )}
           </div>
 
           {/* Proyectos del nuevo usuario */}
@@ -335,8 +479,32 @@ export function UsersPage() {
           {users.map((u) => {
             const isRoot = u.email === SUPERUSER_EMAIL;
             const isSelf = u.email === appUser?.email;
-            const editable = !isRoot && !isSelf;
+            // Las reglas de Firestore solo dejan a un administrador de empresa
+            // crear, editar y borrar VIEWERS de sus empresas. Se bloquea aquí
+            // para que no choque contra un permission-denied.
+            // Y las mismas reglas reservan la gestión global de accesos al
+            // superusuario RAÍZ: un administrador global entra y ve la lista,
+            // pero si intentara guardar recibiría un permission-denied. Se
+            // bloquea aquí con el motivo escrito, en vez de dejarlo chocar.
+            // Ojo con la asimetría: la LECTURA le deja ver a quien comparta UNA
+            // empresa con él (`hasAny`), pero la ESCRITURA exige que TODAS las
+            // empresas del usuario sean suyas (`hasOnly`). Un viewer que también
+            // pertenece a otra empresa se ve, pero no se puede tocar.
+            const empresasAjenas =
+              esAdminDeEmpresa &&
+              (u.clientIds ?? []).some((id) => !(appUser?.clientIds ?? []).includes(id));
+            const bloqueoAdminEmpresa =
+              esAdminDeEmpresa && u.role !== "viewer"
+                ? `Solo un administrador global puede gestionar a un ${ROLE_LABEL[u.role]}.`
+                : empresasAjenas
+                ? "Este usuario también pertenece a una empresa que no administras."
+                : !esAdminDeEmpresa && appUser?.email !== SUPERUSER_EMAIL
+                  ? "Solo el superusuario raíz puede gestionar los accesos globales."
+                  : null;
+            const editable = !isRoot && !isSelf && !bloqueoAdminEmpresa;
+            const soloLectura = !!bloqueoAdminEmpresa;
             const userProjects = u.projectIds ?? [];
+            const userClients = u.clientIds ?? [];
             const isOpen = expanded === u.email;
             return (
               <div key={u.email} className="border-b last:border-0">
@@ -354,6 +522,17 @@ export function UsersPage() {
                     <p className="text-xs text-muted-foreground">
                       {isRoot ? "Superusuario raíz · todos los proyectos" : `Invitado por ${u.addedBy}`}
                     </p>
+                    {/* Empresas a las que pertenece, por nombre (el id no le dice nada a nadie). */}
+                    {!isRoot && (
+                      <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                        <Building2 className="h-3 w-3 shrink-0" />
+                        {userClients.length === 0 ? (
+                          <span className="text-amber-600 dark:text-amber-400">Sin empresa asignada</span>
+                        ) : (
+                          <span className="truncate">{userClients.map(nombreEmpresa).join(" · ")}</span>
+                        )}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
@@ -371,25 +550,28 @@ export function UsersPage() {
 
                     {editable ? (
                       <SelectNative
-                        className="w-36"
+                        className="w-52"
                         value={u.role}
                         disabled={busy === u.email}
-                        onChange={(e) => handleRole(u.email, e.target.value as UserRole)}
+                        onChange={(e) => handleRole(u, e.target.value as UserRole)}
                       >
-                        <option value="viewer">Viewer</option>
-                        <option value="superuser">Administrador</option>
+                        {/* El rol actual siempre aparece, aunque quien edita no lo pueda asignar. */}
+                        {(rolesAsignables.includes(u.role) ? rolesAsignables : [...rolesAsignables, u.role]).map((r) => (
+                          <option key={r} value={r}>{ROLE_LABEL[r]}</option>
+                        ))}
                       </SelectNative>
                     ) : (
-                      <Badge variant={u.role === "superuser" ? "default" : "secondary"} className="shrink-0">
-                        {u.role === "superuser" ? (
-                          <><Shield className="h-3 w-3 mr-1" />Administrador</>
-                        ) : (
-                          <><Eye className="h-3 w-3 mr-1" />Viewer</>
-                        )}
+                      <Badge
+                        variant={u.role === "viewer" ? "secondary" : "default"}
+                        className="shrink-0"
+                        title={bloqueoAdminEmpresa ?? undefined}
+                      >
+                        {ROLE_ICON[u.role]}
+                        {ROLE_LABEL[u.role]}
                       </Badge>
                     )}
 
-                    {editable && (
+                    {editable ? (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -399,14 +581,40 @@ export function UsersPage() {
                       >
                         {busy === u.email ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                       </Button>
+                    ) : (
+                      // El botón deshabilitado no muestra tooltip (pointer-events: none),
+                      // así que el `title` va en el envoltorio.
+                      bloqueoAdminEmpresa && (
+                        <span title={bloqueoAdminEmpresa} className="inline-flex">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" disabled>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </span>
+                      )
                     )}
                   </div>
                 </div>
 
                 {/* Editor de proyectos */}
                 {isOpen && !isRoot && (
-                  <div className="bg-muted/30 px-4 py-3 sm:px-6">
-                    <p className="mb-2 text-xs text-muted-foreground">
+                  <div className="bg-muted/30 px-4 py-3 sm:px-6" title={bloqueoAdminEmpresa ?? undefined}>
+                    {bloqueoAdminEmpresa && (
+                      <p className="mb-3 text-[11px] text-amber-600 dark:text-amber-400">{bloqueoAdminEmpresa}</p>
+                    )}
+
+                    {/* Empresas del usuario */}
+                    <p className="mb-2 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                      <Building2 className="h-3.5 w-3.5" />
+                      {u.role === "client_admin" ? "Empresas que administra (al menos una)" : "Empresas a las que pertenece"}
+                    </p>
+                    <ClientPills
+                      clients={visibleClients}
+                      selected={(id) => userClients.includes(id)}
+                      disabled={busy === u.email || soloLectura}
+                      onToggle={(id) => handleToggleClient(u, id)}
+                    />
+
+                    <p className="mb-2 mt-4 text-xs text-muted-foreground">
                       Marca los proyectos a los que <span className="font-medium">{u.email}</span> tiene acceso (mínimo 1).
                     </p>
                     <div className="flex flex-wrap gap-2">
@@ -416,7 +624,7 @@ export function UsersPage() {
                           <button
                             key={p.id}
                             type="button"
-                            disabled={busy === u.email}
+                            disabled={busy === u.email || soloLectura}
                             onClick={() => handleToggleProject(u, p.id)}
                             className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:opacity-50 ${
                               on
@@ -442,12 +650,12 @@ export function UsersPage() {
                     </p>
                     <PermissionChips
                       value={resolvePermissions(u)}
-                      disabled={busy === u.email}
+                      disabled={busy === u.email || soloLectura}
                       onToggle={(key) => handleTogglePermission(u, key)}
                     />
                     {u.permissions === undefined && (
                       <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
-                        Sin permisos explícitos: por compatibilidad, {u.role === "superuser" ? "Administrador = todo permitido" : "Viewer = nada permitido"}. Al tocar un chip se fijan explícitos.
+                        Sin permisos explícitos: por compatibilidad, {u.role === "viewer" ? "Viewer = nada permitido" : `${ROLE_LABEL[u.role]} = todo permitido`}. Al tocar un chip se fijan explícitos.
                       </p>
                     )}
 
@@ -488,13 +696,15 @@ export function UsersPage() {
                             ✗ sin configurar — verá el bloqueo al entrar
                           </span>
                         )}
-                        <button
-                          type="button"
-                          className="text-muted-foreground underline hover:text-foreground"
-                          onClick={() => setTokenEdit({ email: u.email, value: "" })}
-                        >
-                          {u.githubToken ? "actualizar" : "registrar"}
-                        </button>
+                        {!soloLectura && (
+                          <button
+                            type="button"
+                            className="text-muted-foreground underline hover:text-foreground"
+                            onClick={() => setTokenEdit({ email: u.email, value: "" })}
+                          >
+                            {u.githubToken ? "actualizar" : "registrar"}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

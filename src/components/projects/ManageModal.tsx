@@ -15,7 +15,7 @@ import { useCodemagicApps } from "@/hooks/useCodemagic";
 import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
-import { getAllUsers, SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { getVisibleUsers, SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { checkRepoAccess } from "@/lib/githubAuth";
 import {
   getGoogleFirebaseToken, listFirebaseProjects, listProjectPackages,
@@ -30,8 +30,11 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
   const { data: cmApps = [] } = useCodemagicApps();
   // Candidatos a aprobador: usuarios con API key de GitHub registrada.
   const { data: allUsers = [] } = useQuery({
-    queryKey: ["users-all"],
-    queryFn: getAllUsers,
+    // Un administrador de empresa no puede barrer la colección de usuarios (las
+    // reglas se lo niegan): pide solo los de sus empresas, que son justo los
+    // candidatos a aprobador que le sirven.
+    queryKey: ["users-visible", appUser?.email ?? "anon"],
+    queryFn: () => getVisibleUsers(appUser),
     staleTime: 60 * 1000,
   });
   const approverCandidates = allUsers.filter((u) => !!u.githubToken && !!u.githubLogin);

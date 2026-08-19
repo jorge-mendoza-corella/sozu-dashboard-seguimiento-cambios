@@ -8,6 +8,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjects, useRepos, useAccessibleRepoIds } from "@/hooks/useProjectsRepos";
+import { useClients, useClientScope } from "@/hooks/useClients";
+import { clientDisplayName } from "@/lib/firestoreClients";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { hasFailingDeploy, type RepoRef, type RepoStatus } from "@/lib/github";
 import { SUPERUSER_EMAIL, resolvePermissions } from "@/lib/firestoreUsers";
@@ -30,8 +32,15 @@ export function ResumenPage() {
   const perms = resolvePermissions(appUser);
   const navigate = useNavigate();
 
-  const { data: allProjects = [], isLoading: loadingProjects } = useProjects();
+  const { isLoading: loadingProjects } = useProjects();
   const { data: allRepos = [], isLoading: loadingRepos } = useRepos();
+  // Nombre del cliente dueño de cada proyecto, para ubicarlo de un vistazo
+  // cuando el dashboard atiende a varias empresas.
+  const { data: clients = [] } = useClients(appUser);
+  const clientById = useMemo(
+    () => new Map(clients.map((c) => [c.id, clientDisplayName(c)])),
+    [clients],
+  );
 
   // Misma visibilidad que CI/CD: repos donde su cuenta GitHub es colaboradora.
   const { data: accessibleIds } = useAccessibleRepoIds(
@@ -46,13 +55,9 @@ export function ResumenPage() {
     return allRepos.filter((r) => ok.has(r.id));
   }, [allRepos, accessibleIds, isRoot, appUser?.githubToken]);
 
-  // Proyectos visibles según acceso del usuario.
-  const projects = useMemo(() => {
-    if (isRoot) return allProjects;
-    const ids = appUser?.projectIds;
-    if (!ids || ids.length === 0) return allProjects;
-    return allProjects.filter((p) => ids.includes(p.id));
-  }, [allProjects, isRoot, appUser?.projectIds]);
+  // Proyectos visibles: mismo criterio que CI/CD — el administrador de empresa
+  // ve los de sus empresas, el viewer los que tenga asignados.
+  const { visibleProjects: projects } = useClientScope(appUser);
 
   const repoRefs: RepoRef[] = useMemo(
     () => repos.map((r) => ({ owner: r.owner, repo: r.repo, label: r.label })),
@@ -164,6 +169,19 @@ export function ResumenPage() {
                     )}
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </div>
+
+                  {/* Cliente al que pertenece el proyecto. Sin cliente, el
+                      proyecto no se le cobra a nadie: se marca en ámbar. */}
+                  <p className={cn(
+                    "-mt-2 mb-3 truncate text-[11px]",
+                    p.clientId && clientById.has(p.clientId)
+                      ? "text-muted-foreground"
+                      : "text-amber-600 dark:text-amber-400",
+                  )}>
+                    {p.clientId && clientById.has(p.clientId)
+                      ? clientById.get(p.clientId)
+                      : "Sin cliente asignado"}
+                  </p>
 
                   {!mt || waitingData ? (
                     <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
