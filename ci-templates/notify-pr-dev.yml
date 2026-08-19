@@ -317,8 +317,14 @@ jobs:
             CODE="$(curl -s -o /tmp/n8n.out -w '%{http_code}' --max-time 20 \
               -X POST "$WA_WEBHOOK" -H "apikey: $WA_APIKEY" \
               -H "Content-Type: application/json" -d "$PAYLOAD" || echo 000)"
-            case "$CODE" in 2*) echo "Notificado el aprobador del proyecto"; exit 0 ;; esac
-            echo "Intento ${intento} falló (HTTP ${CODE}): $(cat /tmp/n8n.out)"
+            # n8n contesta 200 aunque el mensaje NO se haya entregado: acepta la
+            # peticion y mete el fallo de la instancia de WhatsApp en el cuerpo. Con
+            # solo mirar el codigo HTTP, esto cantaba "Notificado" mientras Evolution
+            # respondia "Connection Closed" —la sesion caida— y nadie recibia nada
+            # durante dias sin una sola alarma. El cuerpo tambien decide.
+            FALLA="$(jq -r 'if .datos_validos == false then (.error_validacion // "n8n rechazo los datos") elif (.error // null) != null then (.error | if type == "object" then (.message // tostring) else tostring end) else empty end' /tmp/n8n.out 2>/dev/null || true)"
+            case "$CODE" in 2*) if [ -z "$FALLA" ]; then echo "Notificado el aprobador del proyecto"; exit 0; fi ;; esac
+            echo "Intento ${intento} fallo (HTTP ${CODE}${FALLA:+ — n8n: ${FALLA:0:200}}): $(cat /tmp/n8n.out | head -c 300)"
             sleep $((intento * 5))
           done
           echo "::error::No se pudo notificar al aprobador tras 3 intentos"
@@ -367,8 +373,14 @@ jobs:
             CODE="$(curl -s -o /tmp/n8n.out -w '%{http_code}' --max-time 20 \
               -X POST "$WA_WEBHOOK" -H "apikey: $WA_APIKEY" \
               -H "Content-Type: application/json" -d "$PAYLOAD" || echo 000)"
-            case "$CODE" in 2*) echo "Notificado el aprobador del proyecto"; exit 0 ;; esac
-            echo "Intento ${intento} falló (HTTP ${CODE}): $(cat /tmp/n8n.out)"
+            # n8n contesta 200 aunque el mensaje NO se haya entregado: acepta la
+            # peticion y mete el fallo de la instancia de WhatsApp en el cuerpo. Con
+            # solo mirar el codigo HTTP, esto cantaba "Notificado" mientras Evolution
+            # respondia "Connection Closed" —la sesion caida— y nadie recibia nada
+            # durante dias sin una sola alarma. El cuerpo tambien decide.
+            FALLA="$(jq -r 'if .datos_validos == false then (.error_validacion // "n8n rechazo los datos") elif (.error // null) != null then (.error | if type == "object" then (.message // tostring) else tostring end) else empty end' /tmp/n8n.out 2>/dev/null || true)"
+            case "$CODE" in 2*) if [ -z "$FALLA" ]; then echo "Notificado el aprobador del proyecto"; exit 0; fi ;; esac
+            echo "Intento ${intento} fallo (HTTP ${CODE}${FALLA:+ — n8n: ${FALLA:0:200}}): $(cat /tmp/n8n.out | head -c 300)"
             sleep $((intento * 5))
           done
           echo "::error::No se pudo notificar al aprobador tras 3 intentos"
@@ -433,8 +445,14 @@ jobs:
               CODE="$(curl -s -o /tmp/n8n.out -w '%{http_code}' --max-time 20 \
                 -X POST "$WA_WEBHOOK" -H "apikey: $WA_APIKEY" \
                 -H "Content-Type: application/json" -d "$PAYLOAD" || echo 000)"
-              case "$CODE" in 2*) return 0 ;; esac
-              echo "Intento ${intento} falló (HTTP ${CODE}): $(cat /tmp/n8n.out)"
+              # n8n contesta 200 aunque el mensaje NO se haya entregado: acepta la
+              # peticion y mete el fallo de la instancia de WhatsApp en el cuerpo. Con
+              # solo mirar el codigo HTTP, esto cantaba "Notificado" mientras Evolution
+              # respondia "Connection Closed" —la sesion caida— y nadie recibia nada
+              # durante dias sin una sola alarma. El cuerpo tambien decide.
+              FALLA="$(jq -r 'if .datos_validos == false then (.error_validacion // "n8n rechazo los datos") elif (.error // null) != null then (.error | if type == "object" then (.message // tostring) else tostring end) else empty end' /tmp/n8n.out 2>/dev/null || true)"
+              case "$CODE" in 2*) if [ -z "$FALLA" ]; then return 0; fi ;; esac
+              echo "Intento ${intento} fallo (HTTP ${CODE}${FALLA:+ — n8n: ${FALLA:0:200}}): $(cat /tmp/n8n.out | head -c 300)"
               sleep $((intento * 5))
             done
             return 1

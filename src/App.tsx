@@ -18,15 +18,17 @@ import { NegocioPage } from "@/pages/NegocioPage";
 const queryClient = new QueryClient();
 
 function AppRoutes() {
-  const { status, appUser, logout } = useAuth();
+  const { status, appUser, realUser, logout } = useAuth();
   // El usuario acaba de registrar su API key en el gate (el doc de Firestore
   // ya se actualizó, pero appUser en memoria sigue sin token).
   const [tokenJustSaved, setTokenJustSaved] = useState(false);
 
-  // Activar el token de sesión de GitHub del usuario logueado.
+  // Token de GitHub de QUIEN ESTÁ SENTADO AQUÍ, nunca el del suplantado:
+  // "ver como" simula lo que alguien VE, y las escrituras se hacen de verdad —
+  // salir a GitHub como esa persona sería firmar sus PRs y merges con su cuenta.
   useEffect(() => {
-    setSessionGithubAuth(appUser?.githubToken ?? null, appUser?.githubLogin ?? null);
-  }, [appUser?.githubToken, appUser?.githubLogin]);
+    setSessionGithubAuth(realUser?.githubToken ?? null, realUser?.githubLogin ?? null);
+  }, [realUser?.githubToken, realUser?.githubLogin]);
 
   if (status === "loading") {
     return (
@@ -42,14 +44,21 @@ function AppRoutes() {
   // Contribuidores y Usuarios: solo el superusuario raíz (jorge.mendoza@sozu.com).
   // (Bloqueado también por URL directa.)
   const isRoot = isRootAdmin(appUser);
+  // Quién eres no cambia por estar viendo como alguien más: el gate y el guardado
+  // de la API key miran SIEMPRE al usuario real. Cuando miraban el perfil
+  // efectivo, el root impersonando a un usuario con rol de empresa dejaba de ser
+  // "root exento" y el gate le pedía una API key: la que registrara se guardaba
+  // en SU documento (la impersonación conserva el correo), y a partir de ahí el
+  // dashboard salía a GitHub con la cuenta de otra persona.
+  const isRootReal = isRootAdmin(realUser);
   const esAdminGlobal = isRoot || appUser?.role === "superuser";
   const puedeAdministrar = canAdminister(appUser);
 
   // Gate obligatorio: sin API key de GitHub no se puede usar nada (root exento).
-  if (appUser && !isRoot && !appUser.githubToken && !tokenJustSaved) {
+  if (realUser && !isRootReal && !realUser.githubToken && !tokenJustSaved) {
     return (
       <GithubTokenGate
-        email={appUser.email}
+        email={realUser.email}
         logout={logout}
         onUnlocked={() => setTokenJustSaved(true)}
       />

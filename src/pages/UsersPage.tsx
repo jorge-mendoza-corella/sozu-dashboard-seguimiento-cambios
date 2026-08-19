@@ -804,17 +804,24 @@ export function UsersPage() {
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
-                    {!isRoot && (
-                      <button
-                        onClick={() => setExpanded(isOpen ? null : u.email)}
-                        className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-                        title="Proyectos y permisos"
-                      >
-                        <FolderGit2 className="h-3.5 w-3.5" />
-                        {userProjects.length || proyectosUsuario.length} proyectos · permisos
-                        {isOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                      </button>
-                    )}
+                    <button
+                      onClick={() => setExpanded(isOpen ? null : u.email)}
+                      className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                      title={isRoot ? "API key de GitHub" : "Proyectos y permisos"}
+                    >
+                      {isRoot ? (
+                        <>
+                          <KeyRound className="h-3.5 w-3.5" />
+                          API key
+                        </>
+                      ) : (
+                        <>
+                          <FolderGit2 className="h-3.5 w-3.5" />
+                          {userProjects.length || proyectosUsuario.length} proyectos · permisos
+                        </>
+                      )}
+                      {isOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </button>
 
                     {/* Ver como esa persona: es la forma de reproducir un "yo no
                         veo nada" sin pedirle su contraseña. */}
@@ -877,13 +884,28 @@ export function UsersPage() {
                   </div>
                 </div>
 
-                {/* Editor de proyectos */}
-                {isOpen && !isRoot && (
+                {/* Editor de proyectos.
+                    La fila del root también se abre, pero SOLO con su API key:
+                    empresas, proyectos y permisos no le aplican (los tiene todos)
+                    y las reglas prohíben tocar su propio documento. Con la fila
+                    cerrada a cal y canto, la única forma de corregir su API key
+                    era la consola de Firestore — y con una key equivocada ahí, el
+                    dashboard salía a GitHub como otra persona sin salida por la
+                    interfaz. Esos tres campos sí los deja escribir la regla de
+                    "cada quien registra su propia API key". */}
+                {isOpen && (
                   <div className="bg-muted/30 px-4 py-3 sm:px-6" title={bloqueoAdminEmpresa ?? undefined}>
                     {bloqueoAdminEmpresa && (
                       <p className="mb-3 text-[11px] text-amber-600 dark:text-amber-400">{bloqueoAdminEmpresa}</p>
                     )}
+                    {isRoot && (
+                      <p className="mb-3 text-[11px] text-muted-foreground">
+                        El superusuario raíz tiene todas las empresas, proyectos y permisos; aquí solo se registra su API key de GitHub.
+                      </p>
+                    )}
 
+                    {!isRoot && (
+                      <>
                     {/* Empresas del usuario */}
                     <p className="mb-2 flex items-center gap-1 text-xs font-medium text-muted-foreground">
                       <Building2 className="h-3.5 w-3.5" />
@@ -962,8 +984,10 @@ export function UsersPage() {
                         Sin permisos explícitos: por compatibilidad, {u.role === "viewer" ? "Viewer = nada permitido" : `${ROLE_LABEL[u.role]} = todo permitido`}. Al tocar un chip se fijan explícitos.
                       </p>
                     )}
+                      </>
+                    )}
 
-                    {/* API key de GitHub (el root la puede registrar/actualizar) */}
+                    {/* API key de GitHub (cada quien la suya; el root también) */}
                     <p className="mb-2 mt-4 flex items-center gap-1 text-xs font-medium text-muted-foreground">
                       <KeyRound className="h-3.5 w-3.5" /> API key de GitHub
                     </p>
