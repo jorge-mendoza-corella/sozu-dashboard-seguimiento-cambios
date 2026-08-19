@@ -62,9 +62,14 @@ interface Props {
   selfLogin?: string | null;
   /** Logins seleccionables como autor extra al crear PR (configurados por proyecto). */
   notifyAuthors?: string[];
+  /**
+   * Nombre canónico si el repo ya se renombró en GitHub (lo detecta
+   * `useRepoRenames`). Con él la card avisa que el alta quedó con el nombre viejo.
+   */
+  renamedTo?: { owner: string; repo: string } | null;
 }
 
-export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontUrl, frontVersion = null, androidPackage, iosBundleId }: Props) {
+export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontUrl, frontVersion = null, androidPackage, iosBundleId, renamedTo = null }: Props) {
   // Sin el permiso viewOthers el usuario solo ve SUS ramas y PRs
   // (main/dev siempre visibles: son estado compartido del repo).
   const canViewOthers = perms.viewOthers || !selfLogin;
@@ -362,6 +367,23 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           </div>
         </div>
         {status.error && <p className="text-xs text-destructive mt-1">{status.error}</p>}
+        {/* Renombrado en GitHub: el alta del dashboard quedó con el nombre viejo.
+            Hoy GitHub redirige, pero si nadie lo actualiza el repo puede
+            desaparecer de las tarjetas sin dejar rastro de por qué. */}
+        {renamedTo && (
+          <div className="mt-1.5 flex">
+            <Badge
+              className="gap-1 border-amber-300 bg-amber-100 text-[10px] text-amber-800 dark:border-amber-700/50 dark:bg-amber-900/50 dark:text-amber-300"
+              title={`El dashboard lo tiene dado de alta como ${status.owner}/${status.repo}. Hasta actualizar el nombre en Gestionar → Repositorios, el dashboard puede dejar de verlo (GitHub redirige el nombre viejo, pero deja de hacerlo si alguien crea otro repo con ese nombre).`}
+            >
+              <AlertCircle className="h-2.5 w-2.5 shrink-0" />
+              renombrado en GitHub →{" "}
+              {renamedTo.owner.toLowerCase() === status.owner.toLowerCase()
+                ? renamedTo.repo
+                : `${renamedTo.owner}/${renamedTo.repo}`}
+            </Badge>
+          </div>
+        )}
         {/* Front del repo: link, copiar y versión servida (más tiendas si es app). */}
         {frontUrl && (
           <div className="mt-2">

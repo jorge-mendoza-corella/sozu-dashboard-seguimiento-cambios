@@ -51,12 +51,39 @@ export interface RepoAccessCheck {
   ok: boolean;
   /** Explicación accionable cuando ok=false. */
   reason?: string;
+  /**
+   * Nombre canónico del repo cuando el que se pidió ya NO es el suyo (alguien
+   * lo renombró en GitHub). Solo viene si difiere de lo pedido.
+   */
+  renamedTo?: { owner: string; repo: string };
+}
+
+/**
+ * Nombre real que devolvió GitHub, si no es el que se pidió. GitHub sigue los
+ * renombres: el GET al nombre viejo responde 200 pero con el `full_name` NUEVO.
+ * Comparación sin distinguir mayúsculas porque GitHub tampoco las distingue.
+ */
+function detectarRenombre(
+  fullName: unknown,
+  owner: string,
+  repo: string,
+): { owner: string; repo: string } | undefined {
+  if (typeof fullName !== "string") return undefined;
+  const [ownerReal, repoReal] = fullName.split("/");
+  if (!ownerReal || !repoReal) return undefined;
+  const igual =
+    ownerReal.toLowerCase() === owner.toLowerCase() &&
+    repoReal.toLowerCase() === repo.toLowerCase();
+  return igual ? undefined : { owner: ownerReal, repo: repoReal };
 }
 
 /**
  * ¿El token tiene acceso (push) al repo? Para validar aprobadores por proyecto.
  * OJO: en repos privados GitHub responde 404 (no 403) cuando la cuenta no es
  * colaboradora — se traduce a un mensaje accionable.
+ *
+ * De paso reporta el renombre: es el único lugar donde ya se le pregunta a
+ * GitHub por el repo, así que detectarlo aquí no cuesta ni una llamada extra.
  */
 export async function checkRepoAccess(token: string, owner: string, repo: string): Promise<RepoAccessCheck> {
   try {
@@ -76,13 +103,17 @@ export async function checkRepoAccess(token: string, owner: string, repo: string
       return { ok: false, reason: `GitHub respondió ${res.status}` };
     }
     const data = await res.json();
+    // El renombre viaja igual en las dos salidas: el repo existe y responde,
+    // solo cambió de nombre — eso hay que decirlo aunque el acceso no alcance.
+    const renamedTo = detectarRenombre(data.full_name, owner, repo);
     if (!data.permissions?.push) {
       return {
         ok: false,
         reason: "tiene acceso de SOLO LECTURA — súbele el rol a Write en GitHub: repo → Settings → Collaborators",
+        ...(renamedTo ? { renamedTo } : {}),
       };
     }
-    return { ok: true };
+    return { ok: true, ...(renamedTo ? { renamedTo } : {}) };
   } catch {
     return { ok: false, reason: "no se pudo contactar a GitHub" };
   }
