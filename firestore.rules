@@ -22,19 +22,25 @@ service cloud.firestore {
     function esSuperuser() {
       return request.auth != null && perfil().role == 'superuser';
     }
-    // Administrador de UNA empresa: manda dentro de sus clientes y de nadie más.
-    //
-    // Pertenecer no es administrar: `clientIds` dice de qué empresas es, y
-    // `adminClientIds` cuáles de esas puede tocar. Sin esa segunda lista
-    // administra todas las suyas, que es como funcionaba antes del campo.
+    // Administrador de UNA empresa: manda dentro de sus clientes —sus usuarios,
+    // sus proyectos, sus repos— y de nadie más.
     function administraCliente(clientId) {
-      let p = perfil();
       return request.auth != null
-        && p.role == 'client_admin'
-        && p.clientIds is list
-        && p.clientIds.hasAny([clientId])
-        && (!('adminClientIds' in p) || !(p.adminClientIds is list) || p.adminClientIds.size() == 0
-            || p.adminClientIds.hasAny([clientId]));
+        && perfil().role == 'client_admin'
+        && perfil().clientIds is list
+        && perfil().clientIds.hasAny([clientId]);
+    }
+
+    // Configurar es otra cosa que administrar: `configClientIds` dice de cuáles
+    // de sus empresas puede cambiar la marca y las notificaciones. Vacío =
+    // ninguna, y esa es la gracia — "entra a mirar, no a tocar" tiene que poder
+    // decirse. `adminClientIds` es el nombre viejo del campo, se sigue leyendo.
+    function configuraCliente(clientId) {
+      let p = perfil();
+      let lista = 'configClientIds' in p && p.configClientIds is list
+        ? p.configClientIds
+        : ('adminClientIds' in p && p.adminClientIds is list ? p.adminClientIds : []);
+      return administraCliente(clientId) && lista.hasAny([clientId]);
     }
     // Empresas que administra quien pide (lista vacía si no es admin de empresa).
     function misEmpresas() {
@@ -251,7 +257,7 @@ service cloud.firestore {
       // logo, color), y el admin global la de cualquiera. Solo esa llave del
       // documento —con `hasOnly` no se cuela de paso un cambio de estatus, de
       // features o de razón social— y con la forma validada.
-      allow update: if (administraCliente(id) || esSuperuser())
+      allow update: if (configuraCliente(id) || esSuperuser())
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['branding'])
         && marcaValida(request.resource.data);
 
@@ -269,7 +275,7 @@ service cloud.firestore {
         // El root toca todo lo del cliente. El administrador de empresa solo
         // sus notificaciones: precios y datos fiscales son del dueño del SaaS.
         allow write: if esRootVerificado()
-          || (administraCliente(id) && (docId == 'notifications' || docId == 'whatsappSecret'));
+          || (configuraCliente(id) && (docId == 'notifications' || docId == 'whatsappSecret'));
       }
     }
 

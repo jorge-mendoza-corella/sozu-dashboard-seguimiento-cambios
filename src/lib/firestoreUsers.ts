@@ -53,12 +53,18 @@ export interface AppUser {
    */
   clientIds?: string[];
   /**
-   * De esas empresas, cuáles ADMINISTRA. Vacío/undefined = administra todas las
-   * suyas, que es como funcionaba antes de existir este campo.
+   * De sus empresas, cuáles puede CONFIGURAR (marca y notificaciones).
    *
-   * Pertenecer y administrar son cosas distintas: alguien puede necesitar ver lo
-   * de Sozu y mandar solo en Vectis. Con un solo campo eso no se podía decir.
+   * Vacío = ninguna: las ve en solo lectura. Es explícito a propósito — "no
+   * configura nada" es un estado legítimo, y con un vacío que significara
+   * "todas" no había forma de expresarlo.
+   *
+   * Ojo: configurar no es administrar. Sus empresas (`clientIds`) siguen siendo
+   * las que administra en usuarios, proyectos y repos; esto acota solo la
+   * pantalla de Configuración.
    */
+  configClientIds?: string[];
+  /** @deprecated Nombre anterior de `configClientIds`; se sigue leyendo. */
   adminClientIds?: string[];
   projectIds?: string[]; // proyectos a los que tiene acceso (vacío/undefined = legacy: todos)
   /**
@@ -104,26 +110,25 @@ export const isRootAdmin = (user: AppUser | null) =>
 export function isAdminOfClient(user: AppUser | null, clientId: string | undefined): boolean {
   if (!user || !clientId) return false;
   if (user.role === "superuser") return true;
-  if (user.role !== "client_admin") return false;
-  const suyas = user.clientIds ?? [];
-  if (!suyas.includes(clientId)) return false;
-  const administra = user.adminClientIds ?? [];
-  // Sin la lista fina, administra todas las suyas: es el comportamiento previo y
-  // el que conserva a quien nunca bajó a ese detalle.
-  return administra.length === 0 || administra.includes(clientId);
+  return user.role === "client_admin" && (user.clientIds ?? []).includes(clientId);
 }
 
-/** Empresas que ADMINISTRA de verdad (subconjunto de las suyas). */
+/**
+ * Empresas cuya CONFIGURACIÓN puede editar (subconjunto de las suyas).
+ *
+ * Vacío significa ninguna, no todas: poder no configurar nada es un estado
+ * legítimo, y hacerlo significar "todas" lo volvía inexpresable.
+ */
 export function editableClientIds(user: AppUser | null): string[] {
   if (!user || user.role !== "client_admin") return [];
   const suyas = user.clientIds ?? [];
-  const administra = user.adminClientIds ?? [];
-  return administra.length === 0 ? suyas : suyas.filter((id) => administra.includes(id));
+  const configurables = user.configClientIds ?? user.adminClientIds ?? [];
+  return suyas.filter((id) => configurables.includes(id));
 }
 
-/** Guarda qué empresas administra, de entre las que ya tiene asignadas. */
-export async function setUserAdminClients(email: string, adminClientIds: string[]) {
-  await setDoc(doc(db, "users", email), { adminClientIds }, { merge: true });
+/** Guarda qué empresas puede configurar, de entre las que ya tiene asignadas. */
+export async function setUserConfigClients(email: string, configClientIds: string[]) {
+  await setDoc(doc(db, "users", email), { configClientIds }, { merge: true });
 }
 
 /** Empresas que administra. El root/superuser devuelve null = todas. */
