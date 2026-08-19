@@ -37,7 +37,7 @@ export interface ClientBranding {
 
 /** Marca del proveedor: la que ve el equipo interno y quien no tiene propia. */
 export const VENDOR_BRANDING: ClientBranding & { appName: string } = {
-  appName: "SOZU Tracker",
+  appName: "Yorch Tracker",
   tagline: "Seguimiento de cambios y despliegues",
 };
 

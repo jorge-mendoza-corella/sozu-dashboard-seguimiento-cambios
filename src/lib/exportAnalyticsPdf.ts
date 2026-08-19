@@ -2,6 +2,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { DailyMetrics, RepoMetrics } from "@/lib/github";
 import type { EntityMetrics } from "@/components/analytics/ContributorsAnalytics";
+import { VENDOR_BRANDING } from "./branding";
 export interface GroupDetail {
   name: string;
   members: string[];
@@ -52,7 +53,9 @@ export async function exportAnalyticsPdf(input: ExportInput): Promise<void> {
   doc.text("Reporte ejecutivo de contribuidores", margin, 34);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  doc.text(`SOZU Tracker · Generado ${stamp}`, margin, 52);
+  // El nombre sale de la marca del proveedor, no cableado: si cambia, cambia
+  // en todos lados a la vez.
+  doc.text(`${VENDOR_BRANDING.appName} · Generado ${stamp}`, margin, 52);
 
   let y = 92;
   doc.setTextColor(30, 41, 59);
