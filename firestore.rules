@@ -23,11 +23,18 @@ service cloud.firestore {
       return request.auth != null && perfil().role == 'superuser';
     }
     // Administrador de UNA empresa: manda dentro de sus clientes y de nadie más.
+    //
+    // Pertenecer no es administrar: `clientIds` dice de qué empresas es, y
+    // `adminClientIds` cuáles de esas puede tocar. Sin esa segunda lista
+    // administra todas las suyas, que es como funcionaba antes del campo.
     function administraCliente(clientId) {
+      let p = perfil();
       return request.auth != null
-        && perfil().role == 'client_admin'
-        && perfil().clientIds is list
-        && perfil().clientIds.hasAny([clientId]);
+        && p.role == 'client_admin'
+        && p.clientIds is list
+        && p.clientIds.hasAny([clientId])
+        && (!('adminClientIds' in p) || !(p.adminClientIds is list) || p.adminClientIds.size() == 0
+            || p.adminClientIds.hasAny([clientId]));
     }
     // Empresas que administra quien pide (lista vacía si no es admin de empresa).
     function misEmpresas() {

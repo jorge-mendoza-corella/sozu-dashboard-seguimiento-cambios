@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, MessageCircle, KeyRound, ShieldCheck, AlertTriangle, Building2 } from "lucide-react";
+import { Loader2, MessageCircle, KeyRound, ShieldCheck, AlertTriangle, Building2, Lock } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +29,15 @@ import {
 // Todo lo demás guarda al salir del campo (blur) o al picarle al pill: las
 // validaciones (webhook https, teléfono E.164, apikey completa) viven en la
 // capa de datos y aquí solo se pinta el error que lanzan.
+//
+// Pertenecer a una empresa y administrarla son cosas distintas: alguien puede
+// ver lo de Sozu y mandar solo en Vectis. Las empresas que el usuario ve pero no
+// administra SÍ se muestran, con sus valores, pero en solo lectura. No se
+// esconden a propósito: ver la configuración de una empresa a la que perteneces
+// es legítimo, y esconderla haría creer que está sin configurar —y a alguien
+// intentando configurarla dos veces—. Además `firestore.rules` rechazaría
+// cualquier escritura desde aquí, así que la interfaz tiene que evitar llegar
+// a ese error en vez de provocarlo.
 // ---------------------------------------------------------------------------
 
 const fechaLarga = (iso: string) =>
@@ -76,8 +85,16 @@ const loQueFalta = (efectiva: ResolvedWhatsapp): string[] => {
 export function NotificationsSection() {
   const { appUser } = useAuth();
   const qc = useQueryClient();
-  const { visibleClients } = useClientScope(appUser);
+  const { visibleClients, editableClientIds } = useClientScope(appUser);
   const { rows, isLoading } = useWhatsappByClient(appUser);
+
+  /** ¿Manda en esta empresa, o solo la ve? `null` = admin global: manda en todas. */
+  const puedeEditar = (clientId: string) =>
+    editableClientIds === null || editableClientIds.has(clientId);
+
+  /** Explicación del bloqueo, la misma en el badge y en cada control apagado. */
+  const MOTIVO_SOLO_LECTURA =
+    "Perteneces a esta empresa pero no la administras: puedes ver su configuración, no cambiarla. La administra alguien más.";
 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -125,6 +142,8 @@ export function NotificationsSection() {
     const key = `${campo}-${clientId}`;
     const meta = CAMPOS[campo];
     const actual = propia?.[campo] ?? "";
+    // El valor se sigue mostrando: lo que se apaga es poder cambiarlo.
+    const soloLectura = !puedeEditar(clientId);
     return (
       <label key={campo} className="block">
         <span className="text-[11px] font-medium text-muted-foreground">{meta.label}</span>
@@ -139,9 +158,9 @@ export function NotificationsSection() {
             autoCorrect="off"
             className="h-9 w-full rounded-md border bg-background px-2 font-mono text-xs"
             placeholder={meta.placeholder}
-            title={meta.ayuda}
+            title={soloLectura ? MOTIVO_SOLO_LECTURA : meta.ayuda}
             defaultValue={actual}
-            disabled={busy === key}
+            disabled={busy === key || soloLectura}
             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
             onBlur={(e) => {
               const v = e.target.value.trim();
@@ -208,6 +227,9 @@ export function NotificationsSection() {
           // prometer algo que no pasa. Apagar nunca se bloquea — el camino de
           // desactivar tiene que estar siempre abierto, incluso a medio llenar.
           const pillBloqueado = !efectiva.enabled && efectiva.incompleta;
+          // Empresa que ve pero no administra: la tarjeta se pinta completa y
+          // todo lo que escribe queda apagado.
+          const soloLectura = !puedeEditar(c.id);
 
           return (
             <Card key={c.id}>
@@ -215,6 +237,11 @@ export function NotificationsSection() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
                   <span className="text-sm font-semibold">{clientDisplayName(c)}</span>
+                  {soloLectura && (
+                    <Badge variant="outline" className="gap-1" title={MOTIVO_SOLO_LECTURA}>
+                      <Lock className="h-3 w-3" /> Solo lectura
+                    </Badge>
+                  )}
                   {efectiva.incompleta ? (
                     <Badge variant="destructive" className="gap-1">
                       <AlertTriangle className="h-3 w-3" /> Le falta: {faltaTexto}
@@ -256,12 +283,14 @@ export function NotificationsSection() {
                         // reconocer cuál está puesta sin poder reconstruirla.
                         placeholder={enmascarada ?? "apikey del webhook de n8n"}
                         title={
-                          enmascarada
-                            ? `Guardada: ${enmascarada}. Escribe una nueva para reemplazarla; la actual no se puede leer de vuelta.`
-                            : "Se escribe y ya: las reglas prohíben leerla desde el navegador, así que no se puede mostrar de vuelta."
+                          soloLectura
+                            ? MOTIVO_SOLO_LECTURA
+                            : enmascarada
+                              ? `Guardada: ${enmascarada}. Escribe una nueva para reemplazarla; la actual no se puede leer de vuelta.`
+                              : "Se escribe y ya: las reglas prohíben leerla desde el navegador, así que no se puede mostrar de vuelta."
                         }
                         value={apiKeyEnCaptura}
-                        disabled={busy === keyApiKey}
+                        disabled={busy === keyApiKey || soloLectura}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && apiKeyEnCaptura.trim()) guardarApiKey(c.id);
                         }}
@@ -280,13 +309,15 @@ export function NotificationsSection() {
                 <div className="mt-3">
                   <button
                     type="button"
-                    disabled={busy === keyEnabled || pillBloqueado}
+                    disabled={busy === keyEnabled || pillBloqueado || soloLectura}
                     title={
-                      efectiva.enabled
-                        ? "Recibe avisos — click para apagárselos"
-                        : pillBloqueado
-                          ? `No se puede prender: le falta ${faltaTexto}.`
-                          : "No recibe avisos — click para prendérselos"
+                      soloLectura
+                        ? MOTIVO_SOLO_LECTURA
+                        : efectiva.enabled
+                          ? "Recibe avisos — click para apagárselos"
+                          : pillBloqueado
+                            ? `No se puede prender: le falta ${faltaTexto}.`
+                            : "No recibe avisos — click para prendérselos"
                     }
                     onClick={() => guardarCliente(keyEnabled, c.id, { enabled: !efectiva.enabled })}
                     className={cn(
@@ -312,8 +343,12 @@ export function NotificationsSection() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={!apiKeyEnCaptura.trim() || busy === keyApiKey}
-                    title="Guarda la apikey capturada arriba en el doc privado de esta empresa."
+                    disabled={!apiKeyEnCaptura.trim() || busy === keyApiKey || soloLectura}
+                    title={
+                      soloLectura
+                        ? MOTIVO_SOLO_LECTURA
+                        : "Guarda la apikey capturada arriba en el doc privado de esta empresa."
+                    }
                     onClick={() => guardarApiKey(c.id)}
                   >
                     {busy === keyApiKey ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}

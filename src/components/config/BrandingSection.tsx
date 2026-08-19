@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Loader2, Palette, Building2, Globe, Upload, Trash2, RotateCcw, Send, ImageOff, Eye,
+  Loader2, Palette, Building2, Globe, Upload, Trash2, RotateCcw, Send, ImageOff, Eye, Lock,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,14 @@ import {
 // subir un archivo: una URL https, o el archivo mismo leído a data URI y
 // guardado en el doc. Lo segundo tiene tope (un doc de Firestore no pasa de
 // 1 MB), y por eso el tamaño se revisa aquí antes de intentar el guardado.
+//
+// Pertenecer a una empresa y administrarla son cosas distintas: alguien puede
+// ver lo de Sozu y mandar solo en Vectis. Las empresas que el usuario ve pero no
+// administra siguen apareciendo con su marca —y con su vista previa—, en solo
+// lectura. No se esconden: ver cómo está pintada una empresa a la que
+// perteneces es legítimo, y esconderla haría creer que no tiene marca propia.
+// `firestore.rules` (`administraCliente`) rechazaría el guardado de todos modos,
+// así que la pantalla apaga los controles en vez de dejar llegar al error.
 //
 // La vista previa aplica el color SOLO a su propio contenedor, pisando ahí las
 // variables de shadcn. Aplicarlo a toda la interfaz es trabajo de
@@ -104,8 +112,17 @@ type CampoImagen = keyof typeof IMAGENES;
 export function BrandingSection() {
   const { appUser } = useAuth();
   const qc = useQueryClient();
-  const { visibleClients } = useClientScope(appUser);
+  const { visibleClients, editableClientIds } = useClientScope(appUser);
   const { isLoading } = useClients(appUser);
+
+  /** ¿Manda en esta empresa, o solo la ve? `null` = admin global: manda en todas. */
+  const puedeEditar = (clientId: string) =>
+    editableClientIds === null || editableClientIds.has(clientId);
+
+  /** Explicación del bloqueo, la misma en el badge y en cada control apagado. */
+  const MOTIVO_SOLO_LECTURA =
+    "Perteneces a esta empresa pero no la administras: puedes ver su marca, no cambiarla. La administra alguien más.";
+
   // La marca por dominio la publica solo el root: es quien sabe qué dominio es
   // de qué empresa, y ese doc lo lee cualquiera sin sesión.
   const esRoot = isRootAdmin(appUser);
@@ -177,6 +194,8 @@ export function BrandingSection() {
   ) => {
     const key = `${campo}-${c.id}`;
     const actual = c.branding?.[campo] ?? "";
+    // El valor guardado se sigue viendo: lo que se apaga es poder cambiarlo.
+    const soloLectura = !puedeEditar(c.id);
     return (
       <label className="block">
         <span className="text-[11px] font-medium text-muted-foreground">
@@ -193,9 +212,9 @@ export function BrandingSection() {
             autoCorrect="off"
             className="h-9 w-full rounded-md border bg-background px-2 text-xs"
             placeholder={placeholder}
-            title={ayuda}
+            title={soloLectura ? MOTIVO_SOLO_LECTURA : ayuda}
             defaultValue={actual}
-            disabled={busy === key}
+            disabled={busy === key || soloLectura}
             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
             onBlur={(e) => {
               const v = e.target.value.trim();
@@ -218,6 +237,9 @@ export function BrandingSection() {
     const actual = c.branding?.[campo] ?? "";
     const ocupado = busy === key;
     const embebida = actual.startsWith("data:");
+    // La imagen guardada se sigue mostrando; lo que se apaga es cambiarla.
+    const soloLectura = !puedeEditar(c.id);
+    const bloqueado = ocupado || soloLectura;
 
     return (
       <div>
@@ -231,9 +253,13 @@ export function BrandingSection() {
             autoCorrect="off"
             className="h-9 min-w-0 flex-1 rounded-md border bg-background px-2 font-mono text-xs"
             placeholder="https://vectis.mx/logo.svg"
-            title={`${meta.ayuda} Pega una URL https:// o carga el archivo.`}
+            title={
+              soloLectura
+                ? MOTIVO_SOLO_LECTURA
+                : `${meta.ayuda} Pega una URL https:// o carga el archivo.`
+            }
             defaultValue={embebida ? "" : actual}
-            disabled={ocupado}
+            disabled={bloqueado}
             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
             onBlur={(e) => {
               const v = e.target.value.trim();
@@ -249,16 +275,20 @@ export function BrandingSection() {
           <label
             className={cn(
               "inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-accent",
-              ocupado && "pointer-events-none opacity-50",
+              bloqueado && "pointer-events-none opacity-50",
             )}
-            title="Carga un PNG, JPG, WebP o SVG desde tu computadora."
+            title={
+              soloLectura
+                ? MOTIVO_SOLO_LECTURA
+                : "Carga un PNG, JPG, WebP o SVG desde tu computadora."
+            }
           >
             <Upload className="h-3.5 w-3.5" /> Cargar archivo
             <input
               type="file"
               accept={TIPOS_IMAGEN}
               className="hidden"
-              disabled={ocupado}
+              disabled={bloqueado}
               onChange={(e) => {
                 const archivo = e.target.files?.[0];
                 // Se limpia el input para que volver a elegir el MISMO archivo
@@ -303,8 +333,12 @@ export function BrandingSection() {
               <Button
                 size="sm"
                 variant="outline"
-                disabled={ocupado}
-                title={`Quitar el ${meta.label.toLowerCase()} de esta empresa.`}
+                disabled={bloqueado}
+                title={
+                  soloLectura
+                    ? MOTIVO_SOLO_LECTURA
+                    : `Quitar el ${meta.label.toLowerCase()} de esta empresa.`
+                }
                 onClick={() => guardar(key, c.id, { [campo]: "" })}
               >
                 <Trash2 className="h-4 w-4" /> Quitar
@@ -327,6 +361,9 @@ export function BrandingSection() {
     const guardado = c.branding?.primaryColor ?? "";
     const enEdicion = hexEnEdicion(c);
     const pendiente = normalizaHex(enEdicion) !== guardado;
+    // El color guardado se sigue viendo (y tiñendo la vista previa): lo que se
+    // apaga es poder moverlo.
+    const soloLectura = !puedeEditar(c.id);
     return (
       <div>
         <span className="text-[11px] font-medium text-muted-foreground">Color de marca</span>
@@ -335,8 +372,10 @@ export function BrandingSection() {
             type="color"
             className="h-9 w-12 shrink-0 cursor-pointer rounded-md border bg-background p-1"
             value={hexParaPicker(enEdicion)}
-            disabled={busy === key}
-            title="Elige el color y sal del campo para guardarlo."
+            disabled={busy === key || soloLectura}
+            title={
+              soloLectura ? MOTIVO_SOLO_LECTURA : "Elige el color y sal del campo para guardarlo."
+            }
             onChange={(e) => setColor(c.id, e.target.value)}
             onBlur={(e) => guardarColor(c, e.target.value)}
           />
@@ -348,9 +387,13 @@ export function BrandingSection() {
             maxLength={7}
             className="h-9 w-28 rounded-md border bg-background px-2 font-mono text-xs"
             placeholder={COLOR_DEFAULT}
-            title="En hex, por ejemplo #0ea5e9. Vacío = el color por defecto."
+            title={
+              soloLectura
+                ? MOTIVO_SOLO_LECTURA
+                : "En hex, por ejemplo #0ea5e9. Vacío = el color por defecto."
+            }
             value={enEdicion}
-            disabled={busy === key}
+            disabled={busy === key || soloLectura}
             onChange={(e) => setColor(c.id, e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
             onBlur={(e) => guardarColor(c, e.target.value)}
@@ -360,8 +403,10 @@ export function BrandingSection() {
             <Button
               size="sm"
               variant="outline"
-              disabled={busy === key}
-              title="Vuelve al azul del tema para esta empresa."
+              disabled={busy === key || soloLectura}
+              title={
+                soloLectura ? MOTIVO_SOLO_LECTURA : "Vuelve al azul del tema para esta empresa."
+              }
               onClick={() => {
                 setColor(c.id, "");
                 guardar(key, c.id, { primaryColor: "" });
@@ -515,12 +560,20 @@ export function BrandingSection() {
         {visibleClients.map((c) => {
           const b = c.branding ?? {};
           const oculta = !!b.hideVendorBrand;
+          // Empresa que ve pero no administra: la tarjeta se pinta completa
+          // (marca, imágenes y vista previa) y todo lo que escribe queda apagado.
+          const soloLectura = !puedeEditar(c.id);
           return (
             <Card key={c.id}>
               <CardContent className="p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
                   <span className="text-sm font-semibold">{clientDisplayName(c)}</span>
+                  {soloLectura && (
+                    <Badge variant="outline" className="gap-1" title={MOTIVO_SOLO_LECTURA}>
+                      <Lock className="h-3 w-3" /> Solo lectura
+                    </Badge>
+                  )}
                   {b.appName?.trim() || b.logoUrl || b.primaryColor ? (
                     <Badge variant="success">Marca propia</Badge>
                   ) : (
@@ -563,11 +616,13 @@ export function BrandingSection() {
                 <div className="mt-3">
                   <button
                     type="button"
-                    disabled={busy === `firma-${c.id}`}
+                    disabled={busy === `firma-${c.id}` || soloLectura}
                     title={
-                      oculta
-                        ? "El pie no menciona al proveedor — click para volver a mostrarlo"
-                        : "El pie menciona al proveedor — click para ocultarlo"
+                      soloLectura
+                        ? MOTIVO_SOLO_LECTURA
+                        : oculta
+                          ? "El pie no menciona al proveedor — click para volver a mostrarlo"
+                          : "El pie menciona al proveedor — click para ocultarlo"
                     }
                     onClick={() => guardar(`firma-${c.id}`, c.id, { hideVendorBrand: !oculta })}
                     className={cn(

@@ -52,6 +52,14 @@ export interface AppUser {
    * empleado. Vacío = legacy, sin empresa asignada.
    */
   clientIds?: string[];
+  /**
+   * De esas empresas, cuáles ADMINISTRA. Vacío/undefined = administra todas las
+   * suyas, que es como funcionaba antes de existir este campo.
+   *
+   * Pertenecer y administrar son cosas distintas: alguien puede necesitar ver lo
+   * de Sozu y mandar solo en Vectis. Con un solo campo eso no se podía decir.
+   */
+  adminClientIds?: string[];
   projectIds?: string[]; // proyectos a los que tiene acceso (vacío/undefined = legacy: todos)
   /**
    * Repos a los que tiene acceso, dentro de esos proyectos. Vacío/undefined =
@@ -96,7 +104,26 @@ export const isRootAdmin = (user: AppUser | null) =>
 export function isAdminOfClient(user: AppUser | null, clientId: string | undefined): boolean {
   if (!user || !clientId) return false;
   if (user.role === "superuser") return true;
-  return user.role === "client_admin" && (user.clientIds ?? []).includes(clientId);
+  if (user.role !== "client_admin") return false;
+  const suyas = user.clientIds ?? [];
+  if (!suyas.includes(clientId)) return false;
+  const administra = user.adminClientIds ?? [];
+  // Sin la lista fina, administra todas las suyas: es el comportamiento previo y
+  // el que conserva a quien nunca bajó a ese detalle.
+  return administra.length === 0 || administra.includes(clientId);
+}
+
+/** Empresas que ADMINISTRA de verdad (subconjunto de las suyas). */
+export function editableClientIds(user: AppUser | null): string[] {
+  if (!user || user.role !== "client_admin") return [];
+  const suyas = user.clientIds ?? [];
+  const administra = user.adminClientIds ?? [];
+  return administra.length === 0 ? suyas : suyas.filter((id) => administra.includes(id));
+}
+
+/** Guarda qué empresas administra, de entre las que ya tiene asignadas. */
+export async function setUserAdminClients(email: string, adminClientIds: string[]) {
+  await setDoc(doc(db, "users", email), { adminClientIds }, { merge: true });
 }
 
 /** Empresas que administra. El root/superuser devuelve null = todas. */

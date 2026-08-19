@@ -69,6 +69,9 @@ export function applyImpersonation(
     role: suplantado.role,
     clientIds: suplantado.clientIds ?? [],
     projectIds: suplantado.projectIds ?? [],
+    // `repoIds` es parte de lo que ve, no de quién es: sin copiarlo, ver como
+    // alguien con un repo asignado mostraba los seis del proyecto.
+    repoIds: suplantado.repoIds ?? [],
     permissions: suplantado.permissions,
   };
 }
