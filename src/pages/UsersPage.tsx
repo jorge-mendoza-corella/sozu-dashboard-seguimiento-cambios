@@ -203,13 +203,23 @@ function ProjectRepoPicker({
                   type="button"
                   onClick={() => setAbierto(desplegado ? null : p.id)}
                   className="flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted"
-                  title="Elegir los repos de este proyecto"
+                  title={
+                    marcados.length === 0
+                      ? `Elegir los repos de ${p.name}. Sin ninguno marcado los ve todos (${suyos.length}).`
+                      : `Elegir los repos de ${p.name}: ${marcados.length} de ${suyos.length} marcados.`
+                  }
                 >
                   <GitBranch className="h-3 w-3" />
+                  {/* Sin nada marcado decía "todos los repos", y ahí no hay
+                      ninguno seleccionado: se leía como una selección hecha, y
+                      abrir la lista para encontrarla vacía desconcierta. El
+                      chip es el boton de abrir, así que dice eso; que "sin
+                      marcar = todos" lo explica la línea de adentro, junto a
+                      las casillas donde de verdad importa. */}
                   {suyos.length === 0
                     ? "sin repos"
                     : marcados.length === 0
-                      ? "todos los repos"
+                      ? "ver repos"
                       : `${marcados.length} de ${suyos.length} repos`}
                   {desplegado ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                 </button>
