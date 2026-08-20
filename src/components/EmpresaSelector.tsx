@@ -44,11 +44,20 @@ export function EmpresaSelector({ empresas, activa, onChange, totalProyectos, av
     <div className="mb-4 flex flex-wrap items-center gap-2">
       <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         <Building2 className="h-4 w-4" /> Empresa
+        <span className="font-normal normal-case tracking-normal opacity-70">(proyectos)</span>
       </span>
       <div className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-muted p-1">
-        <button type="button" className={opcion(activa === null)} onClick={() => onChange(null)}>
+        <button
+          type="button"
+          className={opcion(activa === null)}
+          onClick={() => onChange(null)}
+          title={`Ver todo: ${totalProyectos} proyecto${totalProyectos === 1 ? "" : "s"}`}
+        >
           Todas
-          <span className="text-[11px] opacity-60">{totalProyectos}</span>
+          {/* El número cuenta PROYECTOS, no repos: es el mismo eje que las
+              pestañas de abajo. Sin decirlo, se lee como "repos" y no cuadra con
+              el conteo de cada pestaña (Admin son 6 repos en 1 proyecto). */}
+          <span className="text-[11px] opacity-60" title="proyectos">{totalProyectos}</span>
         </button>
         {empresas.map((e) => (
           <button
@@ -56,15 +65,17 @@ export function EmpresaSelector({ empresas, activa, onChange, totalProyectos, av
             type="button"
             className={opcion(activa === e.id)}
             onClick={() => onChange(e.id)}
-            title={
-              avisos?.has(e.id)
-                ? `Ver solo lo de ${e.nombre} · ${avisos.get(e.id) ? "manda avisos de WhatsApp" : "NO manda avisos de WhatsApp"}`
-                : `Ver solo lo de ${e.nombre}`
-            }
+            title={[
+              `Ver solo lo de ${e.nombre}`,
+              `${e.proyectos} proyecto${e.proyectos === 1 ? "" : "s"}`,
+              ...(avisos?.has(e.id)
+                ? [avisos.get(e.id) ? "manda avisos de WhatsApp" : "NO manda avisos de WhatsApp"]
+                : []),
+            ].join(" · ")}
           >
             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: e.color }} />
             {e.nombre}
-            <span className="text-[11px] opacity-60">{e.proyectos}</span>
+            <span className="text-[11px] opacity-60" title="proyectos">{e.proyectos}</span>
             {avisos?.has(e.id) && (avisos.get(e.id)
               ? <MessageCircle className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
               : <MessageCircleOff className="h-3 w-3 text-muted-foreground" />)}
