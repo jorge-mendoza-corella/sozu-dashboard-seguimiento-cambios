@@ -3,10 +3,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Loader2, Plus, Building2, FolderGit2, GitBranch, Smartphone,
   AlertTriangle, Users, DollarSign, Unlink,
+  RotateCcw,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
+import { ChevronPlegar } from "./Collapsible";
+import { useAbiertos } from "@/hooks/useAbiertos";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useClientsBilling, useBillingSettings, useBillingOverview } from "@/hooks/useClients";
@@ -88,6 +91,11 @@ function RepoRow({
   const { price, source } = resolveRepoPrice(repo, client, settings);
   // Vacío = el repo no tiene precio propio y hereda (cliente → default global).
   const valorActual = typeof repo.monthlyPrice === "number" ? String(repo.monthlyPrice) : "";
+  const tienePropio = valorActual !== "";
+  // Cuánto se le cobraría SIN precio propio: es lo que va de placeholder, igual
+  // que la tarifa del cliente muestra el default en gris. La palabra "hereda"
+  // no decía cuánto, y para saberlo había que borrar el precio a ver qué salía.
+  const heredado = resolveRepoPrice({ ...repo, monthlyPrice: undefined }, client, settings);
 
   const guardarPrecio = (valor: string, input: HTMLInputElement) => {
     const limpio = valor.trim();
@@ -125,8 +133,12 @@ function RepoRow({
             step="1"
             inputMode="decimal"
             className="h-8 w-28 rounded border bg-background px-2 text-right text-sm"
-            placeholder="hereda"
-            title="Precio mensual de este repo. Vacío = hereda la tarifa del cliente o el default global."
+            placeholder={client ? formatMoney(heredado.price, currency) : "sin cliente"}
+            title={
+              client
+                ? `Precio mensual de este repo. Vacío = ${formatMoney(heredado.price, currency)}, que es ${ETIQUETA_ORIGEN[heredado.source]}.`
+                : "Este repo no se cobra: su proyecto no tiene cliente."
+            }
             defaultValue={valorActual}
             disabled={busy === `precio-${repo.id}`}
             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
@@ -147,6 +159,27 @@ function RepoRow({
               : "no se cobra"}
           </span>
         </div>
+        {/* Volver al default: escribir "vacío" en un type=number es un callejón
+            —borrar el campo y salir funciona, pero nadie lo adivina—, y un cero
+            tecleado NO es lo mismo que heredar: cero es gratis para siempre. */}
+        {tienePropio && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            title={
+              client
+                ? `Quitarle el precio propio: vuelve a ${formatMoney(heredado.price, currency)} (${ETIQUETA_ORIGEN[heredado.source]}).`
+                : "Quitarle el precio propio."
+            }
+            disabled={busy === `precio-${repo.id}`}
+            onClick={() =>
+              void run(`precio-${repo.id}`, () => setRepoMonthlyPrice(repo.id, null), refreshRepos)
+            }
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </Button>
+        )}
         {busy === `precio-${repo.id}` && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
       </div>
 
@@ -198,12 +231,24 @@ function ProjectBlock({
   refreshProjects, refreshRepos,
 }: ProjectBlockProps) {
   const propios = repos.filter((r) => r.projectId === project.id);
+  // Cada proyecto se pliega por su cuenta: la lista completa de una cartera de
+  // siete proyectos y trece repos no cabe en pantalla, y el precio de un repo se
+  // toca de uno en uno.
+  const [abierto, setAbierto] = useState(false);
 
   return (
     <div className="rounded-md border bg-muted/20 px-3 py-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: project.color }} />
-        <span className="text-sm font-medium">{project.name}</span>
+        <button
+          type="button"
+          className="flex items-center gap-2 text-left"
+          title={abierto ? `Contraer ${project.name}` : `Ver los repos de ${project.name}`}
+          onClick={() => setAbierto((v) => !v)}
+        >
+          <ChevronPlegar abierto={abierto} />
+          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: project.color }} />
+          <span className="text-sm font-medium">{project.name}</span>
+        </button>
         {project.isApp && (
           <span className="flex items-center gap-1 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
             <Smartphone className="h-3 w-3" /> APP
@@ -236,7 +281,7 @@ function ProjectBlock({
       </div>
 
       {/* Repos del proyecto: lo que de verdad se cobra. */}
-      <div className="mt-2 space-y-1.5 pl-4">
+      <div className={cn("mt-2 space-y-1.5 pl-4", !abierto && "hidden")}>
         {propios.length === 0 ? (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <GitBranch className="h-3.5 w-3.5" /> Este proyecto todavía no tiene repositorios: no genera cobro.
@@ -279,6 +324,10 @@ export function ProjectAssignmentSection() {
   const [error, setError] = useState("");
   // Cliente sobre el que está abierto el input de "nuevo proyecto".
   const [nuevoPara, setNuevoPara] = useState<string | null>(null);
+  // Qué clientes muestran sus proyectos. Cerrado por defecto: la tarjeta ya dice
+  // cuántos proyectos y repos tiene y cuánto suma al mes, que es lo que se viene
+  // a mirar; abrir es para mover un repo o tocarle el precio.
+  const { abiertos: clientesAbiertos, alternar: alternarCliente } = useAbiertos();
   const [nuevoNombre, setNuevoNombre] = useState("");
 
   const refreshProjects = () => qc.invalidateQueries({ queryKey: ["projects"] });
@@ -427,22 +476,32 @@ export function ProjectAssignmentSection() {
             0,
           );
 
+          const abierta = clientesAbiertos.has(c.id);
+
           return (
             <Card key={c.id}>
               <CardContent className="p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
-                  <h3 className="text-sm font-bold">{clientDisplayName(c)}</h3>
-                  <span className="text-xs text-muted-foreground">
-                    {plural(propios.length, "proyecto", "proyectos")} · {plural(reposDelCliente.length, "repo", "repos")}
-                  </span>
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 text-left"
+                    title={abierta ? `Contraer ${clientDisplayName(c)}` : `Ver los proyectos de ${clientDisplayName(c)}`}
+                    onClick={() => alternarCliente(c.id)}
+                  >
+                    <ChevronPlegar abierto={abierta} />
+                    <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
+                    <h3 className="text-sm font-bold">{clientDisplayName(c)}</h3>
+                    <span className="text-xs text-muted-foreground">
+                      {plural(propios.length, "proyecto", "proyectos")} · {plural(reposDelCliente.length, "repo", "repos")}
+                    </span>
+                  </button>
                   <span className="ml-auto text-sm font-semibold">
                     {formatMoney(subtotal, currency)}
                     <span className="ml-1 text-[11px] font-normal text-muted-foreground">/ mes en repos</span>
                   </span>
                 </div>
 
-                <div className="mt-3 space-y-2">
+                <div className={cn("mt-3 space-y-2", !abierta && "hidden")}>
                   {propios.length === 0 ? (
                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <FolderGit2 className="h-3.5 w-3.5" /> Este cliente todavía no tiene proyectos asignados.
@@ -469,7 +528,7 @@ export function ProjectAssignmentSection() {
                 </div>
 
                 {/* Crear un proyecto ya dentro de este cliente (sin reasignar después). */}
-                <div className="mt-2">
+                <div className={cn("mt-2", !abierta && "hidden")}>
                   {nuevoPara === c.id ? (
                     <div className="flex gap-2">
                       <input

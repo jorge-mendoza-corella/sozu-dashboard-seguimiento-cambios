@@ -13,6 +13,7 @@ import { useCanPublishApps, useClientScope, useClients, reposAsignadosAlUsuario 
 import { clientDisplayName } from "@/lib/firestoreClients";
 import { EmpresaSelector } from "@/components/EmpresaSelector";
 import { useEmpresaActiva } from "@/hooks/useEmpresaActiva";
+import { useAvisosPorEmpresa } from "@/hooks/useNotifications";
 import { empresasDeProyectos } from "@/lib/empresas";
 import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
@@ -143,6 +144,10 @@ export function DashboardPage() {
   // la primera decisión que se toma aquí: sin esto hay que leer siete pestañas
   // mezcladas para encontrar la de un cliente.
   const { empresa: empresaActiva, elegir: setEmpresaActiva } = useEmpresaActiva();
+  // Si cada empresa manda avisos de WhatsApp, para el badge del selector. Viene
+  // vacío para quien no puede leer esa configuración, y entonces no se pinta.
+  const avisosPorEmpresa = useAvisosPorEmpresa(appUser);
+
   const empresas = useMemo(
     () => empresasDeProyectos(todosLosProyectos, clients),
     [todosLosProyectos, clients],
@@ -364,6 +369,7 @@ export function DashboardPage() {
             activa={empresaActiva}
             onChange={setEmpresaActiva}
             totalProyectos={todosLosProyectos.length}
+            avisos={avisosPorEmpresa}
           />
           {projects.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">

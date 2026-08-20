@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   UserPlus, Trash2, Shield, Eye, Loader2, FolderGit2, ChevronDown, ChevronUp, GitBranch,
   GitPullRequest, UserCheck, GitMerge, Rocket, Smartphone, KeyRound, ExternalLink, Building2, Eye as EyeIcon,
+  Search, X,
 } from "lucide-react";
 import { validateGithubToken } from "@/lib/githubAuth";
 import { Button } from "@/components/ui/button";
@@ -284,6 +285,10 @@ export function UsersPage() {
   const [newToken, setNewToken] = useState("");
   // Edición de la API key de un usuario existente (solo root)
   const [tokenEdit, setTokenEdit] = useState<{ email: string; value: string } | null>(null);
+  // Filtro de la lista. Es un filtro sobre lo que YA se puede ver: la consulta
+  // sigue trayendo solo a la gente de las empresas que administras, así que
+  // buscar no puede destapar a nadie de otra empresa.
+  const [filtro, setFiltro] = useState("");
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -301,25 +306,52 @@ export function UsersPage() {
   const refresh = async () => { await refetch(); };
 
   /**
-   * Roles asignables. `superuser` no está: el administrador global es uno solo
-   * —el superusuario raíz— y repartir ese rol es repartir el servicio entero.
-   * Quien ya lo tenga lo sigue mostrando, para poder bajarlo a otro rol.
+   * Roles asignables. El administrador global reparte TODOS, incluido el suyo:
+   * el servicio no puede depender de una sola cuenta —si esa persona se queda
+   * fuera, nadie más puede dar de alta a nadie—. Lo que sigue siendo único es el
+   * superusuario RAÍZ: su documento no lo toca nadie, ni él mismo.
+   * Un administrador de empresa solo reparte los roles operativos.
    */
   const rolesAsignables: UserRole[] = esAdminDeEmpresa
     ? ["developer", "viewer"]
-    : ["client_admin", "developer", "viewer"];
+    : ["superuser", "client_admin", "developer", "viewer"];
 
   // Rol que se enviará al dar de alta: "Desarrollador" viene preseleccionado
   // porque es el alta habitual. Un administrador de empresa reparte los roles
   // operativos —desarrollador y viewer— y nunca otro administrador, así el
   // `select` y lo que se guarda no pueden contradecirse.
-  const rolAlta: UserRole = rolesAsignables.includes(newRole) ? newRole : rolesAsignables[0];
+  // Nunca `rolesAsignables[0]`: para el admin global ese primero es ahora
+  // "Administrador global", y el alta por descuido repartiría el servicio.
+  const rolAlta: UserRole = rolesAsignables.includes(newRole)
+    ? newRole
+    : rolesAsignables.includes("developer") ? "developer" : rolesAsignables[0];
 
   /** Nombre comercial de la empresa; si no está a la vista, al menos su id. */
   const nombreEmpresa = (id: string) => {
     const c = allClients.find((x) => x.id === id);
     return c ? clientDisplayName(c) : id;
   };
+
+  /**
+   * La lista, filtrada por el buscador. Se filtra sobre lo que la consulta YA
+   * devolvió —la gente de las empresas que administras—, así que buscar no
+   * destapa a nadie de otra empresa: para el administrador global es todo, para
+   * el de empresa son los suyos.
+   *
+   * Se busca por correo, cuenta de GitHub, rol y nombre de empresa: son las
+   * cuatro cosas con las que uno se acuerda de alguien.
+   */
+  const usuariosFiltrados = useMemo(() => {
+    const q = filtro.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter((u) =>
+      u.email.toLowerCase().includes(q)
+      || (u.githubLogin ?? "").toLowerCase().includes(q)
+      || ROLE_LABEL[u.role].toLowerCase().includes(q)
+      || (u.clientIds ?? []).some((id) => nombreEmpresa(id).toLowerCase().includes(q)),
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users, filtro, allClients]);
 
   /** Proyectos de esas empresas, siempre dentro de lo que el administrador ve. */
   const proyectosDe = (clientIds: string[]) =>
@@ -726,7 +758,32 @@ export function UsersPage() {
       {/* User list */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Usuarios con acceso ({users.length})</CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle className="text-base">
+              Usuarios con acceso ({usuariosFiltrados.length}
+              {filtro.trim() && usuariosFiltrados.length !== users.length ? ` de ${users.length}` : ""})
+            </CardTitle>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                className="h-8 w-64 rounded-md border bg-background pl-7 pr-7 text-xs"
+                placeholder="Buscar por correo, cuenta, rol o empresa"
+                value={filtro}
+                onChange={(e) => setFiltro(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") setFiltro(""); }}
+              />
+              {filtro && (
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  title="Limpiar la búsqueda"
+                  onClick={() => setFiltro("")}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
           {/* Un fallo al listar se veía como "(0)": parecía que no había nadie,
               cuando en realidad la consulta no se pudo hacer. */}
           {errorLista != null && (
@@ -736,7 +793,12 @@ export function UsersPage() {
           )}
         </CardHeader>
         <CardContent className="p-0">
-          {users.map((u) => {
+          {usuariosFiltrados.length === 0 && users.length > 0 && (
+            <p className="px-6 py-4 text-xs text-muted-foreground">
+              Nadie coincide con “{filtro.trim()}”.
+            </p>
+          )}
+          {usuariosFiltrados.map((u) => {
             const isRoot = u.email === SUPERUSER_EMAIL;
             const isSelf = u.email === appUser?.email;
             // Las reglas de Firestore solo dejan a un administrador de empresa

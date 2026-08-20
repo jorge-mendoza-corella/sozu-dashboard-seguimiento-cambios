@@ -19,6 +19,8 @@ import {
   addProject, renameProject, removeProject, setProjectClient, setProjectIsApp,
 } from "@/lib/firestoreProjects";
 import { ClientFormModal } from "./ClientFormModal";
+import { ChevronPlegar } from "./Collapsible";
+import { useAbiertos } from "@/hooks/useAbiertos";
 
 const STATUS_LABEL: Record<ClientStatus, string> = {
   activo: "Activo",
@@ -49,6 +51,10 @@ export function ClientsSection() {
   const [formFor, setFormFor] = useState<{ id: string | null } | null>(null);
   // Cliente cuyo desplegable de proyectos está abierto (solo uno a la vez).
   const [abierto, setAbierto] = useState<string | null>(null);
+  // Y, dentro, qué proyectos muestran sus repos. Varios a la vez: comparar qué
+  // repo quedó en qué proyecto era justo lo que había que salir a buscar a la
+  // otra pestaña.
+  const { abiertos: reposAbiertos, alternar: alternarRepos } = useAbiertos();
   // Proyecto con el nombre en edición en línea, y el borrador de ese nombre.
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const [nuevoNombre, setNuevoNombre] = useState("");
@@ -252,10 +258,8 @@ export function ClientsSection() {
                       const borrador = editing && editing.id === p.id ? editing.name : null;
                       const esApp = p.isApp === true;
                       return (
-                        <div
-                          key={p.id}
-                          className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/20 px-3 py-2"
-                        >
+                        <div key={p.id} className="rounded-md border bg-muted/20">
+                          <div className="flex flex-wrap items-center gap-2 px-3 py-2">
                           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
                           {borrador !== null ? (
                             <input
@@ -271,9 +275,23 @@ export function ClientsSection() {
                           ) : (
                             <span className="min-w-0 flex-1 truncate text-sm font-medium">{p.name}</span>
                           )}
-                          <span className="text-xs text-muted-foreground">
-                            {nRepos} repo{nRepos === 1 ? "" : "s"}
-                          </span>
+                          {nRepos === 0 ? (
+                            <span className="text-xs text-muted-foreground">sin repos</span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                              title={
+                                reposAbiertos.has(p.id)
+                                  ? `Ocultar los repos de ${p.name}`
+                                  : `Ver los repos de ${p.name}`
+                              }
+                              onClick={() => alternarRepos(p.id)}
+                            >
+                              <ChevronPlegar abierto={reposAbiertos.has(p.id)} className="h-3.5 w-3.5" />
+                              {nRepos} repo{nRepos === 1 ? "" : "s"}
+                            </button>
+                          )}
 
                           {/* Toggle APP */}
                           <button
@@ -345,6 +363,32 @@ export function ClientsSection() {
                               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                               : <Trash2 className="h-3.5 w-3.5" />}
                           </Button>
+                          </div>
+
+                          {/* Los repos, de solo lectura: aquí se ve qué hay en
+                              cada proyecto; moverlos y ponerles precio sigue en
+                              "Proyectos y repos", que es la misma estructura
+                              vista desde el otro lado. */}
+                          {reposAbiertos.has(p.id) && (
+                            <ul className="space-y-1 border-t px-3 py-2">
+                              {repos
+                                .filter((r) => r.projectId === p.id)
+                                .map((r) => (
+                                  <li key={r.id} className="flex flex-wrap items-center gap-2 text-xs">
+                                    <span className="font-medium">{r.label || r.repo}</span>
+                                    <a
+                                      className="font-mono text-[11px] text-muted-foreground underline decoration-dotted hover:text-foreground"
+                                      href={`https://github.com/${r.owner}/${r.repo}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      title="Abrir en GitHub"
+                                    >
+                                      {r.owner}/{r.repo}
+                                    </a>
+                                  </li>
+                                ))}
+                            </ul>
+                          )}
                         </div>
                       );
                     })

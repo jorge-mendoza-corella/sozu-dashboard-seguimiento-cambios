@@ -1,4 +1,4 @@
-import { Building2 } from "lucide-react";
+import { Building2, MessageCircle, MessageCircleOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { EmpresaOption } from "@/lib/empresas";
 
@@ -17,9 +17,16 @@ interface Props {
   activa: string | null;
   onChange: (id: string | null) => void;
   totalProyectos: number;
+  /**
+   * `clientId → manda avisos de WhatsApp`. Vacío = quien mira no puede leer esa
+   * configuración, y entonces no se pinta nada: un badge "apagada" que en
+   * realidad significa "no tengo permiso de saberlo" haría perseguir un
+   * problema que no existe.
+   */
+  avisos?: Map<string, boolean>;
 }
 
-export function EmpresaSelector({ empresas, activa, onChange, totalProyectos }: Props) {
+export function EmpresaSelector({ empresas, activa, onChange, totalProyectos, avisos }: Props) {
   if (empresas.length < 2) return null;
 
   // Control segmentado: es UN eje con opciones excluyentes, no una lista de
@@ -49,11 +56,18 @@ export function EmpresaSelector({ empresas, activa, onChange, totalProyectos }: 
             type="button"
             className={opcion(activa === e.id)}
             onClick={() => onChange(e.id)}
-            title={`Ver solo lo de ${e.nombre}`}
+            title={
+              avisos?.has(e.id)
+                ? `Ver solo lo de ${e.nombre} · ${avisos.get(e.id) ? "manda avisos de WhatsApp" : "NO manda avisos de WhatsApp"}`
+                : `Ver solo lo de ${e.nombre}`
+            }
           >
             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: e.color }} />
             {e.nombre}
             <span className="text-[11px] opacity-60">{e.proyectos}</span>
+            {avisos?.has(e.id) && (avisos.get(e.id)
+              ? <MessageCircle className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+              : <MessageCircleOff className="h-3 w-3 text-muted-foreground" />)}
           </button>
         ))}
       </div>
