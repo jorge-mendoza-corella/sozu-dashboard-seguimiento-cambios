@@ -48,7 +48,12 @@ export function useAuth() {
     queryKey: ["impersonado", viendoComo],
     queryFn: () => getUserByEmail(viendoComo!).catch(() => null),
     enabled: !!viendoComo && appUser?.email === SUPERUSER_EMAIL,
-    staleTime: 60 * 1000,
+    // Sin caché: este doc DEFINE lo que se ve, y "ver como" se usa justo después
+    // de cambiarle el rol o las empresas a alguien. Con el perfil guardado un
+    // minuto, el root acababa mirando la sesión anterior de esa persona —menús
+    // de administración incluidos— y creyendo que el cambio no había servido.
+    staleTime: 0,
+    refetchOnMount: "always",
   });
   // Memoizado a propósito: `applyImpersonation` arma un objeto nuevo, y este
   // perfil es dependencia de casi todos los `useMemo` de la app. Sin estabilizar

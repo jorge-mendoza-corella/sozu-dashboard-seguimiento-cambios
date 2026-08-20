@@ -28,6 +28,7 @@ import {
   setUserGithubToken,
   resolvePermissions,
   canAdminister,
+  esRolOperativo,
   isRootAdmin,
   ROLE_LABEL,
   NO_PERMISSIONS,
@@ -309,8 +310,9 @@ export function UsersPage() {
     : ["client_admin", "developer", "viewer"];
 
   // Rol que se enviará al dar de alta: "Desarrollador" viene preseleccionado
-  // porque es el alta habitual, pero un administrador de empresa solo reparte
-  // viewers —así el `select` y lo que se guarda nunca se contradicen—.
+  // porque es el alta habitual. Un administrador de empresa reparte los roles
+  // operativos —desarrollador y viewer— y nunca otro administrador, así el
+  // `select` y lo que se guarda no pueden contradecirse.
   const rolAlta: UserRole = rolesAsignables.includes(newRole) ? newRole : rolesAsignables[0];
 
   /** Nombre comercial de la empresa; si no está a la vista, al menos su id. */
@@ -603,7 +605,7 @@ export function UsersPage() {
         </p>
         {esAdminDeEmpresa && (
           <p className="mt-1 text-xs text-muted-foreground">
-            Como administrador de empresa solo puedes dar de alta y gestionar <span className="font-medium">viewers</span> de tus empresas.
+            Como administrador de empresa das de alta y gestionas a los <span className="font-medium">desarrolladores</span> y <span className="font-medium">viewers</span> de tus empresas. A otro administrador solo lo mueve el administrador global.
           </p>
         )}
       </div>
@@ -752,7 +754,7 @@ export function UsersPage() {
               esAdminDeEmpresa &&
               (u.clientIds ?? []).some((id) => !(appUser?.clientIds ?? []).includes(id));
             const bloqueoAdminEmpresa =
-              esAdminDeEmpresa && u.role !== "viewer"
+              esAdminDeEmpresa && !esRolOperativo(u.role)
                 ? `Solo un administrador global puede gestionar a un ${ROLE_LABEL[u.role]}.`
                 : empresasAjenas
                 ? "Este usuario también pertenece a una empresa que no administras."
