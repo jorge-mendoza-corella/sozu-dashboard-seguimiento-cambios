@@ -12,6 +12,7 @@ import { useClients, useClientScope, reposAsignadosAlUsuario } from "@/hooks/use
 import { clientDisplayName } from "@/lib/firestoreClients";
 import { EmpresaSelector } from "@/components/EmpresaSelector";
 import { useEmpresaActiva } from "@/hooks/useEmpresaActiva";
+import { useAvisosPorEmpresa } from "@/hooks/useNotifications";
 import { empresasDeProyectos } from "@/lib/empresas";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { hasFailingDeploy, type RepoRef, type RepoStatus } from "@/lib/github";
@@ -77,6 +78,10 @@ export function ResumenPage() {
   // Mismo filtro que en CI/CD: con varias empresas a la vista, lo primero es
   // poder pararse en una. La barra se esconde sola cuando solo hay una.
   const { empresa: empresaActiva, elegir: setEmpresaActiva } = useEmpresaActiva();
+  // Si cada empresa manda avisos de WhatsApp, para el badge del selector. Viene
+  // vacío para quien no puede leer esa configuración, y entonces no se pinta.
+  const avisosPorEmpresa = useAvisosPorEmpresa(appUser);
+
   const empresas = useMemo(
     () => empresasDeProyectos(todosLosProyectos, clients),
     [todosLosProyectos, clients],
@@ -193,6 +198,7 @@ export function ResumenPage() {
           activa={empresaActiva}
           onChange={setEmpresaActiva}
           totalProyectos={todosLosProyectos.length}
+          avisos={avisosPorEmpresa}
         />
         {gruposVisibles.map((g) => (
           <section key={g.clientId ?? "sin-empresa"} className="mb-6 last:mb-0">

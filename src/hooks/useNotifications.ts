@@ -55,3 +55,18 @@ export function useWhatsappByClient(appUser: AppUser | null): {
 
   return { rows, isLoading: cargandoClientes || cargandoPropias };
 }
+
+/**
+ * ¿Cada empresa manda avisos de WhatsApp? Para el badge de Resumen y CI/CD.
+ *
+ * Devuelve un mapa `clientId → manda`, y solo para quien PUEDE leer esa
+ * configuración: las reglas la abren al superuser y al administrador de esa
+ * empresa, nadie más. Para el resto el mapa viene vacío y el badge no se pinta,
+ * en vez de mostrar "apagada" —que es lo que parecería un permission-denied— y
+ * hacer creer que los avisos están mal configurados.
+ */
+export function useAvisosPorEmpresa(appUser: AppUser | null): Map<string, boolean> {
+  const puedeLeer = appUser?.role === "superuser" || appUser?.role === "client_admin";
+  const { rows } = useWhatsappByClient(puedeLeer ? appUser : null);
+  return new Map(rows.map((r) => [r.clientId, r.efectiva.puedeEnviar]));
+}

@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useClientScope } from "@/hooks/useClients";
+import { ChevronPlegar } from "./Collapsible";
+import { useAbiertos } from "@/hooks/useAbiertos";
 import { useWhatsappByClient } from "@/hooks/useNotifications";
 import { clientDisplayName } from "@/lib/firestoreClients";
 import {
@@ -83,6 +85,10 @@ const loQueFalta = (efectiva: ResolvedWhatsapp): string[] => {
 };
 
 export function NotificationsSection() {
+  // Arranca todo cerrado: la cabecera de cada empresa ya dice si manda avisos y
+  // qué le falta, así que abrir es para editar. Con cuatro empresas abiertas de
+  // golpe había que scrollear para encontrar la que se venía a tocar.
+  const { abiertos, alternar, abrirTodos, cerrarTodos } = useAbiertos();
   const { appUser } = useAuth();
   const qc = useQueryClient();
   const { visibleClients, editableClientIds } = useClientScope(appUser);
@@ -193,13 +199,26 @@ export function NotificationsSection() {
       )}
 
       {/* --- Una card por empresa ------------------------------------------ */}
-      <div>
-        <h3 className="flex items-center gap-2 text-sm font-semibold">
-          <Building2 className="h-4 w-4 text-primary" /> Por empresa ({visibleClients.length})
-        </h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Cada empresa manda con lo suyo. Lo que quede vacío no se toma de ningún otro lado.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-semibold">
+            <Building2 className="h-4 w-4 text-primary" /> Por empresa ({visibleClients.length})
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Cada empresa manda con lo suyo. Lo que quede vacío no se toma de ningún otro lado.
+          </p>
+        </div>
+        {visibleClients.length > 1 && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline hover:text-foreground"
+            onClick={() =>
+              abiertos.size === 0 ? abrirTodos(visibleClients.map((c) => c.id)) : cerrarTodos()
+            }
+          >
+            {abiertos.size === 0 ? "desplegar todas" : "contraer todas"}
+          </button>
+        )}
       </div>
 
       {!isLoading && visibleClients.length === 0 && (
@@ -231,10 +250,18 @@ export function NotificationsSection() {
           // todo lo que escribe queda apagado.
           const soloLectura = !puedeEditar(c.id);
 
+          const abierta = abiertos.has(c.id);
+
           return (
             <Card key={c.id}>
               <CardContent className="p-4">
-                <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className="flex w-full flex-wrap items-center gap-2 text-left"
+                  title={abierta ? `Contraer ${clientDisplayName(c)}` : `Desplegar ${clientDisplayName(c)}`}
+                  onClick={() => alternar(c.id)}
+                >
+                  <ChevronPlegar abierto={abierta} />
                   <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
                   <span className="text-sm font-semibold">{clientDisplayName(c)}</span>
                   {soloLectura && (
@@ -251,8 +278,10 @@ export function NotificationsSection() {
                   ) : (
                     <Badge variant="warning">Apagada</Badge>
                   )}
-                </div>
+                </button>
 
+                {abierta && (
+                  <>
                 {efectiva.incompleta && (
                   <p className="mt-2 text-xs text-destructive">
                     Le falta: {faltaTexto}. Mientras siga así, a esta empresa no se le manda ningún
@@ -372,6 +401,8 @@ export function NotificationsSection() {
                     Última modificación el {fechaLarga(propia.updatedAt)}
                     {propia.updatedBy ? ` por ${propia.updatedBy}` : ""}.
                   </p>
+                )}
+                  </>
                 )}
               </CardContent>
             </Card>
