@@ -246,6 +246,33 @@ env:
       fi
     fi
 
+    # --- Admins globales suscritos a TODOS los repos --------------------------
+    # El dueño del servicio no es autor ni aprobador de casi nada, así que por el
+    # camino normal no le llega nada de la cartera. Esto es su suscripción, y es
+    # opt-in (`users/{email}.avisaDeTodosLosRepos`): son todos los movimientos de
+    # todos los repos, y encendido sin pedirlo es una avalancha.
+    #
+    # Sale por la instancia de ESTA empresa, como todo lo demás: si tiene los
+    # avisos apagados, tampoco se manda la copia. Se consulta con runQuery para
+    # que el filtro lo haga el servidor y no haya que leerse la colección
+    # `users` completa. Un fallo aquí no puede dejar mudo el aviso principal, así
+    # que la lista se queda vacía y se sigue.
+    WA_SUSCRITOS=""
+    if [ "$WA_ENABLED" = "true" ]; then
+      SUS_JSON="$(curl -s --max-time 20 -X POST "${FS}:runQuery" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+        -d '{"structuredQuery":{"from":[{"collectionId":"users"}],"where":{"compositeFilter":{"op":"AND","filters":[{"fieldFilter":{"field":{"fieldPath":"avisaDeTodosLosRepos"},"op":"EQUAL","value":{"booleanValue":true}}},{"fieldFilter":{"field":{"fieldPath":"role"},"op":"EQUAL","value":{"stringValue":"superuser"}}}]}}}}' || true)"
+      for LOGIN_SUS in $(printf '%s' "$SUS_JSON" | jq -r '.[]?.document.fields.githubLogin.stringValue // empty'); do
+        TEL_SUS="$(campo "$(leer "contributors/${LOGIN_SUS}")" telefonoWhatsapp)"
+        if [ -n "$TEL_SUS" ]; then
+          WA_SUSCRITOS="${WA_SUSCRITOS}+521${TEL_SUS} "
+          echo "Se copiará a @${LOGIN_SUS} (suscrito a todos los repos)."
+        else
+          echo "@${LOGIN_SUS} pidió los avisos de todos los repos pero no tiene teléfono en Contribuidores; se salta."
+        fi
+      done
+    fi
+
     # --- Exportar al resto de los steps (nunca se imprime la apikey) ----------
     exportar() { printf '%s=%s\n' "$1" "$(printf '%s' "$2" | tr -d '\r\n')" >> "$GITHUB_ENV"; }
     exportar WA_INSTANCE "$WA_INSTANCE"
@@ -255,6 +282,7 @@ env:
     exportar WA_APROBADOR_MOTIVO "$WA_APROBADOR_MOTIVO"
     exportar WA_ENABLED  "$WA_ENABLED"
     exportar WA_MOTIVO   "$WA_MOTIVO"
+    exportar WA_SUSCRITOS "$WA_SUSCRITOS"
     exportar WA_GCP_TOKEN "$ACCESS_TOKEN"
 
     if [ -n "$WA_APIKEY" ]; then HAY_KEY="sí"; else HAY_KEY="NO"; fi
@@ -309,24 +337,48 @@ jobs:
             | grep -oP '(?<=<!-- pr_author: )[\w.-]+(?= -->)' 2>/dev/null | sort -u | paste -sd ', ' || true)"
           AUTOR="${AUTORES:-$ACTOR}"
           MSG="Hay un PR para DEV del repo: ${REPO_NAME}, cambios de: ${AUTOR}"
-          PAYLOAD="$(jq -n --arg tel "$WA_APROBADOR" --arg msg "$MSG" --arg inst "$WA_INSTANCE" \
-            '{tipo:"wa",telefono:$tel,mensajeWA:$msg,instanciaWA:$inst}')"
           # Reintentos: si n8n no responde a la primera, el aviso se pierde sin
-          # dejar rastro. Tres intentos y el job falla si ninguno entra.
-          for intento in 1 2 3; do
-            CODE="$(curl -s -o /tmp/n8n.out -w '%{http_code}' --max-time 20 \
-              -X POST "$WA_WEBHOOK" -H "apikey: $WA_APIKEY" \
-              -H "Content-Type: application/json" -d "$PAYLOAD" || echo 000)"
-            # n8n contesta 200 aunque el mensaje NO se haya entregado: acepta la
-            # peticion y mete el fallo de la instancia de WhatsApp en el cuerpo. Con
-            # solo mirar el codigo HTTP, esto cantaba "Notificado" mientras Evolution
-            # respondia "Connection Closed" —la sesion caida— y nadie recibia nada
-            # durante dias sin una sola alarma. El cuerpo tambien decide.
-            FALLA="$(jq -r 'if .datos_validos == false then (.error_validacion // "n8n rechazo los datos") elif (.error // null) != null then (.error | if type == "object" then (.message // tostring) else tostring end) else empty end' /tmp/n8n.out 2>/dev/null || true)"
-            case "$CODE" in 2*) if [ -z "$FALLA" ]; then echo "Notificado el aprobador del proyecto"; exit 0; fi ;; esac
-            echo "Intento ${intento} fallo (HTTP ${CODE}${FALLA:+ — n8n: ${FALLA:0:200}}): $(cat /tmp/n8n.out | head -c 300)"
-            sleep $((intento * 5))
+          # dejar rastro. Tres intentos por destinatario.
+          send() {
+            PAYLOAD="$(jq -n --arg tel "$1" --arg msg "$MSG" --arg inst "$WA_INSTANCE" \
+              '{tipo:"wa",telefono:$tel,mensajeWA:$msg,instanciaWA:$inst}')"
+            for intento in 1 2 3; do
+              CODE="$(curl -s -o /tmp/n8n.out -w '%{http_code}' --max-time 20 \
+                -X POST "$WA_WEBHOOK" -H "apikey: $WA_APIKEY" \
+                -H "Content-Type: application/json" -d "$PAYLOAD" || echo 000)"
+              # n8n contesta 200 aunque el mensaje NO se haya entregado: acepta la
+              # peticion y mete el fallo de la instancia de WhatsApp en el cuerpo. Con
+              # solo mirar el codigo HTTP, esto cantaba "Notificado" mientras Evolution
+              # respondia "Connection Closed" —la sesion caida— y nadie recibia nada
+              # durante dias sin una sola alarma. El cuerpo tambien decide.
+              FALLA="$(jq -r 'if .datos_validos == false then (.error_validacion // "n8n rechazo los datos") elif (.error // null) != null then (.error | if type == "object" then (.message // tostring) else tostring end) else empty end' /tmp/n8n.out 2>/dev/null || true)"
+              case "$CODE" in 2*) if [ -z "$FALLA" ]; then return 0; fi ;; esac
+              echo "Intento ${intento} fallo (HTTP ${CODE}${FALLA:+ — n8n: ${FALLA:0:200}}): $(cat /tmp/n8n.out | head -c 300)"
+              sleep $((intento * 5))
+            done
+            return 1
+          }
+
+          # La copia a los suscritos va aunque el aviso al aprobador falle: son
+          # destinatarios independientes y uno caído no debe dejar mudo al otro.
+          # El estado de salida lo decide solo el aprobador, que es el aviso que
+          # no puede perderse.
+          for TEL_SUS in ${WA_SUSCRITOS:-}; do
+            if [ "$TEL_SUS" = "$WA_APROBADOR" ]; then
+              echo "El suscrito es el aprobador de este proyecto; no se duplica."
+              continue
+            fi
+            if send "$TEL_SUS"; then
+              echo "Copiado a un admin global suscrito a todos los repos"
+            else
+              echo "::warning::No se pudo copiar a un admin global suscrito"
+            fi
           done
+
+          if send "$WA_APROBADOR"; then
+            echo "Notificado el aprobador del proyecto"
+            exit 0
+          fi
           echo "::error::No se pudo notificar al aprobador tras 3 intentos"
           exit 1
 
@@ -367,22 +419,48 @@ jobs:
           else
             MSG="El PR #${PR_NUM} del repo ${REPO} (hacia ${BASE}) fue CERRADO sin merge por ${CERRADO_POR}"
           fi
-          PAYLOAD="$(jq -n --arg tel "$WA_APROBADOR" --arg msg "$MSG" --arg inst "$WA_INSTANCE" \
-            '{tipo:"wa",telefono:$tel,mensajeWA:$msg,instanciaWA:$inst}')"
-          for intento in 1 2 3; do
-            CODE="$(curl -s -o /tmp/n8n.out -w '%{http_code}' --max-time 20 \
-              -X POST "$WA_WEBHOOK" -H "apikey: $WA_APIKEY" \
-              -H "Content-Type: application/json" -d "$PAYLOAD" || echo 000)"
-            # n8n contesta 200 aunque el mensaje NO se haya entregado: acepta la
-            # peticion y mete el fallo de la instancia de WhatsApp en el cuerpo. Con
-            # solo mirar el codigo HTTP, esto cantaba "Notificado" mientras Evolution
-            # respondia "Connection Closed" —la sesion caida— y nadie recibia nada
-            # durante dias sin una sola alarma. El cuerpo tambien decide.
-            FALLA="$(jq -r 'if .datos_validos == false then (.error_validacion // "n8n rechazo los datos") elif (.error // null) != null then (.error | if type == "object" then (.message // tostring) else tostring end) else empty end' /tmp/n8n.out 2>/dev/null || true)"
-            case "$CODE" in 2*) if [ -z "$FALLA" ]; then echo "Notificado el aprobador del proyecto"; exit 0; fi ;; esac
-            echo "Intento ${intento} fallo (HTTP ${CODE}${FALLA:+ — n8n: ${FALLA:0:200}}): $(cat /tmp/n8n.out | head -c 300)"
-            sleep $((intento * 5))
+          # Reintentos: si n8n no responde a la primera, el aviso se pierde sin
+          # dejar rastro. Tres intentos por destinatario.
+          send() {
+            PAYLOAD="$(jq -n --arg tel "$1" --arg msg "$MSG" --arg inst "$WA_INSTANCE" \
+              '{tipo:"wa",telefono:$tel,mensajeWA:$msg,instanciaWA:$inst}')"
+            for intento in 1 2 3; do
+              CODE="$(curl -s -o /tmp/n8n.out -w '%{http_code}' --max-time 20 \
+                -X POST "$WA_WEBHOOK" -H "apikey: $WA_APIKEY" \
+                -H "Content-Type: application/json" -d "$PAYLOAD" || echo 000)"
+              # n8n contesta 200 aunque el mensaje NO se haya entregado: acepta la
+              # peticion y mete el fallo de la instancia de WhatsApp en el cuerpo. Con
+              # solo mirar el codigo HTTP, esto cantaba "Notificado" mientras Evolution
+              # respondia "Connection Closed" —la sesion caida— y nadie recibia nada
+              # durante dias sin una sola alarma. El cuerpo tambien decide.
+              FALLA="$(jq -r 'if .datos_validos == false then (.error_validacion // "n8n rechazo los datos") elif (.error // null) != null then (.error | if type == "object" then (.message // tostring) else tostring end) else empty end' /tmp/n8n.out 2>/dev/null || true)"
+              case "$CODE" in 2*) if [ -z "$FALLA" ]; then return 0; fi ;; esac
+              echo "Intento ${intento} fallo (HTTP ${CODE}${FALLA:+ — n8n: ${FALLA:0:200}}): $(cat /tmp/n8n.out | head -c 300)"
+              sleep $((intento * 5))
+            done
+            return 1
+          }
+
+          # La copia a los suscritos va aunque el aviso al aprobador falle: son
+          # destinatarios independientes y uno caído no debe dejar mudo al otro.
+          # El estado de salida lo decide solo el aprobador, que es el aviso que
+          # no puede perderse.
+          for TEL_SUS in ${WA_SUSCRITOS:-}; do
+            if [ "$TEL_SUS" = "$WA_APROBADOR" ]; then
+              echo "El suscrito es el aprobador de este proyecto; no se duplica."
+              continue
+            fi
+            if send "$TEL_SUS"; then
+              echo "Copiado a un admin global suscrito a todos los repos"
+            else
+              echo "::warning::No se pudo copiar a un admin global suscrito"
+            fi
           done
+
+          if send "$WA_APROBADOR"; then
+            echo "Notificado el aprobador del proyecto"
+            exit 0
+          fi
           echo "::error::No se pudo notificar al aprobador tras 3 intentos"
           exit 1
 
@@ -478,4 +556,26 @@ jobs:
               FALLOS=$((FALLOS + 1))
             fi
           done <<< "$AUTORES"
+
+          # Copia a los admins globales suscritos a todos los repos. Van al
+          # final y solo si no eran ya destinatarios: el suscrito suele ser
+          # también autor o aprobador en sus propios repos, y ahí el mismo
+          # mensaje dos veces es ruido, no redundancia.
+          for TEL_SUS in ${WA_SUSCRITOS:-}; do
+            YA=0
+            while IFS= read -r AUTOR; do
+              [ -z "$AUTOR" ] && continue
+              P="$(curl -s --max-time 20 -H "Authorization: Bearer $ACCESS_TOKEN"                 "https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT}/databases/(default)/documents/contributors/${AUTOR}"                 | jq -r '.fields.telefonoWhatsapp.stringValue // empty')"
+              if [ -n "$P" ] && [ "+521${P}" = "$TEL_SUS" ]; then YA=1; fi
+            done <<< "$AUTORES"
+            if [ "$YA" = "1" ] || [ "$TEL_SUS" = "${WA_APROBADOR:-}" ]; then
+              echo "El suscrito ya recibió este aviso como autor o aprobador; no se duplica."
+              continue
+            fi
+            if send "$TEL_SUS"; then
+              echo "Copiado a un admin global suscrito a todos los repos"
+            else
+              echo "::warning::No se pudo copiar a un admin global suscrito"
+            fi
+          done
           exit "$FALLOS"

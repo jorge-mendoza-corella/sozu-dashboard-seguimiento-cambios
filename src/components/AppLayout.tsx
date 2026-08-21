@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Activity, GitBranch, Users, GitCommit, LogOut, LayoutDashboard, HardHat, ExternalLink,
-  TrendingUp, Settings, Eye, X,
+  TrendingUp, Settings, Eye, X, Menu,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -51,6 +51,11 @@ export function AppLayout({ children }: Props) {
   const { email: viendoComo, salir } = useImpersonation();
   const impersonando = !!viendoComo && appUser?.email === realUser?.email && appUser !== realUser;
   const { pathname } = useLocation();
+  // Menú desplegado en móvil. En la barra los items no caben —siete con icono y
+  // texto pasan de 700px— y se salían por la derecha: quedaban fuera de la
+  // pantalla, sin scroll que los alcanzara, y el usuario veía media palabra
+  // cortada en el borde. A partir de `md` la barra vuelve a mostrarlos todos.
+  const [menuAbierto, setMenuAbierto] = useState(false);
   const isRoot = isRootAdmin(appUser);
   const navItems = NAV_ITEMS.filter((i) =>
     i.show({
@@ -75,6 +80,15 @@ export function AppLayout({ children }: Props) {
   // del dashboard no se convierta en un link ejecutable.
   const avancesUrl = /^https?:\/\//i.test(avances.url) ? avances.url : AVANCES_URL_DEFAULT;
 
+  // Clases de cada link, compartidas por la barra y el menú: un item activo
+  // tiene que verse igual en los dos, o el menú parece otra navegación.
+  const claseItem = (activo: boolean, enMenu: boolean) =>
+    cn(
+      "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium no-underline transition-colors",
+      enMenu && "w-full py-2.5",
+      activo ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+    );
+
   return (
     <div className="min-h-screen flex flex-col">
       {impersonando && (
@@ -93,7 +107,7 @@ export function AppLayout({ children }: Props) {
       )}
       {/* Top nav */}
       <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
-        <div className="flex h-14 items-center gap-4 px-6">
+        <div className="flex h-14 items-center gap-2 px-4 sm:gap-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2 font-bold text-primary no-underline">
             {branding.logoUrl && !logoRoto ? (
               <img
@@ -109,18 +123,11 @@ export function AppLayout({ children }: Props) {
             )}
             {branding.appName}
           </Link>
-          <nav className="flex items-center gap-1 ml-2">
+          {/* Barra completa solo desde `md`: por debajo no caben y se salían
+              fuera de la pantalla, sin scroll que las alcanzara. */}
+          <nav className="ml-2 hidden items-center gap-1 md:flex">
             {navItems.map(({ to, label, icon: Icon }) => (
-              <Link
-                key={to}
-                to={to}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors no-underline",
-                  pathname === to
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                )}
-              >
+              <Link key={to} to={to} className={claseItem(pathname === to, false)}>
                 <Icon className="h-4 w-4" />
                 {label}
               </Link>
@@ -154,9 +161,69 @@ export function AppLayout({ children }: Props) {
             <Button variant="ghost" size="icon" onClick={logout} title="Cerrar sesión">
               <LogOut className="h-4 w-4" />
             </Button>
+            {/* El botón del menú va al final y solo en móvil: es lo último que se
+                necesita en escritorio y lo primero que se busca en el teléfono. */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              aria-expanded={menuAbierto}
+              aria-label={menuAbierto ? "Cerrar el menú" : "Abrir el menú"}
+              title={menuAbierto ? "Cerrar el menú" : "Abrir el menú"}
+              onClick={() => setMenuAbierto((v) => !v)}
+            >
+              {menuAbierto ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+            </Button>
           </div>
         </div>
+
+        {/* Menú de móvil: los mismos items, uno por renglón. Se cierra al elegir
+            —dejarlo abierto tapa justo la pantalla a la que se acaba de llegar—
+            y también al tocar fuera. */}
+        {menuAbierto && (
+          <nav className="flex flex-col gap-0.5 border-t px-4 py-2 md:hidden">
+            {navItems.map(({ to, label, icon: Icon }) => (
+              <Link
+                key={to}
+                to={to}
+                className={claseItem(pathname === to, true)}
+                onClick={() => setMenuAbierto(false)}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </Link>
+            ))}
+            {isRoot ? (
+              <div onClick={() => setMenuAbierto(false)}>
+                <AvancesDraftBadge email={appUser?.email ?? ""} />
+              </div>
+            ) : avances.allowed ? (
+              <a
+                href={avancesUrl}
+                target="_blank"
+                rel="noreferrer"
+                className={claseItem(false, true)}
+                onClick={() => setMenuAbierto(false)}
+              >
+                <HardHat className="h-4 w-4" />
+                Avances
+                <ExternalLink className="h-3 w-3 opacity-60" />
+              </a>
+            ) : null}
+          </nav>
+        )}
       </header>
+      {/* Capa para cerrar tocando fuera. Va debajo del header (que es sticky con
+          z-50) para no tapar el propio botón de cerrar. */}
+      {menuAbierto && (
+        <button
+          type="button"
+          aria-hidden
+          tabIndex={-1}
+          className="fixed inset-0 z-40 cursor-default md:hidden"
+          onClick={() => setMenuAbierto(false)}
+        />
+      )}
       <main className="flex-1">{children}</main>
       {/* En móvil el header va justo de espacio y esconde versión y correo:
           se muestran al pie, que ahí no compiten con la navegación. Con marca de

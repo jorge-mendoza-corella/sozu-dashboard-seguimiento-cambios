@@ -39,6 +39,15 @@ A QUIÉN SE LE AVISA "de parte de la empresa" (`approver_phone`):
   users/{email}.githubLogin                   → su login de GitHub
   contributors/{login}.telefonoWhatsapp       → su teléfono
 
+Y, opcionalmente, a los ADMINS GLOBALES suscritos (`global_admin_phones`):
+
+  users/{email}.avisaDeTodosLosRepos == true  (y rol superuser)
+  users/{email}.githubLogin                   → su login de GitHub
+  contributors/{login}.telefonoWhatsapp       → su teléfono
+
+Es opt-in y sale por la instancia de la empresa dueña del repo: si esa empresa
+tiene los avisos apagados, tampoco se manda esta copia.
+
 Ese segundo destinatario ERA un `adminPhone` capturado a mano en la
 configuración de la empresa, y se eliminó: era un número suelto que había que
 mantener a mano y que se quedaba viejo en cuanto cambiaba el responsable —el
@@ -73,6 +82,10 @@ _cache_config: dict[str, dict] = {}
 # Lo mismo para el aprobador, que además cuesta TRES lecturas encadenadas
 # (proyecto → usuario → contribuidor) por cada build del mismo proyecto.
 _cache_aprobador: dict[str, tuple[str | None, str]] = {}
+# Los suscritos a todos los repos no dependen del proyecto: se resuelven una vez
+# por corrida (una consulta + una lectura de contributors por persona) y sirven
+# para todos los avisos, sin importar de qué empresa sean.
+_cache_suscritos: list[tuple[str, str]] | None = None
 
 
 # --- Lectura de Firestore -----------------------------------------------------
@@ -279,6 +292,87 @@ def approver_phone(fs_base: str, token: str, project_id: str) -> tuple[str | Non
     resultado = _resolver()
     _cache_aprobador[project_id] = resultado
     return resultado
+
+
+def global_admin_phones(fs_base: str, token: str) -> list[tuple[str, str]]:
+    """Admins globales suscritos a TODOS los repos: `[(login, telefono), ...]`.
+
+    El dueño del servicio no es autor ni aprobador de casi nada, así que por el
+    camino normal no le llega nada de la cartera: se enteraba de los cambios de
+    un cliente solo si alguien se lo contaba. Esta es su suscripción, y es
+    OPT-IN (`users/{email}.avisaDeTodosLosRepos`), porque son todos los
+    movimientos de todos los repos y eso encendido sin pedirlo es una avalancha.
+
+    El aviso sale por la instancia de la EMPRESA dueña del repo, igual que el
+    resto: no hay instancia global, y así se mantiene la regla de que una
+    empresa con los avisos apagados no manda NADA —ni esta copia—.
+
+    Se consulta por REST (`runQuery`) en vez de barrer `users`: el filtro va del
+    lado del servidor y no hay que leer la cartera de usuarios completa para
+    encontrar a uno o dos. Nunca levanta: un fallo aquí no puede impedir el
+    aviso a los autores, que son el destinatario principal.
+    """
+    global _cache_suscritos
+    if _cache_suscritos is not None:
+        return _cache_suscritos
+
+    consulta = {
+        "structuredQuery": {
+            "from": [{"collectionId": "users"}],
+            "where": {
+                "compositeFilter": {
+                    "op": "AND",
+                    "filters": [
+                        {"fieldFilter": {
+                            "field": {"fieldPath": "avisaDeTodosLosRepos"},
+                            "op": "EQUAL", "value": {"booleanValue": True}}},
+                        {"fieldFilter": {
+                            "field": {"fieldPath": "role"},
+                            "op": "EQUAL", "value": {"stringValue": "superuser"}}},
+                    ],
+                },
+            },
+        },
+    }
+    try:
+        r = requests.post(
+            f"{fs_base}:runQuery",
+            headers={"Authorization": f"Bearer {token}"},
+            json=consulta,
+            timeout=TIMEOUT,
+        )
+    except requests.RequestException as e:
+        print(f"· no se pudo consultar los suscritos a todos los repos: {e}")
+        _cache_suscritos = []
+        return _cache_suscritos
+    if r.status_code != 200:
+        print(f"· la consulta de suscritos respondió {r.status_code}")
+        _cache_suscritos = []
+        return _cache_suscritos
+
+    suscritos: list[tuple[str, str]] = []
+    for fila in r.json():
+        doc = fila.get("document")
+        if not doc:
+            continue  # `runQuery` devuelve filas vacías cuando no hay resultados
+        campos = doc.get("fields", {}) or {}
+        correo = doc["name"].rsplit("/", 1)[-1]
+        login = _texto(campos, "githubLogin")
+        if not login:
+            print(f"· {correo} pidió los avisos de todos los repos pero no tiene login de GitHub; se salta.")
+            continue
+        crudo = _texto(
+            _campos(fs_base, token, f"contributors/{quote(login, safe='')}"),
+            "telefonoWhatsapp",
+        )
+        telefono = normalizar_telefono(crudo) if crudo else None
+        if not telefono:
+            print(f"· {login} pidió los avisos de todos los repos pero no tiene teléfono en Contribuidores; se salta.")
+            continue
+        suscritos.append((login, telefono))
+
+    _cache_suscritos = suscritos
+    return suscritos
 
 
 # --- Envío --------------------------------------------------------------------

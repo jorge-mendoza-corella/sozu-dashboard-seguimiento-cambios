@@ -4,7 +4,9 @@ import {
   UserPlus, Trash2, Shield, Eye, Loader2, FolderGit2, ChevronDown, ChevronUp, GitBranch,
   GitPullRequest, UserCheck, GitMerge, Rocket, Smartphone, KeyRound, ExternalLink, Building2, Eye as EyeIcon,
   Search, X,
+  MessageCircle,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { validateGithubToken } from "@/lib/githubAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +29,7 @@ import {
   setUserRepos,
   setUserPermissions,
   setUserGithubToken,
+  setUserAvisaDeTodos,
   resolvePermissions,
   canAdminister,
   esRolOperativo,
@@ -299,6 +302,26 @@ export function UsersPage() {
   // sigue trayendo solo a la gente de las empresas que administras, así que
   // buscar no puede destapar a nadie de otra empresa.
   const [filtro, setFiltro] = useState("");
+
+  /**
+   * Prende o apaga la suscripción a los avisos de todos los repos.
+   *
+   * Solo para uno mismo: las reglas dejan tocar `avisaDeTodosLosRepos` en tu
+   * propio documento y nada más, así que ofrecerlo en la fila de otro sería
+   * prometer un guardado que Firestore va a rechazar.
+   */
+  const handleToggleAvisos = async (u: AppUser) => {
+    setBusy(u.email);
+    setError("");
+    try {
+      await setUserAvisaDeTodos(u.email, !u.avisaDeTodosLosRepos);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al cambiar los avisos");
+    } finally {
+      setBusy(null);
+    }
+  };
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -974,8 +997,49 @@ export function UsersPage() {
                     )}
                     {isRoot && (
                       <p className="mb-3 text-[11px] text-muted-foreground">
-                        El superusuario raíz tiene todas las empresas, proyectos y permisos; aquí solo se registra su API key de GitHub.
+                        El superusuario raíz tiene todas las empresas, proyectos y permisos; aquí solo van su API key y sus avisos.
                       </p>
+                    )}
+
+                    {/* Suscripción a los avisos de toda la cartera. Solo se
+                        ofrece a un admin global —a nadie más se le mandan repos
+                        ajenos— y solo sobre su PROPIA fila: las reglas dejan
+                        tocar este campo en tu documento y en ningún otro, así
+                        que ponerlo en la fila de alguien más sería prometer un
+                        guardado que Firestore rechaza. */}
+                    {u.role === "superuser" && isSelf && (
+                      <div className="mb-4">
+                        <p className="mb-2 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                          <MessageCircle className="h-3.5 w-3.5" /> Avisos de WhatsApp
+                        </p>
+                        <button
+                          type="button"
+                          disabled={busy === u.email}
+                          title={
+                            u.avisaDeTodosLosRepos
+                              ? "Recibes los avisos de todos los repos — click para dejar de recibirlos"
+                              : "No recibes los avisos de repos donde no eres autor ni aprobador — click para recibirlos todos"
+                          }
+                          onClick={() => handleToggleAvisos(u)}
+                          className={cn(
+                            "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition-colors disabled:opacity-50",
+                            u.avisaDeTodosLosRepos
+                              ? "border-emerald-400 bg-emerald-100 text-emerald-700 dark:border-emerald-700/60 dark:bg-emerald-900/40 dark:text-emerald-300"
+                              : "border-border text-muted-foreground hover:bg-muted",
+                          )}
+                        >
+                          {busy === u.email
+                            ? <Loader2 className="h-3 w-3 animate-spin" />
+                            : <MessageCircle className="h-3 w-3" />}
+                          Avisarme de todos los repos
+                        </button>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          {u.avisaDeTodosLosRepos
+                            ? "Recibes cada PR y cada deploy de todas las empresas. Sale por la instancia de la empresa dueña de cada repo: si esa empresa tiene los avisos apagados, tampoco te llega."
+                            : "Por el camino normal solo te llegan los repos donde eres autor o aprobador del proyecto. Prendido, te llega todo lo de la cartera."}
+                          {" "}Tu teléfono sale de Contribuidores.
+                        </p>
+                      </div>
                     )}
 
                     {!isRoot && (
