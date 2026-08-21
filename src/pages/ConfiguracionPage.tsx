@@ -43,7 +43,7 @@ export function ConfiguracionPage() {
   const tabs = TABS.filter((t) => isRoot || !t.soloGlobal);
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <div className="mb-5">
         <div className="mb-1 flex items-center gap-2">
           <Settings className="h-5 w-5 text-primary" />

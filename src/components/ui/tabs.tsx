@@ -10,7 +10,10 @@ export function TabsList({
   return (
     <TabsPrimitive.List
       className={cn(
-        "inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground",
+        // Alto MÍNIMO, no fijo: con `h-10` las pestañas que no caben en una línea
+        // se salían de la caja y se encimaban con la tarjeta de abajo — así se
+        // veía Configuración en un teléfono, con seis pestañas en dos filas.
+        "inline-flex min-h-10 flex-wrap items-center justify-center rounded-md bg-muted p-1 text-muted-foreground",
         className,
       )}
       {...props}
