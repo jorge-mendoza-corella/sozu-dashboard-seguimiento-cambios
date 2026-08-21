@@ -52,6 +52,7 @@ import requests
 
 from whatsapp import (
     approver_phone,
+    global_admin_phones,
     enmascarar,
     normalizar_telefono,
     resolve_for_project,
@@ -308,6 +309,14 @@ def procesar_build(fs_token: str, cm_build: dict, proyecto: dict, resultado: str
     for tel in (actor, aprobador):
         if tel and tel not in destinos:
             destinos.append(tel)
+
+    # Y los admins globales suscritos a todos los repos. Van al final y sin
+    # duplicar: si el suscrito es además quien disparó el build o el aprobador,
+    # ya está en la lista y no se le manda dos veces el mismo mensaje.
+    for login, tel in global_admin_phones(FS_BASE, fs_token):
+        if tel not in destinos:
+            destinos.append(tel)
+            print(f"· {etiqueta}: se copia a @{login} (suscrito a todos los repos)")
 
     if not destinos:
         print(

@@ -77,6 +77,23 @@ export interface AppUser {
   githubToken?: string; // PAT personal de GitHub (obligatorio para operar; root exento)
   githubLogin?: string; // login de GitHub derivado del token (GET /user)
   githubTokenUpdatedAt?: unknown;
+  /**
+   * Avisos de WhatsApp de TODOS los repos, no solo de los suyos.
+   *
+   * Es una suscripción del dueño del servicio: el admin global no es autor ni
+   * aprobador de casi nada, así que por el camino normal no le llega nada de la
+   * cartera. Con esto prendido recibe cada PR y cada deploy de cualquier
+   * empresa.
+   *
+   * Sale por la instancia de la EMPRESA dueña del repo, no por una global: no
+   * hay ninguna, y eso mantiene la regla —si esa empresa tiene los avisos
+   * apagados, tampoco se manda esta copia—. Su teléfono sigue saliendo de
+   * Contribuidores, igual que el de todos.
+   *
+   * Apagado por defecto: son todos los movimientos de todos los repos, y eso
+   * suscrito sin pedirlo es una avalancha.
+   */
+  avisaDeTodosLosRepos?: boolean;
 }
 
 /**
@@ -276,6 +293,18 @@ export async function setUserGithubToken(email: string, token: string, login: st
     { githubToken: token, githubLogin: login, githubTokenUpdatedAt: serverTimestamp() },
     { merge: true },
   );
+}
+
+/**
+ * Prende o apaga los avisos de todos los repos para un usuario.
+ *
+ * Solo tiene efecto para un admin global —a nadie más se le mandan repos que no
+ * son suyos—, y lo escribe cada quien sobre su propio documento: las reglas no
+ * dejan a nadie tocar el doc del superusuario raíz, ni siquiera a él, salvo en
+ * los campos que son suyos por definición.
+ */
+export async function setUserAvisaDeTodos(email: string, valor: boolean) {
+  await setDoc(doc(db, "users", email), { avisaDeTodosLosRepos: valor }, { merge: true });
 }
 
 /** Actualiza los permisos CI/CD de un usuario. */

@@ -239,6 +239,28 @@ proyectos de Sozu. Se quitó al terminar la migración: existía para llegar a e
 estado, y dejarlo invitaba a re-sembrar sobre una estructura que ya se administra
 a mano.
 
+## Avisos de WhatsApp al admin global
+
+El dueño del servicio no es autor ni aprobador de casi nada, así que por el
+camino normal no le llega nada de la cartera: se enteraba de los cambios de un
+cliente solo si alguien se lo contaba. Ahora puede suscribirse a todos los
+repos, en **Usuarios → su propia fila → Avisos de WhatsApp**.
+
+Es **opt-in** y se guarda en `users/{email}.avisaDeTodosLosRepos`. Apagado por
+defecto porque son todos los movimientos de todos los repos, y eso encendido sin
+pedirlo es una avalancha.
+
+Lo escribe cada quien sobre su propio documento —las reglas dejan tocar ese
+campo y la API key, nada más—, y por eso también aparece solo en la fila propia:
+ofrecerlo en la de otro sería prometer un guardado que Firestore rechaza.
+
+La copia sale por la instancia de la **empresa dueña de cada repo**, no por una
+global (no hay ninguna). Eso mantiene la regla: si esa empresa tiene los avisos
+apagados, tampoco se manda la copia. Y no se duplica: cuando el suscrito ya era
+autor o aprobador de ese PR, recibe un solo mensaje.
+
+Su teléfono sale de Contribuidores, igual que el de todos.
+
 ## Facturapi — qué falta (fase 2)
 
 Lo que ya está: la Secret Key se guarda en `secrets/facturapi`, se valida su

@@ -103,21 +103,22 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
 
   const openCreatePR = (branchName: string) => {
     const defaultBase = branchName === "dev" ? "main" : "dev";
-    // Todos los repos excepto sozu-admin llevan marcacion de autores.
-    const needsAuthor = status.repo !== "sozu-admin";
+    // TODOS los repos pasan por el paso de autores, `sozu-admin` incluido. Este
+    // estaba exento —se saltaba el paso y creaba el PR sin marcadores—, lo que
+    // dejaba dos cosas rotas: sus PRs no notificaban a nadie, y no había dónde
+    // agregar a alguien más aunque se quisiera. Que los autores se detecten solos
+    // no quita la necesidad de sumar a un tercero.
     setNewPR({
       head: branchName, title: branchName, base: defaultBase, body: "",
-      authorStep: needsAuthor,
-      detectedAuthors: needsAuthor ? null : [],
+      authorStep: true,
+      detectedAuthors: null,
       selectedAuthors: [],
     });
     setNewPRResult(null);
-    if (needsAuthor) {
-      // Detectar autores reales de los commits del PR (head vs base).
-      getBranchCommitAuthors(status.owner, status.repo, defaultBase, branchName).then((logins) => {
-        setNewPR((p) => (p && p.head === branchName ? { ...p, detectedAuthors: logins } : p));
-      });
-    }
+    // Detectar autores reales de los commits del PR (head vs base).
+    getBranchCommitAuthors(status.owner, status.repo, defaultBase, branchName).then((logins) => {
+      setNewPR((p) => (p && p.head === branchName ? { ...p, detectedAuthors: logins } : p));
+    });
     if (branchName === "dev") {
       // dev->main: cargar el contenido del release (PRs a dev + commits) y
       // prellenar la descripcion con una entrada por PR incluido, usando la

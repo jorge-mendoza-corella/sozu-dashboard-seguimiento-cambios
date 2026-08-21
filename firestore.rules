@@ -134,12 +134,20 @@ service cloud.firestore {
         && administraTodas(resource.data.clientIds)
         && email != 'jorge.mendoza@sozu.com';
 
-      // Cada usuario puede registrar/actualizar SU propia API key de GitHub
-      // (gate de entrada) — solo esos campos, nada más.
+      // Cada usuario puede tocar SU propio documento, pero solo en lo que es
+      // suyo por definición: su API key de GitHub (el gate de entrada) y si
+      // quiere recibir los avisos de todos los repos. Nada de rol, empresas ni
+      // permisos — eso lo reparte quien administra.
+      //
+      // Esta es también la única puerta del superusuario RAÍZ a su propio
+      // documento: la regla de escritura de arriba se lo prohíbe a todos,
+      // él incluido, así que sin estos campos aquí no tendría forma de
+      // registrar su API key ni de suscribirse desde la interfaz.
       allow update: if request.auth != null
         && request.auth.token.email == email
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['githubToken', 'githubLogin', 'githubTokenUpdatedAt']);
+             .hasOnly(['githubToken', 'githubLogin', 'githubTokenUpdatedAt',
+                       'avisaDeTodosLosRepos']);
 
       // Bootstrap: jorge.mendoza@sozu.com puede crear su propio documento si no existe
       allow create: if request.auth != null
