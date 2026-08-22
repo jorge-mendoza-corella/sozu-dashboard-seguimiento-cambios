@@ -175,6 +175,8 @@ export interface WorkflowRun {
   headSha?: string;
   /** Login de quien disparó el run (el que hizo el push/merge). */
   actor?: string | null;
+  /** Id del run en GitHub: la llave con la que el CI anota a quién avisó. */
+  runId?: number;
 }
 
 export interface RepoStatus {
@@ -634,6 +636,7 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
         headBranch: r.head_branch ?? null,
         headSha: r.head_sha,
         actor: r.triggering_actor?.login ?? r.actor?.login ?? null,
+        runId: r.id,
       }));
 
     return { owner, repo, label, branches, openPRs, latestRuns };
