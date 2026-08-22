@@ -12,6 +12,7 @@ import { BranchRow } from "./BranchRow";
 import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
 import { DeployMetaTooltip } from "./DeployMetaTooltip";
+import { AvisoDeploy } from "./AvisoDeploy";
 import type { AvisosDelProyecto } from "@/hooks/useAvisos";
 import { FrontInfoBar } from "./FrontInfoBar";
 import type { FrontVersion } from "@/lib/frontVersions";
@@ -239,6 +240,13 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
   const isCIRunning = isDeployingToMain || isDeployingToDev || status.latestRuns.some(
     (r) => r.status === "in_progress" || r.status === "queued"
   );
+  // El deploy que se está viendo ahora mismo, y el último que terminó: sobre
+  // esos dos se dice a quién se le avisa y a quién se le avisó. Preguntarlo por
+  // cada run de la lista llenaría la tarjeta de líneas repetidas.
+  const runEnCurso = status.latestRuns.find(
+    (r) => r.status === "in_progress" || r.status === "queued",
+  );
+  const ultimoTerminado = status.latestRuns.find((r) => r.status === "completed");
 
   const stateConfig = {
     ok:         { icon: CheckCircle2,   color: "text-green-600",        label: "Todo en orden",          badge: "success"     as const },
@@ -306,6 +314,14 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
             </div>
             <Loader2 className="h-5 w-5 text-white/80 animate-spin shrink-0" />
           </div>
+          {/* A quién le va a llegar el aviso cuando termine. Es justo lo que uno
+              se pregunta mirando la barra correr, y estaba escondido tras el
+              hover de un icono de 12px. */}
+          {runEnCurso && (
+            <div className="relative mt-2">
+              <AvisoDeploy owner={status.owner} repo={status.repo} run={runEnCurso} avisos={avisos} sobreFondoOscuro />
+            </div>
+          )}
         </div>
       )}
 
@@ -688,7 +704,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             <GitPullRequest className="h-3.5 w-3.5" /> PRs abiertos ({scopedPRs.length})
           </h4>
-          <PRList prs={scopedPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} perms={perms} approver={approver} codeOwnerAuths={codeOwnerAuths} selfLogin={canViewOthers ? null : selfLogin} />
+          <PRList prs={scopedPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} perms={perms} approver={approver} codeOwnerAuths={codeOwnerAuths} selfLogin={canViewOthers ? null : selfLogin} avisos={avisos} />
         </div>
 
         {/* Últimos deploys */}
@@ -705,6 +721,14 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                   </DeployMetaTooltip>
                 ))}
           </div>
+          {/* Del último terminado, a quién se le avisó. Solo del último: una
+              línea por cada deploy de la lista sería ruido, y el resto sigue
+              disponible en el tooltip de su badge. */}
+          {ultimoTerminado && !isDeployingToMain && (
+            <div className="mt-1.5">
+              <AvisoDeploy owner={status.owner} repo={status.repo} run={ultimoTerminado} avisos={avisos} />
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
