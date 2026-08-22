@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   RefreshCw, Clock, GitBranch, AlertCircle, GitPullRequest, ArrowUpCircle, Rocket, Plus, Settings, FolderGit2, Loader2, Smartphone,
+  MessageCircle, MessageCircleOff,
 } from "lucide-react";
 import { AppBuildsPanel } from "@/components/codemagic/AppBuildsPanel";
 import { ActiveBuildChips } from "@/components/codemagic/ActiveBuildChips";
@@ -14,6 +15,8 @@ import { clientDisplayName } from "@/lib/firestoreClients";
 import { EmpresaSelector } from "@/components/EmpresaSelector";
 import { useEmpresaActiva } from "@/hooks/useEmpresaActiva";
 import { useAvisosPorEmpresa } from "@/hooks/useNotifications";
+import { useAvisosPorProyecto } from "@/hooks/useAvisos";
+import { AvisosBanner } from "@/components/AvisosBanner";
 import { empresasDeProyectos } from "@/lib/empresas";
 import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
@@ -147,6 +150,9 @@ export function DashboardPage() {
   // Si cada empresa manda avisos de WhatsApp, para el badge del selector. Viene
   // vacío para quien no puede leer esa configuración, y entonces no se pinta.
   const avisosPorEmpresa = useAvisosPorEmpresa(appUser);
+  // Quién recibe los avisos de cada proyecto, para decirlo en la pestaña en vez
+  // de esconderlo en Configuración.
+  const avisosPorProyecto = useAvisosPorProyecto(appUser);
 
   const empresas = useMemo(
     () => empresasDeProyectos(todosLosProyectos, clients),
@@ -318,6 +324,39 @@ export function DashboardPage() {
                     <AlertCircle className="h-3 w-3" />{summary.failing} fallando
                   </Badge>
                 )}
+                {/* Cuántas empresas de las que se ven mandan avisos. Vivía en un
+                    icono de 12px dentro del chip de empresa, que es fácil no
+                    ver: aquí queda a la altura de los demás indicadores del
+                    estado, que es lo que es. */}
+                {avisosPorEmpresa.size > 0 && (() => {
+                  const mudas = [...avisosPorEmpresa.entries()].filter(([, manda]) => !manda);
+                  const nombre = (id: string) =>
+                    clients.find((c) => c.id === id)?.tradeName?.trim()
+                    || clients.find((c) => c.id === id)?.legalName
+                    || id;
+                  return mudas.length === 0 ? (
+                    <Badge
+                      variant="outline"
+                      className="gap-1 border-emerald-200 bg-emerald-50 text-[11px] text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300"
+                      title="Todas las empresas a la vista mandan avisos de WhatsApp."
+                    >
+                      <MessageCircle className="h-3 w-3" />avisos activos
+                    </Badge>
+                  ) : (
+                    <Link to="/configuracion" className="no-underline">
+                      <Badge
+                        variant="outline"
+                        className="gap-1 border-amber-200 bg-amber-50 text-[11px] text-amber-700 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300"
+                        title={`Sin avisos de WhatsApp: ${mudas.map(([id]) => nombre(id)).join(", ")}. Click para configurarlas.`}
+                      >
+                        <MessageCircleOff className="h-3 w-3" />
+                        {mudas.length === avisosPorEmpresa.size
+                          ? "sin avisos de WhatsApp"
+                          : `${mudas.length} sin avisos`}
+                      </Badge>
+                    </Link>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -457,6 +496,7 @@ export function DashboardPage() {
               const view = showDeployTab ? projectView : "repos";
               return (
                 <TabsContent key={p.id} value={p.id}>
+                  <AvisosBanner avisos={avisosPorProyecto.get(p.id)} />
                   {/* App con Codemagic listo pero sin la publicación contratada:
                       se dice por qué, en lugar de esconder la pestaña sin más.
                       El aviso lo ve cualquiera (el root además sigue pudiendo
