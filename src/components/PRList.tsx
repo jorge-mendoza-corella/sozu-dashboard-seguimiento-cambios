@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import {
   GitPullRequest, GitMerge, Rocket, ArrowRight,
-  Clock, CheckCircle, CheckCircle2, XCircle, MessageCircle, Loader2, GitMerge as MergeIcon,
+  Clock, CheckCircle, CheckCircle2, XCircle, MessageCircle, MessageCircleOff, Loader2, GitMerge as MergeIcon,
   User, UserCheck, AlertTriangle, GitCommit, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,15 @@ import { formatDistanceToNow } from "@/lib/timeUtils";
 type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
 type PanelMode = "review" | "merge" | "close" | "content";
 
+import type { AvisosDelProyecto } from "@/hooks/useAvisos";
+
 interface Props {
+  /**
+   * A quién le llega el aviso de WhatsApp de este proyecto. Se dice en cada PR
+   * porque es donde se decide mergear: enterarse después de que el equipo no se
+   * enteró es tarde.
+   */
+  avisos?: AvisosDelProyecto;
   prs: PullRequest[];
   owner: string;
   repo: string;
@@ -29,7 +37,7 @@ interface Props {
   selfLogin?: string | null;
 }
 
-export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null }: Props) {
+export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, avisos }: Props) {
   const [openPanel, setOpenPanel] = useState<{ prNumber: number; mode: PanelMode } | null>(null);
   const [activeEvent, setActiveEvent] = useState<ReviewEvent | null>(null);
   const [comment, setComment] = useState("");
@@ -265,6 +273,39 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                         <UserCheck className="h-2.5 w-2.5" />
                         <span>aprobado</span>
                       </span>
+                    )}
+                    {/* A quién le va a llegar el WhatsApp al cerrar este PR. Va
+                        aquí, junto al autor, porque es donde se decide mergear:
+                        enterarse después de que nadie se enteró es tarde. */}
+                    {avisos && !avisos.desconocido && (
+                      avisos.empresaAvisa ? (
+                        <span
+                          className="flex items-center gap-0.5 text-[10px] text-muted-foreground"
+                          title={
+                            "Al cerrarse (con o sin merge) se avisa por WhatsApp a los autores del PR"
+                            + (avisos.destinatarios.length
+                              ? " y a " + avisos.destinatarios
+                                  .map((d) => `@${d.login} (${d.motivo === "aprobador" ? "aprobador del proyecto" : "suscrito a todos los repos"})${d.tieneTelefono ? "" : " — SIN TELÉFONO en Contribuidores"}`)
+                                  .join(", ")
+                              : ". Nadie más: este proyecto no tiene aprobador asignado.")
+                          }
+                        >
+                          <MessageCircle className="h-2.5 w-2.5" />
+                          <span>
+                            avisa a {pr.author ? `@${pr.author}` : "sus autores"}
+                            {avisos.destinatarios.length > 0
+                              && ` y ${avisos.destinatarios.map((d) => `@${d.login}`).join(", ")}`}
+                          </span>
+                        </span>
+                      ) : (
+                        <span
+                          className="flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400"
+                          title={avisos.motivoEmpresa}
+                        >
+                          <MessageCircleOff className="h-2.5 w-2.5" />
+                          <span>sin aviso de WhatsApp</span>
+                        </span>
+                      )
                     )}
                   </div>
                 </div>
