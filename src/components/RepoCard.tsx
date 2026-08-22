@@ -12,6 +12,7 @@ import { BranchRow } from "./BranchRow";
 import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
 import { DeployMetaTooltip } from "./DeployMetaTooltip";
+import type { AvisosDelProyecto } from "@/hooks/useAvisos";
 import { FrontInfoBar } from "./FrontInfoBar";
 import type { FrontVersion } from "@/lib/frontVersions";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
@@ -67,9 +68,15 @@ interface Props {
    * `useRepoRenames`). Con él la card avisa que el alta quedó con el nombre viejo.
    */
   renamedTo?: { owner: string; repo: string } | null;
+  /**
+   * A quién le toca el aviso de WhatsApp de este proyecto. Solo se usa cuando
+   * el deploy no dejó registro propio: entonces la tarjeta habla en futuro en
+   * vez de afirmar una entrega que nadie comprobó.
+   */
+  avisos?: AvisosDelProyecto;
 }
 
-export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontUrl, frontVersion = null, androidPackage, iosBundleId, renamedTo = null }: Props) {
+export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontUrl, frontVersion = null, androidPackage, iosBundleId, renamedTo = null, avisos }: Props) {
   // Sin el permiso viewOthers el usuario solo ve SUS ramas y PRs
   // (main/dev siempre visibles: son estado compartido del repo).
   const canViewOthers = perms.viewOthers || !selfLogin;
@@ -356,7 +363,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                 </Badge>
               );
               return activeRun ? (
-                <DeployMetaTooltip owner={status.owner} repo={status.repo} run={activeRun}>
+                <DeployMetaTooltip owner={status.owner} repo={status.repo} run={activeRun} avisos={avisos}>
                   {chip}
                 </DeployMetaTooltip>
               ) : chip;
@@ -693,7 +700,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
             {status.latestRuns.length === 0
               ? <p className="text-xs text-muted-foreground">Sin deploys recientes</p>
               : status.latestRuns.map((r, i) => (
-                  <DeployMetaTooltip key={i} owner={status.owner} repo={status.repo} run={r}>
+                  <DeployMetaTooltip key={i} owner={status.owner} repo={status.repo} run={r} avisos={avisos}>
                     <WorkflowBadge run={r} owner={status.owner} repo={status.repo} selfLogin={canViewOthers ? null : selfLogin} />
                   </DeployMetaTooltip>
                 ))}

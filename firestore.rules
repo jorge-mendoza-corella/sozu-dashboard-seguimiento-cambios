@@ -183,6 +183,21 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Lo que cada deploy dejó anotado sobre sus avisos de WhatsApp: a quién le
+    // llegó, a quién no y por qué. Lo escribe el propio workflow con su cuenta
+    // de servicio (que ignora estas reglas), nunca el navegador — si el
+    // dashboard pudiera escribirlo, el registro dejaría de ser evidencia de lo
+    // que pasó y pasaría a ser otra cosa que alguien afirmó.
+    //
+    // Se lee desde CI/CD para poder decir "se avisó a" en vez de calcular a
+    // quién le tocaba: un teléfono sin capturar o una instancia caída cambian el
+    // resultado sin cambiar la configuración que se ve desde aquí.
+    match /deployNotifications/{runId} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if false;
+    }
+
     // Estado de los tracks de Google Play por package. Solo lo escribe el
     // workflow programado (service account, que ignora estas reglas).
     match /playTracks/{pkg} {

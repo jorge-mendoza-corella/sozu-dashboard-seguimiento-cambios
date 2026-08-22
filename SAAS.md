@@ -261,6 +261,29 @@ autor o aprobador de ese PR, recibe un solo mensaje.
 
 Su teléfono sale de Contribuidores, igual que el de todos.
 
+## Qué se avisó de cada deploy
+
+El dashboard puede **calcular** a quién le toca un aviso —el aprobador del
+proyecto, los suscritos, la configuración de la empresa—, pero no si el mensaje
+salió: un teléfono sin capturar, una instancia de WhatsApp caída o una empresa
+apagada cambian el resultado sin cambiar nada de lo que se ve desde la interfaz.
+
+Por eso el propio deploy anota lo que hizo, con su cuenta de servicio, en
+`deployNotifications/{owner}__{repo}__{runId}`: a quién le llegó, a quién no y
+por qué. El navegador solo lo lee — si pudiera escribirlo dejaría de ser
+evidencia de lo que pasó y sería otra cosa que alguien afirmó.
+
+El tooltip de cada deploy en CI/CD lo usa así:
+
+- **con registro** — «Se avisó a @x», y en ámbar cada destinatario que falló con
+  su motivo. Un aviso que no llegó importa más que los que sí: nadie va a abrir
+  el log del workflow para enterarse.
+- **corriendo** — «Al terminar se avisará a…», porque el aviso sale al final del
+  workflow y decirlo en pasado sería afirmar algo que todavía no pasó.
+- **sin registro** (deploys anteriores a esto, o repos cuyo workflow aún no
+  anota) — «Le tocaba el aviso a…», en condicional y diciendo que no dejó
+  registro, en vez de inventar una entrega.
+
 ## Facturapi — qué falta (fase 2)
 
 Lo que ya está: la Secret Key se guarda en `secrets/facturapi`, se valida su

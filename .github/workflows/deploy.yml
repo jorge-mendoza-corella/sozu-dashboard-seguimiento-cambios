@@ -105,6 +105,33 @@ jobs:
           # (jq trata `false` como vacío), por eso se mira el tipo del campo.
           prendido() { printf '%s' "$1" | jq -r 'if (.fields.enabled | type) == "object" then (.fields.enabled.booleanValue | tostring) else "" end'; }
 
+          # --- Registro de lo que se hizo con los avisos ------------------------
+          # El dashboard puede calcular a QUIÉN le toca el aviso, pero no si
+          # salió: un teléfono sin capturar, una instancia caída o una empresa
+          # apagada cambian el resultado sin cambiar la configuración que se ve
+          # desde ahí. Así que el deploy anota lo que hizo y CI/CD lo lee, en vez
+          # de afirmar una entrega que nadie comprobó.
+          #
+          # Se escribe con la cuenta de servicio (ignora las reglas); el
+          # navegador solo lo lee. Un fallo al registrar no puede tumbar el
+          # deploy: es una nota, no el trabajo.
+          NOTIF_DOC="${GITHUB_REPOSITORY/\//__}__${GITHUB_RUN_ID}"
+          registrar() { # $1 = seMando (true|false) ; $2 = motivo ; $3 = avisados (csv) ; $4 = fallidos (json array)
+            BODY="$(jq -n --arg mando "$1" --arg motivo "$2" --arg av "$3" --argjson fal "${4:-[]}" \
+              --arg run "$GITHUB_RUN_ID" \
+              '{fields:{
+                  seMando:{booleanValue:($mando=="true")},
+                  motivo:{stringValue:$motivo},
+                  runId:{stringValue:$run},
+                  avisados:{arrayValue:{values:(($av|split(","))|map(select(length>0)|{stringValue:.}))}},
+                  fallidos:{arrayValue:{values:($fal|map({mapValue:{fields:{login:{stringValue:.login},motivo:{stringValue:.motivo}}}}))}}
+                }}')"
+            curl -s -o /dev/null --max-time 20 -X PATCH \
+              -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+              "https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT}/databases/(default)/documents/deployNotifications/${NOTIF_DOC}" \
+              -d "$BODY" || echo "· no se pudo registrar el aviso (no afecta al deploy)"
+          }
+
           # --- Empresa dueña del repo ------------------------------------------
           # repos/{owner__repo}.projectId -> projects/{projectId}.clientId
           #
@@ -120,11 +147,13 @@ jobs:
           PROJECT_ID="$(campo "$(leer "repos/${REPO_ID}")" projectId)"
           if [ -z "$PROJECT_ID" ]; then
             echo "El repo '${GITHUB_REPOSITORY}' no está dado de alta en el dashboard (repos/${REPO_ID}), así que no se sabe de qué empresa es; se omite la notificación."
+            registrar false "El repo no está dado de alta en el dashboard, así que no se sabe de qué empresa es." "" "[]"
             exit 0
           fi
           CLIENT_ID="$(campo "$(leer "projects/${PROJECT_ID}")" clientId)"
           if [ -z "$CLIENT_ID" ]; then
             echo "El proyecto '${PROJECT_ID}' no tiene empresa asignada; se omite la notificación. Asígnale una en el dashboard → Proyectos."
+            registrar false "El proyecto no tiene empresa asignada, y los avisos salen por la instancia de la empresa." "" "[]"
             exit 0
           fi
           echo "Empresa dueña del repo: '${CLIENT_ID}' (proyecto '${PROJECT_ID}')."
@@ -141,6 +170,7 @@ jobs:
           # `enabled: false` apaga los avisos de la empresa; ausente = prendido.
           if [ "$(prendido "$C_DOC")" = "false" ]; then
             echo "La empresa '${CLIENT_ID}' tiene apagadas las notificaciones de WhatsApp; no se envía nada."
+            registrar false "La empresa tiene los avisos de WhatsApp apagados." "" "[]"
             exit 0
           fi
           # Se enumera lo que falta, no un genérico: quien lea el log tiene que
@@ -154,6 +184,7 @@ jobs:
           if [ -z "$WA_APIKEY" ];   then FALTAN="${FALTAN}apikey, ";    fi
           if [ -n "$FALTAN" ]; then
             echo "La empresa '${CLIENT_ID}' no tiene ${FALTAN%, } de WhatsApp; se omite la notificación. Captúralo en el dashboard → Configuración → Notificaciones."
+            registrar false "A la empresa le falta ${FALTAN%, } de WhatsApp." "" "[]"
             exit 0
           fi
 
@@ -163,6 +194,7 @@ jobs:
             | jq -r '.fields.telefonoWhatsapp.stringValue // empty')"
           if [ -z "$PHONE" ]; then
             echo "Sin teléfono guardado para '$ACTOR' en contributors; se omite la notificación."
+            registrar true "" "" "$(jq -nc --arg l "$ACTOR" '[{login:$l,motivo:"sin teléfono en Contribuidores"}]')"
             exit 0
           fi
           PAYLOAD="$(jq -n --arg tel "+521${PHONE}" --arg inst "$WA_INSTANCE" \
@@ -180,8 +212,9 @@ jobs:
             # respondia "Connection Closed" —la sesion caida— y nadie recibia nada
             # durante dias sin una sola alarma. El cuerpo tambien decide.
             FALLA="$(jq -r 'if .datos_validos == false then (.error_validacion // "n8n rechazo los datos") elif (.error // null) != null then (.error | if type == "object" then (.message // tostring) else tostring end) else empty end' /tmp/n8n.out 2>/dev/null || true)"
-            case "$CODE" in 2*) if [ -z "$FALLA" ]; then echo "Notificado $ACTOR"; exit 0; fi ;; esac
+            case "$CODE" in 2*) if [ -z "$FALLA" ]; then echo "Notificado $ACTOR"; registrar true "" "$ACTOR" "[]"; exit 0; fi ;; esac
             echo "Intento ${intento} fallo (HTTP ${CODE}${FALLA:+ — n8n: ${FALLA:0:200}}): $(cat /tmp/n8n.out | head -c 300)"
             sleep $((intento * 5))
           done
           echo "::warning::No se pudo notificar el deploy tras 3 intentos"
+          registrar true "" "" "$(jq -nc --arg l "$ACTOR" --arg m "el webhook de n8n no aceptó el mensaje tras 3 intentos" '[{login:$l,motivo:$m}]')"

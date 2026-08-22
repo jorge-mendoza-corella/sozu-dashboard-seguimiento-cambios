@@ -553,6 +553,7 @@ export function DashboardPage() {
                         </p>
                       )}
                       <RepoGrid
+                        avisos={avisosPorProyecto.get(p.id)}
                         repos={projectRepos}
                         statusByKey={statusByKey}
                         isLoading={isLoading}
