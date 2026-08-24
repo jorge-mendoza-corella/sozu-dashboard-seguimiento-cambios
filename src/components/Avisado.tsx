@@ -34,8 +34,17 @@ export function Avisado({ login, papeles, ficha, sobreFondoOscuro = false }: {
   ficha?: FichaPersona;
   sobreFondoOscuro?: boolean;
 }) {
+  // Un solo icono, el del papel PRINCIPAL. Con todos a la vez la línea se leía
+  // como un sarpullido de simbolitos antes de cada nombre y costaba distinguir
+  // dónde acababa uno y empezaba el siguiente. El orden es por qué tan bien
+  // explica que esa persona esté en la lista: "es el aprobador" cierra la
+  // pregunta, "disparó el deploy" también; "autor" es lo más común y lo que
+  // menos distingue. Los demás papeles siguen en el tooltip.
+  const prioridad: Papel[] = ["aprobador", "suscrito", "disparo", "mergeo", "autor"];
+  const principal = prioridad.find((p) => papeles.includes(p));
+  const suyos = principal ? [principal] : [];
   const orden: Papel[] = ["disparo", "autor", "aprobador", "mergeo", "suscrito"];
-  const suyos = orden.filter((p) => papeles.includes(p));
+  const todos = orden.filter((p) => papeles.includes(p));
 
   const titulo = [
     `@${login}`,
@@ -44,7 +53,7 @@ export function Avisado({ login, papeles, ficha, sobreFondoOscuro = false }: {
     ficha?.telefono
       ? `tel. ${ficha.telefono}`
       : "SIN TELÉFONO en Contribuidores — no puede recibir avisos",
-    ...(suyos.length ? [suyos.map((p) => PAPEL[p].texto).join(" · ")] : []),
+    ...(todos.length ? [todos.map((p) => PAPEL[p].texto).join(" · ")] : []),
   ].join("\n");
 
   return (
