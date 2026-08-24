@@ -726,7 +726,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
               disponible en el tooltip de su badge. */}
           {ultimoTerminado && !isDeployingToMain && (
             <div className="mt-1.5">
-              <AvisoDeploy owner={status.owner} repo={status.repo} run={ultimoTerminado} avisos={avisos} />
+              <AvisoDeploy owner={status.owner} repo={status.repo} run={ultimoTerminado} avisos={avisos} conEtiquetaDelRun />
             </div>
           )}
         </div>

@@ -5,6 +5,7 @@ import { getDeployMetaCached, metaEnCache } from "@/lib/deployMetaCache";
 import { useAuth } from "@/hooks/useAuth";
 import { useDirectorio, type AvisosDelProyecto } from "@/hooks/useAvisos";
 import { Avisado, type Papel } from "./Avisado";
+import { formatDistanceToNow } from "@/lib/timeUtils";
 import type { DeployMeta, WorkflowRun } from "@/lib/github";
 
 // ---------------------------------------------------------------------------
@@ -29,13 +30,21 @@ import type { DeployMeta, WorkflowRun } from "@/lib/github";
 
 const cache = new Map<string, DeployNotification | null>();
 
-export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false }: {
+export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false, conEtiquetaDelRun = false }: {
   owner: string;
   repo: string;
   run: WorkflowRun;
   avisos?: AvisosDelProyecto;
   /** En el banner verde de "deploy en progreso" el texto va en blanco. */
   sobreFondoOscuro?: boolean;
+  /**
+   * Decir DE QUÉ deploy se habla. Al pie de la lista de deploys la línea se leía
+   * como una propiedad de la tarjeta —o del deploy que está corriendo—, cuando
+   * es del último que terminó: hay tres chips arriba y ninguna pista de a cuál
+   * corresponde. En el banner del deploy en curso no hace falta: el banner ya
+   * dice cuál es.
+   */
+  conEtiquetaDelRun?: boolean;
 }) {
   const clave = run.runId ? `${owner}/${repo}#${run.runId}` : null;
   const corriendo = run.status !== "completed";
@@ -100,6 +109,12 @@ export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false
     />
   );
 
+  // "Dev · hace 23m", el mismo lenguaje de los chips de arriba, para que se vea
+  // a qué deploy se refiere sin tener que deducirlo.
+  const etiqueta = conEtiquetaDelRun
+    ? `${run.headBranch === "main" ? "PRD" : "Dev"} · ${formatDistanceToNow(run.createdAt)}:`
+    : null;
+
   const tenue = sobreFondoOscuro ? "text-white/80" : "text-muted-foreground";
   const alerta = sobreFondoOscuro ? "text-amber-100" : "text-amber-600 dark:text-amber-400";
   const bien = sobreFondoOscuro ? "text-emerald-50" : "text-emerald-600 dark:text-emerald-400";
@@ -118,7 +133,7 @@ export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false
         return (
           <p className={`flex items-start gap-1 text-[11px] ${alerta}`}>
             <MessageCircleOff className="mt-0.5 h-3 w-3 shrink-0" />
-            <span>No se avisó: {registro.motivo || "la empresa no tiene los avisos activos."}</span>
+            <span>{etiqueta} no se avisó: {registro.motivo || "la empresa no tiene los avisos activos."}</span>
           </p>
         );
       }
@@ -128,7 +143,8 @@ export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false
             <p className={`flex items-start gap-1 text-[11px] ${bien}`}>
               <MessageCircle className="mt-0.5 h-3 w-3 shrink-0" />
               <span className="flex flex-wrap items-center gap-x-1 gap-y-0.5">
-                Avisó a
+                {etiqueta && <span className="font-medium opacity-80">{etiqueta}</span>}
+                avisó a
                 {registro.avisados.map((l, i) => (
                   <span key={l} className="inline-flex items-center">
                     {persona(l)}{i < registro.avisados.length - 1 ? "," : ""}
@@ -176,7 +192,8 @@ export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false
   return (
     <p className={`flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] ${sobreFondoOscuro ? "text-white/90" : tenue}`}>
       <MessageCircle className="h-3 w-3 shrink-0" />
-      {corriendo ? "Al terminar avisará a" : "Le tocaba avisar a"}
+      {etiqueta && <span className="font-medium opacity-80">{etiqueta}</span>}
+      {corriendo ? "al terminar avisará a" : "le tocaba avisar a"}
       {destinos.length === 0 ? (
         <span>quien lo disparó</span>
       ) : (
