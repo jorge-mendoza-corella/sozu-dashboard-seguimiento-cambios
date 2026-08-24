@@ -111,8 +111,12 @@ export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false
 
   // "Dev · hace 23m", el mismo lenguaje de los chips de arriba, para que se vea
   // a qué deploy se refiere sin tener que deducirlo.
+  const destino = run.headBranch === "main" ? "PRD" : "Dev";
   const etiqueta = conEtiquetaDelRun
-    ? `${run.headBranch === "main" ? "PRD" : "Dev"} · ${formatDistanceToNow(run.createdAt)}:`
+    // Corriendo se dice "a PRD" —el deploy va hacia allá, no terminó— y ya
+    // terminado, "PRD · hace 23m", que es lo que distingue un deploy de otro
+    // en la lista.
+    ? (corriendo ? `${destino}:` : `${destino} · ${formatDistanceToNow(run.createdAt)}:`)
     : null;
 
   const tenue = sobreFondoOscuro ? "text-white/80" : "text-muted-foreground";

@@ -422,6 +422,21 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4 flex-1">
+        {/* Deploy en curso que NO va a main: a quién se le va a avisar.
+            El de main lo dice en su banner verde, pero un deploy a dev solo
+            tenía un chip "→ DEV" en la cabecera y ningún lugar donde decirlo,
+            así que mientras corría no había forma de saber a quién iba a
+            llegarle el aviso — que es justo cuando uno se lo pregunta. */}
+        {runEnCurso && !isDeployingToMain && (
+          <AvisoDeploy
+            owner={status.owner}
+            repo={status.repo}
+            run={runEnCurso}
+            avisos={avisos}
+            conEtiquetaDelRun
+          />
+        )}
+
         {/* Ramas */}
         <div>
           <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
