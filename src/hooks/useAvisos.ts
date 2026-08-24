@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getAllContributorPhones } from "@/lib/firestoreContributors";
-import { getVisibleUsers, scopeKeyOf, type AppUser } from "@/lib/firestoreUsers";
+import { getVisibleUsers, ROLE_LABEL, scopeKeyOf, type AppUser } from "@/lib/firestoreUsers";
 import { useProjects } from "./useProjectsRepos";
 import { useWhatsappByClient } from "./useNotifications";
 
@@ -132,4 +132,59 @@ export function resumenDestinatarios(a: AvisosDelProyecto | undefined): string {
     `@${d.login} (${d.motivo === "aprobador" ? "aprobador" : "suscrito a todos los repos"})`
     + (d.tieneTelefono ? "" : " — SIN TELÉFONO en Contribuidores");
   return `Avisa a los autores del PR y a ${a.destinatarios.map(parte).join(", ")}.`;
+}
+
+
+export interface FichaPersona {
+  login: string;
+  email?: string;
+  telefono?: string;
+  /** Rol en el dashboard, ya en español ("Administrador de empresa"…). */
+  rol?: string;
+}
+
+/**
+ * Quién es cada cuenta de GitHub: correo, teléfono y rol.
+ *
+ * Para los tooltips de los avisos. Una lista de `@logins` no dice a quién le
+ * llegó nada —hay que acordarse de qué cuenta es de quién, y los logins no se
+ * parecen a los nombres—, así que al pasar el puntero se ve la persona.
+ *
+ * El teléfono sale de Contribuidores, que es de donde lo toman los workflows:
+ * si aquí no aparece, tampoco le va a llegar el WhatsApp, y eso es justo lo que
+ * conviene poder ver. Solo se resuelve para quien puede leer esos documentos.
+ */
+export function useDirectorio(appUser: AppUser | null): Map<string, FichaPersona> {
+  const puedeLeer = appUser?.role === "superuser" || appUser?.role === "client_admin";
+  const { data: usuarios = [] } = useQuery({
+    queryKey: ["users-all", scopeKeyOf(appUser)],
+    queryFn: () => getVisibleUsers(appUser),
+    enabled: !!appUser && puedeLeer,
+  });
+  const { data: telefonos = {} } = useQuery({
+    queryKey: ["contributor-phones"],
+    queryFn: getAllContributorPhones,
+    enabled: !!appUser && puedeLeer,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  return useMemo(() => {
+    const mapa = new Map<string, FichaPersona>();
+    // Se parte de Contribuidores: ahí están TODAS las cuentas que reciben
+    // avisos, incluidas las que no tienen usuario en el dashboard.
+    for (const [login, telefono] of Object.entries(telefonos)) {
+      mapa.set(login, { login, telefono });
+    }
+    for (const u of usuarios) {
+      if (!u.githubLogin) continue;
+      const previo = mapa.get(u.githubLogin);
+      mapa.set(u.githubLogin, {
+        login: u.githubLogin,
+        email: u.email,
+        rol: ROLE_LABEL[u.role],
+        telefono: previo?.telefono,
+      });
+    }
+    return mapa;
+  }, [usuarios, telefonos]);
 }

@@ -496,7 +496,6 @@ export function DashboardPage() {
               const view = showDeployTab ? projectView : "repos";
               return (
                 <TabsContent key={p.id} value={p.id}>
-                  <AvisosBanner avisos={avisosPorProyecto.get(p.id)} />
                   {/* App con Codemagic listo pero sin la publicación contratada:
                       se dice por qué, en lugar de esconder la pestaña sin más.
                       El aviso lo ve cualquiera (el root además sigue pudiendo
@@ -547,11 +546,18 @@ export function DashboardPage() {
                     </div>
                   ) : (
                     <>
-                      {isRoot && (
-                        <p className="mb-3 text-xs text-muted-foreground">
-                          Arrastra las tarjetas para reordenarlas. El orden se guarda automáticamente.
-                        </p>
-                      )}
+                      {/* El chip de avisos va en la misma fila que la ayuda de
+                          arrastrar: antes era una franja de ancho completo que se
+                          comía un renglón entero, siempre, para algo que se
+                          consulta de vez en cuando. */}
+                      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <AvisosBanner avisos={avisosPorProyecto.get(p.id)} />
+                        {isRoot && (
+                          <p className="text-xs text-muted-foreground">
+                            Arrastra las tarjetas para reordenarlas. El orden se guarda automáticamente.
+                          </p>
+                        )}
+                      </div>
                       <RepoGrid
                         avisos={avisosPorProyecto.get(p.id)}
                         repos={projectRepos}
