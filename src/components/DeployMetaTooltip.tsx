@@ -4,12 +4,14 @@ import {
   Loader2, Rocket, CheckCircle2, GitMerge, Users,
   MessageCircle, MessageCircleOff, AlertTriangle,
 } from "lucide-react";
-import { getDeployMeta, type DeployMeta, type WorkflowRun } from "@/lib/github";
+import { type DeployMeta, type WorkflowRun } from "@/lib/github";
+import { getDeployMetaCached, metaEnCache } from "@/lib/deployMetaCache";
 import { getDeployNotification, type DeployNotification } from "@/lib/deployNotifications";
 import type { AvisosDelProyecto } from "@/hooks/useAvisos";
 
-// Caché por sha: el hover repetido no re-consulta GitHub.
-const metaCache = new Map<string, DeployMeta>();
+// La caché por sha vive en `@/lib/deployMetaCache`: la comparten este tooltip y
+// la línea de avisos de la tarjeta, que necesita los mismos datos para ponerle
+// su papel a cada nombre.
 // Y por run: lo que el CI anotó sobre sus avisos. Se guarda incluso cuando no
 // hay registro (`null`), para no volver a preguntar por un deploy viejo que
 // nunca lo escribió.
@@ -30,7 +32,7 @@ export function DeployMetaTooltip({ owner, repo, run, avisos, children }: {
 }) {
   const [open, setOpen] = useState(false);
   const [meta, setMeta] = useState<DeployMeta | null>(
-    run.headSha ? metaCache.get(run.headSha) ?? null : null,
+    metaEnCache(run.headSha) ?? null,
   );
   const claveAviso = run.runId ? `${owner}/${repo}#${run.runId}` : null;
   const [aviso, setAviso] = useState<DeployNotification | null | undefined>(
@@ -45,12 +47,8 @@ export function DeployMetaTooltip({ owner, repo, run, avisos, children }: {
     const rect = anchorRef.current?.getBoundingClientRect();
     if (rect) setPos({ top: rect.bottom + 6, left: Math.max(8, rect.left) });
     setOpen(true);
-    if (run.headSha && !metaCache.has(run.headSha)) {
-      const sha = run.headSha;
-      getDeployMeta(owner, repo, sha).then((m) => {
-        metaCache.set(sha, m);
-        setMeta(m);
-      });
+    if (run.headSha && !metaEnCache(run.headSha)) {
+      getDeployMetaCached(owner, repo, run.headSha).then(setMeta).catch(() => {});
     }
     if (claveAviso && run.runId && !avisoCache.has(claveAviso)) {
       const clave = claveAviso;
@@ -67,7 +65,7 @@ export function DeployMetaTooltip({ owner, repo, run, avisos, children }: {
     hideTimer.current = window.setTimeout(() => setOpen(false), 120);
   };
 
-  const cached = run.headSha ? metaCache.get(run.headSha) ?? meta : meta;
+  const cached = metaEnCache(run.headSha) ?? meta;
   const avisoResuelto = claveAviso && avisoCache.has(claveAviso) ? avisoCache.get(claveAviso) : aviso;
   // Un deploy en curso todavía no notificó a nadie: el aviso sale al final del
   // workflow. Decir "se avisó a" mientras corre sería afirmar algo que aún no

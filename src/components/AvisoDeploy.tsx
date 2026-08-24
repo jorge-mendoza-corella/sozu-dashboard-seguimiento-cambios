@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { MessageCircle, MessageCircleOff, AlertTriangle, Loader2 } from "lucide-react";
 import { getDeployNotification, type DeployNotification } from "@/lib/deployNotifications";
-import type { AvisosDelProyecto } from "@/hooks/useAvisos";
-import type { WorkflowRun } from "@/lib/github";
+import { getDeployMetaCached, metaEnCache } from "@/lib/deployMetaCache";
+import { useAuth } from "@/hooks/useAuth";
+import { useDirectorio, type AvisosDelProyecto } from "@/hooks/useAvisos";
+import { Avisado, type Papel } from "./Avisado";
+import type { DeployMeta, WorkflowRun } from "@/lib/github";
 
 // ---------------------------------------------------------------------------
 // A quién se le avisa de un deploy, dicho EN LA TARJETA.
@@ -41,6 +44,21 @@ export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false
   // sincronizar dos copias del mismo dato.
   const [, redibujar] = useState(0);
   const registro = clave && cache.has(clave) ? cache.get(clave) : undefined;
+  // Autores, aprobadores y quién mergeó: es lo que convierte una lista de
+  // logins en "a quién le llegó y por qué". Sale de la caché compartida con el
+  // tooltip del badge, así que no cuesta una petición extra.
+  const [meta, setMeta] = useState<DeployMeta | null>(metaEnCache(run.headSha) ?? null);
+  const { appUser } = useAuth();
+  const directorio = useDirectorio(appUser);
+
+  useEffect(() => {
+    if (!run.headSha || metaEnCache(run.headSha)) return;
+    let vivo = true;
+    getDeployMetaCached(owner, repo, run.headSha)
+      .then((m) => { if (vivo) setMeta(m); })
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, [owner, repo, run.headSha]);
 
   useEffect(() => {
     // Un deploy en curso todavía no escribió nada: preguntarlo sería una lectura
@@ -55,6 +73,32 @@ export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false
       });
     return () => { vivo = false; };
   }, [clave, owner, repo, run.runId, corriendo]);
+
+  const metaResuelta = metaEnCache(run.headSha) ?? meta;
+  /**
+   * Qué fue cada quien en ESTE deploy. Una persona puede ser varias cosas —el
+   * caso normal en un equipo chico es que el mismo login sea autor y quien
+   * mergeó—, así que se acumulan en vez de elegir una.
+   */
+  const papelesDe = (login: string): Papel[] => {
+    const p: Papel[] = [];
+    if (login === run.actor) p.push("disparo");
+    if (metaResuelta?.authors.includes(login)) p.push("autor");
+    if (metaResuelta?.approvedBy.some((a) => a.login === login)) p.push("aprobador");
+    else if (avisos?.destinatarios.some((d) => d.login === login && d.motivo === "aprobador")) p.push("aprobador");
+    if (metaResuelta?.mergedBy === login) p.push("mergeo");
+    if (avisos?.destinatarios.some((d) => d.login === login && d.motivo === "suscrito")) p.push("suscrito");
+    return p;
+  };
+  const persona = (login: string) => (
+    <Avisado
+      key={login}
+      login={login}
+      papeles={papelesDe(login)}
+      ficha={directorio.get(login)}
+      sobreFondoOscuro={sobreFondoOscuro}
+    />
+  );
 
   const tenue = sobreFondoOscuro ? "text-white/80" : "text-muted-foreground";
   const alerta = sobreFondoOscuro ? "text-amber-100" : "text-amber-600 dark:text-amber-400";
@@ -83,8 +127,13 @@ export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false
           {registro.avisados.length > 0 && (
             <p className={`flex items-start gap-1 text-[11px] ${bien}`}>
               <MessageCircle className="mt-0.5 h-3 w-3 shrink-0" />
-              <span>
-                Avisó a <span className="font-mono">{registro.avisados.map((l) => `@${l}`).join(", ")}</span>
+              <span className="flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                Avisó a
+                {registro.avisados.map((l, i) => (
+                  <span key={l} className="inline-flex items-center">
+                    {persona(l)}{i < registro.avisados.length - 1 ? "," : ""}
+                  </span>
+                ))}
               </span>
             </p>
           )}
@@ -93,7 +142,7 @@ export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false
           {registro.fallidos.map((f) => (
             <p key={f.login} className={`flex items-start gap-1 text-[11px] ${alerta}`}>
               <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-              <span><span className="font-mono">@{f.login}</span> no recibió el aviso: {f.motivo}</span>
+              <span>{persona(f.login)} no recibió el aviso: {f.motivo}</span>
             </p>
           ))}
           {registro.avisados.length === 0 && registro.fallidos.length === 0 && (
@@ -117,15 +166,27 @@ export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false
       </p>
     );
   }
-  const fijos = avisos.destinatarios.filter((d) => d.tieneTelefono).map((d) => `@${d.login}`);
+  // Quien disparó el deploy va primero y CON SU LOGIN: decía "quien lo disparó",
+  // que obliga a ir al tooltip del badge para saber de quién se habla, justo
+  // mientras uno mira correr la barra.
+  const destinos = [
+    ...(run.actor ? [run.actor] : []),
+    ...avisos.destinatarios.filter((d) => d.tieneTelefono && d.login !== run.actor).map((d) => d.login),
+  ];
   return (
-    <p className={`flex items-start gap-1 text-[11px] ${sobreFondoOscuro ? "text-white/90" : tenue}`}>
-      <MessageCircle className="mt-0.5 h-3 w-3 shrink-0" />
-      <span>
-        {corriendo ? "Al terminar avisará a" : "Le tocaba avisar a"}{" "}
-        <span className="font-mono">{["quien lo disparó", ...fijos].join(", ")}</span>
-        {!corriendo && " (este deploy no dejó registro)"}
-      </span>
+    <p className={`flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] ${sobreFondoOscuro ? "text-white/90" : tenue}`}>
+      <MessageCircle className="h-3 w-3 shrink-0" />
+      {corriendo ? "Al terminar avisará a" : "Le tocaba avisar a"}
+      {destinos.length === 0 ? (
+        <span>quien lo disparó</span>
+      ) : (
+        destinos.map((l, i) => (
+          <span key={l} className="inline-flex items-center">
+            {persona(l)}{i < destinos.length - 1 ? "," : ""}
+          </span>
+        ))
+      )}
+      {!corriendo && <span className="opacity-70">(este deploy no dejó registro)</span>}
     </p>
   );
 }

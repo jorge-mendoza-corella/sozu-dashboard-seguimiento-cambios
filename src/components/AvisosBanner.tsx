@@ -4,17 +4,20 @@ import { cn } from "@/lib/utils";
 import type { AvisosDelProyecto } from "@/hooks/useAvisos";
 
 // ---------------------------------------------------------------------------
-// Quién recibe los avisos de WhatsApp de este proyecto, dicho en CI/CD.
+// Si este proyecto avisa por WhatsApp y a quién, en un chip.
 //
-// Esto vivía solo en Configuración, escondido tras dos pestañas, así que desde
-// donde de verdad se trabaja no había forma de saber si un merge iba a avisarle
-// a alguien: se descubría cuando el mensaje no llegaba. Y el único rastro en
-// esta pantalla era un icono de 12px en el chip de la empresa, que no alcanza
-// para algo que decide si el equipo se entera o no.
+// Era una franja de ancho completo con los nombres desplegados. Decía lo
+// correcto pero se comía una fila entera arriba de las tarjetas, todo el tiempo,
+// para una información que se consulta de vez en cuando: cuando algo no llegó, o
+// al configurar un proyecto nuevo. Ahora es un chip, y el detalle —cada
+// destinatario y por qué está— vive en su tooltip.
 //
-// Los AUTORES del PR no se enumeran: dependen de los commits de cada PR y la
-// tarjeta ya los muestra al crearlo. Aquí va lo fijo —el aprobador del proyecto
-// y los suscritos a toda la cartera—, que es justo lo que no se veía.
+// Se queda visible aunque esté todo bien: saber que SÍ avisa es la mitad del
+// valor, y un indicador que solo aparece cuando algo falla enseña a no mirarlo.
+//
+// Los autores del PR no se enumeran: salen de los commits de cada PR, no del
+// proyecto. Lo que se lista aquí es lo fijo —el aprobador y los suscritos a
+// todos los repos—, que es lo que no se ve en ninguna otra parte.
 // ---------------------------------------------------------------------------
 
 export function AvisosBanner({ avisos }: { avisos: AvisosDelProyecto | undefined }) {
@@ -26,73 +29,51 @@ export function AvisosBanner({ avisos }: { avisos: AvisosDelProyecto | undefined
   const sinTelefono = avisos.destinatarios.filter((d) => !d.tieneTelefono);
   const conTelefono = avisos.destinatarios.filter((d) => d.tieneTelefono);
 
+  if (!avisos.empresaAvisa) {
+    return (
+      <Link
+        to="/configuracion"
+        title={`${avisos.motivoEmpresa} Click para configurarlo.`}
+        className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 no-underline hover:bg-amber-100 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300"
+      >
+        <MessageCircleOff className="h-3 w-3" />
+        Sin avisos de WhatsApp
+      </Link>
+    );
+  }
+
+  const detalle = [
+    "Al abrir o cerrar un PR, y al terminar un deploy, se avisa por WhatsApp:",
+    "· a los autores del PR (salen de los commits de cada uno)",
+    ...conTelefono.map((d) => `· @${d.login} — ${d.motivo === "aprobador" ? "aprobador del proyecto" : "suscrito a todos los repos"}`),
+    ...sinTelefono.map((d) => `· @${d.login} — ${d.motivo === "aprobador" ? "aprobador del proyecto" : "suscrito a todos los repos"}: SIN TELÉFONO en Contribuidores, no le llega nada`),
+    ...(avisos.destinatarios.length === 0
+      ? ["· y a nadie más: este proyecto no tiene aprobador asignado"]
+      : []),
+  ].join("\n");
+
   return (
-    <div
+    <span
+      title={detalle}
       className={cn(
-        "mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border px-3 py-2 text-xs",
-        avisos.empresaAvisa
-          ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300"
-          : "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        sinTelefono.length > 0
+          ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300"
+          : "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/30 dark:text-emerald-300",
       )}
     >
-      {avisos.empresaAvisa ? (
-        <MessageCircle className="h-3.5 w-3.5 shrink-0" />
-      ) : (
-        <MessageCircleOff className="h-3.5 w-3.5 shrink-0" />
+      {sinTelefono.length > 0
+        ? <AlertTriangle className="h-3 w-3" />
+        : <MessageCircle className="h-3 w-3" />}
+      Avisa por WhatsApp
+      {conTelefono.length > 0 && (
+        <span className="font-mono font-normal opacity-80">
+          · @{conTelefono[0].login}{conTelefono.length > 1 ? ` +${conTelefono.length - 1}` : ""}
+        </span>
       )}
-
-      {!avisos.empresaAvisa ? (
-        <>
-          <span className="font-semibold">Sin avisos de WhatsApp.</span>
-          <span>{avisos.motivoEmpresa}</span>
-          <Link to="/configuracion" className="underline underline-offset-2">
-            Configurar
-          </Link>
-        </>
-      ) : (
-        <>
-          <span className="font-semibold">Avisa por WhatsApp</span>
-          <span className="opacity-80">a los autores del PR</span>
-          {conTelefono.length > 0 && (
-            <>
-              <span className="opacity-60">·</span>
-              {conTelefono.map((d) => (
-                <span
-                  key={d.login}
-                  className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium dark:bg-emerald-900/40"
-                  title={
-                    d.motivo === "aprobador"
-                      ? `@${d.login} aprueba los PRs de este proyecto, así que recibe todos sus avisos.`
-                      : `@${d.login} está suscrito a los avisos de todos los repos.`
-                  }
-                >
-                  @{d.login}
-                  <span className="ml-1 font-normal opacity-70">
-                    {d.motivo === "aprobador" ? "aprobador" : "todos los repos"}
-                  </span>
-                </span>
-              ))}
-            </>
-          )}
-          {avisos.destinatarios.length === 0 && (
-            <span className="opacity-80">
-              y a nadie más: este proyecto no tiene aprobador asignado.
-            </span>
-          )}
-          {/* Estar en la lista sin teléfono es peor que no estar: se cree que
-              esa persona se entera y nunca le llega nada. */}
-          {sinTelefono.map((d) => (
-            <span
-              key={d.login}
-              className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-              title={`@${d.login} debería recibir estos avisos, pero no tiene teléfono en Contribuidores: no le va a llegar nada.`}
-            >
-              <AlertTriangle className="h-3 w-3" />
-              @{d.login} sin teléfono
-            </span>
-          ))}
-        </>
+      {sinTelefono.length > 0 && (
+        <span className="font-normal">· {sinTelefono.length} sin teléfono</span>
       )}
-    </div>
+    </span>
   );
 }
