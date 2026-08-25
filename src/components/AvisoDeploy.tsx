@@ -186,13 +186,21 @@ export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false
       </p>
     );
   }
-  // Quien disparó el deploy va primero y CON SU LOGIN: decía "quien lo disparó",
-  // que obliga a ir al tooltip del badge para saber de quién se habla, justo
-  // mientras uno mira correr la barra.
-  const destinos = [
+  // A quién le va a llegar, con el MISMO criterio que usa `notify-deploy.sh`:
+  //
+  //   PROD → todos los autores de los PRs que entraron en el release
+  //   DEV  → el autor del PR que acaba de entrar
+  //   y en los dos casos, el aprobador del proyecto y los suscritos
+  //
+  // Faltaban los AUTORES. Solo se listaba a quien disparó el deploy, así que un
+  // release con PRs de tres personas anunciaba avisos para una sola —la que
+  // apretó el botón— y las otras dos aparecían después en "avisó a", como si
+  // hubieran salido de la nada.
+  const destinos = [...new Set([
     ...(run.actor ? [run.actor] : []),
-    ...avisos.destinatarios.filter((d) => d.tieneTelefono && d.login !== run.actor).map((d) => d.login),
-  ];
+    ...(metaResuelta?.authors ?? []),
+    ...avisos.destinatarios.filter((d) => d.tieneTelefono).map((d) => d.login),
+  ])];
   return (
     <p className={`flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] ${sobreFondoOscuro ? "text-white/90" : tenue}`}>
       <MessageCircle className="h-3 w-3 shrink-0" />
