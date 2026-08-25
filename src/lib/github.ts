@@ -159,7 +159,18 @@ export interface PullRequest {
   createdAt: string;
   draft: boolean;
   checksState: "success" | "failure" | "pending" | "unknown";
+  /** Quién CREÓ el PR en GitHub. No siempre es quien escribió el código. */
   author: string;
+  /**
+   * Autores REALES: los marcadores `<!-- pr_author: login -->` que el dashboard
+   * embebe en el cuerpo según los commits, o el creador si no hay ninguno.
+   *
+   * Es la lista que notifican los workflows, y la que hay que mostrar. Con
+   * `author` a secas, un PR creado desde el dashboard por una persona para los
+   * commits de otra decía que se le avisaría a quien apretó el botón — y el
+   * WhatsApp le llegaba al que sí escribió el código.
+   */
+  authors: string[];
   requestedReviewers: string[];
   reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
   hasConflict: boolean;
@@ -259,6 +270,17 @@ export interface DeployMeta {
 }
 
 /**
+ * Autores reales de un PR: los marcadores `<!-- pr_author: login -->` de su
+ * cuerpo, que es exactamente lo que leen los workflows para decidir a quién
+ * avisar. Sin marcadores queda el creador, que es lo que hacen ellos también.
+ */
+function autoresDelCuerpo(body: string | null | undefined, creador?: string): string[] {
+  const marcados = [...(body ?? "").matchAll(/<!-- pr_author: ([\w.-]+) -->/g)].map((m) => m[1]);
+  const unicos = [...new Set(marcados)];
+  return unicos.length > 0 ? unicos : creador ? [creador] : [];
+}
+
+/**
  * Metadatos de un deploy a partir de su commit: PR asociado, autores,
  * aprobadores y quién mergeó. Se consulta perezosamente (hover del tooltip).
  */
@@ -276,7 +298,7 @@ export async function getDeployMeta(owner: string, repo: string, headSha: string
       octokit.pulls.get({ owner, repo, pull_number: pr.number }),
       octokit.pulls.listReviews({ owner, repo, pull_number: pr.number, per_page: 50 }),
     ]);
-    const bodyAuthors = [...(detail.data.body ?? "").matchAll(/<!-- pr_author: ([\w.-]+) -->/g)].map((m) => m[1]);
+
     // Bypass = review marcada por el dashboard, o (heurística para reviews
     // viejas sin marca) approve casi simultáneo al merge en PRs que no van a main.
     const mergedAtMs = detail.data.merged_at ? new Date(detail.data.merged_at).getTime() : null;
@@ -294,7 +316,7 @@ export async function getDeployMeta(owner: string, repo: string, headSha: string
       })
       .filter((a) => (seen.has(a.login) ? false : (seen.add(a.login), true)));
     return {
-      authors: bodyAuthors.length > 0 ? [...new Set(bodyAuthors)] : [detail.data.user?.login ?? "?"],
+      authors: autoresDelCuerpo(detail.data.body, detail.data.user?.login ?? "?"),
       approvedBy,
       mergedBy: detail.data.merged_by?.login ?? null,
       prNumber: pr.number,
@@ -626,6 +648,7 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
           draft: pr.draft ?? false,
           checksState: "unknown" as const,
           author: pr.user?.login ?? "",
+          authors: autoresDelCuerpo(prDetail?.data.body ?? pr.body, pr.user?.login),
           requestedReviewers,
           reviewDecision,
           hasConflict: prDetail?.data.mergeable === false,

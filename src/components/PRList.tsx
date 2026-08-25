@@ -254,10 +254,26 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                   </div>
                   {/* Autor y reviewers */}
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    {pr.author && (
-                      <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                    {/* Los autores del CÓDIGO, y aparte quién abrió el PR
+                        cuando no son la misma persona: los PRs creados desde el
+                        dashboard salen a nombre de quien aprieta el botón, y
+                        este chip hacía parecer que los cambios eran suyos. */}
+                    {pr.authors.length > 0 && (
+                      <span
+                        className="flex items-center gap-0.5 text-[10px] text-muted-foreground"
+                        title={`Cambios de ${pr.authors.map((a) => "@" + a).join(", ")} (autores de los commits)`}
+                      >
                         <User className="h-2.5 w-2.5" />
-                        <span className="font-mono">{pr.author}</span>
+                        <span className="font-mono">{pr.authors.join(", ")}</span>
+                      </span>
+                    )}
+                    {pr.author && !pr.authors.includes(pr.author) && (
+                      <span
+                        className="flex items-center gap-0.5 text-[10px] text-muted-foreground/70"
+                        title={`@${pr.author} abrió el PR, pero los cambios son de ${pr.authors.map((a) => "@" + a).join(", ")}`}
+                      >
+                        <GitPullRequest className="h-2.5 w-2.5" />
+                        <span className="font-mono">abrió {pr.author}</span>
                       </span>
                     )}
                     {pr.requestedReviewers.length > 0 && (
@@ -282,7 +298,10 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                         <span
                           className="flex items-center gap-0.5 text-[10px] text-muted-foreground"
                           title={
-                            "Al cerrarse (con o sin merge) se avisa por WhatsApp a los autores del PR"
+                            "Al cerrarse (con o sin merge) se avisa por WhatsApp a "
+                            + (pr.authors.length > 0
+                              ? `los autores de los commits (${pr.authors.map((a) => "@" + a).join(", ")})`
+                              : "los autores del PR")
                             + (avisos.destinatarios.length
                               ? " y a " + avisos.destinatarios
                                   .map((d) => `@${d.login} (${d.motivo === "aprobador" ? "aprobador del proyecto" : "suscrito a todos los repos"})${d.tieneTelefono ? "" : " — SIN TELÉFONO en Contribuidores"}`)
@@ -292,7 +311,14 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                         >
                           <MessageCircle className="h-2.5 w-2.5" />
                           <span>
-                            avisa a {pr.author ? `@${pr.author}` : "sus autores"}
+                            {/* Los autores REALES (marcadores `pr_author`), no
+                                quien creó el PR: son dos personas distintas cada
+                                vez que alguien abre el PR desde el dashboard
+                                para los commits de otro, y el WhatsApp le llega
+                                a quien escribió el código. */}
+                            avisa a {pr.authors.length > 0
+                              ? pr.authors.map((a) => `@${a}`).join(", ")
+                              : "sus autores"}
                             {avisos.destinatarios.length > 0
                               && ` y ${avisos.destinatarios.map((d) => `@${d.login}`).join(", ")}`}
                           </span>
