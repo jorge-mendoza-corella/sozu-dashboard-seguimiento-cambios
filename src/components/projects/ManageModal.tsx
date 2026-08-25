@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { X, Loader2, Trash2, Plus, FolderGit2, Pencil, Check, Smartphone, Globe, AlertTriangle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,12 +8,17 @@ import { cn } from "@/lib/utils";
 import {
   addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel, setProjectIsApp, setProjectCodemagicApp, setProjectApprover, setProjectNotifyAuthors, setProjectAndroidPackage,
   setProjectIosBundleId, setRepoFrontUrl, renameRepoDoc,
+  type Project,
 } from "@/lib/firestoreProjects";
 import { listRepoContributors } from "@/lib/github";
 import { useProjects, useRepos, useRepoRenames } from "@/hooks/useProjectsRepos";
 import { useCodemagicApps } from "@/hooks/useCodemagic";
 import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useAuth } from "@/hooks/useAuth";
+import { useClients } from "@/hooks/useClients";
+import { useAbiertos } from "@/hooks/useAbiertos";
+import { ChevronPlegar } from "@/components/config/Collapsible";
+import { clientDisplayName } from "@/lib/firestoreClients";
 import { useQuery } from "@tanstack/react-query";
 import { getVisibleUsers, SUPERUSER_EMAIL, isRootAdmin , scopeKeyOf} from "@/lib/firestoreUsers";
 import { checkRepoAccess } from "@/lib/githubAuth";
@@ -197,6 +202,41 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
     }
   };
 
+  // Los proyectos se agrupan por EMPRESA. Sin eso la lista era un montón plano
+  // donde nada decía de quién es cada proyecto: con ocho empresas hay que
+  // acordarse de memoria, y equivocarse aquí significa ponerle el aprobador o la
+  // app de Codemagic de un cliente al proyecto de otro.
+  //
+  // Arrancan CERRADAS: se viene a tocar una empresa, no las ocho, y con todas
+  // abiertas la primera pantalla del modal ya obligaba a scrollear.
+  const { data: clients = [] } = useClients(appUser);
+  const { abiertos, alternar, abrirTodos, cerrarTodos } = useAbiertos();
+
+  const SIN_EMPRESA = "__sin_empresa__";
+  const grupos = useMemo(() => {
+    const porEmpresa = new Map<string, Project[]>();
+    for (const p of projects) {
+      const clave = p.clientId ?? SIN_EMPRESA;
+      const lista = porEmpresa.get(clave);
+      if (lista) lista.push(p); else porEmpresa.set(clave, [p]);
+    }
+    const conNombre = [...porEmpresa.entries()].map(([id, suyos]) => {
+      const c = clients.find((x) => x.id === id);
+      return {
+        id,
+        nombre: c ? clientDisplayName(c) : "Sin empresa",
+        color: c?.color ?? "#94a3b8",
+        proyectos: suyos,
+      };
+    });
+    // Los huérfanos al final: son un pendiente, no una empresa. Y sus repos no
+    // se le cobran a nadie, así que conviene que se vean, no que se pierdan
+    // entre las demás.
+    return conNombre.sort((a, b) =>
+      a.id === SIN_EMPRESA ? 1 : b.id === SIN_EMPRESA ? -1 : a.nombre.localeCompare(b.nombre),
+    );
+  }, [projects, clients]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -210,26 +250,68 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
             </Button>
           </div>
 
-          {/* Proyectos */}
-          <h3 className="text-sm font-semibold text-muted-foreground">Proyectos ({projects.length})</h3>
-          <div className="mt-2 space-y-1.5">
-            {projects.map((p) => {
+          {/* Proyectos, agrupados por empresa */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-muted-foreground">
+              Proyectos ({projects.length}) · {grupos.length} empresa{grupos.length === 1 ? "" : "s"}
+            </h3>
+            {grupos.length > 1 && (
+              <button
+                type="button"
+                className="text-xs text-muted-foreground underline hover:text-foreground"
+                onClick={() => (abiertos.size === 0 ? abrirTodos(grupos.map((g) => g.id)) : cerrarTodos())}
+              >
+                {abiertos.size === 0 ? "desplegar todas" : "contraer todas"}
+              </button>
+            )}
+          </div>
+          <div className="mt-2 space-y-2">
+            {grupos.map((g) => {
+              const abierta = abiertos.has(g.id);
+              return (
+                <div key={g.id} className="rounded-md border">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left"
+                    title={abierta ? `Contraer ${g.nombre}` : `Ver los proyectos de ${g.nombre}`}
+                    onClick={() => alternar(g.id)}
+                  >
+                    <ChevronPlegar abierto={abierta} />
+                    <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: g.color }} />
+                    <span className="text-sm font-semibold">{g.nombre}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {g.proyectos.length} proyecto{g.proyectos.length === 1 ? "" : "s"} ·{" "}
+                      {repos.filter((r) => g.proyectos.some((p) => p.id === r.projectId)).length} repo
+                      {repos.filter((r) => g.proyectos.some((p) => p.id === r.projectId)).length === 1 ? "" : "s"}
+                    </span>
+                    {g.id === SIN_EMPRESA && (
+                      <span
+                        className="ml-auto rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                        title="Sus repos no se le cobran a nadie: asígnales empresa en Configuración → Proyectos y repos."
+                      >
+                        sin cobrar
+                      </span>
+                    )}
+                  </button>
+
+                  <div className={cn("space-y-1.5 border-t p-2", !abierta && "hidden")}>
+            {g.proyectos.map((p) => {
               const count = repos.filter((r) => r.projectId === p.id).length;
-              const isEditing = editing?.id === p.id;
+              const borrador = editing?.id === p.id ? editing : null;
               const isApp = p.isApp ?? false;
               return (
                 <div key={p.id} className="rounded-md border px-3 py-2">
                 <div className="flex items-center gap-2">
                   <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
-                  {isEditing ? (
+                  {borrador ? (
                     <input
                       autoFocus
                       className="flex-1 rounded border bg-background px-2 py-1 text-sm"
-                      value={editing.name}
+                      value={borrador.name}
                       onChange={(e) => setEditing({ id: p.id, name: e.target.value })}
                       onKeyDown={(e) => {
                         if (e.key === "Enter")
-                          run(`rn-${p.id}`, () => renameProject(p.id, editing.name), refreshProjects).then(() =>
+                          run(`rn-${p.id}`, () => renameProject(p.id, borrador.name), refreshProjects).then(() =>
                             setEditing(null),
                           );
                       }}
@@ -258,14 +340,14 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                     )}
                     APP
                   </button>
-                  {isEditing ? (
+                  {borrador ? (
                     <Button
                       size="icon"
                       variant="ghost"
                       className="h-7 w-7"
                       disabled={busy === `rn-${p.id}`}
                       onClick={() =>
-                        run(`rn-${p.id}`, () => renameProject(p.id, editing.name), refreshProjects).then(() =>
+                        run(`rn-${p.id}`, () => renameProject(p.id, borrador.name), refreshProjects).then(() =>
                           setEditing(null),
                         )
                       }
@@ -462,11 +544,15 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                 </div>
               );
             })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <div className="mt-2 flex gap-2">
             <input
               className="flex-1 rounded-md border bg-background px-3 py-2 text-sm"
-              placeholder="Nuevo proyecto"
+              placeholder="Nuevo proyecto (queda sin empresa)"
               value={newProject}
               onChange={(e) => setNewProject(e.target.value)}
               onKeyDown={(e) =>
