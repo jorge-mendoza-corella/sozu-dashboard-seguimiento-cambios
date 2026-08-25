@@ -248,6 +248,14 @@ export interface DeployMeta {
   /** Quién hizo el merge que disparó el deploy. */
   mergedBy: string | null;
   prNumber: number | null;
+  /**
+   * Rama destino del PR y si llegó a mergearse. Sin esto, un `approvedBy`
+   * vacío se pintaba como un guion: no distinguía "se mergeó sin aprobación
+   * vigente" —lo normal en ramas no productivas, donde el dashboard hace
+   * bypass— de "main sin aprobar", que sí sería grave.
+   */
+  baseRef: string | null;
+  merged: boolean;
 }
 
 /**
@@ -255,7 +263,9 @@ export interface DeployMeta {
  * aprobadores y quién mergeó. Se consulta perezosamente (hover del tooltip).
  */
 export async function getDeployMeta(owner: string, repo: string, headSha: string): Promise<DeployMeta> {
-  const empty: DeployMeta = { authors: [], approvedBy: [], mergedBy: null, prNumber: null };
+  const empty: DeployMeta = {
+    authors: [], approvedBy: [], mergedBy: null, prNumber: null, baseRef: null, merged: false,
+  };
   try {
     const { data: prs } = await octokit.repos.listPullRequestsAssociatedWithCommit({
       owner, repo, commit_sha: headSha,
@@ -288,6 +298,8 @@ export async function getDeployMeta(owner: string, repo: string, headSha: string
       approvedBy,
       mergedBy: detail.data.merged_by?.login ?? null,
       prNumber: pr.number,
+      baseRef: detail.data.base.ref,
+      merged: !!detail.data.merged_at,
     };
   } catch {
     return empty;
