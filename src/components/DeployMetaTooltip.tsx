@@ -110,13 +110,39 @@ export function DeployMetaTooltip({ owner, repo, run, avisos, children }: {
                   <span>
                     <span className="text-muted-foreground">Aprobó:</span>{" "}
                     {cached.approvedBy.length === 0 ? (
-                      <span className="font-mono">—</span>
+                      // Ni una review APPROVED vigente. En una rama no
+                      // productiva es lo esperado —el dashboard mergea con
+                      // bypass a propósito—, en main no debería pasar nunca, y
+                      // un guion pelón hacía que las dos cosas se vieran igual.
+                      cached.merged && cached.baseRef && cached.baseRef !== "main" ? (
+                        <span
+                          className="rounded bg-amber-100 px-1 py-0.5 text-[9px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                          title={`Se mergeó a ${cached.baseRef} sin aprobación vigente. En ramas no productivas el dashboard lo permite a propósito (bypass); a main nunca.`}
+                        >
+                          nadie · bypass a {cached.baseRef}
+                        </span>
+                      ) : cached.merged && cached.baseRef === "main" ? (
+                        <span
+                          className="rounded bg-red-100 px-1 py-0.5 text-[9px] font-semibold text-red-700 dark:bg-red-900/40 dark:text-red-300"
+                          title="Se mergeó a main sin ninguna aprobación vigente. Main exige revisión: revisa si se saltó la protección de rama o si la aprobación se descartó al llegar commits nuevos."
+                        >
+                          nadie · a MAIN sin aprobar
+                        </span>
+                      ) : (
+                        <span className="font-mono">—</span>
+                      )
                     ) : (
                       cached.approvedBy.map((a, i) => (
                         <span key={a.login} className="font-mono">
                           {i > 0 && ", "}@{a.login}
                           {a.auto && (
-                            <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 font-sans text-[9px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                            <span
+                              className="ml-1 rounded bg-amber-100 px-1 py-0.5 font-sans text-[9px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                              title={
+                                `La aprobación la firmó el dashboard con la cuenta de @${a.login}, no una revisión hecha a mano`
+                                + (cached.baseRef ? ` (bypass a ${cached.baseRef}, rama no productiva).` : ".")
+                              }
+                            >
                               auto/bypass
                             </span>
                           )}
