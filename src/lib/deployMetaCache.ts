@@ -25,7 +25,18 @@ export function getDeployMetaCached(owner: string, repo: string, sha: string): P
   const yaVa = enVuelo.get(sha);
   if (yaVa) return yaVa;
   const p = getDeployMeta(owner, repo, sha)
-    .then((m) => { cache.set(sha, m); enVuelo.delete(sha); return m; })
+    .then((m) => {
+      // Solo se guarda un resultado ÚTIL. `getDeployMeta` devuelve el objeto
+      // vacío tanto cuando la petición falla —rate limit de GitHub, por
+      // ejemplo— como cuando el commit todavía no tiene PR asociado, que es lo
+      // normal en los segundos siguientes a un merge. Cachear eso convertía un
+      // tropiezo de un segundo en un dato ausente para siempre: la tarjeta se
+      // quedaba diciendo que el deploy avisaría solo a quien lo disparó, sin
+      // los autores del release, y ya no volvía a preguntar.
+      if (m.prNumber !== null) cache.set(sha, m);
+      enVuelo.delete(sha);
+      return m;
+    })
     .catch((e) => { enVuelo.delete(sha); throw e; });
   enVuelo.set(sha, p);
   return p;
