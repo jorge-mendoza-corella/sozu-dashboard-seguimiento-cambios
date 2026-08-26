@@ -328,6 +328,30 @@ export async function getDeployMeta(owner: string, repo: string, headSha: string
   }
 }
 
+/**
+ * Nombre público de una cuenta de GitHub (`name` del perfil), o null.
+ *
+ * Una petición por cuenta, así que se pide SOLO cuando alguien abre una ficha,
+ * nunca al pintar una lista: la cuota de la API es una sola para todo el
+ * dashboard y treinta tarjetas serían treinta llamadas por render. El resultado
+ * se cachea —incluido el "no tiene nombre"— porque un perfil no cambia entre
+ * dos clics.
+ */
+const nombresGitHub = new Map<string, string | null>();
+export async function getGithubDisplayName(login: string): Promise<string | null> {
+  if (nombresGitHub.has(login)) return nombresGitHub.get(login) ?? null;
+  try {
+    const { data } = await octokit.users.getByUsername({ username: login });
+    const nombre = data.name?.trim() || null;
+    nombresGitHub.set(login, nombre);
+    return nombre;
+  } catch {
+    // Un fallo NO se cachea: si fue el rate limit, la próxima vez que se abra
+    // la ficha vuelve a intentarlo en vez de quedarse sin nombre para siempre.
+    return null;
+  }
+}
+
 /** SHA del HEAD de una rama (null si la rama/repo no existe o no hay acceso). */
 export async function getBranchHeadSha(owner: string, repo: string, branch: string): Promise<string | null> {
   try {

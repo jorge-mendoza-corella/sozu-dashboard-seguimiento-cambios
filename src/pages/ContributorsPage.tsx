@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Users, GitCommit, GitBranch, Phone, ExternalLink, X, Loader2, Check,
-  GitPullRequest, Layers, LayoutGrid, Settings2, ChevronDown, ChevronUp,
+  GitPullRequest, Layers, LayoutGrid, Settings2, ChevronDown, ChevronUp, Mail, Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
-import { fetchContributors, type Contributor } from "@/lib/github";
+import { fetchContributors, getGithubDisplayName, type Contributor } from "@/lib/github";
+import { useDirectorio } from "@/hooks/useAvisos";
 import { getAllContributorPhones, saveContributorPhone } from "@/lib/firestoreContributors";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ContributorsAnalytics } from "@/components/analytics/ContributorsAnalytics";
@@ -69,6 +70,24 @@ function DetailModal({
   onSaved: (login: string, telefono: string) => void;
 }) {
   const { appUser } = useAuth();
+  // Quién es esta cuenta, más allá del login. Un `@t-lara` o un
+  // `@oscarcabral-investimento` no dicen a quién estás mirando, y esta pantalla
+  // se usa justo para decidir a quién le llegan los avisos.
+  const directorio = useDirectorio(appUser);
+  const ficha = directorio.get(contributor.login);
+  // El nombre real vive en el perfil de GitHub, y eso es UNA petición por
+  // contribuidor: se pide solo al abrir su ficha, no al pintar la lista de
+  // treinta tarjetas. La cuota de la API es una sola para todo el dashboard y ya
+  // se agotó una vez por pedir de más.
+  const [nombreGitHub, setNombreGitHub] = useState<string | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    getGithubDisplayName(contributor.login)
+      .then((n) => { if (vivo) setNombreGitHub(n); })
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, [contributor.login]);
+
   const [telefono, setTelefono] = useState(telefonoActual ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -127,6 +146,18 @@ function DetailModal({
                   <ExternalLink className="h-4 w-4" />
                 </a>
               </div>
+              {nombreGitHub && (
+                <p className="text-sm font-medium">{nombreGitHub}</p>
+              )}
+              {ficha?.email && (
+                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Mail className="h-3 w-3 shrink-0" />
+                  <a href={`mailto:${ficha.email}`} className="underline decoration-dotted">
+                    {ficha.email}
+                  </a>
+                  {ficha.rol && <span className="opacity-70">· {ficha.rol}</span>}
+                </p>
+              )}
               <p className="text-sm text-muted-foreground">
                 {contributor.totalContributions.toLocaleString()} commits ·{" "}
                 {contributor.repos.length} repos
@@ -259,6 +290,7 @@ export function ContributorsPage() {
   const [selected, setSelected] = useState<Contributor | null>(null);
   const [view, setView] = useState<"flat" | "grouped">("flat");
   const [showGroups, setShowGroups] = useState(false);
+  const [filtro, setFiltro] = useState("");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const toggleGroupExpand = (id: string) =>
@@ -268,6 +300,8 @@ export function ContributorsPage() {
       return next;
     });
   const { appUser } = useAuth();
+  // Correo y rol por cuenta de GitHub: alimentan el buscador y la ficha.
+  const directorio = useDirectorio(appUser);
   const { esAdminGlobal, visibleProjects, visibleProjectIds, repoIds } = useClientScope(appUser);
   const { data: clients = [] } = useClients(appUser);
   const { data: allRepos = [] } = useRepos();
@@ -337,6 +371,25 @@ export function ContributorsPage() {
     },
     [mostrarEmpresas, empresasPorRepoLabel, empresaPorId],
   );
+
+  /**
+   * Los contribuidores que pasan el buscador.
+   *
+   * El nombre de GitHub no se busca aquí a propósito: traerlo costaría una
+   * petición por persona y la cuota de la API es una sola para todo el
+   * dashboard —ya se agotó una vez—. Se busca por lo que ya está en memoria:
+   * cuenta, correo y empresa. El nombre real se ve al abrir la ficha.
+   */
+  const visibles = useMemo(() => {
+    const q = filtro.trim().toLowerCase();
+    if (!q) return contributors;
+    return contributors.filter((c) =>
+      c.login.toLowerCase().includes(q)
+      || (directorio.get(c.login)?.email ?? "").toLowerCase().includes(q)
+      || empresasDe(c).some((e) => e.nombre.toLowerCase().includes(q)),
+    );
+  }, [contributors, filtro, directorio, empresasDe]);
+
 
   // Métricas 30d (dev/main/PRs por repo) del contribuidor seleccionado.
   const metrics30 = useMemo<RepoMetrics30[] | null>(() => {
@@ -439,6 +492,32 @@ export function ContributorsPage() {
             </div>
           ) : (
             <>
+              {/* Buscador. Con treinta y pico de tarjetas en una grilla de tres
+                  columnas, encontrar a alguien era pasar la vista por todas. Se
+                  busca por login, nombre de GitHub, correo y empresa: son las
+                  cuatro cosas con las que uno se acuerda de una persona, y el
+                  login rara vez es la primera. */}
+              <div className="relative mb-4 w-full sm:w-96">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  className="h-9 w-full rounded-md border bg-background pl-9 pr-9 text-sm"
+                  placeholder="Buscar por cuenta, nombre, correo o empresa"
+                  value={filtro}
+                  onChange={(e) => setFiltro(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Escape") setFiltro(""); }}
+                />
+                {filtro && (
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    title="Limpiar la búsqueda"
+                    onClick={() => setFiltro("")}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
               {/* Toolbar: vista + gestión de grupos (solo admin global) */}
               {verHerramientasGlobales && (
                 <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -591,9 +670,15 @@ export function ContributorsPage() {
                 </p>
               )}
 
+              {vista === "flat" && visibles.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Nadie coincide con “{filtro.trim()}”.
+                </p>
+              )}
+
               {vista === "flat" && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {contributors.map((c) => (
+                  {visibles.map((c) => (
                     <Card
                       key={c.login}
                       className="cursor-pointer transition-shadow hover:shadow-md"
