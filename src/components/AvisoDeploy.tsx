@@ -67,6 +67,19 @@ export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false
   // autores hasta que alguien recargara la página.
   const [intento, setIntento] = useState(0);
   useEffect(() => {
+    // SOLO para el deploy en curso. Esta consulta cuesta tres peticiones a
+    // GitHub (PR del commit, detalle, reviews) y se hacía para la tarjeta de
+    // cada repo en cada refresco: seis repos cada dos minutos son ~540 llamadas
+    // por hora solo por esto, y el token de lectura es UNO compartido por todo
+    // el dashboard. Se agotó el límite de 5.000/hora y las tarjetas dejaron de
+    // cargar enteras — peor que no tener los iconos de papel.
+    //
+    // En un deploy terminado los nombres salen del registro del CI, que ya está
+    // en Firestore, y el papel de cada uno se deduce de lo que ya tenemos: el
+    // aprobador y los suscritos vienen de `avisos`, y quien lo disparó es
+    // `run.actor`. Lo único que se pierde es distinguir "autor" de "mergeó" sin
+    // pasar el puntero por el badge, que sí trae los metadatos.
+    if (!corriendo) return;
     if (!run.headSha || metaEnCache(run.headSha)) return;
     let vivo = true;
     let timer: number | undefined;
@@ -87,7 +100,7 @@ export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false
         }
       });
     return () => { vivo = false; if (timer) window.clearTimeout(timer); };
-  }, [owner, repo, run.headSha, intento]);
+  }, [owner, repo, run.headSha, intento, corriendo]);
 
   useEffect(() => {
     // Un deploy en curso todavía no escribió nada: preguntarlo sería una lectura
