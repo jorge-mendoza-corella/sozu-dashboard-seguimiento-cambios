@@ -676,9 +676,35 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
 
     return { owner, repo, label, branches, openPRs, latestRuns };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Error desconocido";
-    return { owner, repo, label, branches: [], openPRs: [], latestRuns: [], error: msg };
+    return {
+      owner, repo, label, branches: [], openPRs: [], latestRuns: [],
+      error: mensajeDeError(err),
+    };
   }
+}
+
+/**
+ * El error de GitHub en cristiano.
+ *
+ * El de rate limit llega con tres líneas de texto legal y un request ID, y así
+ * se pintaba entero en cada tarjeta: seis párrafos rojos que tapaban la pantalla
+ * sin decir lo único que importa —que no es un fallo del repo y que se arregla
+ * solo—. El token de lectura es uno para todo el dashboard, así que cuando se
+ * agota, se agota para todos a la vez.
+ */
+function mensajeDeError(err: unknown): string {
+  const e = err as { status?: number; message?: string; response?: { headers?: Record<string, string> } };
+  const esLimite = e?.status === 403 && (e.message ?? "").toLowerCase().includes("rate limit");
+  if (!esLimite) return e?.message ?? "Error desconocido";
+  const reset = Number(e.response?.headers?.["x-ratelimit-reset"] ?? 0);
+  const cuando = reset
+    ? new Date(reset * 1000).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })
+    : null;
+  return (
+    "GitHub limitó las peticiones de este token (5.000/hora, compartidas por todo el dashboard). "
+    + (cuando ? `Se repone a las ${cuando}; ` : "Se repone en menos de una hora; ")
+    + "hasta entonces no se puede leer el estado de los repos. No es un problema del repositorio."
+  );
 }
 
 /** Cierra un PR sin hacer merge (como el usuario de la sesión). */

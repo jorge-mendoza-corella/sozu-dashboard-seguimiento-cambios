@@ -65,14 +65,17 @@ export function AvisosBanner({ avisos }: { avisos: AvisosDelProyecto | undefined
       {sinTelefono.length > 0
         ? <AlertTriangle className="h-3 w-3" />
         : <MessageCircle className="h-3 w-3" />}
+      {/* Sin nombres: este chip habla del PROYECTO, no de un cambio concreto.
+          Sacar un login aquí lo hacía parecer el destinatario de algo que está
+          pasando, cuando quien recibe cada aviso depende del PR o del deploy —y
+          eso ya lo dice cada tarjeta, con su papel. Lo fijo vive en el tooltip.
+          Lo único que sí sube al chip es lo que hay que arreglar: alguien en la
+          lista sin teléfono no va a recibir nada. */}
       Avisa por WhatsApp
-      {conTelefono.length > 0 && (
-        <span className="font-mono font-normal opacity-80">
-          · @{conTelefono[0].login}{conTelefono.length > 1 ? ` +${conTelefono.length - 1}` : ""}
-        </span>
-      )}
       {sinTelefono.length > 0 && (
-        <span className="font-normal">· {sinTelefono.length} sin teléfono</span>
+        <span className="font-normal">
+          · {sinTelefono.length} sin teléfono
+        </span>
       )}
     </span>
   );

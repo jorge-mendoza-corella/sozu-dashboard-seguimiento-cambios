@@ -60,14 +60,47 @@ export function AvisoDeploy({ owner, repo, run, avisos, sobreFondoOscuro = false
   const { appUser } = useAuth();
   const directorio = useDirectorio(appUser);
 
+  // Reintentos mientras el deploy corre: GitHub tarda unos segundos en asociar
+  // el commit de merge con su PR, y ese es justo el momento en que la tarjeta se
+  // está mirando. Sin esto, el primer intento fallaba, el efecto no se volvía a
+  // disparar —las dependencias no cambian— y el release se quedaba sin sus
+  // autores hasta que alguien recargara la página.
+  const [intento, setIntento] = useState(0);
   useEffect(() => {
+    // SOLO para el deploy en curso. Esta consulta cuesta tres peticiones a
+    // GitHub (PR del commit, detalle, reviews) y se hacía para la tarjeta de
+    // cada repo en cada refresco: seis repos cada dos minutos son ~540 llamadas
+    // por hora solo por esto, y el token de lectura es UNO compartido por todo
+    // el dashboard. Se agotó el límite de 5.000/hora y las tarjetas dejaron de
+    // cargar enteras — peor que no tener los iconos de papel.
+    //
+    // En un deploy terminado los nombres salen del registro del CI, que ya está
+    // en Firestore, y el papel de cada uno se deduce de lo que ya tenemos: el
+    // aprobador y los suscritos vienen de `avisos`, y quien lo disparó es
+    // `run.actor`. Lo único que se pierde es distinguir "autor" de "mergeó" sin
+    // pasar el puntero por el badge, que sí trae los metadatos.
+    if (!corriendo) return;
     if (!run.headSha || metaEnCache(run.headSha)) return;
     let vivo = true;
+    let timer: number | undefined;
     getDeployMetaCached(owner, repo, run.headSha)
-      .then((m) => { if (vivo) setMeta(m); })
-      .catch(() => {});
-    return () => { vivo = false; };
-  }, [owner, repo, run.headSha]);
+      .then((m) => {
+        if (!vivo) return;
+        setMeta(m);
+        // `prNumber === null` = todavía no hay PR asociado (o la petición
+        // falló). Se reintenta un par de veces y se deja de insistir: pasados
+        // tres intentos, lo más probable es que ese commit no venga de un PR.
+        if (m.prNumber === null && intento < 3) {
+          timer = window.setTimeout(() => { if (vivo) setIntento((i) => i + 1); }, 15_000);
+        }
+      })
+      .catch(() => {
+        if (vivo && intento < 3) {
+          timer = window.setTimeout(() => { if (vivo) setIntento((i) => i + 1); }, 15_000);
+        }
+      });
+    return () => { vivo = false; if (timer) window.clearTimeout(timer); };
+  }, [owner, repo, run.headSha, intento, corriendo]);
 
   useEffect(() => {
     // Un deploy en curso todavía no escribió nada: preguntarlo sería una lectura
