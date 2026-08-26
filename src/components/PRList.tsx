@@ -236,6 +236,13 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                     "text-sm truncate group-hover:text-primary",
                     isToMain ? "font-semibold text-emerald-900 dark:text-emerald-100" : "font-medium",
                   )}>
+                    {/* El número, delante del título: es como se nombra un PR al
+                        hablarlo y al buscarlo en GitHub, y para verlo había que
+                        abrir el contenido. Va en `tabular-nums` para que la
+                        columna no baile entre filas. */}
+                    <span className="mr-1.5 font-mono text-xs tabular-nums text-muted-foreground">
+                      #{pr.number}
+                    </span>
                     {pr.title}
                   </p>
                   <div className="flex items-center gap-1 text-xs mt-0.5 flex-wrap">
