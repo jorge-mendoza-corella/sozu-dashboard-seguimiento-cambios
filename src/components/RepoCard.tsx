@@ -602,13 +602,37 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                       </div>
                     );
                   })()}
-                  <input
-                    type="text"
-                    value={newPR.title}
-                    onChange={(e) => setNewPR((p) => p ? { ...p, title: e.target.value } : null)}
-                    placeholder="Título del PR"
-                    className="w-full text-xs rounded border bg-background px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-violet-400 placeholder:text-muted-foreground"
-                  />
+                  {/* El TÍTULO, y dice que lo es.
+                      Venía prellenado con el nombre de la rama y sin etiqueta,
+                      justo debajo de "Crear PR desde <rama>": se leía como el
+                      campo de la rama de origen, y editarlo parecía cambiar de
+                      dónde sale el PR. No lo cambia —el origen es la rama del
+                      botón que se apretó y no se puede tocar—, pero un campo que
+                      parece hacer algo que no hace es peor que no tenerlo. */}
+                  <label className="flex items-center gap-2">
+                    <span className="shrink-0 text-[10px] text-muted-foreground">Título:</span>
+                    <input
+                      type="text"
+                      value={newPR.title}
+                      onChange={(e) => setNewPR((p) => p ? { ...p, title: e.target.value } : null)}
+                      placeholder="Título del PR"
+                      title="Título del PR. La rama de origen no se elige aquí: es la del botón que abriste."
+                      className="flex-1 rounded border bg-background px-2 py-1.5 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-violet-400"
+                    />
+                  </label>
+
+                  {/* La rama de origen, en solo lectura y al lado del destino:
+                      el flujo completo se lee de un vistazo (origen → destino) y
+                      queda claro que ninguno de los dos se elige. */}
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 text-[10px] text-muted-foreground">Desde:</span>
+                    <span
+                      className="flex-1 rounded border bg-muted/40 px-2 py-1 font-mono text-xs"
+                      title="Sale de la rama cuyo botón abriste; para otra rama, usa su propio botón."
+                    >
+                      {newPR.head}
+                    </span>
+                  </div>
                   {/* El destino no es una elección libre: el flujo es rama de
                       trabajo → dev → main. El desplegable ofrecía TODAS las
                       ramas del repo, así que desde una rama de trabajo se podía
