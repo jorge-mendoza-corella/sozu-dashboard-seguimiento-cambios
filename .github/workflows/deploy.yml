@@ -82,139 +82,30 @@ jobs:
           target: sozu-dashboard-dev
           channelId: live
 
-      - name: Notificar deploy listo (WhatsApp)
-        if: success()
-        # Si n8n no responde, no tumbar el status del deploy (ya quedó publicado).
+      # ─────────────────────────────────────────────────────────────────────
+      # Aviso de WhatsApp: el MISMO script que los demás repos monitoreados.
+      #
+      # Este repo tenía su propia copia del envío, escrita a mano dentro del
+      # workflow, y se había quedado atrás en tres cosas a la vez:
+      #
+      #   · `if: success()` — un deploy que reventaba no avisaba a nadie. El
+      #     aviso que más falta hace es justo el del fallo: el bueno se nota
+      #     igual entrando al sitio.
+      #   · avisaba SOLO a quien empujó. Los autores del release y el aprobador
+      #     del proyecto se enteraban por su cuenta.
+      #   · no dejaba registro en `deployNotifications`, así que la tarjeta de
+      #     CI/CD no podía decir a quién le llegó.
+      #
+      # Todo eso ya está resuelto en `ci/notify-deploy.sh`, que es lo que corren
+      # los otros ocho repos. Tener dos implementaciones del mismo aviso fue
+      # exactamente el motivo de que una se quedara vieja.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Notificar deploy (WhatsApp)
+        if: always()
         continue-on-error: true
         env:
           ENVIRONMENT: DEV
+          STATUS: ${{ job.status }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FIRESTORE_PROJECT: sozu-admin-dev
-        run: |
-          ACTOR="${{ github.actor }}"
-          # El service account ya está autenticado (paso "Authenticate to Google Cloud"),
-          # así que aquí no hace falta firmar el JWT a mano como en
-          # ci-templates/notify-pr-dev.yml.
-          ACCESS_TOKEN="$(gcloud auth print-access-token)"
-
-          # --- Helpers de lectura por REST (el token del service account ignora
-          # las reglas de seguridad) --------------------------------------------
-          FS="https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT}/databases/(default)/documents"
-          leer() { curl -s --max-time 20 -H "Authorization: Bearer $ACCESS_TOKEN" "${FS}/$1"; }
-          campo() { printf '%s' "$1" | jq -r --arg f "$2" '.fields[$f].stringValue // empty'; }
-          # `enabled` ausente = prendido. Ojo: `// empty` no sirve para booleanos
-          # (jq trata `false` como vacío), por eso se mira el tipo del campo.
-          prendido() { printf '%s' "$1" | jq -r 'if (.fields.enabled | type) == "object" then (.fields.enabled.booleanValue | tostring) else "" end'; }
-
-          # --- Registro de lo que se hizo con los avisos ------------------------
-          # El dashboard puede calcular a QUIÉN le toca el aviso, pero no si
-          # salió: un teléfono sin capturar, una instancia caída o una empresa
-          # apagada cambian el resultado sin cambiar la configuración que se ve
-          # desde ahí. Así que el deploy anota lo que hizo y CI/CD lo lee, en vez
-          # de afirmar una entrega que nadie comprobó.
-          #
-          # Se escribe con la cuenta de servicio (ignora las reglas); el
-          # navegador solo lo lee. Un fallo al registrar no puede tumbar el
-          # deploy: es una nota, no el trabajo.
-          NOTIF_DOC="${GITHUB_REPOSITORY/\//__}__${GITHUB_RUN_ID}"
-          registrar() { # $1 = seMando (true|false) ; $2 = motivo ; $3 = avisados (csv) ; $4 = fallidos (json array)
-            BODY="$(jq -n --arg mando "$1" --arg motivo "$2" --arg av "$3" --argjson fal "${4:-[]}" \
-              --arg run "$GITHUB_RUN_ID" \
-              '{fields:{
-                  seMando:{booleanValue:($mando=="true")},
-                  motivo:{stringValue:$motivo},
-                  runId:{stringValue:$run},
-                  avisados:{arrayValue:{values:(($av|split(","))|map(select(length>0)|{stringValue:.}))}},
-                  fallidos:{arrayValue:{values:($fal|map({mapValue:{fields:{login:{stringValue:.login},motivo:{stringValue:.motivo}}}}))}}
-                }}')"
-            curl -s -o /dev/null --max-time 20 -X PATCH \
-              -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
-              "https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT}/databases/(default)/documents/deployNotifications/${NOTIF_DOC}" \
-              -d "$BODY" || echo "· no se pudo registrar el aviso (no afecta al deploy)"
-          }
-
-          # --- Empresa dueña del repo ------------------------------------------
-          # repos/{owner__repo}.projectId -> projects/{projectId}.clientId
-          #
-          # TODO ES POR EMPRESA O NO SE MANDA NADA. Ya no hay configuración
-          # global (`settings/notifications`, `secrets/whatsapp`) ni cascada que
-          # herede de ella: con un default global, la empresa que todavía no
-          # configuraba sus avisos los recibía por el número de otra, y su
-          # webhook podía acabar llevándose una llave que no era suya. Sin nada
-          # que heredar, esos dos problemas desaparecen. Un repo cuyo proyecto
-          # no tiene empresa asignada simplemente no notifica, y aquí se dice.
-          REPO_ID="${GITHUB_REPOSITORY/\//__}"
-          CLIENT_ID=""
-          PROJECT_ID="$(campo "$(leer "repos/${REPO_ID}")" projectId)"
-          if [ -z "$PROJECT_ID" ]; then
-            echo "El repo '${GITHUB_REPOSITORY}' no está dado de alta en el dashboard (repos/${REPO_ID}), así que no se sabe de qué empresa es; se omite la notificación."
-            registrar false "El repo no está dado de alta en el dashboard, así que no se sabe de qué empresa es." "" "[]"
-            exit 0
-          fi
-          CLIENT_ID="$(campo "$(leer "projects/${PROJECT_ID}")" clientId)"
-          if [ -z "$CLIENT_ID" ]; then
-            echo "El proyecto '${PROJECT_ID}' no tiene empresa asignada; se omite la notificación. Asígnale una en el dashboard → Proyectos."
-            registrar false "El proyecto no tiene empresa asignada, y los avisos salen por la instancia de la empresa." "" "[]"
-            exit 0
-          fi
-          echo "Empresa dueña del repo: '${CLIENT_ID}' (proyecto '${PROJECT_ID}')."
-
-          # --- Configuración de la empresa (la única que hay) -------------------
-          C_DOC="$(leer "clients/${CLIENT_ID}/private/notifications")"
-          C_KEY="$(campo "$(leer "clients/${CLIENT_ID}/private/whatsappSecret")" apiKey)"
-          if [ -n "$C_KEY" ]; then echo "::add-mask::${C_KEY}"; fi
-
-          WA_INSTANCE="$(campo "$C_DOC" instance)"
-          WA_WEBHOOK="$(campo "$C_DOC" webhookUrl)"
-          WA_APIKEY="$C_KEY"
-
-          # `enabled: false` apaga los avisos de la empresa; ausente = prendido.
-          if [ "$(prendido "$C_DOC")" = "false" ]; then
-            echo "La empresa '${CLIENT_ID}' tiene apagadas las notificaciones de WhatsApp; no se envía nada."
-            registrar false "La empresa tiene los avisos de WhatsApp apagados." "" "[]"
-            exit 0
-          fi
-          # Se enumera lo que falta, no un genérico: quien lea el log tiene que
-          # saber qué campo ir a capturar. El webhook y la apikey ya no pueden
-          # venir de dueños distintos, así que no hay nada que emparejar.
-          # (con `if`, no con `[ ... ] && ...`: el step corre bajo `set -e` y una
-          # lista `&&` cuyo test falla tumbaría el step sin notificar nada.)
-          FALTAN=""
-          if [ -z "$WA_INSTANCE" ]; then FALTAN="${FALTAN}instancia, "; fi
-          if [ -z "$WA_WEBHOOK" ];  then FALTAN="${FALTAN}webhook, ";   fi
-          if [ -z "$WA_APIKEY" ];   then FALTAN="${FALTAN}apikey, ";    fi
-          if [ -n "$FALTAN" ]; then
-            echo "La empresa '${CLIENT_ID}' no tiene ${FALTAN%, } de WhatsApp; se omite la notificación. Captúralo en el dashboard → Configuración → Notificaciones."
-            registrar false "A la empresa le falta ${FALTAN%, } de WhatsApp." "" "[]"
-            exit 0
-          fi
-
-          # Teléfono (10 dígitos) guardado para este usuario de GitHub en Firestore.
-          PHONE="$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-            "https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT}/databases/(default)/documents/contributors/${ACTOR}" \
-            | jq -r '.fields.telefonoWhatsapp.stringValue // empty')"
-          if [ -z "$PHONE" ]; then
-            echo "Sin teléfono guardado para '$ACTOR' en contributors; se omite la notificación."
-            registrar true "" "" "$(jq -nc --arg l "$ACTOR" '[{login:$l,motivo:"sin teléfono en Contribuidores"}]')"
-            exit 0
-          fi
-          PAYLOAD="$(jq -n --arg tel "+521${PHONE}" --arg inst "$WA_INSTANCE" \
-            --arg msg "Ha quedado listo tu deploy en ${ENVIRONMENT} del repo ${GITHUB_REPOSITORY##*/}, puedes revisar" \
-            '{tipo:"wa",telefono:$tel,mensajeWA:$msg,instanciaWA:$inst}')"
-          # Tres intentos: un webhook que no responde a la primera dejaba el
-          # aviso perdido en silencio.
-          for intento in 1 2 3; do
-            CODE="$(curl -s -o /tmp/n8n.out -w '%{http_code}' --max-time 20 \
-              -X POST "$WA_WEBHOOK" -H "apikey: $WA_APIKEY" \
-              -H "Content-Type: application/json" -d "$PAYLOAD" || echo 000)"
-            # n8n contesta 200 aunque el mensaje NO se haya entregado: acepta la
-            # peticion y mete el fallo de la instancia de WhatsApp en el cuerpo. Con
-            # solo mirar el codigo HTTP, esto cantaba "Notificado" mientras Evolution
-            # respondia "Connection Closed" —la sesion caida— y nadie recibia nada
-            # durante dias sin una sola alarma. El cuerpo tambien decide.
-            FALLA="$(jq -r 'if .datos_validos == false then (.error_validacion // "n8n rechazo los datos") elif (.error // null) != null then (.error | if type == "object" then (.message // tostring) else tostring end) else empty end' /tmp/n8n.out 2>/dev/null || true)"
-            case "$CODE" in 2*) if [ -z "$FALLA" ]; then echo "Notificado $ACTOR"; registrar true "" "$ACTOR" "[]"; exit 0; fi ;; esac
-            echo "Intento ${intento} fallo (HTTP ${CODE}${FALLA:+ — n8n: ${FALLA:0:200}}): $(cat /tmp/n8n.out | head -c 300)"
-            sleep $((intento * 5))
-          done
-          echo "::warning::No se pudo notificar el deploy tras 3 intentos"
-          registrar true "" "" "$(jq -nc --arg l "$ACTOR" --arg m "el webhook de n8n no aceptó el mensaje tras 3 intentos" '[{login:$l,motivo:$m}]')"
+        run: bash ci/notify-deploy.sh

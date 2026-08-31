@@ -284,6 +284,32 @@ El tooltip de cada deploy en CI/CD lo usa así:
   anota) — «Le tocaba el aviso a…», en condicional y diciendo que no dejó
   registro, en vez de inventar una entrega.
 
+## Quién recibe cada aviso
+
+| momento | destinatarios |
+|---|---|
+| PR abierto (a dev o a main) | sus **autores** + el aprobador del proyecto + suscritos |
+| PR cerrado (con o sin merge) | sus **autores** + el aprobador + suscritos |
+| Deploy terminado, salga bien o mal | autores del release (PROD) o del PR (DEV) + aprobador + suscritos |
+| Build de app terminado | quien lo disparó + aprobador + suscritos |
+
+Los autores salen de los marcadores `<!-- pr_author -->` que el dashboard embebe
+según los commits, no de quién creó el PR: son personas distintas cada vez que
+alguien abre el PR desde el dashboard para el código de otro.
+
+Tres huecos que hubo y por qué importaban:
+
+- **El PR abierto solo avisaba al aprobador.** Quien escribió el código no se
+  enteraba hasta que el PR se cerraba, así que un desarrollador recibía puros
+  mensajes de merge. Y si el proyecto no tenía aprobador capturado, el aviso se
+  cancelaba entero en vez de llegarle al menos a los autores.
+- **Solo se avisaba de PRs hacia `dev`.** Quedaban fuera los releases
+  (`dev → main`) y los repos que no usan rama dev, como este dashboard.
+- **El deploy de este repo tenía su propia copia del envío**, con `if: success()`
+  —un deploy que reventaba no avisaba a nadie— y avisando solo a quien empujó.
+  Ahora corre el mismo `ci/notify-deploy.sh` que los demás. Dos implementaciones
+  del mismo aviso fue exactamente el motivo de que una se quedara vieja.
+
 ## Facturapi — qué falta (fase 2)
 
 Lo que ya está: la Secret Key se guarda en `secrets/facturapi`, se valida su
