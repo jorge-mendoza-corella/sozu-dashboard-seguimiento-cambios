@@ -403,11 +403,17 @@ function PlatformRow({
   // Sin el, el boton podria quedarse gris un cuarto de hora despues de que
   // Apple ya termino, que seria peor que no tener gate.
   // ---------------------------------------------------------------------------
-  const gateApple = platform.tresEtapas && !!project?.iosBundleId;
+  // WARN: `gateApple` NO puede depender de que el proyecto tenga bundle id.
+  // Cuando lo hacia, un proyecto sin `iosBundleId` apagaba de golpe TODAS las
+  // comprobaciones de abajo y el boton de App Store se quedaba verde sin haber
+  // pasado por TestFlight: el gate se desactivaba justo en el caso en que no
+  // hay ni forma de comprobar nada. La falta de bundle id es ahora un motivo
+  // mas de bloqueo, no una excusa para no mirar.
+  const gateApple = platform.tresEtapas;
   const { data: appStore, isFetching: appStoreFetching } = useQuery({
     queryKey: ["appstore-status", project?.iosBundleId],
     queryFn: () => getAppStoreStatus(project!.iosBundleId!),
-    enabled: gateApple,
+    enabled: gateApple && !!project?.iosBundleId,
     refetchInterval: 60_000,
   });
   const ultimoSubido = appStore?.builds?.[0];
@@ -440,6 +446,26 @@ function PlatformRow({
   const estadoAsc = versionAsc ? versionStateInfo(versionAsc.state) : null;
   const yaEnviada = estadoAsc?.tone === "running" || estadoAsc?.tone === "success";
 
+  // TestFlight es un PASO OBLIGATORIO, no un atajo opcional: el .ipa se prueba
+  // ahi antes de mandarlo a revision. En la app de agentes salia TestFlight en
+  // gris y App Store en verde, o sea justo al reves.
+  //
+  // Vale como prueba cualquiera de las dos: una subida exitosa en el historial,
+  // o que Apple reporte un binario -todo lo que llega a App Store Connect pasa
+  // por TestFlight-. Con solo lo primero habria falsos bloqueos: la lista de
+  // Codemagic son los 25 builds mas recientes, y una subida de hace semanas se
+  // cae de ahi teniendo el binario perfectamente vivo en Apple.
+  //
+  // Se mira el HISTORICO y no el commit de HEAD a proposito. Promover no va del
+  // codigo sino del BINARIO que Apple ya proceso, y lo normal es que `main` haya
+  // avanzado desde la subida; exigir el sha del momento dejaria el boton muerto
+  // en el caso legitimo.
+  //
+  // Android queda fuera (`tresEtapas`): ahi el track interno es opcional y su
+  // promocion ya funciona.
+  const hayEnPruebas =
+    !platform.tresEtapas || publishRuns.some(isSuccess) || !!ultimoSubido;
+
   const promoteDisabledReason =
     promoteInProgress ? "Envío a la store en curso" :
     // Mismo motivo que arriba, del otro lado: con una subida en vuelo, esto
@@ -448,6 +474,9 @@ function PlatformRow({
     buildInProgress ? "Espera a que termine la construcción" :
     deployActive ? "Espera: hay un deploy web en curso" :
     promotedCurrent ? "Este código ya fue enviado a la store" :
+    !hayEnPruebas ? `Primero sube el binario a ${platform.storeLabel}: es el paso de pruebas` :
+    gateApple && !project?.iosBundleId
+      ? "Falta el bundle id de iOS del proyecto: sin él no se puede leer el estado en App Store Connect" :
     gateApple && yaEnviada
       ? `La versión ${versionAsc?.version ?? "—"} ya está en la tienda: ${estadoAsc?.label}.` :
     gateApple && !appStore ? "Aún sin datos de App Store Connect: pulsa \"comprobar ahora\"" :
