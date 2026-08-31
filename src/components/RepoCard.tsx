@@ -609,18 +609,41 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                     placeholder="Título del PR"
                     className="w-full text-xs rounded border bg-background px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-violet-400 placeholder:text-muted-foreground"
                   />
-                  <div className="flex gap-2 items-center">
-                    <span className="text-[10px] text-muted-foreground shrink-0">Base:</span>
-                    <select
-                      value={newPR.base}
-                      onChange={(e) => setNewPR((p) => p ? { ...p, base: e.target.value } : null)}
-                      className="flex-1 text-xs rounded border bg-background px-2 py-1 focus:outline-none focus:ring-1 focus:ring-violet-400"
-                    >
-                      {status.branches.filter((b) => b.name !== newPR.head).map((b) => (
-                        <option key={b.name} value={b.name}>{b.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {/* El destino no es una elección libre: el flujo es rama de
+                      trabajo → dev → main. El desplegable ofrecía TODAS las
+                      ramas del repo, así que desde una rama de trabajo se podía
+                      apuntar a main —saltándose dev y su revisión— o a la rama
+                      de otra persona, y eso último ni siquiera es un error que
+                      se note: el PR se crea y parece normal.
+                      Desde `dev` el único destino es `main`; desde cualquier
+                      otra, `dev`. Con un solo destino posible el selector deja
+                      de ser un menú y pasa a decir a dónde va. */}
+                  {(() => {
+                    const destinos = newPR.head === "dev" ? ["main"] : ["dev"];
+                    const existe = status.branches.some((b) => b.name === destinos[0]);
+                    return (
+                      <div className="flex items-center gap-2">
+                        <span className="shrink-0 text-[10px] text-muted-foreground">Base:</span>
+                        {existe ? (
+                          <span
+                            className="flex-1 rounded border bg-muted/40 px-2 py-1 font-mono text-xs"
+                            title={
+                              newPR.head === "dev"
+                                ? "Un PR desde dev va a main: es el paso de release."
+                                : "Una rama de trabajo entra por dev. A main solo se llega desde dev."
+                            }
+                          >
+                            {destinos[0]}
+                          </span>
+                        ) : (
+                          <span className="flex-1 text-[10px] text-amber-600 dark:text-amber-400">
+                            Este repo no tiene rama <span className="font-mono">{destinos[0]}</span>, que es
+                            el único destino válido desde <span className="font-mono">{newPR.head}</span>.
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {/* dev→main: qué contiene este release (PRs a dev + commits) */}
                   {newPR.head === "dev" && newPR.base === "main" && (
                     <div className="rounded border bg-muted/30 px-2 py-1.5">
@@ -694,7 +717,15 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                   <div className="flex gap-2">
                     <button
                       onClick={handleCreatePR}
-                      disabled={newPRLoading || !newPR.title.trim() || !newPR.body.trim()}
+                      // Sin la rama destino en el repo, crear el PR es un 422 de
+                      // GitHub: mejor no ofrecerlo que explicar después por qué
+                      // falló.
+                      disabled={
+                        newPRLoading
+                        || !newPR.title.trim()
+                        || !newPR.body.trim()
+                        || !status.branches.some((b) => b.name === newPR.base)
+                      }
                       className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors"
                     >
                       {newPRLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitPullRequest className="h-3 w-3" />}
