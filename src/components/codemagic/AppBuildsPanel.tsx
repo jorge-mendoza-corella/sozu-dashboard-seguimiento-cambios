@@ -373,8 +373,18 @@ function PlatformRow({
     deployActive ? "Espera: hay un deploy web en curso" :
     sameShaBuilt ? "Este código ya fue construido" : null;
 
+  // Las tres etapas son una fila: construir → subir a pruebas → mandar a la
+  // tienda. Cada botón miraba SOLO su propia corrida, así que con el envío a
+  // TestFlight en curso el de App Store seguía verde y se podían disparar los
+  // dos a la vez. No es una carrera inocente: promover manda a revisión el
+  // último binario que Apple ya procesó, o sea el ANTERIOR, mientras el nuevo
+  // sigue subiendo. Se revisaría una versión que nadie quiso enviar, y el log
+  // diría que todo salió bien.
   const publishDisabledReason =
     publishInProgress ? "Publicación en curso" :
+    promoteInProgress ? `Espera: hay un envío a ${platform.promoteLabel} en curso` :
+    buildInProgress ? "Espera a que termine la construcción" :
+    deployActive ? "Espera: hay un deploy web en curso" :
     !canPublish ? `Primero construye el artefacto ${platform.label} del código actual` :
     // Con las tres etapas a la vista el botón sigue en pantalla después de
     // publicar, así que hay que decir que ya está hecho o invita a repetirlo.
@@ -432,6 +442,11 @@ function PlatformRow({
 
   const promoteDisabledReason =
     promoteInProgress ? "Envío a la store en curso" :
+    // Mismo motivo que arriba, del otro lado: con una subida en vuelo, esto
+    // mandaría a revisión el binario anterior.
+    publishInProgress ? `Espera: hay una subida a ${platform.storeLabel} en curso` :
+    buildInProgress ? "Espera a que termine la construcción" :
+    deployActive ? "Espera: hay un deploy web en curso" :
     promotedCurrent ? "Este código ya fue enviado a la store" :
     gateApple && yaEnviada
       ? `La versión ${versionAsc?.version ?? "—"} ya está en la tienda: ${estadoAsc?.label}.` :
