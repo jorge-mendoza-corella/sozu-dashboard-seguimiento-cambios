@@ -714,9 +714,34 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                       newPR.head === "dev" && newPR.base === "main" ? "h-28" : "h-14",
                     )}
                   />
+                  {/* Por qué el botón está gris, ESCRITO. El único indicio era
+                      la palabra "obligatoria" en el placeholder —que desaparece
+                      en cuanto se escribe una letra y vuelve a estar vacío si se
+                      borra—, así que un botón muerto sin explicación parecía un
+                      permiso que falta o algo roto. La descripción es
+                      obligatoria porque de ahí sale el cuerpo del release
+                      dev→main y el aviso de WhatsApp: sin ella, el resumen del
+                      release dice "(sin descripcion)" y nadie sabe qué entró. */}
+                  {(() => {
+                    const falta =
+                      !newPR.title.trim() ? "Falta el título." :
+                      !newPR.body.trim() ? "Falta la descripción: se usa en el resumen del release y en el aviso." :
+                      !status.branches.some((b) => b.name === newPR.base)
+                        ? `Este repo no tiene la rama ${newPR.base}.` : null;
+                    return falta ? (
+                      <p className="text-[10px] text-muted-foreground">{falta}</p>
+                    ) : null;
+                  })()}
                   <div className="flex gap-2">
                     <button
                       onClick={handleCreatePR}
+                      title={
+                        !newPR.title.trim() ? "Falta el título" :
+                        !newPR.body.trim() ? "Falta la descripción (obligatoria)" :
+                        !status.branches.some((b) => b.name === newPR.base)
+                          ? `Este repo no tiene la rama ${newPR.base}` :
+                        `Crear el PR de ${newPR.head} hacia ${newPR.base}`
+                      }
                       // Sin la rama destino en el repo, crear el PR es un 422 de
                       // GitHub: mejor no ofrecerlo que explicar después por qué
                       // falló.
