@@ -409,7 +409,11 @@ function PlatformRow({
   // pasado por TestFlight: el gate se desactivaba justo en el caso en que no
   // hay ni forma de comprobar nada. La falta de bundle id es ahora un motivo
   // mas de bloqueo, no una excusa para no mirar.
-  const gateApple = platform.tresEtapas;
+  // Ojo: esto es de APPLE, no de "tres etapas". Iban juntos mientras iOS era la
+  // única plataforma con tres pasos; al dárselos también a Android, atarlos
+  // habría puesto a Play a esperar datos de App Store Connect que no existen
+  // para él.
+  const gateApple = platform.key === "ios";
   const { data: appStore, isFetching: appStoreFetching } = useQuery({
     queryKey: ["appstore-status", project?.iosBundleId],
     queryFn: () => getAppStoreStatus(project!.iosBundleId!),
@@ -461,10 +465,10 @@ function PlatformRow({
   // avanzado desde la subida; exigir el sha del momento dejaria el boton muerto
   // en el caso legitimo.
   //
-  // Android queda fuera (`tresEtapas`): ahi el track interno es opcional y su
-  // promocion ya funciona.
-  const hayEnPruebas =
-    !platform.tresEtapas || publishRuns.some(isSuccess) || !!ultimoSubido;
+  // Vale para las dos plataformas: primero el track de pruebas, luego la
+  // tienda. En Android no hay un equivalente a `ultimoSubido` —eso sale de App
+  // Store Connect—, así que ahí la prueba es la subida exitosa a Play interno.
+  const hayEnPruebas = publishRuns.some(isSuccess) || !!ultimoSubido;
 
   const promoteDisabledReason =
     promoteInProgress ? "Envío a la store en curso" :
@@ -501,7 +505,10 @@ function PlatformRow({
   // no mete esa espera. Por eso el toggle sigue existiendo -sirve a quien solo
   // publica Android- pero iOS lo ignora y siempre da sus tres etapas.
   // ---------------------------------------------------------------------------
-  const modoSimpleAqui = simple && !platform.tresEtapas;
+  // El modo simple sigue siendo cosa de Android, como antes: se comparaba con
+  // `tresEtapas` porque entonces significaba "no es iOS". Ahora que Android
+  // también tiene tres etapas, se dice directo de quién es.
+  const modoSimpleAqui = simple && platform.key !== "ios";
 
   // Modo simple: un workflow que construye y publica directo en la tienda
   // (sin Play interno / TestFlight de por medio).
@@ -607,21 +614,15 @@ function PlatformRow({
               )}
               {storeInProgress ? "Publicando…" : platform.promoteLabel}
             </Button>
-          ) : platform.tresEtapas ? (
-            // iOS: las tres etapas a la vista. TestFlight no es un paso que se
-            // salte (es la unica forma de instalar el .ipa sin Mac), y entre
-            // subirlo y poder mandarlo a revision hay una espera de Apple que
-            // conviene ver en pantalla en vez de adivinar.
+          ) : (
+            // Las tres etapas a la vista, en las dos plataformas: construir →
+            // pruebas (TestFlight / Play interno) → tienda. El paso de pruebas
+            // no se salta, y entre subir el binario y poder mandarlo a revisión
+            // hay una espera que conviene ver en pantalla en vez de adivinar.
             <>
               {botonPruebas}
               {botonTienda}
             </>
-          ) : !publishedCurrent ? (
-
-            botonPruebas
-          ) : (
-            botonTienda
-
           )}
         </>
       )}

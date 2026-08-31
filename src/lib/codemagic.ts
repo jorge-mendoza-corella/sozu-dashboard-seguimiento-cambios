@@ -44,10 +44,14 @@ export interface PlatformDef {
   storeDirectWorkflowId: string;
   /**
    * Muestra los tres pasos a la vez en vez de sustituir el de pruebas por el
-   * final. Solo iOS: ahi TestFlight es una etapa real (es la unica forma de
-   * instalar el .ipa sin Mac) y Apple tarda minutos en procesar el binario
-   * entre una y otra. En Android el track interno es opcional y el paso de
-   * pruebas no aporta una espera que haya que ver en pantalla.
+   * final.
+   *
+   * Las dos plataformas: el flujo es el mismo —construir, probar, publicar— y
+   * verlo distinto en cada fila hacia dudar de si en Android faltaba algo.
+   * Android alternaba los botones (aparecia "Play interno" y, una vez hecho,
+   * lo REEMPLAZABA "Play Store"), asi que el ultimo paso no existia en pantalla
+   * hasta que ya se podia dar: no se veia el camino, solo el escalon siguiente.
+   * Con los tres a la vista, un boton gris dice "todavia no" en vez de callar.
    */
   tresEtapas: boolean;
 }
@@ -59,7 +63,7 @@ export const PLATFORMS: PlatformDef[] = [
     publishWorkflowId: "android-publish", storeLabel: "Play interno",
     promoteWorkflowId: "android-production", promoteLabel: "Play Store",
     storeDirectWorkflowId: "android-store",
-    tresEtapas: false,
+    tresEtapas: true,
   },
   {
     key: "ios", label: "iOS",
