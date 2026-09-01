@@ -4,9 +4,17 @@ name: Sync estado de tiendas (Play / App Store)
 # dashboard sin entrar a las consolas:
 #   · Google Play — tracks (interno / cerrada / abierta / producción)
 #   · App Store Connect — estado de revisión de la versión y builds
+#
+# `repository_dispatch` lo dispara el `codemagic.yaml` de las apps al terminar un
+# build. Sin él, refrescar la tienda después de publicar dependía de tener el
+# dashboard abierto —lo pedía la pestaña— y de que el cron `*/15` corriera, que
+# GitHub cumple muy de vez en cuando: se publicaba a TestFlight y la tarjeta
+# seguía enseñando el build anterior durante horas, con nadie mirando.
 on:
   schedule:
     - cron: "*/15 * * * *" # cada 15 min
+  repository_dispatch: # un build de app terminó (lo avisa Codemagic)
+    types: [codemagic-build-finished]
   workflow_dispatch: # botón "actualizar" del dashboard
 
 concurrency:
@@ -16,6 +24,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -52,14 +61,27 @@ jobs:
           # --- Google Play ---
           PLAY_SA_JSON="$(secret DASHBOARD_PLAY_SERVICE_ACCOUNT)"
           export PLAY_SA_JSON
-          python ci/play_tracks_sync.py
 
           # --- App Store Connect ---
           ASC_KEY_ID="$(secret DASHBOARD_ASC_KEY_ID)"
           ASC_ISSUER_ID="$(secret DASHBOARD_ASC_ISSUER_ID)"
           ASC_PRIVATE_KEY="$(secret DASHBOARD_ASC_PRIVATE_KEY)"
           export ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY
-          python ci/appstore_status_sync.py
+
+          # Cuando despierta el aviso de "build terminado", una sola lectura no
+          # basta: Apple y Google tardan MINUTOS en registrar el binario recién
+          # subido, así que preguntar enseguida devuelve el build anterior y lo
+          # vuelve a guardar. Se pregunta tres veces, espaciadas.
+          PASADAS=1
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then PASADAS=3; fi
+          i=1
+          while [ "$i" -le "$PASADAS" ]; do
+            echo "=== tiendas: pasada $i de $PASADAS"
+            python ci/play_tracks_sync.py
+            python ci/appstore_status_sync.py
+            if [ "$i" -lt "$PASADAS" ]; then sleep 240; fi
+            i=$((i + 1))
+          done
 
           # --- Canales de Firebase Hosting (drafts pendientes de publicar) ---
           # HOSTING_COMPARE es el respaldo cuando la cuenta de servicio no tiene

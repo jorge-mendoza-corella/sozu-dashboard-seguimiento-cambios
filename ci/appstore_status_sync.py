@@ -267,7 +267,15 @@ def main() -> None:
             print(f"⚠ {bundle}: {error}")
         else:
             v = (payload.get("versions") or [{}])[0]
-            print(f"✓ {bundle}: versión {v.get('version')} · {v.get('state')}")
+            # También el build más reciente: la tarjeta de TestFlight sale de
+            # ahí, y sin verlo en el log no se podía distinguir "Apple todavía no
+            # registra el binario" de "el sync no lo está leyendo".
+            b = (payload.get("builds") or [{}])[0]
+            build = f"{b.get('shortVersion') or '?'} build {b.get('version') or '?'}"
+            print(
+                f"✓ {bundle}: versión {v.get('version')} · {v.get('state')} · "
+                f"último build {build} ({b.get('processingState')}, subido {b.get('uploadedDate')})"
+            )
 
 
 if __name__ == "__main__":
