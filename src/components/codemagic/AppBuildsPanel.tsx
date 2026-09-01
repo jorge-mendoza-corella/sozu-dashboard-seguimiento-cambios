@@ -343,6 +343,44 @@ interface Marcador {
   etapa: Etapa;
 }
 
+/** Lo que la tienda reporta hoy en un canal, y de cuándo es ese dato. */
+interface VersionEnTienda {
+  texto: string;
+  /** Cuándo se leyó la tienda por última vez (`updatedAt` del documento). */
+  leidoAt: string | null;
+  /** Cuándo subió el binario que la tienda reporta. Solo Apple lo da. */
+  subidoAt?: string | null;
+}
+
+/**
+ * ¿El número que muestra la tienda puede ser el de ESTE build, o es el anterior?
+ *
+ * La tienda va por detrás por dos motivos distintos y hay que descartar los dos.
+ * Uno: el documento lo escribe un sync, y si la última lectura es anterior a que
+ * el build terminara, ese número no pudo incluirlo. Dos: Apple y Google tardan
+ * minutos en registrar un binario recién subido, así que una lectura POSTERIOR
+ * al build todavía puede traer el anterior — eso solo se detecta cuando la
+ * tienda fecha el binario, que es el caso de Apple con TestFlight.
+ *
+ * Ante la duda se dice "sin confirmar". Enseñar la versión pasada como si fuera
+ * la de este build es el error que se vino a quitar; decir "todavía no sé" es
+ * incómodo pero cierto.
+ */
+function tiendaAlDia(info: VersionEnTienda | undefined, b: CodemagicBuild): boolean {
+  const fin = b.finishedAt ?? b.startedAt;
+  const inicio = b.startedAt ?? b.createdAt ?? fin;
+  if (!info || !fin || !inicio) return false;
+  // La lectura tiene que ser posterior al FIN del build: antes de eso no pudo
+  // ver nada de él.
+  if (!info.leidoAt || new Date(info.leidoAt).getTime() < new Date(fin).getTime()) return false;
+  // El binario, en cambio, se compara contra el INICIO: la subida a la tienda
+  // ocurre DENTRO del build, unos minutos antes de que termine. Compararla
+  // contra el fin dejaba el aviso pegado para siempre, incluso con la tienda ya
+  // al corriente.
+  if (info.subidoAt && new Date(info.subidoAt).getTime() < new Date(inicio).getTime()) return false;
+  return true;
+}
+
 const ETAPA_META: Record<Etapa, { cls: string; help: string }> = {
   build: {
     cls: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300",
@@ -1069,7 +1107,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
   // el que esta ahi, y el marcador ya lo refleja porque solo lo lleva el build
   // mas reciente de ese workflow.
   const versionPorEtapa = useMemo(() => {
-    const m = new Map<string, string>();
+    const m = new Map<string, VersionEnTienda>();
     const ios = PLATFORMS.find((p) => p.key === "ios");
     const android = PLATFORMS.find((p) => p.key === "android");
 
@@ -1078,12 +1116,18 @@ export function AppBuildsPanel({ appId, perms, project }: {
       if (testflight.version || testflight.build) {
         const v = testflight.version ? `v${testflight.version}` : "";
         const b = testflight.build ? `build ${testflight.build}` : "";
-        m.set(`en ${ios.storeLabel}`, [v, b].filter(Boolean).join(" · "));
+        m.set(`en ${ios.storeLabel}`, {
+          texto: [v, b].filter(Boolean).join(" · "),
+          leidoAt: appStoreDoc.updatedAt,
+          // Apple sí dice cuándo se subió ESE binario, y con eso la
+          // comprobación deja de depender de cuándo corrió el sync.
+          subidoAt: testflight.fecha ?? null,
+        });
       }
       // Sin version a la venta se muestra la que va en camino: decir "en App
       // Store" sin numero era justo lo que no se entendia.
       const tienda = produccion.version ?? camino.version;
-      if (tienda) m.set(`en ${ios.promoteLabel}`, `v${tienda}`);
+      if (tienda) m.set(`en ${ios.promoteLabel}`, { texto: `v${tienda}`, leidoAt: appStoreDoc.updatedAt });
     }
 
     if (android && playDoc) {
@@ -1098,10 +1142,12 @@ export function AppBuildsPanel({ appId, perms, project }: {
         const code = (rel.versionCodes ?? [])[0];
         return [nombre ? `v${nombre}` : "", code ? `build ${code}` : ""].filter(Boolean).join(" · ") || null;
       };
+      // Play no fecha sus releases, así que aquí la única prueba disponible es
+      // cuándo se leyó la tienda.
       const interno = de("internal");
-      if (interno) m.set(`en ${android.storeLabel}`, interno);
+      if (interno) m.set(`en ${android.storeLabel}`, { texto: interno, leidoAt: playDoc.updatedAt });
       const prod = de("production");
-      if (prod) m.set(`en ${android.promoteLabel}`, prod);
+      if (prod) m.set(`en ${android.promoteLabel}`, { texto: prod, leidoAt: playDoc.updatedAt });
     }
     return m;
   }, [appStoreDoc, playDoc]);
@@ -1728,18 +1774,32 @@ export function AppBuildsPanel({ appId, perms, project }: {
                   {when && <span className="text-muted-foreground">{formatBuildDate(when)}</span>}
                   {dur && <span className="text-muted-foreground">· {dur}</span>}
                   {tags.map(({ label, etapa }) => {
-                    const version = versionPorEtapa.get(label);
+                    const info = versionPorEtapa.get(label);
+                    const alDia = etapa === "build" || tiendaAlDia(info, b);
                     return (
                       <span
                         key={label}
-                        title={ETAPA_META[etapa].help}
+                        title={
+                          alDia
+                            ? ETAPA_META[etapa].help
+                            : `${ETAPA_META[etapa].help}
+
+La tienda todavía no reporta el binario de este build: ` +
+                              "suele tardar unos minutos en registrarlo. Se vuelve a consultar sola." +
+                              (info ? `
+Lo último que reporta: ${info.texto}.` : "")
+                        }
                         className={cn(
                           "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
                           ETAPA_META[etapa].cls,
+                          !alDia && "border-dashed",
                         )}
                       >
                         ★ {label}
-                        {version && <span className="font-mono font-normal"> · {version}</span>}
+                        {alDia && info && <span className="font-mono font-normal"> · {info.texto}</span>}
+                        {!alDia && (
+                          <span className="font-normal italic opacity-80"> · aún no se refleja en la tienda</span>
+                        )}
                       </span>
                     );
                   })}
