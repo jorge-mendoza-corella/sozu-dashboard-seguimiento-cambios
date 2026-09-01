@@ -270,22 +270,40 @@ def antiguedad(build: dict) -> str:
     return f", hace {minutos // 60} h"
 
 
+def quien_lo_lanzo(actor_login: str, desde_el_dashboard: bool) -> str:
+    """" · lo lanzó @fulano" / " · lanzado fuera del dashboard", o vacío.
+
+    Sin esto, el aviso de un build que uno no lanzó se lee como un aviso de más:
+    llegaron dos mensajes seguidos, de dos apps distintas, y el de la app que la
+    persona no había tocado parecía un error del sistema. El build era real y lo
+    había lanzado alguien más; lo que faltaba en el mensaje era decir quién.
+    """
+    if actor_login:
+        return f" · lo lanzó @{actor_login}"
+    if not desde_el_dashboard:
+        # Sin registro previo: nadie lo disparó desde el dashboard. Puede haber
+        # salido de la interfaz de Codemagic o de su API.
+        return " · lanzado fuera del dashboard"
+    return ""
+
+
 def redactar(
-    resultado: str, *, proyecto: str, workflow: str, rama: str, url: str, status: str, hace: str = ""
+    resultado: str, *, proyecto: str, workflow: str, rama: str, url: str, status: str,
+    hace: str = "", quien: str = "",
 ) -> str:
     """Mensaje de WhatsApp, distinto según cómo terminó el build."""
     plataforma = plataforma_de(workflow)
-    quien = f"{workflow} ({plataforma})" if plataforma else (workflow or "el build")
+    cual = f"{workflow} ({plataforma})" if plataforma else (workflow or "el build")
     donde = f" (rama {rama})" if rama else ""
     if resultado == "exito":
-        return f"✅ Terminó bien el build {quien} de {proyecto}{donde}{hace}. Detalle: {url}"
+        return f"✅ Terminó bien el build {cual} de {proyecto}{donde}{hace}{quien}. Detalle: {url}"
     if resultado == "advertencia":
         return (
-            f"⚠️ Terminó con advertencias el build {quien} de {proyecto}{donde}{hace}. "
+            f"⚠️ Terminó con advertencias el build {cual} de {proyecto}{donde}{hace}{quien}. "
             f"Revisa los pasos en amarillo: {url}"
         )
     raro = "" if status in FRACASO else f" [estado '{status}']"
-    return f"❌ Falló el build {quien} de {proyecto}{donde}{raro}{hace}. Revisa el log: {url}"
+    return f"❌ Falló el build {cual} de {proyecto}{donde}{raro}{hace}{quien}. Revisa el log: {url}"
 
 
 # --- Proceso ------------------------------------------------------------------
@@ -374,6 +392,7 @@ def procesar_build(fs_token: str, cm_build: dict, proyecto: dict, resultado: str
     mensaje = redactar(
         resultado, proyecto=proyecto["name"], workflow=workflow, rama=rama, url=url,
         status=status, hace=antiguedad(cm_build),
+        quien=quien_lo_lanzo(_texto(campos, "actorLogin"), desde_el_dashboard=not nuevo),
     )
     avisados: list[str] = []
     for tel in destinos:
