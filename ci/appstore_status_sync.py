@@ -133,14 +133,38 @@ def fetch_status(token: str, bundle: str) -> tuple[dict | None, str | None]:
     app = items[0]
     app_id = app["id"]
 
-    versions, err = asc_get(token, f"apps/{app_id}/appStoreVersions", {"limit": 3})
+    # 10 versiones, no 3: la que está A LA VENTA puede quedar varias posiciones
+    # atrás cuando hay rechazos y reenvíos, y sin ella el canal de producción se
+    # queda en blanco justo en la app que sí está publicada.
+    versions, err = asc_get(token, f"apps/{app_id}/appStoreVersions", {"limit": 10})
     if err:
         return None, err
-    builds, _ = asc_get(token, "builds", {"filter[app]": app_id, "limit": 3})
+    # Los builds traen el número de build ("82") pero NO la versión de mercado
+    # ("1.0.8"): esa vive en `preReleaseVersion`. Y para los testers externos, un
+    # build no está en TestFlight hasta que Apple aprueba su beta review, que es
+    # `betaAppReviewSubmission`. Sin esos dos includes no se puede decir qué
+    # versión están viendo los testers, que es justo lo que se pide.
+    builds, _ = asc_get(token, "builds", {
+        "filter[app]": app_id,
+        "limit": 10,
+        "sort": "-uploadedDate",
+        "include": "preReleaseVersion,betaAppReviewSubmission",
+    })
     reviews, _ = asc_get(token, "reviewSubmissions", {"filter[app]": app_id, "limit": 3})
 
     def attrs(node: dict) -> dict:
         return node.get("attributes", {}) or {}
+
+    # `included` llega como una bolsa plana: se indexa por (tipo, id) para poder
+    # resolver las relaciones de cada build.
+    incluidos = {
+        (n.get("type"), n.get("id")): attrs(n)
+        for n in ((builds or {}).get("included") or [])
+    }
+
+    def relacion(build: dict, nombre: str, tipo: str) -> dict:
+        ref = ((build.get("relationships") or {}).get(nombre) or {}).get("data") or {}
+        return incluidos.get((tipo, ref.get("id")), {})
 
     return {
         "appName": attrs(app).get("name"),
@@ -158,10 +182,20 @@ def fetch_status(token: str, bundle: str) -> tuple[dict | None, str | None]:
         ],
         "builds": [
             {
+                # `version` de un build es el NÚMERO de build ("82"); la versión
+                # de mercado ("1.0.8") va aparte, en shortVersion.
                 "version": attrs(b).get("version"),
+                "shortVersion": relacion(b, "preReleaseVersion", "preReleaseVersions").get("version"),
                 "processingState": attrs(b).get("processingState"),
                 "uploadedDate": attrs(b).get("uploadedDate"),
+                "expirationDate": attrs(b).get("expirationDate"),
                 "expired": attrs(b).get("expired"),
+                # INTERNAL_ONLY = solo el equipo; APP_STORE_ELIGIBLE = puede ir a
+                # testers externos y a la tienda.
+                "audience": attrs(b).get("buildAudienceType"),
+                "betaState": relacion(
+                    b, "betaAppReviewSubmission", "betaAppReviewSubmissions"
+                ).get("betaReviewState"),
             }
             for b in ((builds or {}).get("data") or [])
         ],

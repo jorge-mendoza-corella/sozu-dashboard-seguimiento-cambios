@@ -16,10 +16,18 @@ export interface AppStoreVersion {
 }
 
 export interface AppStoreBuild {
+  /** Número de build de Apple ("82"). Es lo que Apple llama `version` aquí. */
   version?: string;
+  /** Versión de mercado del build ("1.0.8"), de su `preReleaseVersion`. */
+  shortVersion?: string;
   processingState?: string;
   uploadedDate?: string;
+  expirationDate?: string;
   expired?: boolean;
+  /** INTERNAL_ONLY = solo el equipo; APP_STORE_ELIGIBLE = también externos. */
+  audience?: string;
+  /** Beta review de Apple: sin ella el build no llega a testers externos. */
+  betaState?: string;
 }
 
 export interface AppStoreStatusDoc {
@@ -54,6 +62,10 @@ export function versionStateInfo(state?: string): {
       return { label: "procesando", tone: "running" };
     case "PREPARE_FOR_SUBMISSION":
       return { label: "sin enviar", tone: "draft" };
+    case "READY_FOR_REVIEW":
+      // Estado del enum nuevo (`appVersionState`). Sin este caso caía al default
+      // y la card mostraba el literal de Apple, "ready for review", en inglés.
+      return { label: "lista para enviar", tone: "draft" };
     case "WAITING_FOR_EXPORT_COMPLIANCE":
       return { label: "falta cumplimiento de exportación", tone: "draft" };
     case "REJECTED":
@@ -136,4 +148,135 @@ export async function getAppStoreStatus(bundleId: string): Promise<AppStoreStatu
     reviewSubmissions: raw.reviewSubmissions ?? [],
     error: d.error ?? null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Los tres canales de iOS, para leerlos igual que los tracks de Play.
+//
+// La card enseñaba UNA fila —la versión más reciente de App Store Connect— y con
+// eso no se podía contestar ninguna de las dos preguntas que se hacen a diario:
+// qué están probando los testers y qué tiene instalado la gente. Con la versión
+// en revisión arriba, "producción" quedaba invisible aunque el dato ya estuviera
+// en el documento.
+// ---------------------------------------------------------------------------
+
+export type Tono = "success" | "running" | "draft" | "halted";
+
+export interface AppStoreChannel {
+  key: "testflight" | "revision" | "produccion";
+  label: string;
+  /** Versión de mercado ("1.0.8"), o null si el canal está vacío. */
+  version: string | null;
+  /** Número de build de Apple; solo TestFlight lo tiene. */
+  build?: string | null;
+  estado: { label: string; tone: Tono };
+  /** Fecha relevante del canal (subida del build, creación de la versión). */
+  fecha?: string | null;
+  /** Qué decir cuando el canal está vacío. */
+  vacio?: string;
+}
+
+/** Estados en los que la versión ya está a la venta. */
+const A_LA_VENTA = new Set(["READY_FOR_SALE", "READY_FOR_DISTRIBUTION"]);
+
+/** Versiones que ya no van a ninguna parte: no son "lo que viene". */
+const CERRADAS = new Set([
+  "REPLACED_WITH_NEW_VERSION",
+  "REMOVED_FROM_SALE",
+  "DEVELOPER_REMOVED_FROM_SALE",
+]);
+
+/** Estado del build dentro de TestFlight, ya en español. */
+function testflightEstado(b: AppStoreBuild): { label: string; tone: Tono } {
+  if (b.processingState && b.processingState !== "VALID") {
+    const tone: Tono = b.processingState === "PROCESSING" ? "running" : "halted";
+    return { label: buildStateLabel(b.processingState), tone };
+  }
+  switch (b.betaState) {
+    case "APPROVED":
+      return { label: "en TestFlight", tone: "success" };
+    case "IN_REVIEW":
+      return { label: "en revisión de TestFlight", tone: "running" };
+    case "WAITING_FOR_REVIEW":
+      return { label: "esperando revisión de TestFlight", tone: "running" };
+    case "REJECTED":
+      return { label: "rechazada por TestFlight", tone: "halted" };
+    default:
+      // Sin beta review, el build ya lo tienen los testers INTERNOS; los
+      // externos no. Decir "en TestFlight" a secas sería prometer de más.
+      return b.audience === "INTERNAL_ONLY"
+        ? { label: "listo · solo equipo interno", tone: "success" }
+        : { label: "listo · testers internos", tone: "success" };
+  }
+}
+
+/**
+ * Qué hay en TestFlight, en revisión y en producción. Cada canal se resuelve por
+ * separado: que una versión esté en revisión no borra la que sigue a la venta.
+ */
+export function appStoreChannels(doc: AppStoreStatusDoc | null | undefined): AppStoreChannel[] {
+  const versions = doc?.versions ?? [];
+  const builds = doc?.builds ?? [];
+
+  // TestFlight: el build más reciente que todavía no expira. Uno expirado ya no
+  // se puede instalar, así que anunciarlo como disponible sería mentira.
+  const vivo = builds.find((b) => !b.expired);
+  const testflight: AppStoreChannel = vivo
+    ? {
+        key: "testflight",
+        label: "TestFlight (pruebas)",
+        version: vivo.shortVersion?.trim() || null,
+        build: vivo.version?.trim() || null,
+        estado: testflightEstado(vivo),
+        fecha: vivo.uploadedDate ?? null,
+      }
+    : {
+        key: "testflight",
+        label: "TestFlight (pruebas)",
+        version: null,
+        estado: { label: "—", tone: "draft" },
+        vacio: builds.length
+          ? "El último build subido ya expiró; sube uno nuevo."
+          : "Sin builds subidos todavía.",
+      };
+
+  const enVenta = versions.find((v) => v.state && A_LA_VENTA.has(v.state) && v.version?.trim());
+  const produccion: AppStoreChannel = enVenta
+    ? {
+        key: "produccion",
+        label: "Producción (App Store)",
+        version: enVenta.version!.trim(),
+        estado: versionStateInfo(enVenta.state),
+        fecha: enVenta.createdDate ?? null,
+      }
+    : {
+        key: "produccion",
+        label: "Producción (App Store)",
+        version: null,
+        estado: { label: "—", tone: "draft" },
+        vacio: "Ninguna versión está a la venta todavía.",
+      };
+
+  // En camino: la versión más nueva que no está a la venta ni descartada. Es la
+  // que ocupaba sola la card.
+  const camino = versions.find(
+    (v) => v.version?.trim() && v.state && !A_LA_VENTA.has(v.state) && !CERRADAS.has(v.state),
+  );
+  const revision: AppStoreChannel = camino
+    ? {
+        key: "revision",
+        label: "En camino (revisión)",
+        version: camino.version!.trim(),
+        estado: versionStateInfo(camino.state),
+        fecha: camino.createdDate ?? null,
+      }
+    : {
+        key: "revision",
+        label: "En camino (revisión)",
+        version: null,
+        estado: { label: "—", tone: "draft" },
+        vacio: "Ninguna versión en camino a la tienda.",
+      };
+
+  return [testflight, revision, produccion];
 }
