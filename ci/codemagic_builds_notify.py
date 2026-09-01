@@ -36,7 +36,16 @@ Variables de entorno:
                    debe salir rojo cada 5 minutos por un secret que aún no existe.
   FIRESTORE_TOKEN  access token de GCP para Firestore REST
   GCP_PROJECT      proyecto Firebase (default: sozu-admin-dev)
-  LOOKBACK_MIN     minutos hacia atrás que se miran (default: 180)
+  LOOKBACK_MIN     minutos hacia atrás que se miran (default: 1440, un día)
+
+La ventana es ANCHA a propósito. El cron dice `*/5`, pero GitHub no lo cumple:
+en este repo las corridas reales llegan cada 2 a 12 horas (el planificador
+descarta la inmensa mayoría de los disparos de alta frecuencia). Con la ventana
+de 3 horas que había, todo build que terminaba dentro de un hueco largo se
+quedaba SIN aviso para siempre —no tarde: nunca—, y eso es justo lo que se
+reportó de un build de iOS. Los repetidos no son problema: los corta el registro
+`buildNotifications/{buildId}`, así que ampliar la ventana solo puede recuperar
+avisos perdidos, nunca duplicarlos.
 
 Ningún secreto sale al log, y los teléfonos solo aparecen enmascarados a los
 últimos 4 dígitos (ver whatsapp.enmascarar).
@@ -68,12 +77,18 @@ TIMEOUT = 30
 # es la que usa la UI para pintar el resultado.
 EXITO = {"finished", "success"}
 FRACASO = {"failed", "canceled", "cancelled", "timeout", "skipped"}
+# Terminó, pero con algún paso marcado en amarillo (típico de los `ignore_failure`
+# del `codemagic.yaml`). Es un estado TERMINAL: estaba en la lista de "en curso"
+# y por eso un build que acababa así no avisaba nunca —el sync lo daba por vivo
+# en cada corrida, hasta que se salía de la ventana—. Se avisa como terminado y
+# el mensaje dice que trae advertencias.
+ADVERTENCIA = {"warning"}
 # Estados que Codemagic reporta mientras el build sigue vivo. No es una lista
 # cerrada (hay intermedios sin documentar), por eso la terminalidad se decide
 # también por `finishedAt`.
 EN_CURSO = {
     "queued", "initializing", "preparing", "fetching", "building",
-    "testing", "publishing", "running", "started", "warning",
+    "testing", "publishing", "finishing", "running", "started",
 }
 
 
@@ -205,7 +220,7 @@ def _fecha(iso: str | None) -> datetime | None:
 
 
 def clasificar(build: dict) -> tuple[str, bool]:
-    """(resultado, terminó) del build: resultado es 'exito' o 'fracaso'.
+    """(resultado, terminó) del build: 'exito', 'advertencia' o 'fracaso'.
 
     Se considera terminado si el estado es uno de los conocidos o si Codemagic
     ya puso `finishedAt`. Un estado terminal DESCONOCIDO cuenta como fracaso, y
@@ -215,6 +230,8 @@ def clasificar(build: dict) -> tuple[str, bool]:
     status = (build.get("status") or "").strip().lower()
     if status in EXITO:
         return "exito", True
+    if status in ADVERTENCIA:
+        return "advertencia", True
     if status in FRACASO:
         return "fracaso", True
     if status in EN_CURSO:
@@ -235,15 +252,40 @@ def plataforma_de(workflow_id: str) -> str:
     return ""
 
 
-def redactar(resultado: str, *, proyecto: str, workflow: str, rama: str, url: str, status: str) -> str:
+def antiguedad(build: dict) -> str:
+    """" hace N min/h" si el aviso sale tarde; cadena vacía si sale al momento.
+
+    El aviso depende de cuándo corra el cron, y GitHub lo corre cuando quiere.
+    Sin esta pista, un mensaje que llega cinco horas después se lee como si el
+    build acabara de terminar, y manda a revisar algo que ya se movió.
+    """
+    fin = _fecha(build.get("finishedAt")) or _fecha(build.get("startedAt"))
+    if not fin:
+        return ""
+    minutos = int((datetime.now(timezone.utc) - fin).total_seconds() // 60)
+    if minutos < 20:
+        return ""
+    if minutos < 120:
+        return f", hace {minutos} min"
+    return f", hace {minutos // 60} h"
+
+
+def redactar(
+    resultado: str, *, proyecto: str, workflow: str, rama: str, url: str, status: str, hace: str = ""
+) -> str:
     """Mensaje de WhatsApp, distinto según cómo terminó el build."""
     plataforma = plataforma_de(workflow)
     quien = f"{workflow} ({plataforma})" if plataforma else (workflow or "el build")
     donde = f" (rama {rama})" if rama else ""
     if resultado == "exito":
-        return f"✅ Terminó bien el build {quien} de {proyecto}{donde}. Detalle: {url}"
+        return f"✅ Terminó bien el build {quien} de {proyecto}{donde}{hace}. Detalle: {url}"
+    if resultado == "advertencia":
+        return (
+            f"⚠️ Terminó con advertencias el build {quien} de {proyecto}{donde}{hace}. "
+            f"Revisa los pasos en amarillo: {url}"
+        )
     raro = "" if status in FRACASO else f" [estado '{status}']"
-    return f"❌ Falló el build {quien} de {proyecto}{donde}{raro}. Revisa el log: {url}"
+    return f"❌ Falló el build {quien} de {proyecto}{donde}{raro}{hace}. Revisa el log: {url}"
 
 
 # --- Proceso ------------------------------------------------------------------
@@ -330,7 +372,8 @@ def procesar_build(fs_token: str, cm_build: dict, proyecto: dict, resultado: str
         return
 
     mensaje = redactar(
-        resultado, proyecto=proyecto["name"], workflow=workflow, rama=rama, url=url, status=status
+        resultado, proyecto=proyecto["name"], workflow=workflow, rama=rama, url=url,
+        status=status, hace=antiguedad(cm_build),
     )
     avisados: list[str] = []
     for tel in destinos:
@@ -364,9 +407,9 @@ def main() -> None:
         fail("Falta FIRESTORE_TOKEN.")
 
     try:
-        lookback = int(os.environ.get("LOOKBACK_MIN", "180"))
+        lookback = int(os.environ.get("LOOKBACK_MIN", "1440"))
     except ValueError:
-        lookback = 180
+        lookback = 1440
     desde = datetime.now(timezone.utc) - timedelta(minutes=max(lookback, 1))
 
     proyectos = list_codemagic_projects(fs_token)

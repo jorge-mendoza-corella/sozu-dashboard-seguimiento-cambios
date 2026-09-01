@@ -186,9 +186,27 @@ el dashboard le inyectaba `WA_PHONE` y el propio workflow mandaba el mensaje al
 final. Eso dejaba fuera justo el caso que importa —el build que revienta antes de
 llegar a ese paso—, y un build de iOS falló sin avisarle a nadie.
 
-Ahora avisa `ci/codemagic_builds_notify.py`, programado cada 5 minutos: le
-pregunta a Codemagic cómo terminó cada build y manda el WhatsApp él mismo, con
-éxito o con fallo, sin depender de que el build llegue vivo a ningún paso.
+Ahora avisa `ci/codemagic_builds_notify.py`, programado: le pregunta a Codemagic
+cómo terminó cada build y manda el WhatsApp él mismo, con éxito o con fallo, sin
+depender de que el build llegue vivo a ningún paso.
+
+El cron pide `*/5` y **GitHub no lo cumple**: las corridas reales de este repo
+llegan cada 2 a 12 horas. Con la ventana de 3 h que tenía el sync, el build que
+terminaba dentro de un hueco largo no se avisaba tarde, se perdía —así se quedó
+sin aviso un build de iOS—. La ventana es de 24 h (`LOOKBACK_MIN`), que el
+registro de idempotencia vuelve inofensiva: solo puede recuperar avisos, nunca
+duplicarlos. Y como el aviso puede salir tarde, el mensaje dice hace cuánto
+terminó el build en vez de dejar creer que acaba de pasar.
+
+Para que salga **al momento** hay un `repository_dispatch` de tipo
+`codemagic-build-finished`: un webhook de "build finished" de Codemagic que pase
+por n8n y pegue en `POST /repos/{owner}/{repo}/dispatches` dispara el sync en
+segundos. Sin eso conectado, el cron es la red de seguridad.
+
+Un build que termina en `warning` —un paso con `ignore_failure` en el
+`codemagic.yaml`— cuenta como terminado. Estaba clasificado como estado
+intermedio, tanto aquí como en la UI, así que no avisaba nunca y además dejaba la
+etapa siguiente en gris y el workflow bloqueado para relanzarlo.
 
 Lo único que ese sync no puede deducir es quién lo disparó: el dashboard lo deja
 al lanzarlo en `buildNotifications/{buildId}`, que además sirve de marca de
