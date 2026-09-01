@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, AlertCircle, Apple, ExternalLink } from "lucide-react";
-import { getAppStoreStatus, versionStateInfo, buildStateLabel } from "@/lib/appStoreStatus";
+import { getAppStoreStatus, appStoreChannels, buildStateLabel } from "@/lib/appStoreStatus";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import type { Project } from "@/lib/firestoreProjects";
 import { cn } from "@/lib/utils";
@@ -13,9 +13,14 @@ const STATUS_CLASSES: Record<string, string> = {
 };
 
 /**
- * Estado de la app en App Store Connect: en qué punto de la revisión va cada
- * versión y qué builds subieron. Lo alimenta el mismo workflow programado que
- * los tracks de Play.
+ * Qué versión de iOS hay en cada canal: TestFlight, revisión y producción.
+ * Mismo formato que los tracks de Play, y lo alimenta el mismo workflow
+ * programado.
+ *
+ * Antes era una sola fila con la versión más reciente de App Store Connect. Esa
+ * fila contestaba la pregunta menos útil: enseñaba la que está en revisión y
+ * dejaba invisibles las dos que se consultan a diario —qué prueban los testers y
+ * qué tiene instalado la gente—, aunque el dato ya estuviera en el documento.
  */
 export function AppStoreStatusCard({ project }: { project: Project }) {
   const bundle = project.iosBundleId;
@@ -28,12 +33,15 @@ export function AppStoreStatusCard({ project }: { project: Project }) {
 
   if (!bundle) return null;
 
+  const canales = appStoreChannels(data);
+  const ultimo = data?.builds?.[0];
+
   return (
     <div className="mt-3">
       <div className="mb-1.5 flex flex-wrap items-center gap-2">
         <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
           <Apple className="h-3.5 w-3.5" />
-          App Store · revisión
+          App Store · canales
         </h4>
         <span className="font-mono text-[10px] text-muted-foreground">{bundle}</span>
         <span className="flex-1" />
@@ -50,6 +58,11 @@ export function AppStoreStatusCard({ project }: { project: Project }) {
         </a>
       </div>
 
+      <p className="mb-1.5 text-[10px] text-muted-foreground">
+        Qué versión está en cada canal de iOS. Un build recién subido lo ven los testers internos
+        de inmediato; a los externos solo llega cuando Apple aprueba su revisión de TestFlight.
+      </p>
+
       {data?.error && (
         <p className="mb-1.5 flex items-start gap-1.5 rounded border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
           <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
@@ -65,31 +78,48 @@ export function AppStoreStatusCard({ project }: { project: Project }) {
         <p className="text-[11px] text-muted-foreground">
           Aún sin datos. La sincronización corre cada 30 min — o pulsa "actualizar" arriba.
         </p>
-      ) : data.versions.length === 0 && !data.error ? (
-        <p className="text-[11px] text-muted-foreground">Sin versiones en App Store Connect todavía.</p>
       ) : (
-        <div className="space-y-1.5">
-          {data.versions.slice(0, 2).map((v, i) => {
-            const st = versionStateInfo(v.state);
-            return (
-              <div key={i} className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2 text-[11px]">
-                <span className="font-semibold">v{v.version ?? "—"}</span>
-                <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold", STATUS_CLASSES[st.tone])}>
-                  {st.label}
-                </span>
-                {v.createdDate && (
-                  <span className="text-[10px] text-muted-foreground">creada {formatDistanceToNow(v.createdDate)}</span>
+        <>
+          <div className="grid gap-1.5 sm:grid-cols-3">
+            {canales.map((c) => (
+              <div key={c.key} className="rounded-lg border bg-muted/30 p-2">
+                <div className="mb-1 text-[11px] font-semibold">{c.label}</div>
+                {/* El número de build basta para pintar el canal: los documentos
+                    escritos por el sync anterior no traen `shortVersion`, y hasta
+                    la siguiente sincronización TestFlight se quedaría en blanco
+                    teniendo el dato a la mano. */}
+                {c.version || c.build ? (
+                  <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                    <span
+                      className={cn(
+                        "rounded px-1.5 py-0.5 font-semibold",
+                        STATUS_CLASSES[c.estado.tone],
+                      )}
+                    >
+                      {c.estado.label}
+                    </span>
+                    {c.version && <span className="font-mono">v{c.version}</span>}
+                    {c.build && <span className="text-muted-foreground">build {c.build}</span>}
+                    {c.fecha && (
+                      <span className="text-muted-foreground">{formatDistanceToNow(c.fecha)}</span>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground">{c.vacio ?? "—"}</p>
                 )}
               </div>
-            );
-          })}
-          {data.builds.length > 0 && (
-            <p className="text-[10px] text-muted-foreground">
-              Último build subido: {data.builds[0].version ?? "—"} · {buildStateLabel(data.builds[0].processingState)}
-              {data.builds[0].uploadedDate && ` · ${formatDistanceToNow(data.builds[0].uploadedDate)}`}
+            ))}
+          </div>
+
+          {ultimo && (
+            <p className="mt-1.5 text-[10px] text-muted-foreground">
+              Último build subido: {ultimo.shortVersion ? `v${ultimo.shortVersion} · ` : ""}
+              build {ultimo.version ?? "—"} · {buildStateLabel(ultimo.processingState)}
+              {ultimo.expired && " · expirado"}
+              {ultimo.uploadedDate && ` · ${formatDistanceToNow(ultimo.uploadedDate)}`}
             </p>
           )}
-        </div>
+        </>
       )}
     </div>
   );
