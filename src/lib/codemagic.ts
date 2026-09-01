@@ -300,6 +300,13 @@ export interface BuildStatusInfo {
 // dejaba ventanas donde el build activo no bloqueaba los botones.
 export function buildStatusInfo(status: string): BuildStatusInfo {
   if (status === "finished" || status === "success") return { label: "exitoso", isRunning: false, tone: "success" };
+  // `warning` TERMINA el build: es el resultado de un paso con `ignore_failure`
+  // en el codemagic.yaml, no un estado intermedio. Caía en el default de abajo,
+  // así que un build que acababa así se quedaba "en curso" para siempre: no
+  // llegaba el aviso de que había terminado, la etapa siguiente (TestFlight,
+  // Play interno) seguía en gris y el propio workflow quedaba bloqueado para
+  // relanzarlo. Cuenta como éxito —el artefacto salió— con el aviso a la vista.
+  if (status === "warning") return { label: "exitoso (con avisos)", isRunning: false, tone: "success" };
   if (status === "failed" || status === "timeout") return { label: "falló", isRunning: false, tone: "failed" };
   if (status === "canceled" || status === "cancelled" || status === "skipped")
     return { label: "cancelado", isRunning: false, tone: "neutral" };
