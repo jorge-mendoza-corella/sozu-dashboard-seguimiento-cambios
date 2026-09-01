@@ -76,4 +76,18 @@ jobs:
           export CODEMAGIC_TOKEN
 
 
-          python ci/codemagic_builds_notify.py
+          # Cuando quien despierta esto es el webhook de Codemagic, el build
+          # TODAVIA no termino: el paso que dispara el aviso corre en
+          # `publishing`, con el build aun vivo, asi que una sola pasada leeria
+          # "sigue en curso" y el aviso se quedaria esperando al cron — justo lo
+          # que el webhook vino a evitar. Se reintenta unos minutos; los
+          # repetidos los corta el registro `buildNotifications/{buildId}`.
+          INTENTOS=1
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then INTENTOS=6; fi
+          i=1
+          while [ "$i" -le "$INTENTOS" ]; do
+            echo "--- pasada $i de $INTENTOS"
+            python ci/codemagic_builds_notify.py
+            if [ "$i" -lt "$INTENTOS" ]; then sleep 45; fi
+            i=$((i + 1))
+          done

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle, CheckCircle2, RefreshCw, Loader2,
   GitBranch, GitPullRequest, Zap,
@@ -19,11 +20,20 @@ import type { FrontVersion } from "@/lib/frontVersions";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
 import { createPR, hasFailingDeploy, getBranchCommitAuthors, getPendingReleasePRs, type ApproverAuth, type PRWithCommits } from "@/lib/github";
 import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
+import { getAllContributorPhones } from "@/lib/firestoreContributors";
 
-// Fallback legacy cuando el proyecto no tiene notifyAuthors configurados.
-const DEFAULT_AUTHOR_LOGINS = [
-  "joseramonescobar", "tomaspeterson-prog", "Eddys912", "abelsalazar-cmd",
-];
+// El fallback, cuando el proyecto no tiene `notifyAuthors` configurados, era
+// esta lista de cuatro logins escrita a mano:
+//
+//   ["joseramonescobar", "tomaspeterson-prog", "Eddys912", "abelsalazar-cmd"]
+//
+// Quien no estuviera ahí no se podía notificar, y como la lista no se toca al
+// entrar alguien nuevo, en la práctica nunca crecía: se preguntó por qué no
+// aparecía una persona del equipo, y la respuesta era que nadie la había escrito
+// en este archivo. Ahora el fallback son los contribuidores que tienen teléfono
+// capturado en Contribuidores, que es exactamente el conjunto de gente a la que
+// se le PUEDE mandar el aviso — ofrecer a alguien sin teléfono sería ofrecer un
+// aviso que no va a llegar.
 
 function sortBranches(branches: BranchInfo[]): BranchInfo[] {
   return [
@@ -81,6 +91,16 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
   // Sin el permiso viewOthers el usuario solo ve SUS ramas y PRs
   // (main/dev siempre visibles: son estado compartido del repo).
   const canViewOthers = perms.viewOthers || !selfLogin;
+
+  // Gente a la que se le puede mandar un WhatsApp: la que tiene teléfono en
+  // Contribuidores. Es el fallback cuando el proyecto no configuró sus propios
+  // `notifyAuthors`. Una sola consulta compartida por todas las tarjetas.
+  const { data: telefonos = {}, isLoading: cargandoNotificables } = useQuery({
+    queryKey: ["contributor-phones"],
+    queryFn: getAllContributorPhones,
+    staleTime: 10 * 60_000,
+  });
+  const notificables = Object.keys(telefonos).sort((a, b) => a.localeCompare(b));
   const scopedPRs = canViewOthers
     ? status.openPRs
     : status.openPRs.filter((pr) => pr.author === selfLogin);
@@ -536,9 +556,22 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                     </div>
                   )}
                   {(() => {
-                    const options = (notifyAuthors.length > 0 ? notifyAuthors : DEFAULT_AUTHOR_LOGINS)
-                      .filter((l) => !(newPR.detectedAuthors ?? []).includes(l));
-                    if (options.length === 0) return null;
+                    const base = notifyAuthors.length > 0 ? notifyAuthors : notificables;
+                    const options = base.filter((l) => !(newPR.detectedAuthors ?? []).includes(l));
+                    if (options.length === 0) {
+                      // Distinguir "todavía cargando" de "no hay a quién ofrecer"
+                      // evita leerlo como que la lista se quedó corta.
+                      return cargandoNotificables ? (
+                        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" /> cargando contribuidores…
+                        </p>
+                      ) : notifyAuthors.length === 0 ? (
+                        <p className="text-[11px] text-muted-foreground italic">
+                          Nadie más a quien avisar: ningún contribuidor tiene teléfono capturado en
+                          Contribuidores.
+                        </p>
+                      ) : null;
+                    }
                     return (
                       <>
                         <p className="text-[11px] text-muted-foreground font-medium">

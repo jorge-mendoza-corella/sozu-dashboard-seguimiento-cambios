@@ -14,7 +14,7 @@ import {
   PLATFORMS, WORKFLOW_LABELS, SYNC_TESTERS_WORKFLOW, getBuild, failedStepName,
   type CodemagicBuild, type PlatformDef,
 } from "@/lib/codemagic";
-import { getAppStoreStatus, buildStateLabel, versionStateInfo } from "@/lib/appStoreStatus";
+import { getAppStoreStatus, appStoreChannels, buildStateLabel, versionStateInfo } from "@/lib/appStoreStatus";
 import { useAuth } from "@/hooks/useAuth";
 import { getAllContributorPhones } from "@/lib/firestoreContributors";
 import { registerBuildForNotification } from "@/lib/buildNotifications";
@@ -30,7 +30,7 @@ import type { CicdPermissions } from "@/lib/firestoreUsers";
 import { setProjectTesters, setProjectTestLinks, type Project } from "@/lib/firestoreProjects";
 import { PlayTracksCard } from "./PlayTracksCard";
 import { AppStoreStatusCard } from "./AppStoreStatusCard";
-import { triggerPlayTracksSync } from "@/lib/playTracks";
+import { getPlayTracks, triggerPlayTracksSync } from "@/lib/playTracks";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 
 const TONE_CLASSES: Record<string, string> = {
@@ -689,6 +689,22 @@ export function AppBuildsPanel({ appId, perms, project }: {
     triggerPlayTracksSync().catch(() => sessionStorage.removeItem(key));
   }, [builds, project?.androidPackage]);
 
+  // Qué versión vive hoy en cada canal de tienda. Mismas claves de consulta que
+  // usan PlayTracksCard y AppStoreStatusCard, así que comparten cache y esto no
+  // agrega ni una lectura.
+  const { data: appStoreDoc } = useQuery({
+    queryKey: ["appstore-status", project?.iosBundleId],
+    queryFn: () => getAppStoreStatus(project!.iosBundleId!),
+    enabled: !!project?.iosBundleId,
+    refetchInterval: 5 * 60_000,
+  });
+  const { data: playDoc } = useQuery({
+    queryKey: ["play-tracks", project?.androidPackage],
+    queryFn: () => getPlayTracks(project!.androidPackage!),
+    enabled: !!project?.androidPackage,
+    refetchInterval: 5 * 60_000,
+  });
+
   const branches = app?.branches ?? [];
   const [branch, setBranch] = useState("");
   const effectiveBranch = branch || (branches.includes("main") ? "main" : branches[0]) || "main";
@@ -955,6 +971,54 @@ export function AppBuildsPanel({ appId, perms, project }: {
     );
     return m;
   }, [builds]);
+
+  // Version que quedo en cada canal, por etiqueta de marcador.
+  //
+  // El marcador decia "en TestFlight" y nada mas: para saber QUE version quedo
+  // ahi habia que bajar a las cards de tienda y cruzarlo a ojo. El dato ya
+  // estaba cargado; lo unico que faltaba era ponerlo junto al marcador.
+  //
+  // Sale de la tienda, no del build: la tienda es la que sabe que binario quedo
+  // servido. Un build que publico y despues fue reemplazado por otro deja de ser
+  // el que esta ahi, y el marcador ya lo refleja porque solo lo lleva el build
+  // mas reciente de ese workflow.
+  const versionPorEtapa = useMemo(() => {
+    const m = new Map<string, string>();
+    const ios = PLATFORMS.find((p) => p.key === "ios");
+    const android = PLATFORMS.find((p) => p.key === "android");
+
+    if (ios && appStoreDoc) {
+      const [testflight, camino, produccion] = appStoreChannels(appStoreDoc);
+      if (testflight.version || testflight.build) {
+        const v = testflight.version ? `v${testflight.version}` : "";
+        const b = testflight.build ? `build ${testflight.build}` : "";
+        m.set(`en ${ios.storeLabel}`, [v, b].filter(Boolean).join(" · "));
+      }
+      // Sin version a la venta se muestra la que va en camino: decir "en App
+      // Store" sin numero era justo lo que no se entendia.
+      const tienda = produccion.version ?? camino.version;
+      if (tienda) m.set(`en ${ios.promoteLabel}`, `v${tienda}`);
+    }
+
+    if (android && playDoc) {
+      const de = (track: string): string | null => {
+        const t = playDoc.tracks.find((x) => x.track.toLowerCase() === track);
+        const rel =
+          t?.releases?.find((r) => r.status === "completed") ??
+          t?.releases?.find((r) => r.status === "inProgress") ??
+          t?.releases?.[0];
+        if (!rel) return null;
+        const nombre = rel.name?.trim();
+        const code = (rel.versionCodes ?? [])[0];
+        return [nombre ? `v${nombre}` : "", code ? `build ${code}` : ""].filter(Boolean).join(" · ") || null;
+      };
+      const interno = de("internal");
+      if (interno) m.set(`en ${android.storeLabel}`, interno);
+      const prod = de("production");
+      if (prod) m.set(`en ${android.promoteLabel}`, prod);
+    }
+    return m;
+  }, [appStoreDoc, playDoc]);
 
   // Builds en curso: se muestran como card destacada, no como fila de historial.
   const runningBuilds = useMemo(() => builds.filter(isRunning), [builds]);
@@ -1577,14 +1641,18 @@ export function AppBuildsPanel({ appId, perms, project }: {
                   </span>
                   {when && <span className="text-muted-foreground">{formatBuildDate(when)}</span>}
                   {dur && <span className="text-muted-foreground">· {dur}</span>}
-                  {tags.map((t) => (
-                    <span
-                      key={t}
-                      className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300"
-                    >
-                      ★ {t}
-                    </span>
-                  ))}
+                  {tags.map((t) => {
+                    const version = versionPorEtapa.get(t);
+                    return (
+                      <span
+                        key={t}
+                        className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300"
+                      >
+                        ★ {t}
+                        {version && <span className="font-mono font-normal"> · {version}</span>}
+                      </span>
+                    );
+                  })}
                   <span className="flex-1" />
                   {/* Android/Web: instaladores descargables. iOS: el .ipa firmado para
                       App Store no se puede instalar directo — se distribuye por TestFlight. */}
