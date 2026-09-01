@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Smartphone, Play, Loader2, ExternalLink, XCircle, Download, AlertCircle,
@@ -323,6 +323,39 @@ const PLAT_META: Record<Plat, { label: string; cls: string }> = {
   ios: { label: "iOS", cls: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/30 dark:text-sky-300 dark:border-sky-900/50" },
   web: { label: "Web", cls: "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/30 dark:text-violet-300 dark:border-violet-900/50" },
   otro: { label: "—", cls: "bg-muted text-muted-foreground border-border" },
+};
+
+// Etapa a la que corresponde un marcador, y su color.
+//
+// Los tres marcadores salían del mismo ámbar, así que "★ en TestFlight" y
+// "★ en App Store" se veían igual y había que leerlos para distinguir una prueba
+// de algo que ya está frente al público — que es la diferencia que más importa
+// de un vistazo. Ahora el color la dice: pruebas en azul, producción en morado,
+// y el artefacto recién construido se queda en ámbar, que es lo que ya era.
+//
+// Ninguno de los tres repite el verde/rojo/azul de `TONE_CLASSES`, que son el
+// RESULTADO del build: si un marcador se pintara verde, "está en producción" y
+// "terminó bien" se leerían como la misma cosa.
+type Etapa = "build" | "pruebas" | "produccion";
+
+interface Marcador {
+  label: string;
+  etapa: Etapa;
+}
+
+const ETAPA_META: Record<Etapa, { cls: string; help: string }> = {
+  build: {
+    cls: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300",
+    help: "El artefacto más reciente que se construyó. Todavía no está en ninguna tienda.",
+  },
+  pruebas: {
+    cls: "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800/60 dark:bg-indigo-950/30 dark:text-indigo-300",
+    help: "Canal de pruebas: lo ven los testers, no el público.",
+  },
+  produccion: {
+    cls: "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700 dark:border-fuchsia-800/60 dark:bg-fuchsia-950/30 dark:text-fuchsia-300",
+    help: "Tienda pública: es lo que puede instalar cualquiera.",
+  },
 };
 
 /** Fila de una plataforma: construir artefacto y, si ya existe, enviarlo a la store. */
@@ -673,21 +706,72 @@ export function AppBuildsPanel({ appId, perms, project }: {
   const app = useMemo(() => apps.find((a) => a._id === appId), [apps, appId]);
   const repo = useMemo(() => appRepo(app), [app]);
 
-  // Al terminar bien una publicación a Play, pedir de inmediato el refresco de
-  // tracks (el cron tardaría hasta 30 min en reflejar la nueva versión).
+  const timers = useRef<number[]>([]);
+  useEffect(() => () => { for (const t of timers.current) window.clearTimeout(t); }, []);
+
+  // Al terminar bien CUALQUIER publicación, pedir de inmediato el refresco del
+  // estado de tienda.
+  //
+  // La versión que muestran los marcadores sale de `playTracks`/`appStoreStatus`,
+  // que escribe un sync programado cada 15 min. Sin este empujón, el marcador de
+  // un TestFlight recién terminado enseñaba la versión ANTERIOR —la que seguía
+  // en el documento— hasta que el cron pasara: se leía como si la publicación
+  // hubiera subido el binario viejo.
+  //
+  // Antes esto solo cubría Play, y solo `android-publish`/`android-production`.
+  // Ahora cubre las dos plataformas y las cuatro etapas: el mismo workflow lee
+  // Play y App Store en la misma corrida.
   useEffect(() => {
-    if (!project?.androidPackage) return;
+    const publica = new Set(
+      PLATFORMS.flatMap((p) => [p.publishWorkflowId, p.promoteWorkflowId, p.storeDirectWorkflowId]),
+    );
+    // Solo una publicación RECIÉN terminada. Sin esta ventana, abrir la pestaña
+    // cualquier día disparaba el workflow por una publicación de la semana
+    // pasada —`sessionStorage` es por pestaña, así que cada pestaña nueva
+    // disparaba otra vez— y el sync programado ya cubre ese caso de sobra.
+    const fresco = (b: CodemagicBuild) => {
+      const fin = b.finishedAt ?? b.startedAt;
+      return !!fin && Date.now() - new Date(fin).getTime() < 30 * 60_000;
+    };
     const done = builds.find(
-      (b) =>
-        (b.workflowId === "android-publish" || b.workflowId === "android-production") &&
-        buildStatusInfo(b.status).tone === "success",
+      (b) => publica.has(b.workflowId) && buildStatusInfo(b.status).tone === "success" && fresco(b),
     );
     if (!done) return;
-    const key = `play-sync:${done._id}`;
+    const key = `store-sync:${done._id}`;
     if (sessionStorage.getItem(key)) return;
     sessionStorage.setItem(key, "1");
-    triggerPlayTracksSync().catch(() => sessionStorage.removeItem(key));
-  }, [builds, project?.androidPackage]);
+
+    // Tres pasadas, no una. La primera cubre el caso obvio —el documento lo
+    // escribe un sync programado y el dato quedaría viejo hasta la próxima
+    // corrida—, pero hay una segunda causa que una sola pasada no alcanza:
+    // Apple tarda unos minutos en registrar el binario recién subido, así que un
+    // sync disparado al segundo siguiente todavía lee el build ANTERIOR y lo
+    // vuelve a guardar. Releer Firestore no ayuda ahí: el número solo cambia si
+    // el sync vuelve a preguntarle a Apple.
+    const claves = [
+      ["play-tracks", project?.androidPackage],
+      ["appstore-status", project?.iosBundleId],
+    ] as const;
+    const releer = () => {
+      for (const [k, id] of claves) if (id) void qc.invalidateQueries({ queryKey: [k, id] });
+    };
+    const sincronizar = () => {
+      triggerPlayTracksSync()
+        .then(() => {
+          // El workflow tarda alrededor de un minuto en escribir el documento.
+          timers.current.push(window.setTimeout(releer, 75_000));
+        })
+        .catch(() => sessionStorage.removeItem(key));
+    };
+    // Los temporizadores viven en un ref y NO se cancelan al re-ejecutarse este
+    // efecto: `builds` cambia en cada sondeo, así que una limpieza aquí mataría
+    // las pasadas de los minutos 3 y 7 a los pocos segundos de programarlas —y
+    // en la re-ejecución no volverían a nacer, porque `sessionStorage` ya marcó
+    // ese build como atendido. Se cancelan al desmontar, y nada más.
+    for (const espera of [0, 3 * 60_000, 7 * 60_000]) {
+      timers.current.push(window.setTimeout(sincronizar, espera));
+    }
+  }, [builds, project?.androidPackage, project?.iosBundleId, qc]);
 
   // Qué versión vive hoy en cada canal de tienda. Mismas claves de consulta que
   // usan PlayTracksCard y AppStoreStatusCard, así que comparten cache y esto no
@@ -946,9 +1030,9 @@ export function AppBuildsPanel({ appId, perms, project }: {
   // traen un id interno → cuentan como "build" y la plataforma sale de sus
   // artefactos (platformOfBuild).
   const markers = useMemo(() => {
-    const m = new Map<string, string[]>();
-    const add = (id: string | undefined, tag: string) => {
-      if (id) m.set(id, [...(m.get(id) ?? []), tag]);
+    const m = new Map<string, Marcador[]>();
+    const add = (id: string | undefined, label: string, etapa: Etapa) => {
+      if (id) m.set(id, [...(m.get(id) ?? []), { label, etapa }]);
     };
     const isPublishOrPromote = (b: CodemagicBuild) =>
       PLATFORMS.some((p) =>
@@ -959,15 +1043,17 @@ export function AppBuildsPanel({ appId, perms, project }: {
       add(
         builds.find((b) => platformOfBuild(b) === p.key && !isPublishOrPromote(b) && isSuccess(b))?._id,
         `último build ${p.label}`,
+        "build",
       );
-      add(builds.find((b) => b.workflowId === p.publishWorkflowId && isSuccess(b))?._id, `en ${p.storeLabel}`);
-      add(builds.find((b) => b.workflowId === p.promoteWorkflowId && isSuccess(b))?._id, `en ${p.promoteLabel}`);
+      add(builds.find((b) => b.workflowId === p.publishWorkflowId && isSuccess(b))?._id, `en ${p.storeLabel}`, "pruebas");
+      add(builds.find((b) => b.workflowId === p.promoteWorkflowId && isSuccess(b))?._id, `en ${p.promoteLabel}`, "produccion");
       // Publicación directa (modo simple): también marca la tienda pública.
-      add(builds.find((b) => b.workflowId === p.storeDirectWorkflowId && isSuccess(b))?._id, `en ${p.promoteLabel}`);
+      add(builds.find((b) => b.workflowId === p.storeDirectWorkflowId && isSuccess(b))?._id, `en ${p.promoteLabel}`, "produccion");
     }
     add(
       builds.find((b) => platformOfBuild(b) === "web" && isSuccess(b))?._id,
       "último build Web",
+      "build",
     );
     return m;
   }, [builds]);
@@ -1641,14 +1727,18 @@ export function AppBuildsPanel({ appId, perms, project }: {
                   </span>
                   {when && <span className="text-muted-foreground">{formatBuildDate(when)}</span>}
                   {dur && <span className="text-muted-foreground">· {dur}</span>}
-                  {tags.map((t) => {
-                    const version = versionPorEtapa.get(t);
+                  {tags.map(({ label, etapa }) => {
+                    const version = versionPorEtapa.get(label);
                     return (
                       <span
-                        key={t}
-                        className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300"
+                        key={label}
+                        title={ETAPA_META[etapa].help}
+                        className={cn(
+                          "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+                          ETAPA_META[etapa].cls,
+                        )}
                       >
-                        ★ {t}
+                        ★ {label}
                         {version && <span className="font-mono font-normal"> · {version}</span>}
                       </span>
                     );
