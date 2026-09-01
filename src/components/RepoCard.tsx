@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle, CheckCircle2, RefreshCw, Loader2,
   GitBranch, GitPullRequest, Zap,
@@ -20,20 +19,22 @@ import type { FrontVersion } from "@/lib/frontVersions";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
 import { createPR, hasFailingDeploy, getBranchCommitAuthors, getPendingReleasePRs, type ApproverAuth, type PRWithCommits } from "@/lib/github";
 import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
-import { getAllContributorPhones } from "@/lib/firestoreContributors";
 
-// El fallback, cuando el proyecto no tiene `notifyAuthors` configurados, era
-// esta lista de cuatro logins escrita a mano:
+// SIN LISTA POR DEFECTO. Cuando el proyecto no tiene `notifyAuthors`, aquí no se
+// adivina a quién ofrecer: se dice que falta configurarlo y dónde.
 //
-//   ["joseramonescobar", "tomaspeterson-prog", "Eddys912", "abelsalazar-cmd"]
+// Hubo dos intentos de adivinarlo y los dos confunden. Primero fue una lista de
+// cuatro logins escrita a mano en este archivo, que nadie actualizaba al entrar
+// alguien al equipo y que además ofrecía gente que no había tocado ese repo —
+// muchas veces ninguno de los cuatro tenía nada que ver con el PR. Después,
+// todos los contribuidores con teléfono capturado: más justo, pero sigue siendo
+// una lista larga de gente ajena al proyecto puesta ahí por el dashboard, no por
+// quien lo administra.
 //
-// Quien no estuviera ahí no se podía notificar, y como la lista no se toca al
-// entrar alguien nuevo, en la práctica nunca crecía: se preguntó por qué no
-// aparecía una persona del equipo, y la respuesta era que nadie la había escrito
-// en este archivo. Ahora el fallback son los contribuidores que tienen teléfono
-// capturado en Contribuidores, que es exactamente el conjunto de gente a la que
-// se le PUEDE mandar el aviso — ofrecer a alguien sin teléfono sería ofrecer un
-// aviso que no va a llegar.
+// Un cuadro vacío con la instrucción de configurarlo dice la verdad —este
+// proyecto no tiene autores notificables— en vez de rellenar el hueco con
+// nombres que no vienen al caso. Los autores de los commits se siguen
+// notificando solos: esta lista es solo para agregar a alguien más.
 
 function sortBranches(branches: BranchInfo[]): BranchInfo[] {
   return [
@@ -92,15 +93,6 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
   // (main/dev siempre visibles: son estado compartido del repo).
   const canViewOthers = perms.viewOthers || !selfLogin;
 
-  // Gente a la que se le puede mandar un WhatsApp: la que tiene teléfono en
-  // Contribuidores. Es el fallback cuando el proyecto no configuró sus propios
-  // `notifyAuthors`. Una sola consulta compartida por todas las tarjetas.
-  const { data: telefonos = {}, isLoading: cargandoNotificables } = useQuery({
-    queryKey: ["contributor-phones"],
-    queryFn: getAllContributorPhones,
-    staleTime: 10 * 60_000,
-  });
-  const notificables = Object.keys(telefonos).sort((a, b) => a.localeCompare(b));
   const scopedPRs = canViewOthers
     ? status.openPRs
     : status.openPRs.filter((pr) => pr.author === selfLogin);
@@ -556,21 +548,25 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                     </div>
                   )}
                   {(() => {
-                    const base = notifyAuthors.length > 0 ? notifyAuthors : notificables;
-                    const options = base.filter((l) => !(newPR.detectedAuthors ?? []).includes(l));
+                    if (notifyAuthors.length === 0) {
+                      return (
+                        <p className="rounded border border-dashed px-2 py-1.5 text-[11px] text-muted-foreground">
+                          Este proyecto no tiene <strong>autores seleccionables</strong> configurados.
+                          Se piden una vez por proyecto en <strong>Configuración → Proyectos y repos</strong>,
+                          en el botón <em>configurar</em> junto a "Autores seleccionables en PRs". Para que el
+                          aviso llegue, cada uno necesita su teléfono en <strong>Contribuidores</strong>.
+                        </p>
+                      );
+                    }
+                    const options = notifyAuthors.filter((l) => !(newPR.detectedAuthors ?? []).includes(l));
+                    // Todos los configurados ya son autores del commit: no hay a
+                    // quién agregar, y decirlo evita buscar un cuadro que falta.
                     if (options.length === 0) {
-                      // Distinguir "todavía cargando" de "no hay a quién ofrecer"
-                      // evita leerlo como que la lista se quedó corta.
-                      return cargandoNotificables ? (
-                        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                          <Loader2 className="h-3 w-3 animate-spin" /> cargando contribuidores…
-                        </p>
-                      ) : notifyAuthors.length === 0 ? (
+                      return (
                         <p className="text-[11px] text-muted-foreground italic">
-                          Nadie más a quien avisar: ningún contribuidor tiene teléfono capturado en
-                          Contribuidores.
+                          Los autores configurados ya están detectados en los commits.
                         </p>
-                      ) : null;
+                      );
                     }
                     return (
                       <>
