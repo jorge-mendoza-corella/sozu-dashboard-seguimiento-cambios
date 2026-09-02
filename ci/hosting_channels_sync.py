@@ -270,13 +270,31 @@ def main() -> None:
 
     for site in sites:
         payload, error = fetch_channels(token, site)
-        if error and site in compare:
-            # Sin permisos sobre el sitio: decidir por el contenido servido.
+        # La Hosting API compara IDS de version, y un redespliegue sin cambios
+        # crea una version nueva: el canal draft de sozu-avances sirve HOY lo
+        # mismo que live con otro id. Fiarse solo de eso pinta un borrador
+        # pendiente que no existe, asi que cuando la API dice "pendiente" se
+        # confirma por contenido (y por /api/estado, que es la fuente oficial).
+        api_dice_pendiente = bool(
+            payload and any(not c["published"] for c in payload["channels"])
+        )
+        if (error or api_dice_pendiente) and site in compare:
+            # Sin permisos sobre el sitio, o para confirmar lo que dijo la API:
+            # decidir por el contenido servido.
             live_url, draft_url = compare[site]
             if site == "sozu-avances":
                 draft_url = draft_url_from_settings(token) or draft_url
-            print(f"· {site}: sin acceso a la Hosting API, comparando contenido ({error.split('Detalle:')[0].strip()})")
+            if error:
+                print(f"· {site}: sin acceso a la Hosting API, comparando contenido ({error.split('Detalle:')[0].strip()})")
+            else:
+                print(f"· {site}: la Hosting API ve el canal sin publicar; se confirma por contenido")
+            payload_api, payload = payload, None
             payload, error = compare_by_content(site, live_url, draft_url)
+            if error and payload_api:
+                # La comprobacion por contenido no salio: mejor el dato de la
+                # API que ninguno, pero se deja dicho por que.
+                print(f"· {site}: no se pudo confirmar por contenido ({error}); se usa la Hosting API")
+                payload, error = payload_api, None
             # El sitio de avances publica su propio estado; es la fuente oficial.
             estado_token = os.environ.get("AVANCES_ESTADO_TOKEN", "").strip()
             if payload and estado_token:
