@@ -11,6 +11,7 @@ import { useCodemagicApps, useCodemagicBuilds, useBranchHead, useActiveDeploy } 
 import {
   startBuild, cancelBuild, buildStatusInfo, buildUrl, buildCommitSha, appRepo,
   formatBuildDate, uploadAndroidKeystore, uploadPlayServiceAccount, PLAY_CREDENTIALS_VAR,
+  listSecureVariableKeys, ANDROID_SIGNING_GROUP, KEYSTORE_VAR,
   PLATFORMS, WORKFLOW_LABELS, SYNC_TESTERS_WORKFLOW, getBuild, failedStepName,
   type CodemagicBuild, type PlatformDef,
 } from "@/lib/codemagic";
@@ -939,6 +940,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
         keyAlias: ksForm.keyAlias,
         keyPassword: ksForm.keyPassword,
       });
+      await qc.invalidateQueries({ queryKey: ["codemagic-signing-vars", appId] });
       if (project) {
         await setProjectKeystoreUploaded(project.id);
         await qc.invalidateQueries({ queryKey: ["projects"] });
@@ -966,6 +968,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
     setSaError("");
     try {
       await uploadPlayServiceAccount(appId, saJson);
+      await qc.invalidateQueries({ queryKey: ["codemagic-signing-vars", appId] });
       // El mismo JSON le sirve al sync que lee los tracks de Play de ESTA app:
       // sin esto había que crear el secret en Secret Manager a mano y, mientras
       // faltara, las versiones de tienda salían vacías en las cards.
@@ -1024,6 +1027,20 @@ export function AppBuildsPanel({ appId, perms, project }: {
     enabled: !!project,
     staleTime: 60_000,
   });
+
+  // Lo que Codemagic tiene de VERDAD en el grupo de firma. Las fechas que se
+  // muestran abajo son acuses del propio dashboard (Firestore), asi que decian
+  // "subida hace 14d" mientras el workflow abortaba por falta de la variable:
+  // nadie preguntaba al otro lado. Los valores son secretos, las claves no.
+  // `null` = no se pudo consultar (token sin permiso, red): entonces no se
+  // afirma nada, que es distinto de afirmar que falta.
+  const { data: varsDeFirma } = useQuery({
+    queryKey: ["codemagic-signing-vars", appId],
+    queryFn: () => listSecureVariableKeys(appId, ANDROID_SIGNING_GROUP).catch(() => null),
+    staleTime: 60_000,
+  });
+  const playEnCodemagic = varsDeFirma ? varsDeFirma.includes(PLAY_CREDENTIALS_VAR) : null;
+  const keystoreEnCodemagic = varsDeFirma ? varsDeFirma.includes(KEYSTORE_VAR) : null;
 
   const handleSaveAsc = async () => {
     if (!project) {
@@ -1500,12 +1517,20 @@ export function AppBuildsPanel({ appId, perms, project }: {
                 {project.androidKeystoreUploadedAt ? "actualizar" : "subir"}
               </button>
             </span>
+            {keystoreEnCodemagic === false && (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                El keystore NO está en Codemagic (falta {KEYSTORE_VAR} en el grupo{" "}
+                {ANDROID_SIGNING_GROUP}): cualquier build de Android va a fallar al firmar.
+                Vuelve a subirlo.
+              </span>
+            )}
             <span className="flex items-center gap-1">
               <span className="text-[10px] text-muted-foreground/70">
                 Cuenta de servicio de Play de esta app:{" "}
                 {project.playCredentialsUploadedAt
                   ? `subida hace ${formatDistanceToNow(project.playCredentialsUploadedAt)}`
                   : "sin subir"}
+                {playEnCodemagic === true && " · confirmada en Codemagic"}
               </span>
               <button
                 type="button"
@@ -1516,7 +1541,14 @@ export function AppBuildsPanel({ appId, perms, project }: {
                 {project.playCredentialsUploadedAt ? "actualizar" : "subir"}
               </button>
             </span>
-            {!project.playCredentialsUploadedAt && (
+            {playEnCodemagic === false && (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                La cuenta de servicio NO está en Codemagic (falta {PLAY_CREDENTIALS_VAR} en el
+                grupo {ANDROID_SIGNING_GROUP}): la publicación a Play va a fallar en el paso
+                &quot;Validar credenciales de Google Play&quot;. Vuelve a subirla.
+              </span>
+            )}
+            {playEnCodemagic === null && !project.playCredentialsUploadedAt && (
               <span className="text-[10px] text-amber-600 dark:text-amber-400">
                 Falta la cuenta de servicio de esta app: su publicación a Play fallará.
               </span>
