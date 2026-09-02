@@ -227,7 +227,22 @@ interface CodemagicVariable {
 }
 
 async function listAppVariables(appId: string): Promise<CodemagicVariable[]> {
-  return request<CodemagicVariable[]>(`/apps/${appId}/variables`);
+  const data = await request<CodemagicVariable[] | { variables?: CodemagicVariable[] }>(
+    `/apps/${appId}/variables`,
+  );
+  // Tolerante a la forma de la respuesta: un array pelado que un dia venga
+  // envuelto haria fallar el `.find` de abajo a mitad de una subida, o sea
+  // despues de haber borrado la variable anterior.
+  return Array.isArray(data) ? data : (data.variables ?? []);
+}
+
+/**
+ * Claves que Codemagic tiene HOY en ese grupo. Los valores son secretos y no se
+ * pueden leer; las claves si, y es lo unico que permite saber si una credencial
+ * esta puesta de verdad.
+ */
+export async function listSecureVariableKeys(appId: string, group: string): Promise<string[]> {
+  return (await listAppVariables(appId)).filter((v) => v.group === group).map((v) => v.key);
 }
 
 async function upsertSecureVariable(appId: string, group: string, key: string, value: string) {
@@ -236,13 +251,29 @@ async function upsertSecureVariable(appId: string, group: string, key: string, v
   if (existing) {
     await request(`/apps/${appId}/variables/${existing.id}`, { method: "DELETE" }).catch(() => {});
   }
-  await request(`/apps/${appId}/variables`, {
-    method: "POST",
-    body: JSON.stringify({ key, value, group, secure: true }),
-  });
+  let fallo: unknown = null;
+  try {
+    await request(`/apps/${appId}/variables`, {
+      method: "POST",
+      body: JSON.stringify({ key, value, group, secure: true }),
+    });
+  } catch (e) {
+    fallo = e;
+  }
+  // Manda la lista, no el 2xx: un POST correcto que no devuelva JSON tambien
+  // hace throw en `request`, y al reves un 2xx no prueba que la variable quedo.
+  if ((await listSecureVariableKeys(appId, group)).includes(key)) return;
+  const causa = fallo instanceof Error ? `: ${fallo.message}` : "";
+  throw new Error(
+    `${key} no quedo en el grupo ${group} de Codemagic${causa}. La anterior ya se ` +
+      "borro, asi que ahora esa variable NO existe y la publicacion fallara: vuelve a subirla.",
+  );
 }
 
 export const ANDROID_SIGNING_GROUP = "android_signing_custom";
+
+/** Nombre que espera el workflow para el .jks en base64. */
+export const KEYSTORE_VAR = "ANDROID_KEYSTORE_B64";
 
 /**
  * Sube el keystore de Android (.jks en base64) y sus credenciales como
@@ -255,7 +286,7 @@ export async function uploadAndroidKeystore(appId: string, params: {
   keyAlias: string;
   keyPassword: string;
 }): Promise<void> {
-  await upsertSecureVariable(appId, ANDROID_SIGNING_GROUP, "ANDROID_KEYSTORE_B64", params.fileBase64);
+  await upsertSecureVariable(appId, ANDROID_SIGNING_GROUP, KEYSTORE_VAR, params.fileBase64);
   await upsertSecureVariable(appId, ANDROID_SIGNING_GROUP, "ANDROID_KEYSTORE_PASSWORD", params.storePassword);
   await upsertSecureVariable(appId, ANDROID_SIGNING_GROUP, "ANDROID_KEY_ALIAS", params.keyAlias);
   await upsertSecureVariable(appId, ANDROID_SIGNING_GROUP, "ANDROID_KEY_PASSWORD", params.keyPassword);
