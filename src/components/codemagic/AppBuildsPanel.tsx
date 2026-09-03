@@ -440,8 +440,47 @@ function PlatformRow({
   );
   const promoteInProgress = promoteRuns.some(isRunning) || isPending(platform.promoteWorkflowId);
 
+  // El modo simple salta el paso de pruebas: en Android publica directo a la
+  // tienda. Se calcula aqui arriba porque la etapa depende de el.
+  const modoSimpleAqui = simple && platform.key !== "ios";
+  const storeRuns = forBranch(platform.storeDirectWorkflowId);
+  const storeInProgress = storeRuns.some(isRunning) || isPending(platform.storeDirectWorkflowId);
+  const storeSentCurrent = storeRuns.some(
+    (b) => (isSuccess(b) || isRunning(b)) && !!headSha && buildCommitSha(b) === headSha,
+  );
+
+  // Una fila es UNA secuencia: construir -> pruebas -> tienda. Solo el paso que
+  // toca queda habilitado.
+  //
+  // Antes cada boton miraba solo sus propias condiciones y quedaban dos verdes a
+  // la vez: con el codigo ya en Play interno pero el head movido, "Construir" y
+  // "Play Store" se ofrecian juntos, y el segundo habria mandado a revision un
+  // binario de OTRO commit, porque promover solo exigia "hay algo en pruebas",
+  // nunca que ese algo fuera el codigo actual.
+  const etapaActual: "construir" | "pruebas" | "tienda" | "hecho" =
+    !canPublish ? "construir"
+    : modoSimpleAqui ? (storeSentCurrent ? "hecho" : "tienda")
+    : !publishedCurrent ? "pruebas"
+    : !promotedCurrent ? "tienda"
+    : "hecho";
+
+  const etiquetaEtapa =
+    etapaActual === "construir" ? "construir el artefacto"
+    : etapaActual === "pruebas" ? platform.storeLabel
+    : etapaActual === "tienda" ? platform.promoteLabel
+    : "";
+  // Motivo comun cuando el boton existe pero no es su turno.
+  const fueraDeTurno = (paso: typeof etapaActual) =>
+    etapaActual === paso
+      ? null
+      : etapaActual === "hecho"
+        ? "Este código ya recorrió las tres etapas: construye cuando haya código nuevo"
+        : `Ahora toca: ${etiquetaEtapa}`;
+
+  const turnoConstruir = fueraDeTurno("construir");
   const buildDisabledReason =
     buildInProgress ? "Ya hay un build en curso" :
+    turnoConstruir ? turnoConstruir :
     deployActive ? "Espera: hay un deploy web en curso" :
     sameShaBuilt ? "Este código ya fue construido" : null;
 
@@ -452,8 +491,10 @@ function PlatformRow({
   // último binario que Apple ya procesó, o sea el ANTERIOR, mientras el nuevo
   // sigue subiendo. Se revisaría una versión que nadie quiso enviar, y el log
   // diría que todo salió bien.
+  const turnoPruebas = fueraDeTurno("pruebas");
   const publishDisabledReason =
     publishInProgress ? "Publicación en curso" :
+    turnoPruebas ? turnoPruebas :
     promoteInProgress ? `Espera: hay un envío a ${platform.promoteLabel} en curso` :
     buildInProgress ? "Espera a que termine la construcción" :
     deployActive ? "Espera: hay un deploy web en curso" :
@@ -542,8 +583,10 @@ function PlatformRow({
   // Store Connect—, así que ahí la prueba es la subida exitosa a Play interno.
   const hayEnPruebas = publishRuns.some(isSuccess) || !!ultimoSubido;
 
+  const turnoTienda = fueraDeTurno("tienda");
   const promoteDisabledReason =
     promoteInProgress ? "Envío a la store en curso" :
+    turnoTienda ? turnoTienda :
     // Mismo motivo que arriba, del otro lado: con una subida en vuelo, esto
     // mandaría a revisión el binario anterior.
     publishInProgress ? `Espera: hay una subida a ${platform.storeLabel} en curso` :
@@ -580,21 +623,13 @@ function PlatformRow({
   // El modo simple sigue siendo cosa de Android, como antes: se comparaba con
   // `tresEtapas` porque entonces significaba "no es iOS". Ahora que Android
   // también tiene tres etapas, se dice directo de quién es.
-  const modoSimpleAqui = simple && platform.key !== "ios";
-
-  // Modo simple: un workflow que construye y publica directo en la tienda
-  // (sin Play interno / TestFlight de por medio).
   const storeKey = `${platform.key}-store`;
-  const storeRuns = forBranch(platform.storeDirectWorkflowId);
-  const storeInProgress = storeRuns.some(isRunning) || isPending(platform.storeDirectWorkflowId);
-  const storeSentCurrent = storeRuns.some(
-    (b) => (isSuccess(b) || isRunning(b)) && !!headSha && buildCommitSha(b) === headSha,
-  );
   // Aunque el workflow directo reconstruye por su cuenta, no se habilita hasta
   // que el código actual tenga un artefacto exitoso: publicar a la tienda algo
   // que nunca compiló aquí sería mandar a revisión a ciegas.
   const storeDisabledReason =
     storeInProgress ? "Envío a la tienda en curso" :
+    turnoTienda ? turnoTienda :
     buildInProgress ? "Espera a que termine la construcción" :
     deployActive ? "Espera: hay un deploy web en curso" :
     !canPublish ? `Primero construye el artefacto ${platform.label} del código actual` :
