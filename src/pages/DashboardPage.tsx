@@ -19,7 +19,7 @@ import { useAvisosPorProyecto } from "@/hooks/useAvisos";
 import { AvisosBanner } from "@/components/AvisosBanner";
 import { empresasDeProyectos } from "@/lib/empresas";
 import { useAuth } from "@/hooks/useAuth";
-import { hasFailingDeploy, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
+import { hasFailingDeploy, deployEnCurso, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
 import { getFrontVersions } from "@/lib/frontVersions";
 import { isRootAdmin, resolvePermissions, getVisibleUsers , scopeKeyOf} from "@/lib/firestoreUsers";
@@ -270,6 +270,35 @@ export function DashboardPage() {
     return m;
   }, [reposByProject, statusByKey]);
 
+  // Deploy en curso por proyecto, para avisarlo en su pestaña: si está pasando
+  // en un proyecto que no estás mirando, hasta ahora no había forma de saberlo
+  // sin ir pestaña por pestaña. PRD y DEV se distinguen, que no es lo mismo
+  // enterarse de una subida a producción que de una a desarrollo.
+  const deployPorProyecto = useMemo(() => {
+    const m = new Map<string, "prd" | "dev">();
+    for (const [pid, list] of reposByProject) {
+      for (const r of list) {
+        const enCurso = deployEnCurso(statusByKey.get(`${r.owner}/${r.repo}`)?.latestRuns ?? []);
+        if (enCurso === "prd") { m.set(pid, "prd"); break; }
+        if (enCurso === "dev") m.set(pid, "dev");
+      }
+    }
+    return m;
+  }, [reposByProject, statusByKey]);
+
+  // Lo mismo un nivel arriba: con varias empresas, la de al lado puede estar
+  // desplegando y sus pestañas de proyecto ni están en pantalla.
+  const deployPorEmpresa = useMemo(() => {
+    const m = new Map<string, "prd" | "dev">();
+    for (const p of todosLosProyectos) {
+      const d = deployPorProyecto.get(p.id);
+      if (!d) continue;
+      const clave = p.clientId ?? "";
+      if (d === "prd" || !m.has(clave)) m.set(clave, d);
+    }
+    return m;
+  }, [todosLosProyectos, deployPorProyecto]);
+
   const handleReorder = useCallback(
     async (ids: string[]) => {
       await setReposOrder(ids);
@@ -409,6 +438,7 @@ export function DashboardPage() {
             onChange={setEmpresaActiva}
             totalProyectos={todosLosProyectos.length}
             avisos={avisosPorEmpresa}
+            deploys={deployPorEmpresa}
           />
           {projects.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
@@ -475,6 +505,24 @@ export function DashboardPage() {
                               </span>
                             )}
                             <span className="text-[10px] text-muted-foreground">({count})</span>
+                            {/* Solo si no es la pestaña abierta: dentro ya se ve
+                                la card con su cabecera de deploy. */}
+                            {activeProject !== p.id && deployPorProyecto.get(p.id) === "prd" && (
+                              <span
+                                title="Deploy a PRD en curso"
+                                className="inline-flex items-center gap-0.5 rounded bg-emerald-100 px-1 py-0.5 text-[9px] font-bold text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+                              >
+                                <Rocket className="h-2.5 w-2.5 animate-pulse" />PRD
+                              </span>
+                            )}
+                            {activeProject !== p.id && deployPorProyecto.get(p.id) === "dev" && (
+                              <span
+                                title="Deploy a DEV en curso"
+                                className="inline-flex items-center gap-0.5 rounded bg-sky-100 px-1 py-0.5 text-[9px] font-bold text-sky-700 dark:bg-sky-900/50 dark:text-sky-300"
+                              >
+                                <Loader2 className="h-2.5 w-2.5 animate-spin" />DEV
+                              </span>
+                            )}
                           </span>
                         </TabsTrigger>
                       </div>

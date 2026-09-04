@@ -17,7 +17,7 @@ import type { AvisosDelProyecto } from "@/hooks/useAvisos";
 import { FrontInfoBar } from "./FrontInfoBar";
 import type { FrontVersion } from "@/lib/frontVersions";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
-import { createPR, hasFailingDeploy, getBranchCommitAuthors, getPendingReleasePRs, type ApproverAuth, type PRWithCommits } from "@/lib/github";
+import { createPR, hasFailingDeploy, deployEnCurso, getBranchCommitAuthors, getPendingReleasePRs, type ApproverAuth, type PRWithCommits } from "@/lib/github";
 import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
 
 // SIN LISTA POR DEFECTO. Cuando el proyecto no tiene `notifyAuthors`, aquí no se
@@ -243,12 +243,9 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
   }
   const hasPRs = scopedPRs.length > 0;
 
-  const isDeployingToMain = status.latestRuns.some(
-    (r) => (r.status === "in_progress" || r.status === "queued") && r.headBranch === "main"
-  );
-  const isDeployingToDev = !isDeployingToMain && status.latestRuns.some(
-    (r) => (r.status === "in_progress" || r.status === "queued") && r.headBranch === "dev"
-  );
+  const deployando = deployEnCurso(status.latestRuns);
+  const isDeployingToMain = deployando === "prd";
+  const isDeployingToDev = deployando === "dev";
   const isCIRunning = isDeployingToMain || isDeployingToDev || status.latestRuns.some(
     (r) => r.status === "in_progress" || r.status === "queued"
   );

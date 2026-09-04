@@ -1,4 +1,4 @@
-import { Building2, MessageCircle, MessageCircleOff } from "lucide-react";
+import { Building2, MessageCircle, MessageCircleOff, Rocket, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { EmpresaOption } from "@/lib/empresas";
 
@@ -32,9 +32,15 @@ interface Props {
    * problema que no existe.
    */
   avisos?: Map<string, boolean>;
+  /**
+   * `clientId → deploy en curso`. Con varias empresas, uno corriendo en la que
+   * no estás mirando no se ve por ningún lado: ni sus pestañas de proyecto
+   * están en pantalla.
+   */
+  deploys?: Map<string, "prd" | "dev">;
 }
 
-export function EmpresaSelector({ empresas, activa, onChange, totalProyectos, avisos }: Props) {
+export function EmpresaSelector({ empresas, activa, onChange, totalProyectos, avisos, deploys }: Props) {
   if (empresas.length < 2) return null;
 
   const elegida = empresas.find((e) => e.id === activa);
@@ -105,6 +111,14 @@ export function EmpresaSelector({ empresas, activa, onChange, totalProyectos, av
                 {avisos?.has(e.id) && (avisos.get(e.id)
                   ? <MessageCircle className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
                   : <MessageCircleOff className="h-3 w-3 text-muted-foreground" />)}
+                {/* Solo cuando no es la empresa abierta: dentro ya se ve en la
+                    pestaña del proyecto que está desplegando. */}
+                {!activo && deploys?.get(e.id) === "prd" && (
+                  <Rocket className="h-3 w-3 animate-pulse text-emerald-600 dark:text-emerald-400" aria-label="Deploy a PRD en curso" />
+                )}
+                {!activo && deploys?.get(e.id) === "dev" && (
+                  <Loader2 className="h-3 w-3 animate-spin text-sky-600 dark:text-sky-400" aria-label="Deploy a DEV en curso" />
+                )}
                 {/* Barra al pie de la activa: ata visualmente la empresa con la
                     fila de pestañas de proyecto que cuelga de ella. */}
                 {activo && (
