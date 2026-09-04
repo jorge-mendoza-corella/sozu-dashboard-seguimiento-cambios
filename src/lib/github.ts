@@ -376,6 +376,21 @@ export async function hasActiveDeployRun(owner: string, repo: string): Promise<b
 }
 
 /**
+ * Deploy en curso de un repo: "prd" (rama main), "dev", o null. PRD gana cuando
+ * coinciden los dos, que es el que interesa vigilar.
+ *
+ * Vive aquí y no en la card porque también lo pintan las pestañas de proyecto:
+ * un deploy corriendo en una pestaña que no estás mirando era invisible.
+ */
+export function deployEnCurso(latestRuns: WorkflowRun[]): "prd" | "dev" | null {
+  const corriendo = (rama: string) =>
+    latestRuns.some(
+      (r) => (r.status === "in_progress" || r.status === "queued") && r.headBranch === rama,
+    );
+  return corriendo("main") ? "prd" : corriendo("dev") ? "dev" : null;
+}
+
+/**
  * True si el deploy MÁS RECIENTE de alguna rama falló. Un deploy exitoso
  * posterior en la misma rama limpia el fallo previo, así que no se reporta
  * como fallando. `latestRuns` viene ordenado más-nuevo-primero, por lo que
