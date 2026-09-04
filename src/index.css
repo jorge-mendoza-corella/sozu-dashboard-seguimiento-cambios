@@ -125,3 +125,24 @@
   0% { margin-left: -35%; }
   100% { margin-left: 100%; }
 }
+
+/* Pestana con algo corriendo: un anillo que late. El chip de dentro dice QUE
+   es (PRD / DEV / build); esto es lo que hace que la pestana se note sin
+   mirarla, que es el punto: el deploy pasa en una pestana que no estas viendo.
+   Se usa `box-shadow` y no `ring` de Tailwind porque conviven con el efecto
+   tab-alert, que ya ocupa ::before y ::after del mismo trigger. */
+@keyframes tab-run-prd {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(16 185 129 / 0.55); }
+  50%      { box-shadow: 0 0 0 5px rgb(16 185 129 / 0); }
+}
+@keyframes tab-run-dev {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(14 165 233 / 0.55); }
+  50%      { box-shadow: 0 0 0 5px rgb(14 165 233 / 0); }
+}
+.tab-run-prd { border-radius: 0.375rem; animation: tab-run-prd 1.7s ease-out infinite; }
+.tab-run-dev { border-radius: 0.375rem; animation: tab-run-dev 1.7s ease-out infinite; }
+
+/* Quien prefiera no ver movimiento: el chip y su color siguen ahi. */
+@media (prefers-reduced-motion: reduce) {
+  .tab-run-prd, .tab-run-dev { animation: none; }
+}

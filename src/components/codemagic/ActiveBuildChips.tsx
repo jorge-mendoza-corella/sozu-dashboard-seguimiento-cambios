@@ -15,6 +15,11 @@ export function describeActiveBuild(b: CodemagicBuild): { plat: string; etapa: s
     wf === "ios-publish" ? "pase a TestFlight" :
     wf === "android-production" ? "pase a Play Store" :
     wf === "ios-appstore" ? "pase a App Store" :
+    // Modo simple: construyen Y publican en la tienda en la misma corrida. Sin
+    // estas dos lineas caian en "en construccion" y el chip decia que se estaba
+    // compilando algo mientras en realidad ya iba camino a la tienda.
+    wf === "android-store" ? "publicacion en Play Store" :
+    wf === "ios-store" ? "publicacion en App Store" :
     wf === "sync-testflight-testers" ? "sync testers" :
     "en construcción";
   return { plat, etapa };
