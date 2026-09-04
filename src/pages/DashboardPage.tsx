@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { AppBuildsPanel } from "@/components/codemagic/AppBuildsPanel";
 import { ActiveBuildChips } from "@/components/codemagic/ActiveBuildChips";
+import { TabBuildChip } from "@/components/codemagic/TabBuildChip";
 import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
 import { useProjects, useRepos, useAccessibleRepoIds, useRepoRenames } from "@/hooks/useProjectsRepos";
@@ -494,6 +495,10 @@ export function DashboardPage() {
                             "gap-1.5",
                             "data-[state=active]:font-bold data-[state=active]:text-primary",
                             alert && `tab-alert tab-alert-${alert}`,
+                            // Late mientras haya algo corriendo dentro, y solo
+                            // si no es la pestana abierta.
+                            activeProject !== p.id && deployPorProyecto.get(p.id) === "prd" && "tab-run-prd",
+                            activeProject !== p.id && deployPorProyecto.get(p.id) === "dev" && "tab-run-dev",
                           )}
                         >
                           <span className="relative z-10 flex items-center gap-1.5">
@@ -514,6 +519,11 @@ export function DashboardPage() {
                               >
                                 <Rocket className="h-2.5 w-2.5 animate-pulse" />PRD
                               </span>
+                            )}
+                            {/* Apps: lo que corre en Codemagic (construir,
+                                pase a pruebas, publicacion en la tienda). */}
+                            {activeProject !== p.id && p.codemagicAppId && (
+                              <TabBuildChip appId={p.codemagicAppId} />
                             )}
                             {activeProject !== p.id && deployPorProyecto.get(p.id) === "dev" && (
                               <span

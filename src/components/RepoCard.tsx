@@ -306,7 +306,9 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           <div className="relative flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 ring-1 ring-white/30">
-                <Rocket className="h-4 w-4 text-white" />
+                {/* En movimiento: quieto dentro de su circulito parecia el
+                    sello de "ya subio", justo lo contrario de lo que pasa. */}
+                <Rocket className="h-4 w-4 text-white animate-bounce" />
               </div>
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-100/80 leading-none mb-0.5">
@@ -373,7 +375,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           <div className="flex items-center gap-1.5 shrink-0">
             {isDeployingToMain && (
               <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-700/50 text-[10px] gap-1">
-                <Rocket className="h-2.5 w-2.5" />
+                <Rocket className="h-2.5 w-2.5 animate-bounce" />
                 → PRD
               </Badge>
             )}
