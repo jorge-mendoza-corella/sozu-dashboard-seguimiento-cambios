@@ -316,6 +316,8 @@ jobs:
           REPO_FULL: ${{ github.repository }}
           REPO_NAME: ${{ github.event.repository.name }}
           BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD: ${{ github.event.pull_request.head.ref }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
           ACTOR: ${{ github.actor }}
         run: |
           # Empresa sin configurar (o con los avisos apagados) no notifica, y no
@@ -341,6 +343,19 @@ jobs:
           AUTOR="${AUTORES:-$ACTOR}"
           DESTINO="$(printf '%s' "$BASE" | tr '[:lower:]' '[:upper:]')"
           MSG="Hay un PR para ${DESTINO} del repo: ${REPO_NAME}, cambios de: ${AUTOR}"
+
+          # A main solo se llega desde dev. Un PR de una rama de trabajo directo
+          # a main se salta todo lo que se prueba en dev, y el aviso normal lo
+          # anunciaba como uno mas: se perdia entre los demas mensajes. Este hay
+          # que verlo al instante, asi que va con otro tono y dice quien fue.
+          # El repo ademas lo rechaza en el check "validate-branch", pero eso
+          # solo se ve entrando al PR.
+          PR_INVALIDO=""
+          if [ "$BASE" = "main" ] && [ "$HEAD" != "dev" ]; then
+            PR_INVALIDO="si"
+            MSG="CUIDADO!!! PR INVALIDO en ${REPO_NAME}: ${ACTOR} mando la rama '${HEAD}' DIRECTO a main, saltandose dev. PR #${PR_NUM} — ${PR_URL}. No lo apruebes: cierralo y que lo rehaga hacia dev."
+            echo "::warning::PR invalido: ${HEAD} -> main (autor ${ACTOR})"
+          fi
 
           # Teléfono de un contribuidor, en E.164. Se reusa el token que ya
           # obtuvo el step de resolución: pedir otro sería firmar el mismo JWT
@@ -381,6 +396,9 @@ jobs:
           # Su mensaje es distinto al del aprobador a propósito: al aprobador se
           # le pide una acción, al autor se le confirma un estado.
           MSG_AUTOR="Tu PR #${PR_NUM} del repo ${REPO_NAME} quedó abierto hacia ${BASE} y está esperando revisión"
+          if [ -n "$PR_INVALIDO" ]; then
+            MSG_AUTOR="Tu PR #${PR_NUM} en ${REPO_NAME} va de '${HEAD}' DIRECTO a main y NO es válido: a main solo se llega desde dev. Ciérralo y abre el PR hacia dev."
+          fi
           MSG_APROBADOR="$MSG"
           for AUTOR in $(printf '%s' "$AUTORES" | tr ',' ' '); do
             [ -z "$AUTOR" ] && continue
