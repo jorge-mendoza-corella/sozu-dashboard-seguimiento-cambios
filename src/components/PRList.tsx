@@ -185,11 +185,17 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
         // main: merge solo si aprobado | non-main: merge solo si aún no aprobado
         // mergedPRs oculta el botón de inmediato tras confirmar el merge
         // Permiso por rama destino: main requiere mergeMain; el resto, mergeDev.
+        // A main solo se llega desde dev. Un PR de una rama de trabajo
+        // directo a main se salta el paso por dev -y con el, todo lo que se
+        // prueba ahi-, asi que aqui no se aprueba ni se mergea: se marca en
+        // rojo y se avisa. El repo tambien lo rechaza por su cuenta (el check
+        // "validate-branch"), pero eso solo se ve entrando al PR en GitHub.
+        const esPRInvalido = isToMain && pr.head !== "dev";
         const hasMergePerm = isToMain ? perms.mergeMain : perms.mergeDev;
         // A main solo se mergea con aprobación. A las demás ramas siempre se
         // puede: antes se exigía que NO estuviera aprobado y el botón
         // desaparecía justo al aprobar el PR, dejándolo sin salida.
-        const canMerge = hasMergePerm && !mergedPRs.has(pr.number) && (!isToMain || isApproved);
+        const canMerge = hasMergePerm && !mergedPRs.has(pr.number) && (!isToMain || isApproved) && !esPRInvalido;
         const canClose = perms.createPR && !mergedPRs.has(pr.number);
 
         const isPanelOpen  = openPanel?.prNumber === pr.number;
@@ -203,16 +209,18 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
             <div
               className={cn(
                 "flex flex-wrap items-start gap-2 p-2 rounded-md transition-colors",
-                hasConflict
+                esPRInvalido
+                  ? "bg-red-50 dark:bg-red-950/40 border-2 border-red-500 dark:border-red-600"
+                  : hasConflict
                   ? "bg-orange-50 dark:bg-orange-950/30 border border-orange-400 dark:border-orange-600/60"
                   : isToMain
                     ? "bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-300 dark:border-emerald-700/60"
                     : isDev
                       ? "bg-sky-50/60 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-800/40"
                       : "border border-transparent hover:bg-muted/50",
-                !hasConflict && hasPendingReview && "ring-1 ring-amber-300 dark:ring-amber-700/60",
-                !hasConflict && isApproved && "ring-1 ring-green-300 dark:ring-green-700/60",
-                !hasConflict && hasChangesReq && "ring-1 ring-red-300 dark:ring-red-700/60",
+                !hasConflict && !esPRInvalido && hasPendingReview && "ring-1 ring-amber-300 dark:ring-amber-700/60",
+                !hasConflict && !esPRInvalido && isApproved && "ring-1 ring-green-300 dark:ring-green-700/60",
+                !hasConflict && !esPRInvalido && hasChangesReq && "ring-1 ring-red-300 dark:ring-red-700/60",
                 hasConflict && "ring-2 ring-orange-400 dark:ring-orange-500/70",
               )}
             >
@@ -385,8 +393,19 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                 )}
                 {pr.draft && <Badge variant="outline" className="text-[10px]">Draft</Badge>}
 
+                {/* PR invalido: ni se aprueba ni se mergea desde aqui. */}
+                {esPRInvalido && (
+                  <span
+                    title={`PR invalido: ${pr.head} va directo a main. A main solo se llega desde dev, asi que este PR no se puede aprobar ni mergear desde el dashboard.`}
+                    className="flex items-center gap-1 rounded border border-red-400 bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700 dark:border-red-600/70 dark:bg-red-900/50 dark:text-red-300"
+                  >
+                    <AlertTriangle className="h-2.5 w-2.5" />
+                    PR invalido
+                  </span>
+                )}
+
                 {/* Badge de estado de review */}
-                {hasAnyReviewBadge && (
+                {hasAnyReviewBadge && !esPRInvalido && (
                   isApproved ? (
                     <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border bg-green-100 text-green-700 border-green-300 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700/60">
                       <CheckCircle2 className="h-2.5 w-2.5" />
