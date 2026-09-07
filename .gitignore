@@ -33,7 +33,3 @@ dist-ssr
 # Python (scripts de ci/)
 __pycache__/
 *.pyc
-
-# Especificaciones sueltas que se trabajan aquí pero no son de este repo
-# (handoffs, documentos de alcance). El código del dashboard no las usa.
-SOZU-Spec-*.md
