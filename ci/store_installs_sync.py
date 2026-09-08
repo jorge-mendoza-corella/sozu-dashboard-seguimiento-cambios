@@ -244,55 +244,98 @@ def _num(fila: dict, columna: str) -> int:
         return 0
 
 
-def fetch_play_installs(token: str, pkg: str, bucket: str) -> tuple[dict | None, str | None]:
+def periodo_de(nombre: str) -> str:
+    """`…/installs_com.x_202608_overview.csv` → `2026-08`."""
+    crudo = nombre.rsplit("_", 2)[-2]
+    return f"{crudo[:4]}-{crudo[4:]}" if len(crudo) == 6 and crudo.isdigit() else crudo
+
+
+def resumen_mes(filas: list[dict], con_dias: bool) -> dict:
+    """Totales del mes. `con_dias` guarda el detalle diario, para los 30 días."""
+    dias = [
+        {
+            "fecha": (f.get("Date") or "").strip(),
+            "instalaciones": _num(f, "Daily User Installs"),
+            "desinstalaciones": _num(f, "Daily User Uninstalls"),
+            "activos": _num(f, "Active Device Installs"),
+        }
+        for f in filas
+        if (f.get("Date") or "").strip()
+    ]
+    dias.sort(key=lambda d: d["fecha"])
+    resumen = {
+        "instalaciones": sum(d["instalaciones"] for d in dias),
+        "desinstalaciones": sum(d["desinstalaciones"] for d in dias),
+        # Un total del día, no un incremento: interesa el último, no la suma.
+        "activos": dias[-1]["activos"] if dias else 0,
+        "ultimaFecha": dias[-1]["fecha"] if dias else "",
+        "primeraFecha": dias[0]["fecha"] if dias else "",
+        # `Total User Installs` sería el acumulado que publica Google, pero en
+        # estos informes llega siempre en 0: se guarda por si algún día trae
+        # dato, y mientras tanto el total se suma mes a mes.
+        "acumuladoGoogle": max((_num(f, "Total User Installs") for f in filas), default=0),
+    }
+    if con_dias:
+        resumen["dias"] = dias
+    return resumen
+
+
+def fetch_play_installs(token: str, pkg: str, bucket: str, previo: dict) -> tuple[dict | None, str | None]:
     """Descargas de Play, sumadas de los informes mensuales de Play Console.
 
-    Se bajan los últimos MESES_PLAY informes para el detalle reciente, pero el
-    total NO se suma: la columna `Total User Installs` ya viene acumulada desde
-    que existe la app, así que el número que se enseña sí es el histórico
-    completo, no solo el del rango leído.
+    Los meses ya sumados se guardan en el documento: solo se vuelven a bajar el
+    mes en curso y el anterior, que Play sigue completando. Así el total crece
+    con la app —es el histórico— sin bajar todos los informes cada día.
     """
     nombres, error = listar_informes(token, bucket, pkg)
     if error:
         return None, error
     if not nombres:
         return None, (
-            f"El bucket '{bucket}' no tiene informes de instalaciones de '{pkg}'. Revisa que el "
-            "package sea el correcto y que la app tenga al menos un mes publicada."
+            f"El bucket '{bucket}' no tiene informes de instalaciones de '{pkg}'. Play los genera "
+            "cuando la app lleva al menos un mes publicada; revisa también que el package sea el "
+            "correcto."
         )
 
-    dias: list[dict] = []
-    for nombre in nombres[-MESES_PLAY:]:
+    meses: dict[str, dict] = dict(previo.get("meses") or {})
+    mes_actual = hoy().strftime("%Y-%m")
+    mes_anterior = (hoy().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    recientes = (mes_actual, mes_anterior)
+
+    for nombre in nombres:
+        periodo = periodo_de(nombre)
+        if periodo in meses and periodo not in recientes:
+            continue
         filas, error = bajar_informe(token, bucket, nombre)
         if error:
             return None, error
-        for fila in filas:
-            fecha = (fila.get("Date") or "").strip()
-            if not fecha:
-                continue
-            dias.append({
-                "fecha": fecha,
-                "instalaciones": _num(fila, "Daily User Installs"),
-                "desinstalaciones": _num(fila, "Daily User Uninstalls"),
-                "activos": _num(fila, "Active Device Installs"),
-                "acumulado": _num(fila, "Total User Installs"),
-            })
-    if not dias:
+        meses[periodo] = resumen_mes(filas, con_dias=periodo in recientes)
+    # El detalle diario solo hace falta en los dos meses que se rebajan; en los
+    # viejos sería peso muerto en un documento que se lee en cada tarjeta.
+    for periodo, mes in meses.items():
+        if periodo not in recientes:
+            mes.pop("dias", None)
+
+    if not meses:
         return None, f"Los informes de '{pkg}' llegaron vacíos: Play todavía no reporta instalaciones."
 
-    dias.sort(key=lambda d: d["fecha"])
-    ultimo = dias[-1]
+    ordenados = sorted(meses)
+    ultimo = meses[ordenados[-1]]
     corte = (hoy() - timedelta(days=30)).isoformat()
-    recientes = [d for d in dias if d["fecha"] >= corte]
+    dias_recientes = [
+        d for p in recientes for d in (meses.get(p, {}).get("dias") or []) if d["fecha"] >= corte
+    ]
     return {
-        "descargas": ultimo["acumulado"],
-        "desinstalaciones": sum(d["desinstalaciones"] for d in dias),
+        "descargas": sum(m["instalaciones"] for m in meses.values()),
+        "desinstalaciones": sum(m["desinstalaciones"] for m in meses.values()),
         "activos": ultimo["activos"],
-        "descargas30d": sum(d["instalaciones"] for d in recientes),
-        "desinstalaciones30d": sum(d["desinstalaciones"] for d in recientes),
-        # El acumulado es histórico; el desglose, solo del rango leído.
-        "desde": dias[0]["fecha"],
-        "hasta": ultimo["fecha"],
+        "descargas30d": sum(d["instalaciones"] for d in dias_recientes),
+        "desinstalaciones30d": sum(d["desinstalaciones"] for d in dias_recientes),
+        "desde": meses[ordenados[0]].get("primeraFecha") or ordenados[0],
+        "hasta": ultimo.get("ultimaFecha") or ordenados[-1],
+        "meses": meses,
+        # Se cuentan todos los informes que existen, así que el total es el
+        # histórico de la app, no una ventana.
         "historico": True,
     }, None
 
@@ -575,7 +618,8 @@ def sync_play(fs_token: str, app: dict, tokens: dict) -> None:
         return
 
     print(f"· {pkg}: service account del {origen} ({email}), bucket del {origen_bucket}")
-    payload, error = fetch_play_installs(token, pkg, normaliza_bucket(bucket))
+    previo = read_raw(fs_token, "playInstalls", pkg)
+    payload, error = fetch_play_installs(token, pkg, normaliza_bucket(bucket), previo)
     write_doc(fs_token, "playInstalls", pkg, "package", project_id, payload, error)
     if payload:
         print(
