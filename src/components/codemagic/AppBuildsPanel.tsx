@@ -20,7 +20,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { getAllContributorPhones } from "@/lib/firestoreContributors";
 import { registerBuildForNotification } from "@/lib/buildNotifications";
 import {
-  getProjectCredentialsMeta, setPlayServiceAccountForProject, setAppStoreConnectForProject,
+  getProjectCredentialsMeta, setPlayServiceAccountForProject, setPlayReportsBucketForProject,
+  setAppStoreConnectForProject,
 } from "@/lib/storeCredentials";
 import { isRootAdmin } from "@/lib/firestoreUsers";
 import {
@@ -996,6 +997,10 @@ export function AppBuildsPanel({ appId, perms, project }: {
   const [saBusy, setSaBusy] = useState(false);
   const [saError, setSaError] = useState("");
   const [saJson, setSaJson] = useState("");
+  // Bucket de informes de Play: de ahí salen las descargas de la tarjeta. Va en
+  // el mismo modal porque se saca de la misma consola y con la misma cuenta,
+  // pero es opcional: sin él se publica igual, solo faltan las descargas.
+  const [saBucket, setSaBucket] = useState("");
 
   const handleUploadServiceAccount = async () => {
     if (!saJson.trim()) return;
@@ -1021,6 +1026,9 @@ export function AppBuildsPanel({ appId, perms, project }: {
       } else {
         try {
           await setPlayServiceAccountForProject(project.id, saJson, appUser.email);
+          if (saBucket.trim()) {
+            await setPlayReportsBucketForProject(project.id, saBucket, appUser.email);
+          }
           await qc.invalidateQueries({ queryKey: ["project-credentials-meta", project.id] });
         } catch (e) {
           // Que falle esto no invalida la subida a Codemagic, que es lo que
@@ -1043,6 +1051,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
       }
       setSaOpen(false);
       setSaJson("");
+      setSaBucket("");
     } catch (e) {
       setSaError(e instanceof Error ? e.message : "Error al guardar las credenciales");
     } finally {
@@ -2071,6 +2080,21 @@ Lo último que reporta: ${info.texto}.` : "")
                 value={saJson}
                 onChange={(e) => setSaJson(e.target.value)}
               />
+              <label className="mt-3 block text-xs font-medium">
+                Bucket de informes de Play <span className="font-normal text-muted-foreground">(opcional)</span>
+              </label>
+              <input
+                className="mt-1 w-full rounded-md border bg-background px-3 py-2 font-mono text-[11px]"
+                placeholder="gs://pubsite_prod_1234567890123456789"
+                spellCheck={false}
+                value={saBucket}
+                onChange={(e) => setSaBucket(e.target.value)}
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Play Console → Download reports → Statistics. De ahí salen las descargas que muestra
+                la tarjeta del repo: Google no las expone por API, solo en ese bucket. Sin esto se
+                publica igual, pero la tarjeta no puede enseñar cuántas descargas lleva la app.
+              </p>
               {saError && <p className="mt-1 text-xs text-destructive">{saError}</p>}
               <div className="mt-4 flex justify-end gap-2">
                 <Button variant="outline" size="sm" disabled={saBusy} onClick={() => setSaOpen(false)}>

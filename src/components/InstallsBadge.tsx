@@ -126,7 +126,9 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
                     que la tienen, y suele haber bastante diferencia. */}
                 <Fila label="desinstalaciones" valor={exacto(dPlay.desinstalaciones)} tenue />
                 <p className="mt-0.5 text-[10px] text-muted-foreground">
-                  contadas desde {fechaCorta(dPlay.desde)}
+                  {dPlay.historico
+                    ? `total histórico · desglose desde ${fechaCorta(dPlay.desde)}`
+                    : `contadas desde ${fechaCorta(dPlay.desde)}`}
                 </p>
               </div>
             )}

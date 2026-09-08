@@ -11,7 +11,7 @@ import { db } from "./firebase";
 // significaba que la credencial de una servía para todas. Ahora cada proyecto
 // tiene las suyas:
 //
-//   `projects/{id}/private/playSecret`  { serviceAccountJson }
+//   `projects/{id}/private/playSecret`  { serviceAccountJson, reportsBucket }
 //   `projects/{id}/private/ascSecret`   { keyId, issuerId, privateKey }
 //
 // Las reglas prohíben LEER esa subcolección desde el navegador (ni el root
@@ -87,6 +87,28 @@ export async function setPlayServiceAccountForProject(
     { playCredentialsUpdatedAt: new Date(), playCredentialsUpdatedBy: email },
     { merge: true },
   );
+}
+
+/**
+ * Guarda el bucket de informes de Play de ESE proyecto.
+ *
+ * Las instalaciones no salen por ninguna API de Google: Play Console las
+ * publica como CSV en un bucket de Cloud Storage de la cuenta de desarrollador
+ * (Download reports → Statistics, arriba dice `gs://pubsite_prod_…`). El nombre
+ * no se puede deducir del package, así que hay que pegarlo una vez por cuenta
+ * de Play. Sin él, la tarjeta no puede mostrar descargas de Android.
+ */
+export async function setPlayReportsBucketForProject(
+  projectId: string,
+  bucket: string,
+  email: string,
+): Promise<void> {
+  const limpio = bucket.trim().replace(/^gs:\/\//, "").replace(/\/+$/, "");
+  if (!limpio) throw new Error("Falta el bucket de informes.");
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(limpio)) {
+    throw new Error("Eso no parece un bucket. Pega el gs:// que aparece en Play Console → Download reports.");
+  }
+  await setDoc(SECRETO_PLAY(projectId), { reportsBucket: limpio, updatedBy: email, updatedAt: new Date() }, { merge: true });
 }
 
 /** Guarda la llave de App Store Connect de ESE proyecto. */

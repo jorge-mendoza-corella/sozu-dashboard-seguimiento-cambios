@@ -3,10 +3,12 @@
 Vuelca a Firestore cuántas descargas lleva cada app, para verlo en la tarjeta
 del repo sin entrar a Play Console ni a App Store Connect.
 
-  · Google Play  → Play Developer Reporting API (installsOverviewMetricSet).
-                   Da instalaciones por día: descargas, desinstalaciones y
-                   cuántos dispositivos activos la tienen ahora mismo.
-                   Escribe `playInstalls/{package}`.
+  · Google Play  → informes de Play Console (CSV mensuales en el bucket
+                   `gs://pubsite_prod_…` de la cuenta de desarrollador). Las
+                   instalaciones no salen por ninguna API: la Reporting API solo
+                   expone vitals y la Developer API, publicación. De ahí sale el
+                   acumulado histórico, el mes reciente y cuántos dispositivos la
+                   tienen hoy. Escribe `playInstalls/{package}`.
   · App Store    → App Store Connect Analytics Reports ("App Downloads
                    Standard"). Apple no expone un total: entrega reportes por
                    periodo que hay que pedir, esperar y descargar. Se guardan
@@ -35,13 +37,16 @@ from urllib.parse import quote
 import jwt  # PyJWT
 import requests
 
-from store_credentials import app_store_connect_for, play_service_account_for
+from store_credentials import app_store_connect_for, play_reports_bucket_for, play_service_account_for
 
 GCP_PROJECT = os.environ.get("GCP_PROJECT", "sozu-admin-dev")
 FS_BASE = f"https://firestore.googleapis.com/v1/projects/{GCP_PROJECT}/databases/(default)/documents"
-REPORTING_BASE = "https://playdeveloperreporting.googleapis.com/v1beta1"
 ASC_BASE = "https://api.appstoreconnect.apple.com/v1"
-PLAY_SCOPE = "https://www.googleapis.com/auth/playdeveloperreporting"
+PLAY_SCOPE = "https://www.googleapis.com/auth/devstorage.read_only"
+
+# Cuántos informes mensuales se bajan. El total histórico sale de una columna
+# acumulada del último, así que estos meses solo alimentan el desglose reciente.
+MESES_PLAY = 3
 
 # Nombre del reporte de Apple con las descargas. Es el "estándar": el detallado
 # trae las mismas cuentas partidas en más dimensiones, y aquí solo se suman.
@@ -133,13 +138,20 @@ def write_doc(token: str, coleccion: str, doc_id: str, clave: str, project_id: s
 
 
 # --- Google Play -------------------------------------------------------------
+#
+# Las instalaciones NO están en ninguna API: la Play Developer Reporting API
+# solo expone vitals (crashes, ANR…) y la Play Developer API, publicación. Lo
+# único que Google entrega son los informes de Play Console, que deja como CSV
+# en un bucket de Cloud Storage de la cuenta de desarrollador
+# (`gs://pubsite_prod_…`). De ahí se leen, que es lo mismo que hace quien baja
+# los informes a mano.
 
 def play_access_token(sa: dict) -> tuple[str | None, str | None]:
-    """(token OAuth para la Reporting API, error).
+    """(token OAuth para leer el bucket de informes, error).
 
-    Es otro scope que el de play_tracks_sync.py: la Reporting API no entra en
-    `androidpublisher`, así que hay que firmar un JWT propio aunque la cuenta
-    de servicio sea la misma.
+    Otro scope que el de play_tracks_sync.py: los informes son objetos de Cloud
+    Storage, no recursos de la Play Developer API, aunque la cuenta de servicio
+    sea la misma.
     """
     now = int(time.time())
     try:
@@ -165,108 +177,123 @@ def play_access_token(sa: dict) -> tuple[str | None, str | None]:
         timeout=30,
     )
     if r.status_code != 200:
-        return None, f"No se pudo obtener token de la Reporting API: {r.status_code} {r.text[:300]}"
+        return None, f"No se pudo obtener token para los informes de Play: {r.status_code} {r.text[:300]}"
     return r.json()["access_token"], None
 
 
-def _fecha(d: dict) -> str:
-    return f"{d.get('year', 0):04d}-{d.get('month', 0):02d}-{d.get('day', 0):02d}"
+def normaliza_bucket(valor: str) -> str:
+    """`gs://pubsite_prod_123/` → `pubsite_prod_123`. Se pega tal cual se copia."""
+    return valor.strip().removeprefix("gs://").strip("/")
 
 
-def fetch_play_installs(token: str, pkg: str, sa_email: str, desde: date) -> tuple[dict | None, str | None]:
-    """Descargas, desinstalaciones e instalaciones activas de Play, por día."""
-    h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    url = f"{REPORTING_BASE}/apps/{pkg}/installsOverviewMetricSet:query"
-    hasta = hoy() - timedelta(days=1)  # el día en curso todavía no está cerrado
-    cuerpo = {
-        "timelineSpec": {
-            "aggregationPeriod": "DAILY",
-            "startTime": {"year": desde.year, "month": desde.month, "day": desde.day},
-            "endTime": {"year": hasta.year, "month": hasta.month, "day": hasta.day},
-        },
-        "metrics": ["installEvents", "uninstallEvents", "activeDeviceInstalls"],
-        "pageSize": 1000,
-    }
-
-    filas: list[dict] = []
+def listar_informes(token: str, bucket: str, pkg: str) -> tuple[list[str], str | None]:
+    """Nombres de los CSV mensuales de instalaciones de esa app, ordenados."""
+    nombres: list[str] = []
     pagina = None
+    prefijo = f"stats/installs/installs_{pkg}_"
     while True:
+        params = {"prefix": prefijo, "maxResults": 1000}
         if pagina:
-            cuerpo["pageToken"] = pagina
-        r = requests.post(url, headers=h, json=cuerpo, timeout=60)
+            params["pageToken"] = pagina
+        r = requests.get(
+            f"https://storage.googleapis.com/storage/v1/b/{quote(bucket, safe='')}/o",
+            headers={"Authorization": f"Bearer {token}"}, params=params, timeout=60,
+        )
         if r.status_code != 200:
             try:
-                detalle = r.json().get("error", {}).get("message", r.text[:300])
+                detalle = r.json().get("error", {}).get("message", r.text[:200])
             except ValueError:
-                # Cuando la API no está habilitada en el proyecto del service
-                # account, Google no contesta JSON: manda su página 404 de
-                # siempre. Guardar ese HTML en Firestore llenaría el tooltip de
-                # basura, así que se traduce a lo único que hay que hacer.
-                if "<html" in r.text[:200].lower():
-                    return None, (
-                        f"La Play Developer Reporting API no está habilitada en el proyecto de "
-                        f"Google Cloud del service account ({sa_email.split('@')[-1].split('.')[0]}). "
-                        "Habilítala ahí (playdeveloperreporting.googleapis.com) y dale al service "
-                        "account, en Play Console, el permiso 'View app information and download "
-                        "bulk reports'."
-                    )
-                detalle = r.text[:300]
+                detalle = r.text[:200]
             if r.status_code in (401, 403):
-                return None, (
-                    f"El service account {sa_email} no puede leer las descargas de '{pkg}'. "
-                    "En Play Console → Users and permissions dale 'View app information and "
-                    "download bulk reports', y habilita la Play Developer Reporting API en su "
-                    f"proyecto de Google Cloud. Detalle: {detalle}"
+                return [], (
+                    f"El service account no puede leer el bucket de informes '{bucket}'. En Play "
+                    "Console → Users and permissions dale el permiso 'View app information and "
+                    f"download bulk reports'. Detalle: {detalle}"
                 )
             if r.status_code == 404:
-                return None, f"La Reporting API no conoce el package '{pkg}'. Detalle: {detalle}"
-            return None, f"Reporting API {r.status_code}: {detalle}"
+                return [], (
+                    f"No existe el bucket de informes '{bucket}'. Cópialo de Play Console → "
+                    "Download reports → Statistics (arriba dice gs://pubsite_prod_…)."
+                )
+            return [], f"Cloud Storage {r.status_code}: {detalle}"
         data = r.json()
-        filas.extend(data.get("rows", []))
+        nombres.extend(o["name"] for o in data.get("items", []) if o.get("name", "").endswith("_overview.csv"))
         pagina = data.get("nextPageToken")
         if not pagina:
             break
+    return sorted(nombres), None
 
-    if not filas:
-        return None, (
-            "Play todavía no reporta instalaciones de esta app (o la Reporting API no tiene "
-            "datos en el rango consultado)."
-        )
 
-    def valor(fila: dict, metrica: str) -> int:
-        for m in fila.get("metrics", []):
-            if m.get("metric") == metrica:
-                v = m.get("decimalValue", {}).get("value")
-                return int(float(v)) if v is not None else 0
+def bajar_informe(token: str, bucket: str, nombre: str) -> tuple[list[dict], str | None]:
+    """Filas del CSV mensual. Play los escribe en UTF-16, no en UTF-8."""
+    r = requests.get(
+        f"https://storage.googleapis.com/storage/v1/b/{quote(bucket, safe='')}/o/{quote(nombre, safe='')}",
+        headers={"Authorization": f"Bearer {token}"}, params={"alt": "media"}, timeout=120,
+    )
+    if r.status_code != 200:
+        return [], f"No se pudo bajar {nombre}: {r.status_code}"
+    crudo = r.content
+    texto = crudo.decode("utf-16") if crudo[:2] in (b"\xff\xfe", b"\xfe\xff") else crudo.decode("utf-8-sig", "replace")
+    return list(csv.DictReader(io.StringIO(texto))), None
+
+
+def _num(fila: dict, columna: str) -> int:
+    try:
+        return int(float(fila.get(columna) or 0))
+    except (TypeError, ValueError):
         return 0
 
-    dias = sorted(
-        (
-            {
-                "fecha": _fecha(fila.get("startTime", {})),
-                "installs": valor(fila, "installEvents"),
-                "uninstalls": valor(fila, "uninstallEvents"),
-                "activos": valor(fila, "activeDeviceInstalls"),
-            }
-            for fila in filas
-        ),
-        key=lambda d: d["fecha"],
-    )
+
+def fetch_play_installs(token: str, pkg: str, bucket: str) -> tuple[dict | None, str | None]:
+    """Descargas de Play, sumadas de los informes mensuales de Play Console.
+
+    Se bajan los últimos MESES_PLAY informes para el detalle reciente, pero el
+    total NO se suma: la columna `Total User Installs` ya viene acumulada desde
+    que existe la app, así que el número que se enseña sí es el histórico
+    completo, no solo el del rango leído.
+    """
+    nombres, error = listar_informes(token, bucket, pkg)
+    if error:
+        return None, error
+    if not nombres:
+        return None, (
+            f"El bucket '{bucket}' no tiene informes de instalaciones de '{pkg}'. Revisa que el "
+            "package sea el correcto y que la app tenga al menos un mes publicada."
+        )
+
+    dias: list[dict] = []
+    for nombre in nombres[-MESES_PLAY:]:
+        filas, error = bajar_informe(token, bucket, nombre)
+        if error:
+            return None, error
+        for fila in filas:
+            fecha = (fila.get("Date") or "").strip()
+            if not fecha:
+                continue
+            dias.append({
+                "fecha": fecha,
+                "instalaciones": _num(fila, "Daily User Installs"),
+                "desinstalaciones": _num(fila, "Daily User Uninstalls"),
+                "activos": _num(fila, "Active Device Installs"),
+                "acumulado": _num(fila, "Total User Installs"),
+            })
+    if not dias:
+        return None, f"Los informes de '{pkg}' llegaron vacíos: Play todavía no reporta instalaciones."
+
+    dias.sort(key=lambda d: d["fecha"])
+    ultimo = dias[-1]
     corte = (hoy() - timedelta(days=30)).isoformat()
-    ultimos = [d for d in dias if d["fecha"] >= corte]
+    recientes = [d for d in dias if d["fecha"] >= corte]
     return {
-        "descargas": sum(d["installs"] for d in dias),
-        "desinstalaciones": sum(d["uninstalls"] for d in dias),
-        # `activeDeviceInstalls` es un total del día, no un incremento: el dato
-        # útil es el último, no la suma.
-        "activos": dias[-1]["activos"],
-        "descargas30d": sum(d["installs"] for d in ultimos),
-        "desinstalaciones30d": sum(d["uninstalls"] for d in ultimos),
+        "descargas": ultimo["acumulado"],
+        "desinstalaciones": sum(d["desinstalaciones"] for d in dias),
+        "activos": ultimo["activos"],
+        "descargas30d": sum(d["instalaciones"] for d in recientes),
+        "desinstalaciones30d": sum(d["desinstalaciones"] for d in recientes),
+        # El acumulado es histórico; el desglose, solo del rango leído.
         "desde": dias[0]["fecha"],
-        "hasta": dias[-1]["fecha"],
-        # La Reporting API no guarda toda la vida de la app: se dice desde
-        # cuándo se está contando para no vender el número como histórico.
-        "parcial": True,
+        "hasta": ultimo["fecha"],
+        "historico": True,
     }, None
 
 
@@ -505,11 +532,6 @@ def fetch_appstore_installs(token: str, bundle: str, previo: dict) -> tuple[dict
 
 # --- Main --------------------------------------------------------------------
 
-# Desde dónde se le pide historia a Play. La Reporting API no guarda toda la
-# vida de la app; se prueban rangos de más a menos hasta que uno conteste.
-INICIOS_PLAY = [date(2021, 1, 1), date(hoy().year - 2, 1, 1), hoy() - timedelta(days=365)]
-
-
 def sync_play(fs_token: str, app: dict, tokens: dict) -> None:
     pkg, project_id = app["package"], app["projectId"]
     raw_sa, origen = play_service_account_for(FS_BASE, fs_token, project_id)
@@ -540,20 +562,28 @@ def sync_play(fs_token: str, app: dict, tokens: dict) -> None:
         print(f"⚠ {pkg}: {error}")
         return
 
-    print(f"· {pkg}: service account del {origen} ({email})")
-    payload = ultimo_error = None
-    for inicio in INICIOS_PLAY:
-        payload, ultimo_error = fetch_play_installs(token, pkg, email, inicio)
-        if payload:
-            break
-    write_doc(fs_token, "playInstalls", pkg, "package", project_id, payload, ultimo_error)
+    bucket, origen_bucket = play_reports_bucket_for(FS_BASE, fs_token, project_id)
+    if not bucket:
+        error = (
+            f"El proyecto '{project_id}' no tiene bucket de informes de Play. Cópialo de Play "
+            "Console → Download reports → Statistics (arriba dice gs://pubsite_prod_…) y guárdalo "
+            "en el dashboard, junto a la cuenta de servicio de Play. Las instalaciones no salen "
+            "por API: Google solo las publica en ese bucket."
+        )
+        write_doc(fs_token, "playInstalls", pkg, "package", project_id, None, error)
+        print(f"⚠ {pkg}: {error}")
+        return
+
+    print(f"· {pkg}: service account del {origen} ({email}), bucket del {origen_bucket}")
+    payload, error = fetch_play_installs(token, pkg, normaliza_bucket(bucket))
+    write_doc(fs_token, "playInstalls", pkg, "package", project_id, payload, error)
     if payload:
         print(
-            f"✓ {pkg}: {payload['descargas']} descargas desde {payload['desde']} "
-            f"({payload['descargas30d']} en 30 días, {payload['activos']} activas)"
+            f"✓ {pkg}: {payload['descargas']} descargas históricas "
+            f"({payload['descargas30d']} en 30 días, {payload['activos']} instaladas hoy)"
         )
     else:
-        print(f"⚠ {pkg}: {ultimo_error}")
+        print(f"⚠ {pkg}: {error}")
 
 
 def sync_appstore(fs_token: str, app: dict, tokens: dict) -> None:
