@@ -1,0 +1,60 @@
+name: Sync descargas de las apps (Play / App Store)
+
+# Cuántas descargas lleva cada app, para verlo en la tarjeta del repo:
+#   · Google Play — Play Developer Reporting API (instalaciones por día)
+#   · App Store   — Analytics Reports de App Store Connect (descargas por mes)
+#
+# Va aparte del sync de estado de tiendas y corre una vez al día: un total de
+# descargas no cambia de un minuto a otro, y los reportes de Apple se generan
+# una vez al día y pesan (hay que bajarlos y sumarlos).
+on:
+  schedule:
+    - cron: "40 6 * * *" # 06:40 UTC, con los reportes del día anterior ya listos
+  workflow_dispatch: # botón "actualizar" del dashboard
+
+concurrency:
+  group: store-installs-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_GCP_DEV }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install --quiet "pyjwt[crypto]" requests
+
+      - name: Sync
+        env:
+          GCP_PROJECT: sozu-admin-dev
+        run: |
+          FIRESTORE_TOKEN="$(gcloud auth print-access-token)"
+          export FIRESTORE_TOKEN
+
+          secret() {
+            gcloud secrets versions access latest --secret="$1" --project=sozu-admin-dev 2>/dev/null || true
+          }
+
+          # Respaldos globales: cada proyecto puede traer su propia credencial.
+          PLAY_SA_JSON="$(secret DASHBOARD_PLAY_SERVICE_ACCOUNT)"
+          export PLAY_SA_JSON
+          ASC_KEY_ID="$(secret DASHBOARD_ASC_KEY_ID)"
+          ASC_ISSUER_ID="$(secret DASHBOARD_ASC_ISSUER_ID)"
+          ASC_PRIVATE_KEY="$(secret DASHBOARD_ASC_PRIVATE_KEY)"
+          export ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY
+
+          python ci/store_installs_sync.py
