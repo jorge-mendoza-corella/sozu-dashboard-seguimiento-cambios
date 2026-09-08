@@ -120,6 +120,25 @@ def play_service_account_for(fs_base: str, token: str, project_id: str) -> tuple
     return (heredado, "global") if heredado else ("", "-")
 
 
+def play_reports_bucket_for(fs_base: str, token: str, project_id: str) -> tuple[str, str]:
+    """(bucket de informes de Play de ESE proyecto, de dónde salió).
+
+    Las instalaciones no salen por API: Play Console las deja como CSV en un
+    bucket de Cloud Storage de la cuenta de desarrollador
+    (`gs://pubsite_prod_…`, visible en Download reports → Statistics). El
+    nombre no se puede deducir del package, así que se guarda junto al service
+    account de la app, y una cuenta de Play sirve para todas sus apps.
+    """
+    propio = _string(_project_fields(fs_base, token, project_id, "playSecret"), "reportsBucket")
+    if propio:
+        return propio, "proyecto"
+    env = os.environ.get("PLAY_REPORTS_BUCKET", "").strip()
+    if env:
+        return env, "entorno"
+    heredado = _string(_doc_fields(fs_base, token, "play"), "reportsBucket")
+    return (heredado, "global") if heredado else ("", "-")
+
+
 def app_store_connect_for(fs_base: str, token: str, project_id: str) -> tuple[dict, str]:
     """({key_id, issuer_id, private_key} de ESE proyecto, origen). {} si falta algo."""
     fields = _project_fields(fs_base, token, project_id, "ascSecret")

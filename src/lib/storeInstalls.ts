@@ -8,20 +8,24 @@ import { db } from "./firebase";
 // JWT con la llave privada, la otra entrega reportes comprimidos), así que un
 // workflow diario —.github/workflows/store-installs-sync.yml— los consulta y
 // deja el resultado en Firestore. Aquí solo se lee.
+//
+// Android sale de los informes de Play Console (el total es histórico); iOS, de
+// los Analytics Reports de Apple, que solo cubren desde que se pidieron.
 // ---------------------------------------------------------------------------
 
 export interface PlayInstalls {
-  /** Descargas contadas en el rango que la Reporting API conserva. */
+  /** Instalaciones acumuladas desde que existe la app (columna de Play Console). */
   descargas: number;
   desinstalaciones: number;
   /** Dispositivos activos que la tienen instalada hoy. */
   activos: number;
   descargas30d: number;
   desinstalaciones30d: number;
+  /** Primer y último día de los informes leídos: acotan el DESGLOSE, no el total. */
   desde: string;
   hasta: string;
-  /** El total no cubre toda la vida de la app: Play no guarda tanto atrás. */
-  parcial?: boolean;
+  /** El total sí cubre toda la vida de la app. */
+  historico?: boolean;
 }
 
 export interface AppStoreInstalls {
