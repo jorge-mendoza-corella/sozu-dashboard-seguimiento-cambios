@@ -198,6 +198,18 @@ def fetch_play_installs(token: str, pkg: str, sa_email: str, desde: date) -> tup
             try:
                 detalle = r.json().get("error", {}).get("message", r.text[:300])
             except ValueError:
+                # Cuando la API no está habilitada en el proyecto del service
+                # account, Google no contesta JSON: manda su página 404 de
+                # siempre. Guardar ese HTML en Firestore llenaría el tooltip de
+                # basura, así que se traduce a lo único que hay que hacer.
+                if "<html" in r.text[:200].lower():
+                    return None, (
+                        f"La Play Developer Reporting API no está habilitada en el proyecto de "
+                        f"Google Cloud del service account ({sa_email.split('@')[-1].split('.')[0]}). "
+                        "Habilítala ahí (playdeveloperreporting.googleapis.com) y dale al service "
+                        "account, en Play Console, el permiso 'View app information and download "
+                        "bulk reports'."
+                    )
                 detalle = r.text[:300]
             if r.status_code in (401, 403):
                 return None, (
