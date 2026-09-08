@@ -213,6 +213,21 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Descargas acumuladas de cada app (Play Developer Reporting API y
+    // Analytics Reports de App Store Connect). Mismo origen: las escribe el
+    // sync diario, el dashboard solo las lee.
+    match /playInstalls/{pkg} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if false;
+    }
+
+    match /appStoreInstalls/{bundleId} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if false;
+    }
+
     // Canales de Firebase Hosting (drafts pendientes de publicar). Mismo origen.
     match /hostingChannels/{site} {
       allow read: if request.auth != null
