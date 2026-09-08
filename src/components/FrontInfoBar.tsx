@@ -6,6 +6,7 @@ import { formatDistanceToNow } from "@/lib/timeUtils";
 import type { FrontVersion } from "@/lib/frontVersions";
 import { getPlayTracks, playPublishedVersion, releaseStatusInfo } from "@/lib/playTracks";
 import { getAppStoreStatus, appStoreLiveVersion, versionStateInfo } from "@/lib/appStoreStatus";
+import { InstallsBadge } from "./InstallsBadge";
 
 interface Props {
   /** URL del front. Sin ella no se pinta nada: el repo no es front. */
@@ -160,6 +161,8 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
               {iosVersion?.version ?? "—"}
             </span>
           )}
+          {/* Cuánta gente se llevó lo que dicen esas versiones. */}
+          <InstallsBadge androidPackage={androidPackage} iosBundleId={iosBundleId} />
         </>
       )}
     </div>
