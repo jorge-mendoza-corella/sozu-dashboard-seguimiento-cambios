@@ -89,11 +89,14 @@ export const PLATFORMS: PlatformDef[] = [
     promoteAccion: "Enviar a revisión",
     promoteAviso:
       "No reconstruye: manda a revisión de Apple el último build que ya está en TestFlight. " +
+      "En App Store Connect no tienes que preparar nada a mano: crea la versión con el número " +
+      "del propio build, le ata esa compilación y escribe tu comentario como \"Novedades\". " +
       "Apple tarda de unas horas a un par de días y, si lo aprueba, la versión sale a la venta " +
       "AUTOMÁTICAMENTE (release AFTER_APPROVAL) — no hay un paso manual después. " +
-      "Antes de enviar, la ficha de App Store Connect tiene que estar completa (capturas, " +
-      "descripción, categoría, política de privacidad y export compliance): si le falta algo, " +
-      "Apple rechaza el envío y este build falla.",
+      "Lo único que NO crea es la ficha de la app: capturas, descripción, categoría, política de " +
+      "privacidad, clasificación por edad y export compliance. En una actualización eso se hereda " +
+      "de la versión anterior; en la PRIMERA versión hay que llenarlo antes o Apple rechaza el " +
+      "envío y este build falla.",
     storeDirectWorkflowId: "ios-store",
     tresEtapas: true,
   },
