@@ -12,12 +12,14 @@ import { cn } from "@/lib/utils";
 //
 //   solo en pruebas   → pruebas en ámbar
 //   ya en revisión    → pruebas Y revisión en azul (el avance llegó hasta ahí)
-//   ya publicada      → las tres en verde: no queda nada pendiente
+//   ya publicada      → las tres en verde, incluida la de revisión aunque esté
+//                       vacía: vacía es justo la señal de que no queda nada
 //
-// Producción se pinta verde en cuanto hay algo a la venta, aunque sea la
-// versión anterior: eso ya está en la calle y no depende de lo que venga
-// detrás. Un canal vacío se queda gris, porque no es una etapa por la que se
-// esté pasando.
+// Lo que NO se pinta de verde es la tarjeta de producción mientras el avance no
+// llegue ahí, aunque tenga una versión a la venta: esa versión es la anterior,
+// y darle el color de "llegamos" haría creer que lo que se está siguiendo ya
+// salió. El badge sí queda verde —esa versión está publicada de verdad—, que es
+// la diferencia entre el dato y el avance.
 //
 // La usan Google Play y App Store, que tienen canales distintos pero el mismo
 // camino: se prueba, la tienda revisa, sale. Un solo componente evita que cada
@@ -69,15 +71,17 @@ function coloresDe(canales: CanalTienda[]): Record<EtapaCanal, Color> {
   const revision = canales.find((c) => c.etapa === "revision");
   const produccion = canales.find((c) => c.etapa === "produccion");
 
+  // Tienda todavía sin nada: no hay avance que pintar.
+  if (!pruebas?.version && !revision?.version && !produccion?.version) {
+    return { pruebas: "vacio", revision: "vacio", produccion: "vacio" };
+  }
+
   const publicada =
     !!produccion?.version && !revision?.version && pruebas?.version === produccion.version;
   if (publicada) return { pruebas: "verde", revision: "verde", produccion: "verde" };
 
-  // Producción siempre en verde si hay algo a la venta: aunque sea la versión
-  // anterior, esa ya está en la calle.
-  const enTienda: Color = produccion?.version ? "verde" : "vacio";
-  if (revision?.version) return { pruebas: "azul", revision: "azul", produccion: enTienda };
-  return { pruebas: "ambar", revision: "vacio", produccion: enTienda };
+  if (revision?.version) return { pruebas: "azul", revision: "azul", produccion: "vacio" };
+  return { pruebas: "ambar", revision: "vacio", produccion: "vacio" };
 }
 
 export function CanalesTienda({ canales }: { canales: CanalTienda[] }) {
@@ -91,7 +95,7 @@ export function CanalesTienda({ canales }: { canales: CanalTienda[] }) {
           key={c.key}
           className={cn(
             "rounded-lg border p-2 transition-colors",
-            COLOR_CLASSES[c.version || c.build ? colores[c.etapa] : "vacio"],
+            COLOR_CLASSES[colores[c.etapa]],
           )}
           title={
             alDia
