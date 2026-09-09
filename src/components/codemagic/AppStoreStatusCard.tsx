@@ -3,14 +3,7 @@ import { Loader2, AlertCircle, Apple, ExternalLink } from "lucide-react";
 import { getAppStoreStatus, appStoreChannels, buildStateLabel } from "@/lib/appStoreStatus";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import type { Project } from "@/lib/firestoreProjects";
-import { cn } from "@/lib/utils";
-
-const STATUS_CLASSES: Record<string, string> = {
-  success: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-  running: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
-  draft: "bg-muted text-muted-foreground",
-  halted: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
-};
+import { CanalesTienda, type CanalTienda } from "./CanalesTienda";
 
 /**
  * Qué versión de iOS hay en cada canal: TestFlight, revisión y producción.
@@ -34,6 +27,21 @@ export function AppStoreStatusCard({ project }: { project: Project }) {
   if (!bundle) return null;
 
   const canales = appStoreChannels(data);
+  // Mismos canales, en la forma de la fila compartida con Google Play: el color
+  // de cada etapa tiene que decir lo mismo en las dos tiendas.
+  const canalesUi: CanalTienda[] = canales.map((c) => ({
+    key: c.key,
+    label: c.label,
+    etapa: c.key === "testflight" ? "pruebas" : c.key === "revision" ? "revision" : "produccion",
+    // El número de build basta para pintar el canal: los documentos escritos
+    // por el sync anterior no traen `shortVersion`, y hasta la siguiente
+    // sincronización TestFlight se quedaría en blanco teniendo el dato.
+    version: c.version ? `v${c.version}` : null,
+    build: c.build ?? null,
+    estado: c.estado,
+    detalle: c.fecha ? formatDistanceToNow(c.fecha) : null,
+    vacio: c.vacio,
+  }));
   const ultimo = data?.builds?.[0];
 
   return (
@@ -80,36 +88,7 @@ export function AppStoreStatusCard({ project }: { project: Project }) {
         </p>
       ) : (
         <>
-          <div className="grid gap-1.5 sm:grid-cols-3">
-            {canales.map((c) => (
-              <div key={c.key} className="rounded-lg border bg-muted/30 p-2">
-                <div className="mb-1 text-[11px] font-semibold">{c.label}</div>
-                {/* El número de build basta para pintar el canal: los documentos
-                    escritos por el sync anterior no traen `shortVersion`, y hasta
-                    la siguiente sincronización TestFlight se quedaría en blanco
-                    teniendo el dato a la mano. */}
-                {c.version || c.build ? (
-                  <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                    <span
-                      className={cn(
-                        "rounded px-1.5 py-0.5 font-semibold",
-                        STATUS_CLASSES[c.estado.tone],
-                      )}
-                    >
-                      {c.estado.label}
-                    </span>
-                    {c.version && <span className="font-mono">v{c.version}</span>}
-                    {c.build && <span className="text-muted-foreground">build {c.build}</span>}
-                    {c.fecha && (
-                      <span className="text-muted-foreground">{formatDistanceToNow(c.fecha)}</span>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-[10px] text-muted-foreground">{c.vacio ?? "—"}</p>
-                )}
-              </div>
-            ))}
-          </div>
+          <CanalesTienda canales={canalesUi} />
 
           {ultimo && (
             <p className="mt-1.5 text-[10px] text-muted-foreground">

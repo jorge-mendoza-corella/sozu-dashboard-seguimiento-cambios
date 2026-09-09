@@ -6,14 +6,7 @@ import {
 } from "@/lib/playTracks";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import type { Project } from "@/lib/firestoreProjects";
-import { cn } from "@/lib/utils";
-
-const STATUS_CLASSES: Record<string, string> = {
-  success: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-  running: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
-  draft: "bg-muted text-muted-foreground",
-  halted: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
-};
+import { CanalesTienda, type CanalTienda } from "./CanalesTienda";
 
 /**
  * Estado en vivo de los tracks de Google Play (interno, cerrada, abierta,
@@ -64,6 +57,20 @@ export function PlayTracksCard({ project, canRefresh }: { project: Project; canR
   };
 
   const canales = playChannels(data);
+  // Los canales de Play en la forma que pinta la fila compartida con iOS: el
+  // camino es el mismo en las dos tiendas y el color tiene que significar lo
+  // mismo en las dos filas.
+  const canalesUi: CanalTienda[] = canales.map((c) => ({
+    key: c.key,
+    label: c.label,
+    etapa: c.key === "interna" ? "pruebas" : c.key === "revision" ? "revision" : "produccion",
+    version: c.version,
+    build: c.build ?? null,
+    estado: c.estado,
+    vacio: c.vacio,
+    link: c.linkKind ? project[c.linkKind] ?? null : null,
+    linkTitle: "Link de invitación para testers de este canal",
+  }));
   // Los tracks de prueba que no son el interno (Alpha, Beta abierta): siguen
   // existiendo y tienen su link de invitación, pero no son una etapa del camino
   // a producción, así que van debajo y en pequeño.
@@ -134,40 +141,7 @@ export function PlayTracksCard({ project, canRefresh }: { project: Project; canR
         </p>
       ) : (
         <>
-          <div className="grid gap-1.5 sm:grid-cols-3">
-            {canales.map((c) => {
-              const link = c.linkKind ? project[c.linkKind] : null;
-              return (
-                <div key={c.key} className="rounded-lg border bg-muted/30 p-2">
-                  <div className="mb-1 flex items-center gap-1.5">
-                    <span className="text-[11px] font-semibold">{c.label}</span>
-                    {link && (
-                      <a
-                        href={link}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-0.5 text-[10px] text-primary underline"
-                        title="Link de invitación para testers de este canal"
-                      >
-                        invitación <ExternalLink className="h-2.5 w-2.5" />
-                      </a>
-                    )}
-                  </div>
-                  {c.version ? (
-                    <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                      <span className={cn("rounded px-1.5 py-0.5 font-semibold", STATUS_CLASSES[c.estado.tone])}>
-                        {c.estado.label}
-                      </span>
-                      <span className="font-mono">{c.version}</span>
-                      {c.build && <span className="text-muted-foreground">build {c.build}</span>}
-                    </div>
-                  ) : (
-                    <p className="text-[10px] text-muted-foreground">{c.vacio ?? "—"}</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <CanalesTienda canales={canalesUi} />
 
           {otrosTracks.length > 0 && (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
