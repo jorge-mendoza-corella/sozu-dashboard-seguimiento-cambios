@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw, AlertCircle, ExternalLink, Store } from "lucide-react";
 import {
-  getPlayTracks, triggerPlayTracksSync, trackMeta, releaseStatusInfo,
+  getPlayTracks, triggerPlayTracksSync, trackMeta, releaseStatusInfo, playChannels,
 } from "@/lib/playTracks";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import type { Project } from "@/lib/firestoreProjects";
@@ -63,14 +63,20 @@ export function PlayTracksCard({ project, canRefresh }: { project: Project; canR
     }
   };
 
-  const conRelease = (data?.tracks ?? []).filter((t) => (t.releases ?? []).length > 0);
+  const canales = playChannels(data);
+  // Los tracks de prueba que no son el interno (Alpha, Beta abierta): siguen
+  // existiendo y tienen su link de invitación, pero no son una etapa del camino
+  // a producción, así que van debajo y en pequeño.
+  const otrosTracks = (data?.tracks ?? []).filter(
+    (t) => t.track.toLowerCase() !== "internal" && t.track.toLowerCase() !== "production" && (t.releases ?? []).length > 0,
+  );
 
   return (
     <div className="mt-4">
       <div className="mb-1.5 flex flex-wrap items-center gap-2">
         <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
           <Store className="h-3.5 w-3.5" />
-          Google Play · tracks
+          Google Play · canales
         </h4>
         <span className="font-mono text-[10px] text-muted-foreground">{pkg}</span>
         <span className="flex-1" />
@@ -103,8 +109,9 @@ export function PlayTracksCard({ project, canRefresh }: { project: Project; canR
       </div>
 
       <p className="mb-1.5 text-[10px] text-muted-foreground">
-        Qué versión está en cada canal de Play. Google no expone por API el "en revisión" de un
-        envío: mientras revisan, el release aparece aquí como borrador o en despliegue.
+        Qué versión está en cada canal de Android. Google no expone por API si terminó de revisar
+        un envío —lo da por "publicado" desde que se manda—, así que la de producción se lee de la
+        ficha pública de Play: es la que la gente puede bajar hoy.
       </p>
 
       {msg && <p className="mb-1.5 text-[11px] text-amber-600 dark:text-amber-400">{msg}</p>}
@@ -125,52 +132,67 @@ export function PlayTracksCard({ project, canRefresh }: { project: Project; canR
           Aún sin datos. La sincronización corre cada 30 min
           {canRefresh ? ' — o pulsa "actualizar" para consultarlo ahora.' : "."}
         </p>
-      ) : conRelease.length === 0 && !data.error ? (
-        <p className="text-[11px] text-muted-foreground">Ningún track tiene versiones publicadas todavía.</p>
       ) : (
-        <div className="grid gap-1.5 sm:grid-cols-2">
-          {conRelease.map((t) => {
-            const meta = trackMeta(t.track);
-            const link = meta.linkKind ? project[meta.linkKind] : null;
-            return (
-              <div key={t.track} className="rounded-lg border bg-muted/30 p-2">
-                <div className="mb-1 flex items-center gap-1.5">
-                  <span className="text-[11px] font-semibold">{meta.label}</span>
-                  {link && (
-                    <a
-                      href={link}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-0.5 text-[10px] text-primary underline"
-                      title="Link de invitación para testers de este track"
-                    >
-                      invitación <ExternalLink className="h-2.5 w-2.5" />
-                    </a>
+        <>
+          <div className="grid gap-1.5 sm:grid-cols-3">
+            {canales.map((c) => {
+              const link = c.linkKind ? project[c.linkKind] : null;
+              return (
+                <div key={c.key} className="rounded-lg border bg-muted/30 p-2">
+                  <div className="mb-1 flex items-center gap-1.5">
+                    <span className="text-[11px] font-semibold">{c.label}</span>
+                    {link && (
+                      <a
+                        href={link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-0.5 text-[10px] text-primary underline"
+                        title="Link de invitación para testers de este canal"
+                      >
+                        invitación <ExternalLink className="h-2.5 w-2.5" />
+                      </a>
+                    )}
+                  </div>
+                  {c.version ? (
+                    <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                      <span className={cn("rounded px-1.5 py-0.5 font-semibold", STATUS_CLASSES[c.estado.tone])}>
+                        {c.estado.label}
+                      </span>
+                      <span className="font-mono">{c.version}</span>
+                      {c.build && <span className="text-muted-foreground">build {c.build}</span>}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground">{c.vacio ?? "—"}</p>
                   )}
                 </div>
-                <div className="space-y-1">
-                  {(t.releases ?? []).map((r, i) => {
-                    const st = releaseStatusInfo(r.status);
-                    return (
-                      <div key={i} className="flex flex-wrap items-center gap-1.5 text-[10px]">
-                        <span className={cn("rounded px-1.5 py-0.5 font-semibold", STATUS_CLASSES[st.tone])}>
-                          {st.label}
-                        </span>
-                        <span className="font-mono">{r.name ?? "—"}</span>
-                        {r.versionCodes?.length ? (
-                          <span className="text-muted-foreground">build {r.versionCodes.join(", ")}</span>
-                        ) : null}
-                        {typeof r.userFraction === "number" && (
-                          <span className="text-muted-foreground">{Math.round(r.userFraction * 100)}% usuarios</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+
+          {otrosTracks.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+              {otrosTracks.map((t) => {
+                const meta = trackMeta(t.track);
+                const link = meta.linkKind ? project[meta.linkKind] : null;
+                const rel = t.releases?.[0];
+                const st = releaseStatusInfo(rel?.status);
+                return (
+                  <span key={t.track} className="flex items-center gap-1">
+                    {meta.label}:
+                    <span className="font-mono text-foreground/80">{rel?.name ?? "—"}</span>
+                    {rel?.versionCodes?.length ? <span>build {rel.versionCodes.join(", ")}</span> : null}
+                    <span>· {st.label}</span>
+                    {link && (
+                      <a href={link} target="_blank" rel="noreferrer" className="text-primary underline">
+                        invitación
+                      </a>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

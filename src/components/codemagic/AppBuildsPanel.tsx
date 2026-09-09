@@ -104,6 +104,11 @@ const TEST_LINKS: Record<TestLinkKind, { label: string; help: string }> = {
 // A qué canal fue cada publicación. Se declara workflow por workflow porque
 // con un ternario por defecto un workflow nuevo se anuncia como canal de
 // pruebas: `android-store` publica en producción y salía como "Play interno".
+// La única rama desde la que esta pestaña construye y publica. Lo que llega a
+// las tiendas sale de `main`; construir desde otra rama sería publicar código
+// que ni siquiera está mergeado.
+const RAMA_DE_PUBLICACION = "main";
+
 const DESTINO_PUBLICACION: Record<string, { label: string; produccion: boolean }> = {
   "android-publish": { label: "Play interno", produccion: false },
   "android-production": { label: "Play Store", produccion: true },
@@ -787,7 +792,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
   project?: Project;
 }) {
   const qc = useQueryClient();
-  const { data: apps = [], isLoading: loadingApps, error: appsError } = useCodemagicApps();
+  const { data: apps = [], error: appsError } = useCodemagicApps();
   const { data: builds = [], isLoading: loadingBuilds, error: buildsError } = useCodemagicBuilds(appId);
 
   const app = useMemo(() => apps.find((a) => a._id === appId), [apps, appId]);
@@ -876,9 +881,11 @@ export function AppBuildsPanel({ appId, perms, project }: {
     refetchInterval: 5 * 60_000,
   });
 
-  const branches = app?.branches ?? [];
-  const [branch, setBranch] = useState("");
-  const effectiveBranch = branch || (branches.includes("main") ? "main" : branches[0]) || "main";
+  // Todo lo de esta pestaña se construye y se publica desde `main`, punto: es
+  // la rama que llega a las tiendas. El selector dejaba elegir cualquier otra y
+  // eso solo servía para publicar por error algo que ni siquiera está mergeado,
+  // así que ahora la rama se enseña, no se escoge.
+  const effectiveBranch = RAMA_DE_PUBLICACION;
 
   const { data: headSha } = useBranchHead(repo?.owner, repo?.repo, effectiveBranch);
   const { data: deployActive = false } = useActiveDeploy(repo?.owner, repo?.repo);
@@ -1485,18 +1492,13 @@ export function AppBuildsPanel({ appId, perms, project }: {
               modo: <span className="font-semibold">{simple ? "simple" : "avanzado"}</span>
             </button>
           )}
-          <SelectNative
-            className="h-7 w-32 text-xs"
-            value={effectiveBranch}
-            disabled={loadingApps || branches.length === 0}
-            onChange={(e) => setBranch(e.target.value)}
-            title="Rama a construir"
+          <span
+            className="flex items-center gap-1 rounded-md border bg-muted/50 px-2 py-1 font-mono text-xs text-foreground/80"
+            title="Todo lo de esta pestaña se construye y publica desde main: es la rama que llega a las tiendas."
           >
-            {branches.length === 0 && <option value={effectiveBranch}>{effectiveBranch}</option>}
-            {branches.map((b) => (
-              <option key={b} value={b}>{b}</option>
-            ))}
-          </SelectNative>
+            <GitBranch className="h-3 w-3 text-muted-foreground" />
+            {effectiveBranch}
+          </span>
           <a
             href={`https://codemagic.io/app/${appId}`}
             target="_blank"

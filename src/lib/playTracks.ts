@@ -27,6 +27,13 @@ export interface PlayTracksDoc {
   package: string;
   updatedAt: string | null;
   tracks: PlayTrack[];
+  /**
+   * Versión que la ficha pública de Play sirve HOY. No sale de la API —Google
+   * no dice si terminó de revisar un envío— sino de leer la página de la app.
+   * `null` cuando no se pudo leer o Play la oculta ("varía según el
+   * dispositivo").
+   */
+  storeVersion: string | null;
   error: string | null;
 }
 
@@ -59,7 +66,13 @@ export function releaseStatusInfo(status?: string): { label: string; tone: "succ
 export async function getPlayTracks(pkg: string): Promise<PlayTracksDoc | null> {
   const snap = await getDoc(doc(db, "playTracks", pkg));
   if (!snap.exists()) return null;
-  const d = snap.data() as { package?: string; updatedAt?: { toDate?: () => Date }; raw?: string; error?: string | null };
+  const d = snap.data() as {
+    package?: string;
+    updatedAt?: { toDate?: () => Date };
+    raw?: string;
+    storeVersion?: string | null;
+    error?: string | null;
+  };
   let tracks: PlayTrack[] = [];
   try {
     tracks = d.raw ? (JSON.parse(d.raw) as PlayTrack[]) : [];
@@ -70,9 +83,17 @@ export async function getPlayTracks(pkg: string): Promise<PlayTracksDoc | null> 
     package: d.package ?? pkg,
     updatedAt: d.updatedAt?.toDate ? d.updatedAt.toDate().toISOString() : null,
     tracks: tracks.sort((a, b) => trackMeta(a.track).order - trackMeta(b.track).order),
+    storeVersion: d.storeVersion ?? null,
     error: d.error ?? null,
   };
 }
+
+/** Nombre de la versión de un release; si Play no lo trae, su versionCode. */
+const versionDeRelease = (rel: PlayRelease): string | null => {
+  if (rel.name?.trim()) return rel.name.trim();
+  const codes = (rel.versionCodes ?? []).map(Number).filter((n) => !Number.isNaN(n));
+  return codes.length ? String(Math.max(...codes)) : null;
+};
 
 export interface PlayPublished {
   version: string;
@@ -84,12 +105,6 @@ export interface PlayPublished {
 
 const ORDEN_TRACKS = ["production", "beta", "alpha", "internal"];
 
-const versionDeRelease = (rel: PlayRelease): string | null => {
-  if (rel.name?.trim()) return rel.name.trim();
-  const codes = (rel.versionCodes ?? []).map(Number).filter((n) => !Number.isNaN(n));
-  return codes.length ? String(Math.max(...codes)) : null;
-};
-
 /**
  * Última versión subida a Play, empezando por producción y bajando a los tracks
  * de prueba. No se exige `completed`: un release recién enviado queda en
@@ -100,6 +115,19 @@ const versionDeRelease = (rel: PlayRelease): string | null => {
  */
 export function playPublishedVersion(doc: PlayTracksDoc | null | undefined): PlayPublished | null {
   if (!doc) return null;
+  // Lo primero es lo que la tienda sirve de verdad. La API llama `completed` a
+  // un envío que Google todavía revisa, así que preferirla anunciaba como
+  // publicada una versión que nadie podía bajar.
+  if (doc.storeVersion) {
+    const prod = doc.tracks.find((t) => t.track.toLowerCase() === "production");
+    const rel = prod?.releases?.find((r) => versionDeRelease(r) === doc.storeVersion);
+    return {
+      version: doc.storeVersion,
+      track: "production",
+      status: rel?.status,
+      esProduccion: true,
+    };
+  }
   const candidatos = [...doc.tracks].sort((a, b) => {
     const ia = ORDEN_TRACKS.indexOf(a.track.toLowerCase());
     const ib = ORDEN_TRACKS.indexOf(b.track.toLowerCase());
@@ -121,6 +149,131 @@ export function playPublishedVersion(doc: PlayTracksDoc | null | undefined): Pla
     }
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Los tres canales de Android, leídos como los de iOS.
+//
+// La card enseñaba un track por tarjeta y trataba el release de producción como
+// "publicado", que es lo que dice la API… mientras Google todavía revisa. La
+// app de clientes anunciaba 1.1.5 en producción teniendo 1.0.9 en la tienda.
+// Google no expone el estado de revisión, así que la versión publicada se lee
+// de la ficha pública (`storeVersion`) y el release del track queda como lo
+// ENVIADO: si los dos números no coinciden, lo enviado sigue en camino.
+// ---------------------------------------------------------------------------
+
+export type TonoPlay = "success" | "running" | "draft" | "halted";
+
+export interface PlayChannel {
+  key: "interna" | "revision" | "produccion";
+  label: string;
+  version: string | null;
+  /** Código de versión (build) del release, cuando lo hay. */
+  build?: string | null;
+  estado: { label: string; tone: TonoPlay };
+  /** Link de invitación configurable del canal (solo el de pruebas). */
+  linkKind?: "playInternalUrl";
+  /** Qué decir cuando el canal está vacío. */
+  vacio?: string;
+}
+
+const releaseVigente = (t: PlayTrack | undefined): PlayRelease | null =>
+  t?.releases?.find((r) => r.status === "completed") ??
+  t?.releases?.find((r) => r.status === "inProgress") ??
+  t?.releases?.[0] ??
+  null;
+
+const trackDe = (doc: PlayTracksDoc | null | undefined, nombre: string): PlayTrack | undefined =>
+  doc?.tracks.find((t) => t.track.toLowerCase() === nombre);
+
+const buildDe = (rel: PlayRelease | null): string | null => (rel?.versionCodes ?? [])[0] ?? null;
+
+/**
+ * Qué hay en prueba interna, en revisión y en producción. Cada canal se
+ * resuelve por separado, igual que en iOS: que un envío esté en revisión no
+ * borra la versión que la gente sigue teniendo.
+ */
+export function playChannels(doc: PlayTracksDoc | null | undefined): PlayChannel[] {
+  const relInterna = releaseVigente(trackDe(doc, "internal"));
+  const interna: PlayChannel = relInterna
+    ? {
+        key: "interna",
+        label: "Prueba interna",
+        version: versionDeRelease(relInterna),
+        build: buildDe(relInterna),
+        estado: releaseStatusInfo(relInterna.status),
+        linkKind: "playInternalUrl",
+      }
+    : {
+        key: "interna",
+        label: "Prueba interna",
+        version: null,
+        estado: { label: "—", tone: "draft" },
+        linkKind: "playInternalUrl",
+        vacio: "Nada subido al track interno todavía.",
+      };
+
+  const relProd = releaseVigente(trackDe(doc, "production"));
+  const enviada = relProd ? versionDeRelease(relProd) : null;
+  const publica = doc?.storeVersion ?? null;
+  // Sin la ficha pública no hay con qué comparar: entonces se dice lo único
+  // seguro —que se envió— en vez de afirmar que está publicada.
+  const seSabePublica = !!publica;
+  const yaSalio = seSabePublica && !!enviada && enviada === publica;
+
+  const revision: PlayChannel =
+    enviada && !yaSalio
+      ? {
+          key: "revision",
+          label: "En camino (revisión)",
+          version: enviada,
+          build: buildDe(relProd),
+          estado: seSabePublica
+            ? { label: "en revisión de Google", tone: "running" }
+            : { label: "enviada a producción", tone: "running" },
+        }
+      : {
+          key: "revision",
+          label: "En camino (revisión)",
+          version: null,
+          estado: { label: "—", tone: "draft" },
+          vacio: enviada
+            ? "Nada en camino: lo enviado ya está publicado."
+            : "Ningún envío a producción todavía.",
+        };
+
+  const produccion: PlayChannel = publica
+    ? {
+        key: "produccion",
+        label: "Producción (Play Store)",
+        version: publica,
+        // El código de versión solo se conoce si la publicada es la enviada:
+        // la ficha pública no lo dice.
+        build: yaSalio ? buildDe(relProd) : null,
+        estado: { label: "disponible en Play", tone: "success" },
+      }
+    : {
+        key: "produccion",
+        label: "Producción (Play Store)",
+        version: enviada,
+        build: buildDe(relProd),
+        estado: enviada
+          ? { label: "enviada · Play no confirma", tone: "draft" }
+          : { label: "—", tone: "draft" },
+        vacio: enviada ? undefined : "Ninguna versión en producción todavía.",
+      };
+
+  return [interna, revision, produccion];
+}
+
+/**
+ * Versión enviada a producción que Play todavía no sirve. Es lo que falta para
+ * leer la card sin abrir el panel: el número que se ve es el de la tienda, y
+ * este dice qué viene detrás.
+ */
+export function playEnCamino(doc: PlayTracksDoc | null | undefined): string | null {
+  const [, revision] = playChannels(doc);
+  return revision.version;
 }
 
 const SYNC_REPO = { owner: "jorge-mendoza-corella", repo: "sozu-dashboard-seguimiento-cambios" };

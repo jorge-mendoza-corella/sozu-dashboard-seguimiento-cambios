@@ -32,6 +32,8 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import quote
 
+import re
+
 import jwt  # PyJWT
 import requests
 
@@ -127,7 +129,14 @@ def list_android_packages(token: str) -> list[tuple[str, str]]:
     return out
 
 
-def write_tracks_doc(token: str, pkg: str, project_id: str, tracks: list | None, error: str | None) -> None:
+def write_tracks_doc(
+    token: str,
+    pkg: str,
+    project_id: str,
+    tracks: list | None,
+    error: str | None,
+    version_publica: str | None = None,
+) -> None:
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     # `raw` guarda el JSON tal cual: el front lo parsea. Evita mapear estructuras
     # anidadas al formato tipado de Firestore (y sobrevive cambios de la API).
@@ -137,6 +146,9 @@ def write_tracks_doc(token: str, pkg: str, project_id: str, tracks: list | None,
             "projectId": {"stringValue": project_id},
             "updatedAt": {"timestampValue": now},
             "raw": {"stringValue": json.dumps(tracks or [], ensure_ascii=False)},
+            # Lo que sirve la tienda AHORA, leído de la ficha pública. Sin esto
+            # no hay forma de distinguir "enviado a producción" de "publicado".
+            "storeVersion": {"stringValue": version_publica} if version_publica else {"nullValue": None},
             "error": {"stringValue": error} if error else {"nullValue": None},
         }
     }
@@ -172,6 +184,40 @@ def fetch_tracks(token: str, pkg: str, sa_email: str) -> tuple[list | None, str 
     finally:
         # El edit es una transacción abierta: descartarla deja la app intacta.
         requests.delete(f"{PLAY_BASE}/{pkg}/edits/{edit_id}", headers=h, timeout=30)
+
+
+# --- Versión que la gente puede bajar hoy --------------------------------------
+#
+# La Play Developer API dice qué release hay en cada track, pero NO si Google ya
+# terminó de revisarlo: un envío a producción aparece como `completed` mientras
+# lo revisan, y la card anunciaba como publicada una versión que nadie tenía. La
+# ficha pública sí muestra la versión servida, así que se lee de ahí y ese es el
+# dato de "producción"; el release del track queda como "lo enviado".
+
+FICHA = "https://play.google.com/store/apps/details"
+# La versión viene dentro de los datos embebidos de la página, no en el HTML
+# visible. Play también puede decir "Varía según el dispositivo": entonces no
+# hay match y se devuelve None en vez de inventar un número.
+VERSION_EN_FICHA = re.compile(r'\[\[\["(\d+(?:\.\d+)+)"\]\]')
+
+
+def store_version(pkg: str) -> tuple[str | None, str | None]:
+    """(versión visible en la ficha pública de Play, error)."""
+    try:
+        r = requests.get(
+            FICHA,
+            params={"id": pkg, "hl": "es_MX", "gl": "MX"},
+            headers={"User-Agent": "Mozilla/5.0 (compatible; sozu-dashboard/1.0)"},
+            timeout=30,
+        )
+    except requests.RequestException as e:
+        return None, f"No se pudo leer la ficha pública de Play: {e}"
+    if r.status_code == 404:
+        return None, None  # app aún no publicada: no es un error que reportar
+    if r.status_code != 200:
+        return None, f"La ficha pública de Play respondió {r.status_code}"
+    m = VERSION_EN_FICHA.search(r.text)
+    return (m.group(1) if m else None), None
 
 
 def main() -> None:
@@ -222,7 +268,11 @@ def main() -> None:
 
         print(f"· {pkg}: service account del {origen} ({sa.get('client_email', '?')})")
         tracks, error = fetch_tracks(play_token, pkg, sa.get("client_email", "?"))
-        write_tracks_doc(fs_token, pkg, project_id, tracks, error)
+        publica, aviso = store_version(pkg)
+        if aviso:
+            print(f"· {pkg}: {aviso}")
+        print(f"· {pkg}: la ficha pública sirve {publica or '—'}")
+        write_tracks_doc(fs_token, pkg, project_id, tracks, error, publica)
         if error:
             print(f"⚠ {pkg}: {error}")
         else:

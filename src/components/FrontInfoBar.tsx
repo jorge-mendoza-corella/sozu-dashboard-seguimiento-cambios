@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Globe, ExternalLink, Copy, Check, Smartphone, Apple } from "lucide-react";
+import { Globe, ExternalLink, Copy, Check, Smartphone, Apple, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import type { FrontVersion } from "@/lib/frontVersions";
-import { getPlayTracks, playPublishedVersion, releaseStatusInfo } from "@/lib/playTracks";
+import { getPlayTracks, playPublishedVersion, playEnCamino, releaseStatusInfo } from "@/lib/playTracks";
 import { getAppStoreStatus, appStoreLiveVersion, appStoreEnCamino, versionStateInfo } from "@/lib/appStoreStatus";
 import { InstallsBadge } from "./InstallsBadge";
 
@@ -17,6 +17,26 @@ interface Props {
   androidPackage?: string;
   /** Solo apps: bundle id de iOS, para la versión a la venta en el App Store. */
   iosBundleId?: string;
+}
+
+/**
+ * Marca ámbar pegada al número de la tienda: hay una versión más nueva enviada
+ * que todavía no está publicada.
+ *
+ * El chip enseña lo que la gente puede bajar hoy, que es lo correcto, pero así
+ * solo no se distinguía "no hemos enviado nada" de "ya se envió y la tienda la
+ * está revisando" — y esa espera dura días, que es justo cuando se pregunta.
+ */
+function EnRevision({ version }: { version: string }) {
+  return (
+    <span
+      className="ml-1 flex items-center gap-0.5 rounded border border-amber-300 bg-amber-100 px-1 py-px font-sans text-[10px] font-semibold text-amber-800 dark:border-amber-700/60 dark:bg-amber-900/40 dark:text-amber-300"
+      title={`La ${version} está enviada y en revisión de la tienda: todavía no la sirve nadie.`}
+    >
+      <Clock className="h-2.5 w-2.5" />
+      {version}
+    </span>
+  );
 }
 
 /**
@@ -68,6 +88,7 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
       (frontVersion?.error ? `\n${frontVersion.error}` : "");
 
   const playPub = playPublishedVersion(play);
+  const playCamino = playEnCamino(play);
   const iosVersion = appStoreLiveVersion(appStore);
   // Lo que Apple todavía no publica. El chip enseña lo que la gente puede bajar
   // hoy; sin esto, una versión esperando revisión no se veía por ningún lado.
@@ -127,7 +148,10 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
                   : playPub
                     ? `Google Play · track ${playPub.track}` +
                       (playPub.status ? ` · ${releaseStatusInfo(playPub.status).label}` : "") +
-                      (playPub.esProduccion ? "" : " (aún no está en producción)")
+                      (playPub.esProduccion ? "" : " (aún no está en producción)") +
+                      (playCamino
+                        ? `\nEn revisión: ${playCamino} — enviada a producción, Google todavía no la sirve`
+                        : "")
                     : "Aún no hay ninguna versión subida a Google Play, o falta la cuenta de servicio para leerlo"
               }
               className={cn(
@@ -142,6 +166,7 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
               {playPub && !playPub.esProduccion && (
                 <span className="font-sans text-[10px] text-muted-foreground">{playPub.track}</span>
               )}
+              {playCamino && <EnRevision version={playCamino} />}
             </span>
           )}
           {iosBundleId && (
@@ -166,6 +191,7 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
             >
               <Apple className="h-3 w-3 text-muted-foreground" />
               {iosVersion?.version ?? "—"}
+              {iosVersion?.aLaVenta && iosEnCamino && <EnRevision version={iosEnCamino.version} />}
             </span>
           )}
           {/* Cuánta gente se llevó lo que dicen esas versiones. */}
