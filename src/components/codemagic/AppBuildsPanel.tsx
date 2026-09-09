@@ -348,6 +348,8 @@ interface Marcador {
 /** Lo que la tienda reporta hoy en un canal, y de cuándo es ese dato. */
 interface VersionEnTienda {
   texto: string;
+  /** Matiz que no cabe en el marcador y sí importa. Va al tooltip. */
+  nota?: string;
   /** Cuándo se leyó la tienda por última vez (`updatedAt` del documento). */
   leidoAt: string | null;
   /** Cuándo subió el binario que la tienda reporta. Solo Apple lo da. */
@@ -1138,6 +1140,22 @@ export function AppBuildsPanel({ appId, perms, project }: {
   // El rol se decide por workflowId; builds lanzados desde la UI de Codemagic
   // traen un id interno → cuentan como "build" y la plataforma sale de sus
   // artefactos (platformOfBuild).
+  //
+  // El marcador de producción de iOS no puede ser un rótulo fijo: entre pulsar
+  // el botón y estar en la tienda pasan horas o días de revisión de Apple, y
+  // durante todo ese rato "en App Store" afirmaba algo falso —la 1.0.14 salía
+  // como producción teniendo la 1.0.7 en la tienda—. La etiqueta dice en qué
+  // punto va el envío, y cuando Apple aprueba cambia sola a "publicado", que es
+  // el aviso de que salió sin que nadie la publicara a mano.
+  const etiquetaTiendaIos = useMemo(() => {
+    const porDefecto = PLATFORMS.find((p) => p.key === "ios")!.promoteLabel;
+    if (!appStoreDoc) return porDefecto;
+    const [, camino, produccion] = appStoreChannels(appStoreDoc);
+    if (camino.version) return "en revisión de Apple";
+    if (produccion.version) return "publicado en App Store";
+    return porDefecto;
+  }, [appStoreDoc]);
+
   const markers = useMemo(() => {
     const m = new Map<string, Marcador[]>();
     const add = (id: string | undefined, label: string, etapa: Etapa) => {
@@ -1155,9 +1173,10 @@ export function AppBuildsPanel({ appId, perms, project }: {
         "build",
       );
       add(builds.find((b) => b.workflowId === p.publishWorkflowId && isSuccess(b))?._id, `en ${p.storeLabel}`, "pruebas");
-      add(builds.find((b) => b.workflowId === p.promoteWorkflowId && isSuccess(b))?._id, `en ${p.promoteLabel}`, "produccion");
+      const etiquetaTienda = p.key === "ios" ? etiquetaTiendaIos : `en ${p.promoteLabel}`;
+      add(builds.find((b) => b.workflowId === p.promoteWorkflowId && isSuccess(b))?._id, etiquetaTienda, "produccion");
       // Publicación directa (modo simple): también marca la tienda pública.
-      add(builds.find((b) => b.workflowId === p.storeDirectWorkflowId && isSuccess(b))?._id, `en ${p.promoteLabel}`, "produccion");
+      add(builds.find((b) => b.workflowId === p.storeDirectWorkflowId && isSuccess(b))?._id, etiquetaTienda, "produccion");
     }
     add(
       builds.find((b) => platformOfBuild(b) === "web" && isSuccess(b))?._id,
@@ -1165,7 +1184,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
       "build",
     );
     return m;
-  }, [builds]);
+  }, [builds, etiquetaTiendaIos]);
 
   // Version que quedo en cada canal, por etiqueta de marcador.
   //
@@ -1195,10 +1214,23 @@ export function AppBuildsPanel({ appId, perms, project }: {
           subidoAt: testflight.fecha ?? null,
         });
       }
-      // Sin version a la venta se muestra la que va en camino: decir "en App
-      // Store" sin numero era justo lo que no se entendia.
-      const tienda = produccion.version ?? camino.version;
-      if (tienda) m.set(`en ${ios.promoteLabel}`, { texto: `v${tienda}`, leidoAt: appStoreDoc.updatedAt });
+      // Lo que la tienda dice del último envío: la versión que va en camino
+      // mientras Apple revisa y, cuando ya no hay ninguna en camino, la que
+      // quedó a la venta. Antes se prefería siempre producción, así que el
+      // marcador del envío recién hecho mostraba la versión ANTERIOR.
+      const enCamino = !!camino.version;
+      const tienda = camino.version ?? produccion.version;
+      if (tienda) {
+        m.set(etiquetaTiendaIos, {
+          texto: `v${tienda}${enCamino ? ` · ${camino.estado.label}` : ""}`,
+          leidoAt: appStoreDoc.updatedAt,
+          nota: enCamino
+            ? "Enviada a revisión. Apple tarda de unas horas a un par de días; cuando la apruebe, " +
+              "sale a la venta sola y este marcador pasa a \"publicado en App Store\"."
+            : "Apple la aprobó y salió a la venta sola (release AFTER_APPROVAL): nadie tuvo que " +
+              "publicarla a mano.",
+        });
+      }
     }
 
     if (android && playDoc) {
@@ -1221,7 +1253,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
       if (prod) m.set(`en ${android.promoteLabel}`, { texto: prod, leidoAt: playDoc.updatedAt });
     }
     return m;
-  }, [appStoreDoc, playDoc]);
+  }, [appStoreDoc, playDoc, etiquetaTiendaIos]);
 
   // Builds en curso: se muestran como card destacada, no como fila de historial.
   const runningBuilds = useMemo(() => builds.filter(isRunning), [builds]);
@@ -1237,7 +1269,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
     const m = new Map<string, number>();
     for (const [wf, arr] of acc) m.set(wf, arr.reduce((a, x) => a + x, 0) / arr.length);
     return m;
-  }, [builds]);
+  }, [builds, etiquetaTiendaIos]);
 
   const filteredBuilds = useMemo(() => {
     return builds.filter((b) => {
@@ -1872,7 +1904,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
                         key={label}
                         title={
                           alDia
-                            ? ETAPA_META[etapa].help
+                            ? ETAPA_META[etapa].help + (info?.nota ? `\n\n${info.nota}` : "")
                             : `${ETAPA_META[etapa].help}
 
 La tienda todavía no reporta el binario de este build: ` +
