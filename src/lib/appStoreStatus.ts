@@ -96,6 +96,20 @@ export function buildStateLabel(state?: string): string {
   }
 }
 
+/**
+ * Estados en los que la versión ya está a la venta. Son dos porque Apple
+ * cambió el enum: `appStoreState` decía READY_FOR_SALE y `appVersionState`, el
+ * vigente, dice READY_FOR_DISTRIBUTION. El sync guarda el que venga.
+ */
+const A_LA_VENTA = new Set(["READY_FOR_SALE", "READY_FOR_DISTRIBUTION"]);
+
+/** Versiones que ya no van a ninguna parte: no son "lo que viene". */
+const CERRADAS = new Set([
+  "REPLACED_WITH_NEW_VERSION",
+  "REMOVED_FROM_SALE",
+  "DEVELOPER_REMOVED_FROM_SALE",
+]);
+
 export interface AppStorePublished {
   version: string;
   state?: string;
@@ -104,19 +118,38 @@ export interface AppStorePublished {
 }
 
 /**
- * Versión más avanzada en el App Store: la que está a la venta y, si no hay,
- * la última enviada. Exigir `READY_FOR_SALE` dejaba un guión en la card justo
- * después de publicar, mientras Apple revisa — que es cuando más se consulta.
- * `aLaVenta` distingue una de otra.
+ * Versión que la gente puede bajar hoy del App Store y, solo si no hay ninguna,
+ * la última enviada. Exigir una versión a la venta dejaba un guión en la card
+ * justo después de publicar la primera, mientras Apple revisa; `aLaVenta`
+ * distingue los dos casos y la card pinta el borde punteado con eso.
+ *
+ * Se aceptan los DOS estados de "publicada": Apple renombró el enum y la app de
+ * agentes reportaba `READY_FOR_DISTRIBUTION` en la 1.0.7 —la que está en la
+ * tienda—, así que buscar solo `READY_FOR_SALE` no la encontraba y la card caía
+ * al respaldo, anunciando como producción la 1.0.14, que estaba esperando
+ * revisión y nadie tenía instalada.
  */
 export function appStoreLiveVersion(doc: AppStoreStatusDoc | null | undefined): AppStorePublished | null {
-  const live = doc?.versions.find((v) => v.state === "READY_FOR_SALE");
+  const live = doc?.versions.find((v) => v.state && A_LA_VENTA.has(v.state) && v.version?.trim());
   if (live?.version?.trim()) {
     return { version: live.version.trim(), state: live.state, aLaVenta: true };
   }
   const enCurso = doc?.versions.find((v) => v.version?.trim());
   if (!enCurso?.version) return null;
   return { version: enCurso.version.trim(), state: enCurso.state, aLaVenta: false };
+}
+
+/**
+ * Versión que Apple todavía no publica, cuando hay otra a la venta. Es lo que
+ * falta para leer la card sin abrir el panel: el número que se ve es el de la
+ * tienda, y este dice qué viene detrás.
+ */
+export function appStoreEnCamino(doc: AppStoreStatusDoc | null | undefined): AppStorePublished | null {
+  const enCamino = doc?.versions.find(
+    (v) => v.version?.trim() && v.state && !A_LA_VENTA.has(v.state) && !CERRADAS.has(v.state),
+  );
+  if (!enCamino?.version) return null;
+  return { version: enCamino.version.trim(), state: enCamino.state, aLaVenta: false };
 }
 
 export async function getAppStoreStatus(bundleId: string): Promise<AppStoreStatusDoc | null> {
@@ -175,16 +208,6 @@ export interface AppStoreChannel {
   /** Qué decir cuando el canal está vacío. */
   vacio?: string;
 }
-
-/** Estados en los que la versión ya está a la venta. */
-const A_LA_VENTA = new Set(["READY_FOR_SALE", "READY_FOR_DISTRIBUTION"]);
-
-/** Versiones que ya no van a ninguna parte: no son "lo que viene". */
-const CERRADAS = new Set([
-  "REPLACED_WITH_NEW_VERSION",
-  "REMOVED_FROM_SALE",
-  "DEVELOPER_REMOVED_FROM_SALE",
-]);
 
 /** Estado del build dentro de TestFlight, ya en español. */
 function testflightEstado(b: AppStoreBuild): { label: string; tone: Tono } {

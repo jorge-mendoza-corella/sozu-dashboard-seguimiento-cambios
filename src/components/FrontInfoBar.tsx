@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import type { FrontVersion } from "@/lib/frontVersions";
 import { getPlayTracks, playPublishedVersion, releaseStatusInfo } from "@/lib/playTracks";
-import { getAppStoreStatus, appStoreLiveVersion, versionStateInfo } from "@/lib/appStoreStatus";
+import { getAppStoreStatus, appStoreLiveVersion, appStoreEnCamino, versionStateInfo } from "@/lib/appStoreStatus";
 import { InstallsBadge } from "./InstallsBadge";
 
 interface Props {
@@ -69,6 +69,9 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
 
   const playPub = playPublishedVersion(play);
   const iosVersion = appStoreLiveVersion(appStore);
+  // Lo que Apple todavía no publica. El chip enseña lo que la gente puede bajar
+  // hoy; sin esto, una versión esperando revisión no se veía por ningún lado.
+  const iosEnCamino = appStoreEnCamino(appStore);
   const esApp = !!androidPackage || !!iosBundleId;
 
   return (
@@ -149,7 +152,11 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
                   : iosVersion
                     ? (iosVersion.aLaVenta ? "A la venta en el App Store" : "Enviada al App Store, aún no a la venta") +
                       `: ${iosVersion.version}` +
-                      (iosVersion.state ? ` · ${versionStateInfo(iosVersion.state).label}` : "")
+                      (iosVersion.state ? ` · ${versionStateInfo(iosVersion.state).label}` : "") +
+                      (iosVersion.aLaVenta && iosEnCamino
+                        ? `\nEn camino: ${iosEnCamino.version}` +
+                          (iosEnCamino.state ? ` · ${versionStateInfo(iosEnCamino.state).label}` : "")
+                        : "")
                     : "Aún no hay ninguna versión en App Store Connect, o falta la llave para leerlo"
               }
               className={cn(
