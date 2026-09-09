@@ -2,14 +2,22 @@ import { ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
-// La fila de canales de una tienda, con el color contando el camino.
+// La fila de canales de una tienda, con el color contando hasta dónde llegó
+// esta versión.
 //
 // Las tres tarjetas eran grises y todas se leían igual: había que comparar los
 // números a ojo para saber si lo que se probó ya está en la calle o si sigue
-// atorado en revisión. Ahora el color lo dice de un vistazo — pruebas en ámbar,
-// revisión en azul, producción en verde— y, cuando lo que se probó es lo mismo
-// que está publicado y no queda nada en camino, la fila ENTERA se pinta de
-// verde: no hay nada pendiente en esa tienda.
+// atorado en revisión. Ahora el color avanza con la versión, como una barra de
+// progreso, y no como una etiqueta fija por tarjeta:
+//
+//   solo en pruebas   → pruebas en ámbar
+//   ya en revisión    → pruebas Y revisión en azul (el avance llegó hasta ahí)
+//   ya publicada      → las tres en verde: no queda nada pendiente
+//
+// Producción se pinta verde en cuanto hay algo a la venta, aunque sea la
+// versión anterior: eso ya está en la calle y no depende de lo que venga
+// detrás. Un canal vacío se queda gris, porque no es una etapa por la que se
+// esté pasando.
 //
 // La usan Google Play y App Store, que tienen canales distintos pero el mismo
 // camino: se prueba, la tienda revisa, sale. Un solo componente evita que cada
@@ -35,14 +43,14 @@ export interface CanalTienda {
   linkTitle?: string;
 }
 
-const ETAPA_CLASSES: Record<EtapaCanal, string> = {
-  pruebas: "border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/25",
-  revision: "border-blue-200 bg-blue-50/70 dark:border-blue-900/50 dark:bg-blue-950/25",
-  produccion: "border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/25",
-};
+type Color = "ambar" | "azul" | "verde" | "vacio";
 
-const PUBLICADO = "border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/25";
-const VACIO = "border-border bg-muted/30";
+const COLOR_CLASSES: Record<Color, string> = {
+  ambar: "border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/25",
+  azul: "border-blue-200 bg-blue-50/70 dark:border-blue-900/50 dark:bg-blue-950/25",
+  verde: "border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/25",
+  vacio: "border-border bg-muted/30",
+};
 
 const BADGE_CLASSES: Record<TonoEstado, string> = {
   success: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
@@ -52,23 +60,29 @@ const BADGE_CLASSES: Record<TonoEstado, string> = {
 };
 
 /**
- * Nada pendiente en esta tienda: lo que está publicado es lo mismo que se
- * probó, y no hay ningún envío esperando revisión.
+ * Hasta dónde llegó la versión que se está siguiendo, y de qué color queda cada
+ * canal por eso. El avance es de la FILA: un canal no se pinta por lo que es,
+ * sino por lo lejos que llegó lo que se probó.
  */
-function todoPublicado(canales: CanalTienda[]): boolean {
+function coloresDe(canales: CanalTienda[]): Record<EtapaCanal, Color> {
   const pruebas = canales.find((c) => c.etapa === "pruebas");
   const revision = canales.find((c) => c.etapa === "revision");
   const produccion = canales.find((c) => c.etapa === "produccion");
-  return (
-    !!produccion?.version &&
-    !revision?.version &&
-    !!pruebas?.version &&
-    pruebas.version === produccion.version
-  );
+
+  const publicada =
+    !!produccion?.version && !revision?.version && pruebas?.version === produccion.version;
+  if (publicada) return { pruebas: "verde", revision: "verde", produccion: "verde" };
+
+  // Producción siempre en verde si hay algo a la venta: aunque sea la versión
+  // anterior, esa ya está en la calle.
+  const enTienda: Color = produccion?.version ? "verde" : "vacio";
+  if (revision?.version) return { pruebas: "azul", revision: "azul", produccion: enTienda };
+  return { pruebas: "ambar", revision: "vacio", produccion: enTienda };
 }
 
 export function CanalesTienda({ canales }: { canales: CanalTienda[] }) {
-  const alDia = todoPublicado(canales);
+  const colores = coloresDe(canales);
+  const alDia = colores.pruebas === "verde" && colores.produccion === "verde";
 
   return (
     <div className="grid gap-1.5 sm:grid-cols-3">
@@ -77,7 +91,7 @@ export function CanalesTienda({ canales }: { canales: CanalTienda[] }) {
           key={c.key}
           className={cn(
             "rounded-lg border p-2 transition-colors",
-            !c.version ? VACIO : alDia ? PUBLICADO : ETAPA_CLASSES[c.etapa],
+            COLOR_CLASSES[c.version || c.build ? colores[c.etapa] : "vacio"],
           )}
           title={
             alDia
