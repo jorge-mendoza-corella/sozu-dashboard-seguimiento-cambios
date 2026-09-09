@@ -411,7 +411,11 @@ function PlatformRow({
   perms: CicdPermissions;
   estaBusy: (key: string) => boolean;
   pendingWorkflows: Record<string, { id: string; t: number }>;
-  onRequestStart: (workflowId: string, key: string, opts?: { askNotes?: boolean; label?: string }) => void;
+  onRequestStart: (
+    workflowId: string,
+    key: string,
+    opts?: { askNotes?: boolean; label?: string; aviso?: string },
+  ) => void;
   /**
    * Modo simple: Construir + un solo botón que publica directo en la tienda.
    * No aplica a las plataformas con `tresEtapas` (ver `modoSimpleAqui`).
@@ -468,7 +472,9 @@ function PlatformRow({
   const etiquetaEtapa =
     etapaActual === "construir" ? "construir el artefacto"
     : etapaActual === "pruebas" ? platform.storeLabel
-    : etapaActual === "tienda" ? platform.promoteLabel
+    // La acción, no el destino: "Ahora toca: App Store" sonaba a que la app ya
+    // estaba ahí, cuando lo que falta es mandarla a revisión.
+    : etapaActual === "tienda" ? platform.promoteAccion
     : "";
   // Motivo comun cuando el boton existe pero no es su turno.
   const fueraDeTurno = (paso: typeof etapaActual) =>
@@ -660,16 +666,20 @@ function PlatformRow({
     <Button
       size="sm"
       className="bg-emerald-600 hover:bg-emerald-700 text-white"
-      title={promoteDisabledReason ?? `Enviar a ${platform.promoteLabel} (pide comentario de la versión)`}
+      title={promoteDisabledReason ?? `${platform.promoteAccion} · ${platform.promoteAviso}`}
       disabled={!!promoteDisabledReason || estaBusy(promoteKey)}
-      onClick={() => onRequestStart(platform.promoteWorkflowId, promoteKey, { askNotes: true, label: `Enviar a ${platform.promoteLabel}` })}
+      onClick={() => onRequestStart(platform.promoteWorkflowId, promoteKey, {
+        askNotes: true,
+        label: `${platform.promoteAccion} · ${platform.label}`,
+        aviso: platform.promoteAviso,
+      })}
     >
       {promoteInProgress || estaBusy(promoteKey) ? (
         <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
       ) : (
         <Rocket className="h-3.5 w-3.5 mr-1.5" />
       )}
-      {promoteInProgress ? "Enviando…" : platform.promoteLabel}
+      {promoteInProgress ? "Enviando…" : platform.promoteAccion}
     </Button>
   );
 
@@ -712,7 +722,7 @@ function PlatformRow({
               title={storeDisabledReason ?? `Publicar directo en ${platform.promoteLabel} (pide comentario de la versión)`}
               disabled={!!storeDisabledReason || estaBusy(storeKey)}
               onClick={() => onRequestStart(platform.storeDirectWorkflowId, storeKey, {
-                askNotes: true, label: `Publicar en ${platform.promoteLabel}`,
+                askNotes: true, label: `Publicar en ${platform.promoteLabel}`, aviso: platform.promoteAviso,
               })}
             >
               {storeInProgress || estaBusy(storeKey) ? (
@@ -1274,14 +1284,18 @@ export function AppBuildsPanel({ appId, perms, project }: {
   // Modal de confirmación (reemplaza a window.confirm / window.prompt).
   // mode "start" = iniciar workflow · mode "cancel" = cancelar build en curso.
   const [confirmData, setConfirmData] = useState<
-    | { mode: "start"; workflowId: string; key: string; label: string; askNotes: boolean }
+    | { mode: "start"; workflowId: string; key: string; label: string; askNotes: boolean; aviso?: string }
     | { mode: "cancel"; buildId: string; label: string }
     | null
   >(null);
   const [notes, setNotes] = useState("");
   const [notesError, setNotesError] = useState("");
 
-  const requestStart = (workflowId: string, key: string, opts?: { askNotes?: boolean; label?: string }) => {
+  const requestStart = (
+    workflowId: string,
+    key: string,
+    opts?: { askNotes?: boolean; label?: string; aviso?: string },
+  ) => {
     setNotes("");
     setNotesError("");
     setConfirmData({
@@ -1290,6 +1304,7 @@ export function AppBuildsPanel({ appId, perms, project }: {
       key,
       label: opts?.label ?? WORKFLOW_LABELS[workflowId] ?? workflowId,
       askNotes: !!opts?.askNotes,
+      aviso: opts?.aviso,
     });
   };
 
@@ -2223,6 +2238,14 @@ Lo último que reporta: ${info.texto}.` : "")
                     </code>{" "}
                     de <span className="font-medium text-foreground">{app?.appName ?? "la app"}</span>.
                   </p>
+                  {/* Qué hace de verdad el botón. En iOS "App Store" se leía
+                      como publicar al instante, cuando lo que dispara es un
+                      envío a revisión que, si Apple aprueba, publica solo. */}
+                  {confirmData.aviso && (
+                    <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
+                      {confirmData.aviso}
+                    </p>
+                  )}
                   {confirmData.askNotes && (
                     <div className="mt-3">
                       <label className="text-xs font-medium">
