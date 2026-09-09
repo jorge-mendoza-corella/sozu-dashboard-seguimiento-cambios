@@ -91,6 +91,9 @@ export const PLATFORMS: PlatformDef[] = [
       "No reconstruye: manda a revisión de Apple el último build que ya está en TestFlight. " +
       "En App Store Connect no tienes que preparar nada a mano: crea la versión con el número " +
       "del propio build, le ata esa compilación y escribe tu comentario como \"Novedades\". " +
+      "Si ya creaste una versión a mano y sigue editable, no hace otra: reutiliza esa, le cambia " +
+      "el número al del build, le ata la compilación nueva y le reescribe las novedades. El " +
+      "número sale SIEMPRE del build, nunca de lo que escribiste en la consola. " +
       "Apple tarda de unas horas a un par de días y, si lo aprueba, la versión sale a la venta " +
       "AUTOMÁTICAMENTE (release AFTER_APPROVAL) — no hay un paso manual después. " +
       "Lo único que NO crea es la ficha de la app: capturas, descripción, categoría, política de " +
