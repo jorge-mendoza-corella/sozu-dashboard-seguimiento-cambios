@@ -40,6 +40,17 @@ export interface PlatformDef {
   /** Paso final: promover a la store pública (exige comentario de release). */
   promoteWorkflowId: string;
   promoteLabel: string;
+  /**
+   * Lo que el botón HACE, que no es lo mismo que el sitio a donde va.
+   *
+   * En iOS el botón decía "App Store" y eso se lee como "publicar ahora",
+   * cuando lo que dispara es un envío a revisión de Apple. El destino sigue
+   * siendo "App Store" —así se marcan las versiones ya publicadas—, pero el
+   * botón dice la acción.
+   */
+  promoteAccion: string;
+  /** Qué pasa de verdad al pulsarlo. Se muestra en el modal de confirmación. */
+  promoteAviso: string;
   /** Modo simple: construye y publica directo en la tienda, en un solo paso. */
   storeDirectWorkflowId: string;
   /**
@@ -62,6 +73,11 @@ export const PLATFORMS: PlatformDef[] = [
     buildWorkflowId: "android-release",
     publishWorkflowId: "android-publish", storeLabel: "Play interno",
     promoteWorkflowId: "android-production", promoteLabel: "Play Store",
+    promoteAccion: "Play Store",
+    promoteAviso:
+      "Promueve a producción el release que ya está en el track interno: no reconstruye. " +
+      "Google no revisa cada actualización como Apple, así que en cuestión de horas queda " +
+      "disponible para todos los usuarios.",
     storeDirectWorkflowId: "android-store",
     tresEtapas: true,
   },
@@ -70,6 +86,14 @@ export const PLATFORMS: PlatformDef[] = [
     buildWorkflowId: "ios-release",
     publishWorkflowId: "ios-publish", storeLabel: "TestFlight",
     promoteWorkflowId: "ios-appstore", promoteLabel: "App Store",
+    promoteAccion: "Enviar a revisión",
+    promoteAviso:
+      "No reconstruye: manda a revisión de Apple el último build que ya está en TestFlight. " +
+      "Apple tarda de unas horas a un par de días y, si lo aprueba, la versión sale a la venta " +
+      "AUTOMÁTICAMENTE (release AFTER_APPROVAL) — no hay un paso manual después. " +
+      "Antes de enviar, la ficha de App Store Connect tiene que estar completa (capturas, " +
+      "descripción, categoría, política de privacidad y export compliance): si le falta algo, " +
+      "Apple rechaza el envío y este build falla.",
     storeDirectWorkflowId: "ios-store",
     tresEtapas: true,
   },
