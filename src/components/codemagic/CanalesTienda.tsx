@@ -54,12 +54,21 @@ const COLOR_CLASSES: Record<Color, string> = {
   vacio: "border-border bg-muted/30",
 };
 
-const BADGE_CLASSES: Record<TonoEstado, string> = {
-  success: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-  running: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
-  draft: "bg-muted text-muted-foreground",
-  halted: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300",
+// El badge lleva el color de SU canal, no el del texto que muestre. Los estados
+// que manda cada tienda son un vocabulario distinto —"publicado", "listo ·
+// testers internos", "esperando revisión", "disponible en Play"— y pintarlos
+// por tono hacía que dos tarjetas de la misma etapa salieran de colores
+// distintos según la palabra que usara Apple o Google ese día.
+const BADGE_ETAPA: Record<EtapaCanal, string> = {
+  pruebas: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
+  revision: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
+  produccion: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
 };
+
+// La excepción: un rechazo o un binario inválido no son una etapa del camino,
+// son algo roto. Pintarlos del color de su canal los escondería justo entre lo
+// que se ve bien.
+const BADGE_ROTO = "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300";
 
 /**
  * Hasta dónde llegó la versión que se está siguiendo, y de qué color queda cada
@@ -119,7 +128,12 @@ export function CanalesTienda({ canales }: { canales: CanalTienda[] }) {
           </div>
           {c.version || c.build ? (
             <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-              <span className={cn("rounded px-1.5 py-0.5 font-semibold", BADGE_CLASSES[c.estado.tone])}>
+              <span
+                className={cn(
+                  "rounded px-1.5 py-0.5 font-semibold",
+                  c.estado.tone === "halted" ? BADGE_ROTO : BADGE_ETAPA[c.etapa],
+                )}
+              >
                 {c.estado.label}
               </span>
               {c.version && <span className="font-mono">{c.version}</span>}
