@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Download, Smartphone, Apple, TrendingUp, Users, Clock, AlertTriangle } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { compacto, exacto, fechaCorta, getAppStoreInstalls, getPlayInstalls } from "@/lib/storeInstalls";
 
@@ -61,7 +62,12 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
   const total = (dPlay?.descargas ?? 0) + (dIos?.descargas ?? 0);
   const mes30 = (dPlay?.descargas30d ?? 0) + (dIos?.descargasUltimoMes ?? 0);
   const hayDato = !!dPlay || (!!dIos && !dIos.pendiente);
-  if (!hayDato) return null;
+  // Sin dato PERO con algo que contar (un error de la tienda, o Apple todavía
+  // generando el reporte), el chip se queda en pantalla con un guión: esconderlo
+  // hacía que "no hay descargas" y "no se pudieron leer" se vieran igual, o sea
+  // igual que no haber puesto nada.
+  const pendiente = !hayDato && (!!play?.error || !!ios?.error || !!dIos?.pendiente);
+  if (!hayDato && !pendiente) return null;
 
   const show = () => {
     if (hideTimer.current) { window.clearTimeout(hideTimer.current); hideTimer.current = null; }
@@ -83,11 +89,16 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
   return (
     <span ref={anchorRef} onMouseEnter={show} onMouseLeave={hide} className="inline-flex">
       <span
-        className="flex cursor-default items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-1.5 py-1 font-mono text-violet-700 transition-colors hover:bg-violet-100 dark:border-violet-800/60 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/50"
-        aria-label={`${exacto(total)} descargas`}
+        className={cn(
+          "flex cursor-default items-center gap-1 rounded-md border px-1.5 py-1 font-mono transition-colors",
+          pendiente
+            ? "border-dashed border-muted-foreground/40 text-muted-foreground"
+            : "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-800/60 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/50",
+        )}
+        aria-label={pendiente ? "Descargas: todavía sin dato" : `${exacto(total)} descargas`}
       >
         <Download className="h-3 w-3 shrink-0 opacity-80" />
-        {compacto(total)}
+        {pendiente ? "—" : compacto(total)}
       </span>
 
       {open && pos && createPortal(
@@ -98,8 +109,8 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
           onMouseLeave={hide}
         >
           <p className="mb-1.5 flex items-center gap-1 font-semibold">
-            <Download className="h-3 w-3 text-violet-500" />
-            {exacto(total)} descargas
+            <Download className={cn("h-3 w-3", pendiente ? "text-muted-foreground" : "text-violet-500")} />
+            {pendiente ? "Descargas: todavía sin dato" : `${exacto(total)} descargas`}
           </p>
 
           <div className="space-y-1 text-[11px]">
