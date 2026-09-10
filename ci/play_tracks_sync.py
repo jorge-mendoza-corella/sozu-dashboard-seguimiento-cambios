@@ -136,6 +136,7 @@ def write_tracks_doc(
     tracks: list | None,
     error: str | None,
     version_publica: str | None = None,
+    descargas_publicas: str | None = None,
 ) -> None:
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     # `raw` guarda el JSON tal cual: el front lo parsea. Evita mapear estructuras
@@ -149,6 +150,9 @@ def write_tracks_doc(
             # Lo que sirve la tienda AHORA, leído de la ficha pública. Sin esto
             # no hay forma de distinguir "enviado a producción" de "publicado".
             "storeVersion": {"stringValue": version_publica} if version_publica else {"nullValue": None},
+            # Rango de descargas de la ficha ("10+"): respaldo mientras los
+            # informes exactos no estén disponibles.
+            "storeDownloads": {"stringValue": descargas_publicas} if descargas_publicas else {"nullValue": None},
             "error": {"stringValue": error} if error else {"nullValue": None},
         }
     }
@@ -201,8 +205,15 @@ FICHA = "https://play.google.com/store/apps/details"
 VERSION_EN_FICHA = re.compile(r'\[\[\["(\d+(?:\.\d+)+)"\]\]')
 
 
-def store_version(pkg: str) -> tuple[str | None, str | None]:
-    """(versión visible en la ficha pública de Play, error)."""
+# Play también publica el rango de descargas en la ficha ("10+", "1 K+"). No es
+# el número exacto que dan los informes, pero es lo único que se puede leer sin
+# permisos y sirve mientras Google no abre el bucket de reportes. Se busca por
+# la etiqueta, no por la clase CSS: las clases de Play son ofuscadas y cambian.
+DESCARGAS_EN_FICHA = re.compile(r">([\d.,]+\s?[KMkm]?\+?)</div><div[^>]*>Descargas<")
+
+
+def store_version(pkg: str) -> tuple[str | None, str | None, str | None]:
+    """(versión visible en la ficha pública, rango de descargas, error)."""
     try:
         r = requests.get(
             FICHA,
@@ -211,13 +222,18 @@ def store_version(pkg: str) -> tuple[str | None, str | None]:
             timeout=30,
         )
     except requests.RequestException as e:
-        return None, f"No se pudo leer la ficha pública de Play: {e}"
+        return None, None, f"No se pudo leer la ficha pública de Play: {e}"
     if r.status_code == 404:
-        return None, None  # app aún no publicada: no es un error que reportar
+        return None, None, None  # app aún no publicada: no es un error que reportar
     if r.status_code != 200:
-        return None, f"La ficha pública de Play respondió {r.status_code}"
-    m = VERSION_EN_FICHA.search(r.text)
-    return (m.group(1) if m else None), None
+        return None, None, f"La ficha pública de Play respondió {r.status_code}"
+    version = VERSION_EN_FICHA.search(r.text)
+    descargas = DESCARGAS_EN_FICHA.search(r.text)
+    return (
+        version.group(1) if version else None,
+        descargas.group(1).strip() if descargas else None,
+        None,
+    )
 
 
 def main() -> None:
@@ -268,11 +284,11 @@ def main() -> None:
 
         print(f"· {pkg}: service account del {origen} ({sa.get('client_email', '?')})")
         tracks, error = fetch_tracks(play_token, pkg, sa.get("client_email", "?"))
-        publica, aviso = store_version(pkg)
+        publica, descargas, aviso = store_version(pkg)
         if aviso:
             print(f"· {pkg}: {aviso}")
-        print(f"· {pkg}: la ficha pública sirve {publica or '—'}")
-        write_tracks_doc(fs_token, pkg, project_id, tracks, error, publica)
+        print(f"· {pkg}: la ficha pública sirve {publica or '—'} · descargas {descargas or '—'}")
+        write_tracks_doc(fs_token, pkg, project_id, tracks, error, publica, descargas)
         if error:
             print(f"⚠ {pkg}: {error}")
         else:

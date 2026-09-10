@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Download, Smartphone, Apple, TrendingUp, Users, Clock, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
+import { getPlayTracks } from "@/lib/playTracks";
 import { compacto, exacto, fechaCorta, getAppStoreInstalls, getPlayInstalls } from "@/lib/storeInstalls";
 
 interface Props {
@@ -50,6 +51,16 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
     enabled: !!androidPackage,
     staleTime: 30 * 60_000,
   });
+  // Respaldo de Android: el rango que Play enseña en su propia ficha ("10+").
+  // Los informes exactos viven en un bucket que Google tarda en abrir —y
+  // mientras tanto la tarjeta no tenía NADA que decir de una app que sí se está
+  // bajando—. Es aproximado y se dice que lo es.
+  const { data: playTracks } = useQuery({
+    queryKey: ["play-tracks", androidPackage],
+    queryFn: () => getPlayTracks(androidPackage!),
+    enabled: !!androidPackage,
+    staleTime: 30 * 60_000,
+  });
   const { data: ios } = useQuery({
     queryKey: ["appstore-installs", iosBundleId],
     queryFn: () => getAppStoreInstalls(iosBundleId!),
@@ -61,13 +72,14 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
   const dIos = ios?.data ?? null;
   const total = (dPlay?.descargas ?? 0) + (dIos?.descargas ?? 0);
   const mes30 = (dPlay?.descargas30d ?? 0) + (dIos?.descargasUltimoMes ?? 0);
+  const rangoPlay = !dPlay ? playTracks?.storeDownloads ?? null : null;
   const hayDato = !!dPlay || (!!dIos && !dIos.pendiente);
   // Sin dato PERO con algo que contar (un error de la tienda, o Apple todavía
   // generando el reporte), el chip se queda en pantalla con un guión: esconderlo
   // hacía que "no hay descargas" y "no se pudieron leer" se vieran igual, o sea
   // igual que no haber puesto nada.
   const pendiente = !hayDato && (!!play?.error || !!ios?.error || !!dIos?.pendiente);
-  if (!hayDato && !pendiente) return null;
+  if (!hayDato && !pendiente && !rangoPlay) return null;
 
   const show = () => {
     if (hideTimer.current) { window.clearTimeout(hideTimer.current); hideTimer.current = null; }
@@ -91,14 +103,16 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
       <span
         className={cn(
           "flex cursor-default items-center gap-1 rounded-md border px-1.5 py-1 font-mono transition-colors",
-          pendiente
+          !hayDato
             ? "border-dashed border-muted-foreground/40 text-muted-foreground"
             : "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-800/60 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/50",
         )}
-        aria-label={pendiente ? "Descargas: todavía sin dato" : `${exacto(total)} descargas`}
+        aria-label={
+          hayDato ? `${exacto(total)} descargas` : rangoPlay ? `${rangoPlay} descargas` : "Descargas: todavía sin dato"
+        }
       >
         <Download className="h-3 w-3 shrink-0 opacity-80" />
-        {pendiente ? "—" : compacto(total)}
+        {hayDato ? compacto(total) : rangoPlay ?? "—"}
       </span>
 
       {open && pos && createPortal(
@@ -110,7 +124,11 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
         >
           <p className="mb-1.5 flex items-center gap-1 font-semibold">
             <Download className={cn("h-3 w-3", pendiente ? "text-muted-foreground" : "text-violet-500")} />
-            {pendiente ? "Descargas: todavía sin dato" : `${exacto(total)} descargas`}
+            {hayDato
+              ? `${exacto(total)} descargas`
+              : rangoPlay
+                ? `${rangoPlay} descargas en Google Play`
+                : "Descargas: todavía sin dato"}
           </p>
 
           <div className="space-y-1 text-[11px]">
@@ -122,6 +140,13 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
               />
             )}
 
+            {/* De dónde sale el rango, para que no se lea como número exacto. */}
+            {!dPlay && rangoPlay && (
+              <p className="text-[10px] text-muted-foreground">
+                Es el rango que Play enseña en la ficha pública de la app. El número exacto sale de
+                los informes de Play Console, que todavía no se pueden leer.
+              </p>
+            )}
             {dPlay && (
               <div className="mt-1.5 border-t pt-1.5">
                 <p className="mb-1 flex items-center gap-1.5 font-medium">
