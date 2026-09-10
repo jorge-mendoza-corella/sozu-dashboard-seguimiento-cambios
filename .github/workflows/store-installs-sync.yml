@@ -70,3 +70,13 @@ jobs:
           # sus reportes. Usa el mismo service account, que está dado de alta
           # como Lector en la propiedad de Analytics.
           python ci/ga4_installs_sync.py
+
+          # Puente al Portal Alta Dirección (sozu-admin): la serie diaria que
+          # acaban de calcular los dos pasos anteriores se deja en Supabase,
+          # que es lo único que ese portal puede leer desde el navegador.
+          # Sin la llave de servicio el paso se salta solo y avisa: es un
+          # consumidor extra y no debe tumbar el sync de las tarjetas.
+          SUPABASE_URL="$(secret SUPABASE_URL)"
+          SUPABASE_SERVICE_ROLE_KEY="$(secret SUPABASE_SERVICE_ROLE_KEY)"
+          export SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY
+          python ci/supabase_installs_push.py
