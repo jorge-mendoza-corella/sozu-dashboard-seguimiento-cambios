@@ -37,8 +37,10 @@ export interface AppStoreInstalls {
   descargas: number;
   primeraVez: number;
   redescargas: number;
-  descargasUltimoMes: number;
-  ultimoMes: string;
+  /** Descargas de los últimos 30 días, sumadas de los reportes diarios. */
+  descargas30d: number;
+  /** Serie diaria de Apple: lo que ninguna otra fuente da sin tocar las apps. */
+  serie?: { fecha: string; descargas: number }[];
   desde: string;
   hasta: string;
   parcial?: boolean;

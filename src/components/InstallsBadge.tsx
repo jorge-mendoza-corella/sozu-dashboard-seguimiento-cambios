@@ -145,8 +145,15 @@ export function InstallsBadge({ androidPackage, iosBundleId, projectId }: Props)
   const dPlay = play?.data && !play.data.pendiente ? play.data : null;
   const dIos = ios?.data ?? null;
   const total = (dPlay?.descargas ?? 0) + (dIos?.descargas ?? 0);
-  const mes30 = (dPlay?.descargas30d ?? 0) + (dIos?.descargasUltimoMes ?? 0);
+  const mes30 = (dPlay?.descargas30d ?? 0) + (dIos?.descargas30d ?? 0);
   const dGa4 = ga4?.data && !ga4.data.pendiente ? ga4.data : null;
+  // De dónde salen las barras: GA4 trae las dos plataformas, y sin él queda la
+  // serie diaria de Apple, que es la única tienda que publica por día.
+  const serieDiaria: DiaInstalls[] | null = dGa4
+    ? ultimosDias(dGa4.dias, 21)
+    : dIos?.serie?.length
+      ? ultimosDias(dIos.serie.map((d) => ({ fecha: d.fecha, android: 0, ios: d.descargas })), 21)
+      : null;
   const rangoPlay = !dPlay ? playTracks?.storeDownloads ?? null : null;
   const hayDato = !!dPlay || (!!dIos && !dIos.pendiente);
   // Sin dato PERO con algo que contar (un error de la tienda, o Apple todavía
@@ -211,37 +218,36 @@ export function InstallsBadge({ androidPackage, iosBundleId, projectId }: Props)
               <Metrica
                 icon={<TrendingUp className="h-3 w-3" />}
                 valor={`+${exacto(mes30)}`}
-                title={
-                  dIos && !dPlay
-                    ? `Descargas nuevas en ${fechaCorta(dIos.ultimoMes)}`
-                    : "Descargas nuevas en los últimos 30 días"
-                }
+                title="Descargas nuevas en los últimos 30 días"
               />
             )}
 
-            {dGa4 && (
+            {serieDiaria && (
               <div className="mt-1.5 border-t pt-1.5">
                 <p className="mb-1 flex items-center justify-between gap-2 font-medium">
                   <span className="flex items-center gap-1.5">
                     <BarChart3 className="h-3 w-3 text-muted-foreground" /> Día a día
                   </span>
                   <span className="flex items-center gap-2 font-normal">
-                    <span className="flex items-center gap-1" title="Android (últimos 30 días)">
-                      <span className="h-2 w-2 rounded-sm bg-lime-500/80" />
-                      {exacto(dGa4.android30d)}
-                    </span>
+                    {dGa4 && (
+                      <span className="flex items-center gap-1" title="Android (últimos 30 días)">
+                        <span className="h-2 w-2 rounded-sm bg-lime-500/80" />
+                        {exacto(dGa4.android30d)}
+                      </span>
+                    )}
                     <span className="flex items-center gap-1" title="iOS (últimos 30 días)">
                       <span className="h-2 w-2 rounded-sm bg-sky-500/80" />
-                      {exacto(dGa4.ios30d)}
+                      {exacto(dGa4 ? dGa4.ios30d : dIos?.descargas30d ?? 0)}
                     </span>
                   </span>
                 </p>
-                <BarrasDiarias dias={ultimosDias(dGa4.dias, 21)} />
+                <BarrasDiarias dias={serieDiaria} />
                 {/* Se dice qué cuenta: no es la descarga en la tienda, es la
                     primera vez que alguien abre la app. */}
                 <p className="mt-1 text-[10px] text-muted-foreground">
-                  Primeras aperturas por día (últimas 3 semanas), medidas dentro de la app. No es
-                  lo mismo que la descarga en la tienda: quien baja y no abre no cuenta.
+                  {dGa4
+                    ? "Primeras aperturas por día (últimas 3 semanas), medidas dentro de la app. No es lo mismo que la descarga en la tienda: quien baja y no abre no cuenta."
+                    : "Descargas por día del App Store (últimas 3 semanas). Google Play no publica el día a día: su informe sale al cierre del mes."}
                 </p>
               </div>
             )}
