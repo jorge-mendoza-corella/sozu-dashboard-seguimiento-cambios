@@ -52,6 +52,12 @@ jobs:
           # Respaldos globales: cada proyecto puede traer su propia credencial.
           PLAY_SA_JSON="$(secret DASHBOARD_PLAY_SERVICE_ACCOUNT)"
           export PLAY_SA_JSON
+          # Respaldo para los informes de Play: Google no le abre el bucket al
+          # service account (403 aun con el permiso puesto y reinvitado), y esta
+          # credencial de usuario sí lo lee. Solo se usa si el service account falla.
+          PLAY_REPORTS_OAUTH="$(secret DASHBOARD_PLAY_REPORTS_OAUTH)"
+          export PLAY_REPORTS_OAUTH
+
           ASC_KEY_ID="$(secret DASHBOARD_ASC_KEY_ID)"
           ASC_ISSUER_ID="$(secret DASHBOARD_ASC_ISSUER_ID)"
           ASC_PRIVATE_KEY="$(secret DASHBOARD_ASC_PRIVATE_KEY)"

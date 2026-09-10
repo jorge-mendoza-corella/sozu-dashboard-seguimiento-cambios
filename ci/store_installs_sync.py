@@ -146,6 +146,46 @@ def write_doc(token: str, coleccion: str, doc_id: str, clave: str, project_id: s
 # (`gs://pubsite_prod_…`). De ahí se leen, que es lo mismo que hace quien baja
 # los informes a mano.
 
+def oauth_usuario_token() -> tuple[str | None, str | None]:
+    """(access token de la credencial de usuario de respaldo, error).
+
+    Google concede el acceso al bucket de informes a quien tiene el permiso en
+    Play Console… menos, por lo visto, a este service account: lleva días con
+    "View app information and download bulk reports" marcado y Cloud Storage
+    sigue contestando 403, incluso tras volver a invitarlo. La misma cuenta de
+    Play, desde un usuario humano, lo lee sin problema.
+
+    Así que el sync acepta unas credenciales OAuth de usuario como RESPALDO —el
+    JSON de `gcloud auth application-default login`, con scope de solo lectura
+    de Storage—. Se usan únicamente si el service account no puede listar el
+    bucket; el día que Google lo destrabe, el service account vuelve a mandar
+    sin tocar nada.
+    """
+    crudo = os.environ.get("PLAY_REPORTS_OAUTH", "").strip()
+    if not crudo:
+        return None, None
+    try:
+        creds = json.loads(crudo)
+    except json.JSONDecodeError:
+        return None, "PLAY_REPORTS_OAUTH no es un JSON válido."
+    faltan = [k for k in ("client_id", "client_secret", "refresh_token") if not creds.get(k)]
+    if faltan:
+        return None, f"A PLAY_REPORTS_OAUTH le falta {', '.join(faltan)}."
+    r = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "client_id": creds["client_id"],
+            "client_secret": creds["client_secret"],
+            "refresh_token": creds["refresh_token"],
+            "grant_type": "refresh_token",
+        },
+        timeout=30,
+    )
+    if r.status_code != 200:
+        return None, f"No se pudo renovar el token de respaldo: {r.status_code} {r.text[:200]}"
+    return r.json().get("access_token"), None
+
+
 def play_access_token(sa: dict) -> tuple[str | None, str | None]:
     """(token OAuth para leer el bucket de informes, error).
 
@@ -620,6 +660,17 @@ def sync_play(fs_token: str, app: dict, tokens: dict) -> None:
     print(f"· {pkg}: service account del {origen} ({email}), bucket del {origen_bucket}")
     previo = read_raw(fs_token, "playInstalls", pkg)
     payload, error = fetch_play_installs(token, pkg, normaliza_bucket(bucket), previo)
+
+    # El 403 sobre el bucket es el caso conocido: se reintenta con la credencial
+    # de usuario de respaldo antes de dar la app por perdida.
+    if error and "no puede leer el bucket" in error:
+        respaldo, fallo = oauth_usuario_token()
+        if fallo:
+            print(f"· {pkg}: respaldo OAuth no utilizable — {fallo}")
+        elif respaldo:
+            print(f"· {pkg}: el service account no ve el bucket; se reintenta con la credencial de respaldo")
+            payload, error = fetch_play_installs(respaldo, pkg, normaliza_bucket(bucket), previo)
+
     write_doc(fs_token, "playInstalls", pkg, "package", project_id, payload, error)
     if payload:
         print(
