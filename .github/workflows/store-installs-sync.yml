@@ -76,7 +76,12 @@ jobs:
           # que es lo único que ese portal puede leer desde el navegador.
           # Sin la llave de servicio el paso se salta solo y avisa: es un
           # consumidor extra y no debe tumbar el sync de las tarjetas.
-          SUPABASE_URL="$(secret SUPABASE_URL)"
-          SUPABASE_SERVICE_ROLE_KEY="$(secret SUPABASE_SERVICE_ROLE_KEY)"
+          # Secretos PROPIOS y no los `SUPABASE_*` que ya existían: esos son la
+          # config del front y apuntan a supabase-dev.sozu.com, así que el sync
+          # habría escrito en la base de dev mientras el portal lee la de
+          # producción — y nadie lo habría notado, porque el paso no falla.
+          # El nombre dice de quién es y a dónde apunta.
+          SUPABASE_URL="$(secret DASHBOARD_SUPABASE_URL)"
+          SUPABASE_SERVICE_ROLE_KEY="$(secret DASHBOARD_SUPABASE_SERVICE_ROLE_KEY)"
           export SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY
           python ci/supabase_installs_push.py

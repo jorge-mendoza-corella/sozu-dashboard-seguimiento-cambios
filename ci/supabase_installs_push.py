@@ -24,10 +24,15 @@ justo cuando deben ceder.
 
 Variables de entorno:
   FIRESTORE_TOKEN             access token de GCP para Firestore REST
-  SUPABASE_URL                https://<proyecto>.supabase.co
-  SUPABASE_SERVICE_ROLE_KEY   llave de servicio (salta RLS). Sin ella el script
-                              no hace nada y lo dice: es un extra, no debe
-                              tumbar el resto del sync.
+  SUPABASE_URL                base a la que escribir. El workflow la saca de
+                              `DASHBOARD_SUPABASE_URL`, un secreto propio: los
+                              `SUPABASE_*` que ya existían son la config del
+                              front y apuntan a la base de DEV, así que
+                              reusarlos habría escrito en el lado equivocado
+                              sin que nada fallara.
+  SUPABASE_SERVICE_ROLE_KEY   llave de servicio de ESA base (salta RLS). Sin
+                              ella el script no hace nada y lo dice: es un
+                              extra, no debe tumbar el resto del sync.
   GCP_PROJECT                 id del proyecto Firebase (default: sozu-admin-dev)
 """
 from __future__ import annotations
