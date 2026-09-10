@@ -68,7 +68,9 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
     staleTime: 30 * 60_000,
   });
 
-  const dPlay = play?.data ?? null;
+  // Con `pendiente` hay documento pero no números: Play aún no publica
+  // informes de esa app. Se trata como si no hubiera dato, no como error.
+  const dPlay = play?.data && !play.data.pendiente ? play.data : null;
   const dIos = ios?.data ?? null;
   const total = (dPlay?.descargas ?? 0) + (dIos?.descargas ?? 0);
   const mes30 = (dPlay?.descargas30d ?? 0) + (dIos?.descargasUltimoMes ?? 0);
@@ -103,7 +105,7 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
       <span
         className={cn(
           "flex cursor-default items-center gap-1 rounded-md border px-1.5 py-1 font-mono transition-colors",
-          !hayDato
+          !hayDato && !rangoPlay
             ? "border-dashed border-muted-foreground/40 text-muted-foreground"
             : "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-800/60 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/50",
         )}
@@ -144,7 +146,8 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
             {!dPlay && rangoPlay && (
               <p className="text-[10px] text-muted-foreground">
                 Es el rango que Play enseña en la ficha pública de la app. El número exacto sale de
-                los informes de Play Console, que todavía no se pueden leer.
+                los informes de Play Console, que se publican al cierre del mes siguiente al
+                lanzamiento{play?.data?.pendiente ? " — esta app todavía no tiene ninguno" : ""}.
               </p>
             )}
             {dPlay && (

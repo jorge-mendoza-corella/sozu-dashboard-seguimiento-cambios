@@ -331,11 +331,12 @@ def fetch_play_installs(token: str, pkg: str, bucket: str, previo: dict) -> tupl
     if error:
         return None, error
     if not nombres:
-        return None, (
-            f"El bucket '{bucket}' no tiene informes de instalaciones de '{pkg}'. Play los genera "
-            "cuando la app lleva al menos un mes publicada; revisa también que el package sea el "
-            "correcto."
-        )
+        # No es un fallo: Play publica el primer informe mensual el mes
+        # siguiente al lanzamiento, así que una app recién publicada no tiene
+        # ninguno. Decirlo como error hacía sospechar del package —que está
+        # bien, la ficha de esa app existe y hasta reporta descargas— y dejaba
+        # la tarjeta en rojo por algo que solo es esperar al corte del mes.
+        return {"pendiente": True}, None
 
     meses: dict[str, dict] = dict(previo.get("meses") or {})
     mes_actual = hoy().strftime("%Y-%m")
@@ -672,7 +673,9 @@ def sync_play(fs_token: str, app: dict, tokens: dict) -> None:
             payload, error = fetch_play_installs(respaldo, pkg, normaliza_bucket(bucket), previo)
 
     write_doc(fs_token, "playInstalls", pkg, "package", project_id, payload, error)
-    if payload:
+    if payload and payload.get("pendiente"):
+        print(f"· {pkg}: Play todavía no publica informes de esta app (el primero sale al cierre del mes).")
+    elif payload:
         print(
             f"✓ {pkg}: {payload['descargas']} descargas históricas "
             f"({payload['descargas30d']} en 30 días, {payload['activos']} instaladas hoy)"
