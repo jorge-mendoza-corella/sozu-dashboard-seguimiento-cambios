@@ -34,6 +34,11 @@ export interface PlayTracksDoc {
    * dispositivo").
    */
   storeVersion: string | null;
+  /**
+   * Rango de descargas que Play enseña en la ficha ("10+", "1 K+"). No es el
+   * número exacto de los informes, pero es lo único legible sin permisos.
+   */
+  storeDownloads: string | null;
   error: string | null;
 }
 
@@ -71,6 +76,7 @@ export async function getPlayTracks(pkg: string): Promise<PlayTracksDoc | null> 
     updatedAt?: { toDate?: () => Date };
     raw?: string;
     storeVersion?: string | null;
+    storeDownloads?: string | null;
     error?: string | null;
   };
   let tracks: PlayTrack[] = [];
@@ -84,6 +90,7 @@ export async function getPlayTracks(pkg: string): Promise<PlayTracksDoc | null> 
     updatedAt: d.updatedAt?.toDate ? d.updatedAt.toDate().toISOString() : null,
     tracks: tracks.sort((a, b) => trackMeta(a.track).order - trackMeta(b.track).order),
     storeVersion: d.storeVersion ?? null,
+    storeDownloads: d.storeDownloads ?? null,
     error: d.error ?? null,
   };
 }
