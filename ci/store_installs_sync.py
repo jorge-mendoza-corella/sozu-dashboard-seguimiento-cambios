@@ -51,8 +51,6 @@ MESES_PLAY = 3
 # Nombre del reporte de Apple con las descargas. Es el "estándar": el detallado
 # trae las mismas cuentas partidas en más dimensiones, y aquí solo se suman.
 ASC_REPORT = "App Downloads Standard"
-# Etiqueta con la que Apple identifica los pedidos de reporte de este dashboard.
-ASC_REQUEST_NAME = "sozu-dashboard-descargas"
 
 
 def fail(msg: str) -> None:
@@ -446,7 +444,12 @@ def asc_crear_pedido(token: str, app_id: str, tipo: str) -> str | None:
         json={
             "data": {
                 "type": "analyticsReportRequests",
-                "attributes": {"accessType": tipo, "name": ASC_REQUEST_NAME},
+                # Solo `accessType`: `analyticsReportRequests` no tiene campo
+                # `name`, y mandarlo hacía que Apple rechazara el pedido con un
+                # 409 —el mismo código que usa para "ya existe"—, así que el
+                # sync daba por hecho que el pedido estaba puesto y esperaba un
+                # reporte que nunca se le encargó.
+                "attributes": {"accessType": tipo},
                 "relationships": {"app": {"data": {"type": "apps", "id": app_id}}},
             }
         },
