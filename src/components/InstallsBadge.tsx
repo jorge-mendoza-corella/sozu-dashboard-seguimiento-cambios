@@ -3,15 +3,19 @@ import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   Download, Smartphone, Apple, TrendingUp, Users, Clock, AlertTriangle, Trash2, RotateCcw,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { getPlayTracks } from "@/lib/playTracks";
+import { getGa4Installs, ultimosDias, type DiaInstalls } from "@/lib/ga4Installs";
 import { compacto, exacto, fechaCorta, getAppStoreInstalls, getPlayInstalls } from "@/lib/storeInstalls";
 
 interface Props {
   androidPackage?: string;
   iosBundleId?: string;
+  /** Proyecto del dashboard: con él se leen las instalaciones diarias de GA4. */
+  projectId?: string;
 }
 
 /**
@@ -44,6 +48,53 @@ function Metrica({ icon, valor, title, tenue }: {
 }
 
 /**
+ * Instalaciones día a día, en barras apiladas: abajo Android, arriba iOS.
+ *
+ * Es lo único que responde "¿cuántas se bajaron ayer?", que es la pregunta que
+ * ninguna tienda contesta a tiempo —Play publica por mes cerrado— y por eso
+ * vive aquí aunque la fuente sea GA4 y no la tienda.
+ */
+function BarrasDiarias({ dias }: { dias: DiaInstalls[] }) {
+  const max = Math.max(1, ...dias.map((d) => d.android + d.ios));
+  return (
+    <div className="flex h-10 items-end gap-px">
+      {dias.map((d) => {
+        const total = d.android + d.ios;
+        const alto = total === 0 ? 2 : Math.max(3, Math.round((total / max) * 40));
+        const fecha = new Date(`${d.fecha}T12:00:00Z`).toLocaleDateString("es-MX", {
+          day: "numeric", month: "short", timeZone: "UTC",
+        });
+        return (
+          <span
+            key={d.fecha}
+            title={`${fecha}: ${total} (${d.android} Android · ${d.ios} iOS)`}
+            className="flex flex-1 cursor-help flex-col-reverse justify-start"
+            style={{ height: `${alto}px` }}
+          >
+            {/* Un día sin instalaciones deja una raya gris: sin ella, el hueco
+                se lee como "no hay dato" en vez de "ese día nadie la bajó". */}
+            {total === 0 ? (
+              <span className="h-[2px] w-full rounded-sm bg-muted-foreground/25" />
+            ) : (
+              <>
+                <span
+                  className="w-full rounded-b-sm bg-lime-500/80"
+                  style={{ flexGrow: d.android || 0.001 }}
+                />
+                <span
+                  className="w-full rounded-t-sm bg-sky-500/80"
+                  style={{ flexGrow: d.ios || 0.001 }}
+                />
+              </>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
  * Descargas acumuladas de la app, junto a las versiones: la versión dice QUÉ
  * hay publicado y este número, cuánta gente se lo llevó. Suma Play y App Store
  * en un solo chip —que es la pregunta de un vistazo— y deja el desglose por
@@ -52,7 +103,7 @@ function Metrica({ icon, valor, title, tenue }: {
  * Si ninguna tienda tiene dato, no se pinta nada: un "—" más en la fila de
  * versiones sería ruido sin información.
  */
-export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
+export function InstallsBadge({ androidPackage, iosBundleId, projectId }: Props) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const anchorRef = useRef<HTMLSpanElement>(null);
@@ -74,6 +125,14 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
     enabled: !!androidPackage,
     staleTime: 30 * 60_000,
   });
+  // Instalaciones diarias (GA4). Es la única fuente con día a día de las dos
+  // plataformas: las tiendas publican por mes cerrado o con un día de retraso.
+  const { data: ga4 } = useQuery({
+    queryKey: ["ga4-installs", projectId],
+    queryFn: () => getGa4Installs(projectId!),
+    enabled: !!projectId,
+    staleTime: 30 * 60_000,
+  });
   const { data: ios } = useQuery({
     queryKey: ["appstore-installs", iosBundleId],
     queryFn: () => getAppStoreInstalls(iosBundleId!),
@@ -87,6 +146,7 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
   const dIos = ios?.data ?? null;
   const total = (dPlay?.descargas ?? 0) + (dIos?.descargas ?? 0);
   const mes30 = (dPlay?.descargas30d ?? 0) + (dIos?.descargasUltimoMes ?? 0);
+  const dGa4 = ga4?.data && !ga4.data.pendiente ? ga4.data : null;
   const rangoPlay = !dPlay ? playTracks?.storeDownloads ?? null : null;
   const hayDato = !!dPlay || (!!dIos && !dIos.pendiente);
   // Sin dato PERO con algo que contar (un error de la tienda, o Apple todavía
@@ -94,7 +154,7 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
   // hacía que "no hay descargas" y "no se pudieron leer" se vieran igual, o sea
   // igual que no haber puesto nada.
   const pendiente = !hayDato && (!!play?.error || !!ios?.error || !!dIos?.pendiente);
-  if (!hayDato && !pendiente && !rangoPlay) return null;
+  if (!hayDato && !pendiente && !rangoPlay && !dGa4) return null;
 
   const show = () => {
     if (hideTimer.current) { window.clearTimeout(hideTimer.current); hideTimer.current = null; }
@@ -133,7 +193,7 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
       {open && pos && createPortal(
         <div
           style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999 }}
-          className="w-64 rounded-lg border bg-background p-2.5 text-xs shadow-xl"
+          className="w-72 rounded-lg border bg-background p-2.5 text-xs shadow-xl"
           onMouseEnter={show}
           onMouseLeave={hide}
         >
@@ -157,6 +217,33 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
                     : "Descargas nuevas en los últimos 30 días"
                 }
               />
+            )}
+
+            {dGa4 && (
+              <div className="mt-1.5 border-t pt-1.5">
+                <p className="mb-1 flex items-center justify-between gap-2 font-medium">
+                  <span className="flex items-center gap-1.5">
+                    <BarChart3 className="h-3 w-3 text-muted-foreground" /> Día a día
+                  </span>
+                  <span className="flex items-center gap-2 font-normal">
+                    <span className="flex items-center gap-1" title="Android (últimos 30 días)">
+                      <span className="h-2 w-2 rounded-sm bg-lime-500/80" />
+                      {exacto(dGa4.android30d)}
+                    </span>
+                    <span className="flex items-center gap-1" title="iOS (últimos 30 días)">
+                      <span className="h-2 w-2 rounded-sm bg-sky-500/80" />
+                      {exacto(dGa4.ios30d)}
+                    </span>
+                  </span>
+                </p>
+                <BarrasDiarias dias={ultimosDias(dGa4.dias, 21)} />
+                {/* Se dice qué cuenta: no es la descarga en la tienda, es la
+                    primera vez que alguien abre la app. */}
+                <p className="mt-1 text-[10px] text-muted-foreground">
+                  Primeras aperturas por día (últimas 3 semanas), medidas dentro de la app. No es
+                  lo mismo que la descarga en la tienda: quien baja y no abre no cuenta.
+                </p>
+              </div>
             )}
 
             {/* De dónde sale el rango, para que no se lea como número exacto. */}

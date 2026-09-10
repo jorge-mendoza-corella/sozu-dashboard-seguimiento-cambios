@@ -17,6 +17,8 @@ interface Props {
   androidPackage?: string;
   /** Solo apps: bundle id de iOS, para la versión a la venta en el App Store. */
   iosBundleId?: string;
+  /** Proyecto del dashboard, para las instalaciones diarias de GA4. */
+  projectId?: string;
 }
 
 /**
@@ -44,7 +46,7 @@ function EnRevision({ version }: { version: string }) {
  * sirviendo. En las apps se añaden las versiones publicadas en las tiendas, para
  * ver de un golpe si la web va por delante de lo que tiene la gente instalado.
  */
-export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundleId }: Props) {
+export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundleId, projectId }: Props) {
   const [copiado, setCopiado] = useState(false);
 
   const { data: play } = useQuery({
@@ -195,7 +197,7 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
             </span>
           )}
           {/* Cuánta gente se llevó lo que dicen esas versiones. */}
-          <InstallsBadge androidPackage={androidPackage} iosBundleId={iosBundleId} />
+          <InstallsBadge androidPackage={androidPackage} iosBundleId={iosBundleId} projectId={projectId} />
         </>
       )}
     </div>
