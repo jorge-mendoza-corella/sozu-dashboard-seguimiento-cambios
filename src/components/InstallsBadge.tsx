@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Download, Smartphone, Apple, TrendingUp, Users, Clock, AlertTriangle } from "lucide-react";
+import {
+  Download, Smartphone, Apple, TrendingUp, Users, Clock, AlertTriangle, Trash2, RotateCcw,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { getPlayTracks } from "@/lib/playTracks";
@@ -12,21 +14,32 @@ interface Props {
   iosBundleId?: string;
 }
 
-/** Fila del tooltip: icono, etiqueta y número alineado a la derecha. */
-function Fila({ icon, label, valor, tenue }: {
-  icon?: React.ReactNode;
-  label: string;
+/**
+ * Una métrica del tooltip: icono y número, sin la palabra.
+ *
+ * Con las etiquetas escritas, cuatro renglones de texto competían por leerse y
+ * la diferencia importante —descargas contra dispositivos con la app hoy— se
+ * perdía entre palabras parecidas. El icono la dice sin leer, y el título
+ * explica qué cuenta cada número, que es lo que de verdad se pregunta: por qué
+ * "instaladas hoy" puede ser mayor que las descargas.
+ */
+function Metrica({ icon, valor, title, tenue }: {
+  icon: React.ReactNode;
   valor: string;
+  title: string;
   tenue?: boolean;
 }) {
   return (
-    <p className="flex items-center justify-between gap-3">
-      <span className="flex items-center gap-1.5 text-muted-foreground">
-        {icon}
-        {label}
-      </span>
-      <span className={tenue ? "font-mono text-muted-foreground" : "font-mono font-semibold"}>{valor}</span>
-    </p>
+    <span
+      title={title}
+      className={cn(
+        "flex cursor-help items-center gap-1 rounded px-1 py-0.5",
+        tenue ? "text-muted-foreground" : "text-foreground",
+      )}
+    >
+      {icon}
+      <span className="font-mono font-semibold">{valor}</span>
+    </span>
   );
 }
 
@@ -135,10 +148,14 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
 
           <div className="space-y-1 text-[11px]">
             {mes30 > 0 && (
-              <Fila
+              <Metrica
                 icon={<TrendingUp className="h-3 w-3" />}
-                label={dIos && !dPlay ? `en ${fechaCorta(dIos.ultimoMes)}` : "últimos 30 días"}
                 valor={`+${exacto(mes30)}`}
+                title={
+                  dIos && !dPlay
+                    ? `Descargas nuevas en ${fechaCorta(dIos.ultimoMes)}`
+                    : "Descargas nuevas en los últimos 30 días"
+                }
               />
             )}
 
@@ -155,15 +172,24 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
                 <p className="mb-1 flex items-center gap-1.5 font-medium">
                   <Smartphone className="h-3 w-3 text-muted-foreground" /> Google Play
                 </p>
-                <Fila label="descargas" valor={exacto(dPlay.descargas)} />
-                <Fila
-                  icon={<Users className="h-3 w-3" />}
-                  label="instaladas hoy"
-                  valor={exacto(dPlay.activos)}
-                />
-                {/* Sin las desinstalaciones, "descargas" se lee como usuarios
-                    que la tienen, y suele haber bastante diferencia. */}
-                <Fila label="desinstalaciones" valor={exacto(dPlay.desinstalaciones)} tenue />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Metrica
+                    icon={<Download className="h-3 w-3" />}
+                    valor={exacto(dPlay.descargas)}
+                    title="Descargas: usuarios distintos que instalaron la app por primera vez. Se cuenta por cuenta de Google, no por aparato."
+                  />
+                  <Metrica
+                    icon={<Users className="h-3 w-3" />}
+                    valor={exacto(dPlay.activos)}
+                    title="Aparatos que tienen la app instalada hoy. Puede ser MAYOR que las descargas: cada usuario cuenta una vez al descargar, pero aporta un aparato por cada teléfono, tablet o emulador donde la instale — testers incluidos."
+                  />
+                  <Metrica
+                    icon={<Trash2 className="h-3 w-3" />}
+                    valor={exacto(dPlay.desinstalaciones)}
+                    title="Desinstalaciones contadas en el rango leído."
+                    tenue
+                  />
+                </div>
                 <p className="mt-0.5 text-[10px] text-muted-foreground">
                   {dPlay.historico
                     ? `total histórico · desglose desde ${fechaCorta(dPlay.desde)}`
@@ -177,8 +203,19 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
                 <p className="mb-1 flex items-center gap-1.5 font-medium">
                   <Apple className="h-3 w-3 text-muted-foreground" /> App Store
                 </p>
-                <Fila label="primera vez" valor={exacto(dIos.primeraVez)} />
-                <Fila label="redescargas" valor={exacto(dIos.redescargas)} tenue />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Metrica
+                    icon={<Download className="h-3 w-3" />}
+                    valor={exacto(dIos.primeraVez)}
+                    title="Descargas de primera vez: aparatos que no tenían la app antes."
+                  />
+                  <Metrica
+                    icon={<RotateCcw className="h-3 w-3" />}
+                    valor={exacto(dIos.redescargas)}
+                    title="Redescargas: alguien que ya la había tenido y la vuelve a bajar."
+                    tenue
+                  />
+                </div>
                 <p className="mt-0.5 text-[10px] text-muted-foreground">
                   contadas desde {fechaCorta(dIos.desde)}
                 </p>
