@@ -453,13 +453,18 @@ def asc_crear_pedido(token: str, app_id: str, tipo: str) -> str | None:
         timeout=30,
     )
     if r.status_code in (200, 201):
+        print(f"· pedido de reporte {tipo} creado en Apple")
         return None
     try:
-        detalle = r.json()["errors"][0].get("detail", r.text[:200])
+        detalle = r.json()["errors"][0].get("detail", r.text[:300])
     except Exception:
-        detalle = r.text[:200]
-    # 409 = ya existe un pedido de ese tipo: no es un problema.
+        detalle = r.text[:300]
+    # 409 = ya existe un pedido de ese tipo: no es un problema, pero se dice.
+    # Callarlo hacía que "ya existe" y "Apple lo rechazó" se vieran igual —o
+    # sea, no se vieran—, y el sync llevaba dos días diciendo que Apple estaba
+    # generando un reporte que nunca se le llegó a pedir.
     if r.status_code == 409:
+        print(f"· pedido de reporte {tipo}: Apple dice que ya existe ({detalle})")
         return None
     return f"No se pudo pedir el reporte de descargas ({tipo}): {r.status_code} {detalle}"
 
