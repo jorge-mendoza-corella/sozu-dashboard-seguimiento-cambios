@@ -19,6 +19,8 @@ interface Props {
   iosBundleId?: string;
   /** Proyecto del dashboard, para las instalaciones diarias de GA4. */
   projectId?: string;
+  /** Descargas leídas a mano de las consolas, como piso del número. */
+  installsManual?: { android?: number; ios?: number; fecha?: string };
 }
 
 /**
@@ -46,7 +48,7 @@ function EnRevision({ version }: { version: string }) {
  * sirviendo. En las apps se añaden las versiones publicadas en las tiendas, para
  * ver de un golpe si la web va por delante de lo que tiene la gente instalado.
  */
-export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundleId, projectId }: Props) {
+export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundleId, projectId, installsManual }: Props) {
   const [copiado, setCopiado] = useState(false);
 
   const { data: play } = useQuery({
@@ -197,7 +199,12 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
             </span>
           )}
           {/* Cuánta gente se llevó lo que dicen esas versiones. */}
-          <InstallsBadge androidPackage={androidPackage} iosBundleId={iosBundleId} projectId={projectId} />
+          <InstallsBadge
+            androidPackage={androidPackage}
+            iosBundleId={iosBundleId}
+            projectId={projectId}
+            installsManual={installsManual}
+          />
         </>
       )}
     </div>

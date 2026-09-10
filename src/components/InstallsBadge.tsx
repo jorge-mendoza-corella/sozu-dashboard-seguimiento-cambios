@@ -16,6 +16,8 @@ interface Props {
   iosBundleId?: string;
   /** Proyecto del dashboard: con él se leen las instalaciones diarias de GA4. */
   projectId?: string;
+  /** Descargas leídas a mano de las consolas, como piso del número. */
+  installsManual?: { android?: number; ios?: number; fecha?: string };
 }
 
 /**
@@ -103,7 +105,7 @@ function BarrasDiarias({ dias }: { dias: DiaInstalls[] }) {
  * Si ninguna tienda tiene dato, no se pinta nada: un "—" más en la fila de
  * versiones sería ruido sin información.
  */
-export function InstallsBadge({ androidPackage, iosBundleId, projectId }: Props) {
+export function InstallsBadge({ androidPackage, iosBundleId, projectId, installsManual }: Props) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const anchorRef = useRef<HTMLSpanElement>(null);
@@ -144,7 +146,16 @@ export function InstallsBadge({ androidPackage, iosBundleId, projectId }: Props)
   // informes de esa app. Se trata como si no hubiera dato, no como error.
   const dPlay = play?.data && !play.data.pendiente ? play.data : null;
   const dIos = ios?.data ?? null;
-  const total = (dPlay?.descargas ?? 0) + (dIos?.descargas ?? 0);
+  // Por plataforma gana el número más alto entre lo automático y lo leído a
+  // mano en la consola: las fuentes automáticas van por detrás —Play publica
+  // por mes cerrado— y enseñar 10 cuando la consola dice 17 es contradecir a
+  // la fuente oficial. Nunca se suman: serían los mismos usuarios dos veces.
+  const androidTotal = Math.max(dPlay?.descargas ?? 0, installsManual?.android ?? 0);
+  const iosTotal = Math.max(dIos?.descargas ?? 0, installsManual?.ios ?? 0);
+  const total = androidTotal + iosTotal;
+  const usaManual =
+    (installsManual?.android ?? 0) > (dPlay?.descargas ?? 0) ||
+    (installsManual?.ios ?? 0) > (dIos?.descargas ?? 0);
   const mes30 = (dPlay?.descargas30d ?? 0) + (dIos?.descargas30d ?? 0);
   const dGa4 = ga4?.data && !ga4.data.pendiente ? ga4.data : null;
   // De dónde salen las barras: GA4 trae las dos plataformas, y sin él queda la
@@ -155,7 +166,7 @@ export function InstallsBadge({ androidPackage, iosBundleId, projectId }: Props)
       ? ultimosDias(dIos.serie.map((d) => ({ fecha: d.fecha, android: 0, ios: d.descargas })), 21)
       : null;
   const rangoPlay = !dPlay ? playTracks?.storeDownloads ?? null : null;
-  const hayDato = !!dPlay || (!!dIos && !dIos.pendiente);
+  const hayDato = !!dPlay || (!!dIos && !dIos.pendiente) || total > 0;
   // Sin dato PERO con algo que contar (un error de la tienda, o Apple todavía
   // generando el reporte), el chip se queda en pantalla con un guión: esconderlo
   // hacía que "no hay descargas" y "no se pudieron leer" se vieran igual, o sea
@@ -250,6 +261,16 @@ export function InstallsBadge({ androidPackage, iosBundleId, projectId }: Props)
                     : "Descargas por día del App Store (últimas 3 semanas). Google Play no publica el día a día: su informe sale al cierre del mes."}
                 </p>
               </div>
+            )}
+
+            {usaManual && (
+              <p className="mt-1.5 border-t pt-1.5 text-[10px] text-muted-foreground">
+                Incluye lo leído a mano en las consolas
+                {installsManual?.fecha ? ` el ${fechaCorta(installsManual.fecha)}` : ""}
+                {installsManual?.android ? ` · Play ${exacto(installsManual.android)}` : ""}
+                {installsManual?.ios ? ` · App Store ${exacto(installsManual.ios)}` : ""}. Se usa
+                mientras el dato automático va por detrás; en cuanto lo supera, manda el automático.
+              </p>
             )}
 
             {/* De dónde sale el rango, para que no se lea como número exacto. */}
