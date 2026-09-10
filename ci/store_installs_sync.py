@@ -482,11 +482,13 @@ def asc_instancias(token: str, request_id: str) -> tuple[list[dict], str | None]
         return [], err
     salida: list[dict] = []
     for rep in reportes.get("data", []):
-        # Mensual: un reporte diario de dos años son cientos de descargas para
-        # un número que solo se mira sumado.
+        # Diario, no mensual. El mensual bastaba para un total, pero la pregunta
+        # que ninguna tienda contesta a tiempo es "¿cuántas se bajaron ayer?", y
+        # Apple sí la responde a este nivel. Cada instancia ya bajada se guarda,
+        # así que la corrida diaria solo trae la del día nuevo.
         inst, err = asc_get(
             token, f"analyticsReports/{rep['id']}/instances",
-            {"filter[granularity]": "MONTHLY", "limit": 200},
+            {"filter[granularity]": "DAILY", "limit": 200},
         )
         if err:
             return [], err
@@ -589,18 +591,18 @@ def fetch_appstore_installs(token: str, bundle: str, previo: dict) -> tuple[dict
         # antes, se conserva ese total en vez de borrarlo.
         return (previo or {"pendiente": True}), None
 
-    # Meses ya sumados en la corrida anterior: solo se vuelven a bajar el mes en
-    # curso y el anterior (Apple los sigue corrigiendo unos días).
-    meses: dict[str, dict] = dict(previo.get("meses") or {})
-    mes_actual = hoy().strftime("%Y-%m")
-    mes_previo = (hoy().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+    # Días ya sumados en corridas anteriores: solo se vuelven a bajar los tres
+    # más recientes, que Apple sigue corrigiendo. El resto se conserva tal cual
+    # para no bajar un año de reportes cada mañana.
+    dias: dict[str, dict] = dict(previo.get("dias") or {})
+    frescos = {(hoy() - timedelta(days=i)).isoformat() for i in range(3)}
 
     for inst in instancias:
         attrs = inst.get("attributes") or {}
-        periodo = (attrs.get("processingDate") or "")[:7]
-        if not periodo:
+        fecha = (attrs.get("processingDate") or "")[:10]
+        if not fecha:
             continue
-        if periodo in meses and periodo not in (mes_actual, mes_previo):
+        if fecha in dias and fecha not in frescos:
             continue
         textos, err = asc_descargar_segmentos(token, inst["id"])
         if err:
@@ -610,24 +612,30 @@ def fetch_appstore_installs(token: str, bundle: str, previo: dict) -> tuple[dict
             parcial = sumar_descargas(t)
             for k in acumulado:
                 acumulado[k] += parcial[k]
-        meses[periodo] = acumulado
+        dias[fecha] = acumulado
 
-    if not meses:
+    if not dias:
         return {"pendiente": True}, None
 
-    ordenados = sorted(meses)
-    primera = sum(m["primera"] for m in meses.values())
-    redes = sum(m["redescarga"] for m in meses.values())
-    ultimo = meses[ordenados[-1]]
+    ordenados = sorted(dias)
+    primera = sum(d["primera"] for d in dias.values())
+    redes = sum(d["redescarga"] for d in dias.values())
+    corte30 = (hoy() - timedelta(days=30)).isoformat()
+    recientes = [d for f, d in dias.items() if f >= corte30]
     return {
         "descargas": primera + redes,
         "primeraVez": primera,
         "redescargas": redes,
-        "descargasUltimoMes": ultimo["primera"] + ultimo["redescarga"],
-        "ultimoMes": ordenados[-1],
+        "descargas30d": sum(d["primera"] + d["redescarga"] for d in recientes),
+        # La serie diaria, para pintar el día a día de iOS aunque las apps
+        # todavía no manden nada a Analytics.
+        "serie": [
+            {"fecha": f, "descargas": dias[f]["primera"] + dias[f]["redescarga"]}
+            for f in ordenados
+        ],
         "desde": ordenados[0],
         "hasta": ordenados[-1],
-        "meses": meses,
+        "dias": dias,
         "parcial": True,
         "pendiente": False,
     }, None
