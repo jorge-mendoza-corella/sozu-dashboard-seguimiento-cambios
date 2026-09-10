@@ -26,6 +26,11 @@ export interface PlayInstalls {
   hasta: string;
   /** El total sí cubre toda la vida de la app. */
   historico?: boolean;
+  /**
+   * Play todavía no publica informes de esta app: los saca al cierre del mes
+   * siguiente al lanzamiento. No es un error, solo no hay números finos aún.
+   */
+  pendiente?: boolean;
 }
 
 export interface AppStoreInstalls {
