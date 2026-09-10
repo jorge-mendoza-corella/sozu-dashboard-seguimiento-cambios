@@ -558,12 +558,23 @@ def fetch_appstore_installs(token: str, bundle: str, previo: dict) -> tuple[dict
             return None, err
 
     usables = [p for p in pedidos if not (p.get("attributes") or {}).get("stoppedDueToInactivity")]
+    # Sin esto, "Apple está generando el reporte" era indistinguible de "el
+    # pedido nunca se creó" o de "Apple lo paró por inactividad", que son tres
+    # esperas muy distintas: una se resuelve sola y las otras dos no.
+    resumen = ", ".join(
+        f"{(p.get('attributes') or {}).get('accessType', '?')}"
+        + (" (parado por inactividad)" if (p.get("attributes") or {}).get("stoppedDueToInactivity") else "")
+        for p in pedidos
+    ) or "ninguno"
+    print(f"· {bundle}: pedidos de reporte en Apple: {resumen}")
+
     instancias: list[dict] = []
     for p in usables:
         inst, err = asc_instancias(token, p["id"])
         if err:
             return None, err
         instancias.extend(inst)
+    print(f"· {bundle}: instancias mensuales listas: {len(instancias)}")
 
     if not instancias:
         # Sin instancias no hay nada nuevo que sumar; si ya se había contado
