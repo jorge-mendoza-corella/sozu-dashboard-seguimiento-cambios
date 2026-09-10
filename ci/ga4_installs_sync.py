@@ -211,6 +211,39 @@ def serie_diaria(filas: list[dict], streams: dict) -> list[dict]:
     return [dias[k] for k in sorted(dias)]
 
 
+def diagnostico(token: str, prop: str, desde: str, hasta: str) -> None:
+    """Qué está recibiendo esa propiedad, cuando no hay ninguna `first_open`.
+
+    Sin esto, "GA4 no reporta nada" tapa tres casos muy distintos: que la app
+    no lleve el SDK de Analytics, que los streams configurados no sean los que
+    reportan, o que sí haya datos pero con otro nombre de evento.
+    """
+    r = requests.post(
+        f"{GA4_BASE}/properties/{prop}:runReport",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json={
+            "dateRanges": [{"startDate": desde, "endDate": hasta}],
+            "dimensions": [{"name": "streamId"}, {"name": "eventName"}],
+            "metrics": [{"name": "eventCount"}],
+            "orderBys": [{"metric": {"metricName": "eventCount"}, "desc": True}],
+            "limit": 15,
+        },
+        timeout=60,
+    )
+    if r.status_code != 200:
+        print(f"  · el diagnóstico tampoco pudo leer GA4: {r.status_code} {r.text[:200]}")
+        return
+    filas = r.json().get("rows", [])
+    if not filas:
+        print("  · la propiedad no registró NINGÚN evento en el rango: las apps no están mandando datos a GA4.")
+        return
+    print("  · eventos que sí llegan a esta propiedad:")
+    for fila in filas:
+        dims = [d.get("value") for d in fila.get("dimensionValues", [])]
+        val = (fila.get("metricValues") or [{}])[0].get("value")
+        print(f"    stream {dims[0]} · {dims[1]}: {val}")
+
+
 def main() -> None:
     fs_token = os.environ.get("FIRESTORE_TOKEN", "").strip()
     if not fs_token:
@@ -238,6 +271,8 @@ def main() -> None:
         if not dias:
             write_doc(fs_token, app["projectId"], {"pendiente": True}, None)
             print(f"· {app['projectId']}: GA4 todavía no reporta ninguna primera apertura.")
+            print(f"  · streams configurados: {app['streams']}")
+            diagnostico(token, app["property"], desde.isoformat(), hasta.isoformat())
             continue
 
         corte30 = (hasta - timedelta(days=30)).isoformat()
