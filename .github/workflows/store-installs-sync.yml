@@ -64,3 +64,9 @@ jobs:
           export ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY
 
           python ci/store_installs_sync.py
+
+          # Instalaciones DIARIAS desde GA4 (`first_open`). Las tiendas no las
+          # dan: Play publica por mes cerrado y Apple tarda un día en generar
+          # sus reportes. Usa el mismo service account, que está dado de alta
+          # como Lector en la propiedad de Analytics.
+          python ci/ga4_installs_sync.py

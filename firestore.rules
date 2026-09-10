@@ -213,6 +213,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Instalaciones diarias por plataforma, leídas de GA4 (`first_open`).
+    // Mismo origen: las escribe el sync diario, el dashboard solo las lee.
+    match /ga4Installs/{projectId} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if false;
+    }
+
     // Descargas acumuladas de cada app (Play Developer Reporting API y
     // Analytics Reports de App Store Connect). Mismo origen: las escribe el
     // sync diario, el dashboard solo las lee.

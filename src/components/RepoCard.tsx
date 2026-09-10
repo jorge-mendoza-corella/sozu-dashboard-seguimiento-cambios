@@ -71,6 +71,8 @@ interface Props {
   /** Solo proyectos app: paquete Android y bundle iOS, para las versiones de tienda. */
   androidPackage?: string;
   iosBundleId?: string;
+  /** Proyecto del dashboard, para las instalaciones diarias de GA4. */
+  projectId?: string;
   /** Login de GitHub del usuario logueado — para el permiso "ver cambios de otros". */
   selfLogin?: string | null;
   /** Logins seleccionables como autor extra al crear PR (configurados por proyecto). */
@@ -88,7 +90,7 @@ interface Props {
   avisos?: AvisosDelProyecto;
 }
 
-export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontUrl, frontVersion = null, androidPackage, iosBundleId, renamedTo = null, avisos }: Props) {
+export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontUrl, frontVersion = null, androidPackage, iosBundleId, projectId, renamedTo = null, avisos }: Props) {
   // Sin el permiso viewOthers el usuario solo ve SUS ramas y PRs
   // (main/dev siempre visibles: son estado compartido del repo).
   const canViewOthers = perms.viewOthers || !selfLogin;
@@ -427,6 +429,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
               frontVersion={frontVersion}
               androidPackage={androidPackage}
               iosBundleId={iosBundleId}
+              projectId={projectId}
             />
           </div>
         )}

@@ -28,6 +28,8 @@ interface Props {
   avisos?: AvisosDelProyecto;
   /** Proyecto app: identificadores de tienda, para las versiones publicadas. */
   androidPackage?: string;
+  /** Proyecto del dashboard: con él se leen las instalaciones diarias de GA4. */
+  projectId?: string;
   iosBundleId?: string;
   onRefetch: () => void;
   onReorder: (ids: string[]) => void;
@@ -35,7 +37,7 @@ interface Props {
 
 const keyOf = (r: MonitoredRepo) => `${r.owner}/${r.repo}`;
 
-export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontVersions = {}, renames, avisos, androidPackage, iosBundleId, onRefetch, onReorder }: Props) {
+export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontVersions = {}, renames, avisos, androidPackage, iosBundleId, projectId, onRefetch, onReorder }: Props) {
   const [items, setItems] = useState<MonitoredRepo[]>(repos);
   const dragFrom = useRef<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -108,6 +110,7 @@ export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canRe
               // Las tiendas solo aplican al repo que publica el front de la app.
               androidPackage={r.frontUrl ? androidPackage : undefined}
               iosBundleId={r.frontUrl ? iosBundleId : undefined}
+              projectId={r.frontUrl ? projectId : undefined}
             />
           </div>
         );
