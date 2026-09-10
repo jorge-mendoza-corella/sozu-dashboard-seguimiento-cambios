@@ -4,7 +4,7 @@ import { RepoCard, RepoCardSkeleton } from "@/components/RepoCard";
 import { cn } from "@/lib/utils";
 import type { RepoStatus, ApproverAuth } from "@/lib/github";
 import type { FrontVersion } from "@/lib/frontVersions";
-import type { MonitoredRepo } from "@/lib/firestoreProjects";
+import type { MonitoredRepo, Project } from "@/lib/firestoreProjects";
 import type { CicdPermissions } from "@/lib/firestoreUsers";
 
 import type { AvisosDelProyecto } from "@/hooks/useAvisos";
@@ -30,6 +30,8 @@ interface Props {
   androidPackage?: string;
   /** Proyecto del dashboard: con él se leen las instalaciones diarias de GA4. */
   projectId?: string;
+  /** Descargas leídas a mano de las consolas, como piso del número. */
+  installsManual?: Project["installsManual"];
   iosBundleId?: string;
   onRefetch: () => void;
   onReorder: (ids: string[]) => void;
@@ -37,7 +39,7 @@ interface Props {
 
 const keyOf = (r: MonitoredRepo) => `${r.owner}/${r.repo}`;
 
-export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontVersions = {}, renames, avisos, androidPackage, iosBundleId, projectId, onRefetch, onReorder }: Props) {
+export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontVersions = {}, renames, avisos, androidPackage, iosBundleId, projectId, installsManual, onRefetch, onReorder }: Props) {
   const [items, setItems] = useState<MonitoredRepo[]>(repos);
   const dragFrom = useRef<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -111,6 +113,7 @@ export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canRe
               androidPackage={r.frontUrl ? androidPackage : undefined}
               iosBundleId={r.frontUrl ? iosBundleId : undefined}
               projectId={r.frontUrl ? projectId : undefined}
+              installsManual={r.frontUrl ? installsManual : undefined}
             />
           </div>
         );

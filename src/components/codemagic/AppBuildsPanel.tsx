@@ -32,6 +32,7 @@ import type { CicdPermissions } from "@/lib/firestoreUsers";
 import { setProjectTesters, setProjectTestLinks, type Project } from "@/lib/firestoreProjects";
 import { PlayTracksCard } from "./PlayTracksCard";
 import { AppStoreStatusCard } from "./AppStoreStatusCard";
+import { InstallsManualCard } from "./InstallsManualCard";
 import { getPlayTracks, triggerPlayTracksSync } from "@/lib/playTracks";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 
@@ -1694,6 +1695,10 @@ export function AppBuildsPanel({ appId, perms, project }: {
         {/* Estado en las tiendas (lo alimenta el workflow programado) */}
         {project?.androidPackage && <PlayTracksCard project={project} canRefresh={perms.buildApp} />}
         {project?.iosBundleId && <AppStoreStatusCard project={project} />}
+        {/* Solo el root: es un número que se enseña en la tarjeta de todos. */}
+        {isRoot && project && appUser?.email && (
+          <InstallsManualCard project={project} email={appUser.email} />
+        )}
 
         {/* Testers y canales de prueba: solo en modo avanzado */}
         {project && !simple && (

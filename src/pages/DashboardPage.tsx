@@ -633,6 +633,7 @@ export function DashboardPage() {
                         androidPackage={p.isApp ? p.androidPackage : undefined}
                         iosBundleId={p.isApp ? p.iosBundleId : undefined}
                         projectId={p.id}
+                        installsManual={p.isApp ? p.installsManual : undefined}
                         onRefetch={() => refetch()}
                         onReorder={handleReorder}
                       />

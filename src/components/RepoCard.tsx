@@ -8,6 +8,7 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import type { Project } from "@/lib/firestoreProjects";
 import { BranchRow } from "./BranchRow";
 import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
@@ -73,6 +74,8 @@ interface Props {
   iosBundleId?: string;
   /** Proyecto del dashboard, para las instalaciones diarias de GA4. */
   projectId?: string;
+  /** Descargas leídas a mano de las consolas, como piso del número. */
+  installsManual?: Project["installsManual"];
   /** Login de GitHub del usuario logueado — para el permiso "ver cambios de otros". */
   selfLogin?: string | null;
   /** Logins seleccionables como autor extra al crear PR (configurados por proyecto). */
@@ -90,7 +93,7 @@ interface Props {
   avisos?: AvisosDelProyecto;
 }
 
-export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontUrl, frontVersion = null, androidPackage, iosBundleId, projectId, renamedTo = null, avisos }: Props) {
+export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontUrl, frontVersion = null, androidPackage, iosBundleId, projectId, installsManual, renamedTo = null, avisos }: Props) {
   // Sin el permiso viewOthers el usuario solo ve SUS ramas y PRs
   // (main/dev siempre visibles: son estado compartido del repo).
   const canViewOthers = perms.viewOthers || !selfLogin;
@@ -430,6 +433,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
               androidPackage={androidPackage}
               iosBundleId={iosBundleId}
               projectId={projectId}
+              installsManual={installsManual}
             />
           </div>
         )}

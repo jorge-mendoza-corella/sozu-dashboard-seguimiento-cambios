@@ -42,6 +42,26 @@ export interface Project {
   // "simple" (default): construir y publicar directo en la tienda, en un clic.
   // "avanzado": flujo por etapas (Play interno / TestFlight → tienda) + testers.
   deployMode?: "simple" | "avanzado";
+  /**
+   * Descargas leídas A MANO de las consolas, con su fecha.
+   *
+   * Las fuentes automáticas van por detrás de la realidad por motivos que no
+   * se pueden arreglar desde aquí: Play publica un informe por mes cerrado y
+   * Apple tarda días en generar los suyos la primera vez. Mientras tanto la
+   * tarjeta enseñaba 10 descargas de una app que la consola ya daba por 17 +
+   * 43. Con esto se puede poner lo que la consola dice hoy y el dashboard deja
+   * de contradecir a la fuente oficial.
+   *
+   * Es un piso, no un sustituto: en cuanto el dato automático lo supera, manda
+   * el automático.
+   */
+  installsManual?: {
+    android?: number;
+    ios?: number;
+    /** Día en que se leyeron las consolas (ISO corto). */
+    fecha?: string;
+    actualizadoPor?: string;
+  };
 }
 
 export interface MonitoredRepo {
@@ -133,6 +153,30 @@ export async function setProjectIosBundleId(id: string, bundleId: string | null)
 }
 
 /** Alterna entre el flujo de un clic ("simple") y el flujo por etapas ("avanzado"). */
+/** Guarda las descargas leídas a mano de las consolas. */
+export async function setProjectInstallsManual(
+  id: string,
+  valores: { android?: number | null; ios?: number | null },
+  email: string,
+): Promise<void> {
+  const limpio = (v: number | null | undefined) =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.round(v) : null;
+  const android = limpio(valores.android);
+  const ios = limpio(valores.ios);
+  if (android === null && ios === null) {
+    await updateDoc(doc(db, "projects", id), { installsManual: deleteField() });
+    return;
+  }
+  await updateDoc(doc(db, "projects", id), {
+    installsManual: {
+      ...(android !== null ? { android } : {}),
+      ...(ios !== null ? { ios } : {}),
+      fecha: new Date().toISOString().slice(0, 10),
+      actualizadoPor: email,
+    },
+  });
+}
+
 export async function setProjectDeployMode(id: string, mode: "simple" | "avanzado") {
   await updateDoc(doc(db, "projects", id), { deployMode: mode });
 }
