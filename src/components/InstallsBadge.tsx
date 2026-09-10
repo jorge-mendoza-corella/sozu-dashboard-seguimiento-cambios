@@ -190,10 +190,19 @@ export function InstallsBadge({ androidPackage, iosBundleId }: Props) {
                     tenue
                   />
                 </div>
+                {/* HASTA cuándo llega el dato, no solo desde cuándo. Play
+                    publica un informe por mes CERRADO: durante septiembre lo
+                    más nuevo que existe es agosto, así que el número se queda
+                    quieto semanas y parece roto al compararlo con Play Console,
+                    que sí enseña el día de hoy. */}
                 <p className="mt-0.5 text-[10px] text-muted-foreground">
                   {dPlay.historico
-                    ? `total histórico · desglose desde ${fechaCorta(dPlay.desde)}`
+                    ? `total histórico · último informe de Play: ${fechaCorta(dPlay.hasta)}`
                     : `contadas desde ${fechaCorta(dPlay.desde)}`}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  Play publica un informe por mes cerrado, así que lo posterior a esa fecha todavía
+                  no está aquí aunque Play Console ya lo enseñe.
                 </p>
               </div>
             )}
