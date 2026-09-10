@@ -150,12 +150,11 @@ export function InstallsBadge({ androidPackage, iosBundleId, projectId, installs
   // mano en la consola: las fuentes automáticas van por detrás —Play publica
   // por mes cerrado— y enseñar 10 cuando la consola dice 17 es contradecir a
   // la fuente oficial. Nunca se suman: serían los mismos usuarios dos veces.
-  const androidTotal = Math.max(dPlay?.descargas ?? 0, installsManual?.android ?? 0);
-  const iosTotal = Math.max(dIos?.descargas ?? 0, installsManual?.ios ?? 0);
+  const manualAndroid = installsManual?.android ?? 0;
+  const manualIos = installsManual?.ios ?? 0;
+  const androidTotal = Math.max(dPlay?.descargas ?? 0, manualAndroid);
+  const iosTotal = Math.max(dIos?.descargas ?? 0, manualIos);
   const total = androidTotal + iosTotal;
-  const usaManual =
-    (installsManual?.android ?? 0) > (dPlay?.descargas ?? 0) ||
-    (installsManual?.ios ?? 0) > (dIos?.descargas ?? 0);
   const mes30 = (dPlay?.descargas30d ?? 0) + (dIos?.descargas30d ?? 0);
   const dGa4 = ga4?.data && !ga4.data.pendiente ? ga4.data : null;
   // De dónde salen las barras: GA4 trae las dos plataformas, y sin él queda la
@@ -263,16 +262,6 @@ export function InstallsBadge({ androidPackage, iosBundleId, projectId, installs
               </div>
             )}
 
-            {usaManual && (
-              <p className="mt-1.5 border-t pt-1.5 text-[10px] text-muted-foreground">
-                Incluye lo leído a mano en las consolas
-                {installsManual?.fecha ? ` el ${fechaCorta(installsManual.fecha)}` : ""}
-                {installsManual?.android ? ` · Play ${exacto(installsManual.android)}` : ""}
-                {installsManual?.ios ? ` · App Store ${exacto(installsManual.ios)}` : ""}. Se usa
-                mientras el dato automático va por detrás; en cuanto lo supera, manda el automático.
-              </p>
-            )}
-
             {/* De dónde sale el rango, para que no se lea como número exacto. */}
             {!dPlay && rangoPlay && (
               <p className="text-[10px] text-muted-foreground">
@@ -281,12 +270,23 @@ export function InstallsBadge({ androidPackage, iosBundleId, projectId, installs
                 lanzamiento{play?.data?.pendiente ? " — esta app todavía no tiene ninguno" : ""}.
               </p>
             )}
-            {dPlay && (
+            {(dPlay || manualAndroid > 0) && (
               <div className="mt-1.5 border-t pt-1.5">
-                <p className="mb-1 flex items-center gap-1.5 font-medium">
-                  <Smartphone className="h-3 w-3 text-muted-foreground" /> Google Play
+                <p className="mb-1 flex items-center justify-between gap-2 font-medium">
+                  <span className="flex items-center gap-1.5">
+                    <Smartphone className="h-3 w-3 text-muted-foreground" /> Google Play
+                  </span>
+                  <span className="font-mono">{exacto(androidTotal)}</span>
                 </p>
-                <div className="flex flex-wrap items-center gap-2">
+                {/* Sin informe automático, el único número honesto es el de la
+                    consola: se enseña con su fecha en vez de dejar el hueco. */}
+                {!dPlay && (
+                  <p className="text-[10px] text-muted-foreground">
+                    Según Play Console{installsManual?.fecha ? ` el ${fechaCorta(installsManual.fecha)}` : ""}:
+                    usuarios con la app instalada. El informe automático llega al cierre del mes.
+                  </p>
+                )}
+                {dPlay && <div className="flex flex-wrap items-center gap-2">
                   <Metrica
                     icon={<Download className="h-3 w-3" />}
                     valor={exacto(dPlay.descargas)}
@@ -303,30 +303,43 @@ export function InstallsBadge({ androidPackage, iosBundleId, projectId, installs
                     title="Desinstalaciones contadas en el rango leído."
                     tenue
                   />
-                </div>
+                </div>}
                 {/* HASTA cuándo llega el dato, no solo desde cuándo. Play
                     publica un informe por mes CERRADO: durante septiembre lo
                     más nuevo que existe es agosto, así que el número se queda
                     quieto semanas y parece roto al compararlo con Play Console,
                     que sí enseña el día de hoy. */}
-                <p className="mt-0.5 text-[10px] text-muted-foreground">
-                  {dPlay.historico
-                    ? `total histórico · último informe de Play: ${fechaCorta(dPlay.hasta)}`
-                    : `contadas desde ${fechaCorta(dPlay.desde)}`}
-                </p>
-                <p className="text-[10px] text-muted-foreground">
-                  Play publica un informe por mes cerrado, así que lo posterior a esa fecha todavía
-                  no está aquí aunque Play Console ya lo enseñe.
-                </p>
+                {dPlay && (
+                  <>
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+                      {dPlay.historico
+                        ? `total histórico · último informe de Play: ${fechaCorta(dPlay.hasta)}`
+                        : `contadas desde ${fechaCorta(dPlay.desde)}`}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      Play publica un informe por mes cerrado, así que lo posterior a esa fecha
+                      todavía no está aquí aunque Play Console ya lo enseñe.
+                    </p>
+                  </>
+                )}
               </div>
             )}
 
-            {dIos && !dIos.pendiente && (
+            {((dIos && !dIos.pendiente) || manualIos > 0) && (
               <div className="mt-1.5 border-t pt-1.5">
-                <p className="mb-1 flex items-center gap-1.5 font-medium">
-                  <Apple className="h-3 w-3 text-muted-foreground" /> App Store
+                <p className="mb-1 flex items-center justify-between gap-2 font-medium">
+                  <span className="flex items-center gap-1.5">
+                    <Apple className="h-3 w-3 text-muted-foreground" /> App Store
+                  </span>
+                  <span className="font-mono">{exacto(iosTotal)}</span>
                 </p>
-                <div className="flex flex-wrap items-center gap-2">
+                {!dIos?.descargas && (
+                  <p className="text-[10px] text-muted-foreground">
+                    Según App Store Connect{installsManual?.fecha ? ` el ${fechaCorta(installsManual.fecha)}` : ""}:
+                    primeras descargas. Apple todavía está generando el reporte automático.
+                  </p>
+                )}
+                {dIos && !dIos.pendiente && <div className="flex flex-wrap items-center gap-2">
                   <Metrica
                     icon={<Download className="h-3 w-3" />}
                     valor={exacto(dIos.primeraVez)}
@@ -338,10 +351,12 @@ export function InstallsBadge({ androidPackage, iosBundleId, projectId, installs
                     title="Redescargas: alguien que ya la había tenido y la vuelve a bajar."
                     tenue
                   />
-                </div>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">
-                  contadas desde {fechaCorta(dIos.desde)}
-                </p>
+                </div>}
+                {dIos && !dIos.pendiente && (
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">
+                    contadas desde {fechaCorta(dIos.desde)}
+                  </p>
+                )}
               </div>
             )}
 
