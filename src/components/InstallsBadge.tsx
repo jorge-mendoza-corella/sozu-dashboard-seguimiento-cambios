@@ -1,10 +1,7 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Download, Smartphone, Apple, TrendingUp, Users, Clock, AlertTriangle, Trash2, RotateCcw,
-  BarChart3,
-} from "lucide-react";
+import { Download, Smartphone, Apple, TrendingUp, Clock, AlertTriangle, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { getPlayTracks } from "@/lib/playTracks";
@@ -18,35 +15,6 @@ interface Props {
   projectId?: string;
   /** Descargas leídas a mano de las consolas, como piso del número. */
   installsManual?: { android?: number; ios?: number; fecha?: string };
-}
-
-/**
- * Una métrica del tooltip: icono y número, sin la palabra.
- *
- * Con las etiquetas escritas, cuatro renglones de texto competían por leerse y
- * la diferencia importante —descargas contra dispositivos con la app hoy— se
- * perdía entre palabras parecidas. El icono la dice sin leer, y el título
- * explica qué cuenta cada número, que es lo que de verdad se pregunta: por qué
- * "instaladas hoy" puede ser mayor que las descargas.
- */
-function Metrica({ icon, valor, title, tenue }: {
-  icon: React.ReactNode;
-  valor: string;
-  title: string;
-  tenue?: boolean;
-}) {
-  return (
-    <span
-      title={title}
-      className={cn(
-        "flex cursor-help items-center gap-1 rounded px-1 py-0.5",
-        tenue ? "text-muted-foreground" : "text-foreground",
-      )}
-    >
-      {icon}
-      <span className="font-mono font-semibold">{valor}</span>
-    </span>
-  );
 }
 
 /**
@@ -210,175 +178,139 @@ export function InstallsBadge({ androidPackage, iosBundleId, projectId, installs
       {open && pos && createPortal(
         <div
           style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999 }}
-          className="w-72 rounded-lg border bg-background p-2.5 text-xs shadow-xl"
+          className="w-64 rounded-lg border bg-background p-2.5 text-xs shadow-xl"
           onMouseEnter={show}
           onMouseLeave={hide}
         >
-          <p className="mb-1.5 flex items-center gap-1 font-semibold">
-            <Download className={cn("h-3 w-3", pendiente ? "text-muted-foreground" : "text-violet-500")} />
-            {hayDato
-              ? `${exacto(total)} descargas`
-              : rangoPlay
-                ? `${rangoPlay} descargas en Google Play`
-                : "Descargas: todavía sin dato"}
+          {/* El panel enseña NÚMEROS; el porqué de cada uno vive en su `title`.
+              Con las explicaciones a la vista —de dónde sale el dato, cuándo
+              publica Play su informe, qué está generando Apple— el tooltip
+              eran seis renglones de prosa para tres cifras, y encima cuentan
+              una situación temporal: en cuanto Analytics reporte a diario, esos
+              avisos sobran. */}
+          <p className="mb-1.5 flex items-center justify-between gap-2 font-semibold">
+            <span className="flex items-center gap-1">
+              <Download className={cn("h-3 w-3", pendiente ? "text-muted-foreground" : "text-violet-500")} />
+              descargas
+            </span>
+            <span className="font-mono">
+              {hayDato ? exacto(total) : rangoPlay ?? "—"}
+            </span>
           </p>
 
           <div className="space-y-1 text-[11px]">
+            {(dPlay || manualAndroid > 0) && (
+              <p
+                className="flex items-center justify-between gap-2"
+                title={
+                  dPlay
+                    ? `Informe de Play Console, hasta ${fechaCorta(dPlay.hasta)}. ` +
+                      `${exacto(dPlay.activos)} aparatos la tienen hoy · ${exacto(dPlay.desinstalaciones)} desinstalaciones. ` +
+                      "Play publica un informe por mes cerrado, así que lo posterior a esa fecha no está aquí."
+                    : `Leído en Play Console${installsManual?.fecha ? ` el ${fechaCorta(installsManual.fecha)}` : ""}: ` +
+                      "usuarios con la app instalada. El informe automático llega al cierre del mes."
+                }
+              >
+                <span className="flex cursor-help items-center gap-1.5 text-muted-foreground">
+                  <Smartphone className="h-3 w-3" /> Google Play
+                </span>
+                <span className="font-mono">{exacto(androidTotal)}</span>
+              </p>
+            )}
+
+            {((dIos && !dIos.pendiente) || manualIos > 0) && (
+              <p
+                className="flex items-center justify-between gap-2"
+                title={
+                  dIos && !dIos.pendiente
+                    ? `Reportes de App Store Connect desde ${fechaCorta(dIos.desde)}. ` +
+                      `${exacto(dIos.primeraVez)} de primera vez · ${exacto(dIos.redescargas)} redescargas.`
+                    : `Leído en App Store Connect${installsManual?.fecha ? ` el ${fechaCorta(installsManual.fecha)}` : ""}: ` +
+                      "primeras descargas. Apple todavía está generando el reporte automático."
+                }
+              >
+                <span className="flex cursor-help items-center gap-1.5 text-muted-foreground">
+                  <Apple className="h-3 w-3" /> App Store
+                </span>
+                <span className="font-mono">{exacto(iosTotal)}</span>
+              </p>
+            )}
+
             {mes30 > 0 && (
-              <Metrica
-                icon={<TrendingUp className="h-3 w-3" />}
-                valor={`+${exacto(mes30)}`}
-                title="Descargas nuevas en los últimos 30 días"
-              />
+              <p
+                className="flex items-center justify-between gap-2"
+                title="Descargas nuevas en los últimos 30 días, según los informes de las tiendas"
+              >
+                <span className="flex cursor-help items-center gap-1.5 text-muted-foreground">
+                  <TrendingUp className="h-3 w-3" /> últimos 30 días
+                </span>
+                <span className="font-mono">+{exacto(mes30)}</span>
+              </p>
             )}
 
             {serieDiaria && (
               <div className="mt-1.5 border-t pt-1.5">
-                <p className="mb-1 flex items-center justify-between gap-2 font-medium">
-                  <span className="flex items-center gap-1.5">
-                    <BarChart3 className="h-3 w-3 text-muted-foreground" /> Día a día
+                <p className="mb-1 flex items-center justify-between gap-2">
+                  <span
+                    className="flex cursor-help items-center gap-1.5 text-muted-foreground"
+                    title={
+                      dGa4
+                        ? "Primeras aperturas por día, medidas dentro de la app (Analytics). Quien descarga y no abre no cuenta."
+                        : "Descargas por día del App Store. Google Play no publica día a día: su informe sale al cierre del mes."
+                    }
+                  >
+                    <BarChart3 className="h-3 w-3" /> día a día
                   </span>
-                  <span className="flex items-center gap-2 font-normal">
+                  <span className="flex items-center gap-2 font-mono">
                     {dGa4 && (
-                      <span className="flex items-center gap-1" title="Android (últimos 30 días)">
+                      <span className="flex items-center gap-1" title="Android · últimos 30 días">
                         <span className="h-2 w-2 rounded-sm bg-lime-500/80" />
                         {exacto(dGa4.android30d)}
                       </span>
                     )}
-                    <span className="flex items-center gap-1" title="iOS (últimos 30 días)">
+                    <span className="flex items-center gap-1" title="iOS · últimos 30 días">
                       <span className="h-2 w-2 rounded-sm bg-sky-500/80" />
                       {exacto(dGa4 ? dGa4.ios30d : dIos?.descargas30d ?? 0)}
                     </span>
                   </span>
                 </p>
                 <BarrasDiarias dias={serieDiaria} />
-                {/* Se dice qué cuenta: no es la descarga en la tienda, es la
-                    primera vez que alguien abre la app. */}
-                <p className="mt-1 text-[10px] text-muted-foreground">
-                  {dGa4
-                    ? "Primeras aperturas por día (últimas 3 semanas), medidas dentro de la app. No es lo mismo que la descarga en la tienda: quien baja y no abre no cuenta."
-                    : "Descargas por día del App Store (últimas 3 semanas). Google Play no publica el día a día: su informe sale al cierre del mes."}
-                </p>
               </div>
             )}
 
-            {/* De dónde sale el rango, para que no se lea como número exacto. */}
-            {!dPlay && rangoPlay && (
-              <p className="text-[10px] text-muted-foreground">
-                Es el rango que Play enseña en la ficha pública de la app. El número exacto sale de
-                los informes de Play Console, que se publican al cierre del mes siguiente al
-                lanzamiento{play?.data?.pendiente ? " — esta app todavía no tiene ninguno" : ""}.
+            {/* Lo que sigue solo sale cuando hay algo roto o a medias: son
+                estados que se resuelven y no deben ocupar sitio el resto del
+                tiempo. */}
+            {!hayDato && rangoPlay && (
+              <p
+                className="cursor-help text-[10px] text-muted-foreground"
+                title="El número exacto sale de los informes de Play Console, que se publican al cierre del mes siguiente al lanzamiento."
+              >
+                Rango de la ficha pública de Play.
               </p>
             )}
-            {(dPlay || manualAndroid > 0) && (
-              <div className="mt-1.5 border-t pt-1.5">
-                <p className="mb-1 flex items-center justify-between gap-2 font-medium">
-                  <span className="flex items-center gap-1.5">
-                    <Smartphone className="h-3 w-3 text-muted-foreground" /> Google Play
-                  </span>
-                  <span className="font-mono">{exacto(androidTotal)}</span>
-                </p>
-                {/* Sin informe automático, el único número honesto es el de la
-                    consola: se enseña con su fecha en vez de dejar el hueco. */}
-                {!dPlay && (
-                  <p className="text-[10px] text-muted-foreground">
-                    Según Play Console{installsManual?.fecha ? ` el ${fechaCorta(installsManual.fecha)}` : ""}:
-                    usuarios con la app instalada. El informe automático llega al cierre del mes.
-                  </p>
-                )}
-                {dPlay && <div className="flex flex-wrap items-center gap-2">
-                  <Metrica
-                    icon={<Download className="h-3 w-3" />}
-                    valor={exacto(dPlay.descargas)}
-                    title="Descargas: usuarios distintos que instalaron la app por primera vez. Se cuenta por cuenta de Google, no por aparato."
-                  />
-                  <Metrica
-                    icon={<Users className="h-3 w-3" />}
-                    valor={exacto(dPlay.activos)}
-                    title="Aparatos que tienen la app instalada hoy. Puede ser MAYOR que las descargas: cada usuario cuenta una vez al descargar, pero aporta un aparato por cada teléfono, tablet o emulador donde la instale — testers incluidos."
-                  />
-                  <Metrica
-                    icon={<Trash2 className="h-3 w-3" />}
-                    valor={exacto(dPlay.desinstalaciones)}
-                    title="Desinstalaciones contadas en el rango leído."
-                    tenue
-                  />
-                </div>}
-                {/* HASTA cuándo llega el dato, no solo desde cuándo. Play
-                    publica un informe por mes CERRADO: durante septiembre lo
-                    más nuevo que existe es agosto, así que el número se queda
-                    quieto semanas y parece roto al compararlo con Play Console,
-                    que sí enseña el día de hoy. */}
-                {dPlay && (
-                  <>
-                    <p className="mt-0.5 text-[10px] text-muted-foreground">
-                      {dPlay.historico
-                        ? `total histórico · último informe de Play: ${fechaCorta(dPlay.hasta)}`
-                        : `contadas desde ${fechaCorta(dPlay.desde)}`}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">
-                      Play publica un informe por mes cerrado, así que lo posterior a esa fecha
-                      todavía no está aquí aunque Play Console ya lo enseñe.
-                    </p>
-                  </>
-                )}
-              </div>
-            )}
 
-            {((dIos && !dIos.pendiente) || manualIos > 0) && (
-              <div className="mt-1.5 border-t pt-1.5">
-                <p className="mb-1 flex items-center justify-between gap-2 font-medium">
-                  <span className="flex items-center gap-1.5">
-                    <Apple className="h-3 w-3 text-muted-foreground" /> App Store
-                  </span>
-                  <span className="font-mono">{exacto(iosTotal)}</span>
-                </p>
-                {!dIos?.descargas && (
-                  <p className="text-[10px] text-muted-foreground">
-                    Según App Store Connect{installsManual?.fecha ? ` el ${fechaCorta(installsManual.fecha)}` : ""}:
-                    primeras descargas. Apple todavía está generando el reporte automático.
-                  </p>
-                )}
-                {dIos && !dIos.pendiente && <div className="flex flex-wrap items-center gap-2">
-                  <Metrica
-                    icon={<Download className="h-3 w-3" />}
-                    valor={exacto(dIos.primeraVez)}
-                    title="Descargas de primera vez: aparatos que no tenían la app antes."
-                  />
-                  <Metrica
-                    icon={<RotateCcw className="h-3 w-3" />}
-                    valor={exacto(dIos.redescargas)}
-                    title="Redescargas: alguien que ya la había tenido y la vuelve a bajar."
-                    tenue
-                  />
-                </div>}
-                {dIos && !dIos.pendiente && (
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">
-                    contadas desde {fechaCorta(dIos.desde)}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Apple no entrega analíticas hasta que alguien las pide y tarda
-                ~1 día en generarlas: mientras tanto el total es solo de Play. */}
-            {dIos?.pendiente && (
-              <p className="mt-1.5 flex items-start gap-1.5 border-t pt-1.5 text-[10px] text-muted-foreground">
+            {dIos?.pendiente && !manualIos && (
+              <p className="flex items-start gap-1.5 text-[10px] text-muted-foreground">
                 <Clock className="mt-px h-3 w-3 shrink-0" />
-                App Store: Apple está generando el reporte de descargas (~1 día).
+                App Store: Apple está generando el reporte.
               </p>
             )}
 
             {errores.map((e) => (
-              <p key={e} className="mt-1.5 flex items-start gap-1.5 border-t pt-1.5 text-[10px] text-amber-600 dark:text-amber-400">
+              <p
+                key={e}
+                title={e}
+                className="flex cursor-help items-start gap-1.5 text-[10px] text-amber-600 dark:text-amber-400"
+              >
                 <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
-                {e}
+                <span className="line-clamp-2">{e}</span>
               </p>
             ))}
 
             {revisado && (
               <p className="mt-1.5 border-t pt-1.5 text-[10px] text-muted-foreground">
-                actualizado {formatDistanceToNow(revisado)} · se revisa una vez al día
+                actualizado {formatDistanceToNow(revisado)}
               </p>
             )}
           </div>
