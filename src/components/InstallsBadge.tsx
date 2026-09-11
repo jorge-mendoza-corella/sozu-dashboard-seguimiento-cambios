@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { getPlayTracks } from "@/lib/playTracks";
 import { getGa4Installs, ultimosDias, type DiaInstalls } from "@/lib/ga4Installs";
+import { getInstallsDiarias } from "@/lib/installsDiarias";
 import { DescargasModal } from "./DescargasModal";
 import { compacto, exacto, fechaCorta, getAppStoreInstalls, getPlayInstalls } from "@/lib/storeInstalls";
 
@@ -126,10 +127,28 @@ export function InstallsBadge({
   // mano en la consola: las fuentes automáticas van por detrás —Play publica
   // por mes cerrado— y enseñar 10 cuando la consola dice 17 es contradecir a
   // la fuente oficial. Nunca se suman: serían los mismos usuarios dos veces.
+  // La MISMA serie que pinta el modal y la card del Portal Alta Dirección. El
+  // chip sumaba por su cuenta —informes de tienda más lo tecleado a mano— y
+  // daba 33 donde el modal decía 50: dos números del mismo dato en la misma
+  // pantalla. Aquí manda la serie; lo demás queda de respaldo mientras no
+  // exista.
+  const { data: serie } = useQuery({
+    queryKey: ["installs-diarias", projectId],
+    queryFn: () => getInstallsDiarias(projectId!),
+    enabled: !!projectId,
+    staleTime: 30 * 60_000,
+  });
+
   const manualAndroid = installsManual?.android ?? 0;
   const manualIos = installsManual?.ios ?? 0;
-  const androidTotal = Math.max(dPlay?.descargas ?? 0, manualAndroid);
-  const iosTotal = Math.max(dIos?.descargas ?? 0, manualIos);
+  const deSerie = serie
+    ? serie.dias.reduce(
+        (a, d) => ({ android: a.android + d.android, ios: a.ios + d.ios }),
+        { android: 0, ios: 0 },
+      )
+    : null;
+  const androidTotal = deSerie?.android ?? Math.max(dPlay?.descargas ?? 0, manualAndroid);
+  const iosTotal = deSerie?.ios ?? Math.max(dIos?.descargas ?? 0, manualIos);
   const total = androidTotal + iosTotal;
   const mes30 = (dPlay?.descargas30d ?? 0) + (dIos?.descargas30d ?? 0);
   const dGa4 = ga4?.data && !ga4.data.pendiente ? ga4.data : null;
@@ -141,7 +160,7 @@ export function InstallsBadge({
       ? ultimosDias(dIos.serie.map((d) => ({ fecha: d.fecha, android: 0, ios: d.descargas })), 21)
       : null;
   const rangoPlay = !dPlay ? playTracks?.storeDownloads ?? null : null;
-  const hayDato = !!dPlay || (!!dIos && !dIos.pendiente) || total > 0;
+  const hayDato = !!deSerie || !!dPlay || (!!dIos && !dIos.pendiente) || total > 0;
   // Sin dato PERO con algo que contar (un error de la tienda, o Apple todavía
   // generando el reporte), el chip se queda en pantalla con un guión: esconderlo
   // hacía que "no hay descargas" y "no se pudieron leer" se vieran igual, o sea
@@ -170,7 +189,14 @@ export function InstallsBadge({
     <span ref={anchorRef} onMouseEnter={show} onMouseLeave={hide} className="inline-flex">
       <button
         type="button"
-        onClick={() => projectId && setDetalle(true)}
+        onClick={() => {
+          if (!projectId) return;
+          // El tooltip se queda flotando encima del modal si no se cierra: son
+          // dos capas contando lo mismo, y la de abajo ya no se puede quitar
+          // porque el puntero está sobre el modal.
+          setOpen(false);
+          setDetalle(true);
+        }}
         disabled={!projectId}
         title={projectId ? "Ver el detalle diario y el consumo en Codemagic" : undefined}
         className={cn(

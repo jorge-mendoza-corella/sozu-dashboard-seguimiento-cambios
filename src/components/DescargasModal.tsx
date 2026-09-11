@@ -248,18 +248,15 @@ export function DescargasModal({
               />
             </div>
 
-            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-              Primeras aperturas tras instalar, medidas dentro de la app.
-              {totales.estimado > 0 && (
-                <>
-                  {" "}
-                  {N(totales.estimado)} están repartidas por estimación: son los totales que
-                  reportaban las consolas antes de que las apps midieran, y el día exacto de cada
-                  una no se conserva.
-                </>
-              )}
-              {serie.updatedAt && ` · actualizado ${formatDistanceToNow(serie.updatedAt)}`}
-            </p>
+            {/* La nota de "repartidas por estimación" se quitó: con los
+                reportes reales de las tiendas ya llegando, explicar la siembra
+                cada vez que se abre el modal cuenta algo que dejó de ser el
+                caso normal. Queda cuándo se leyó, que sí cambia todos los días. */}
+            {serie.updatedAt && (
+              <p className="mt-2 text-[10px] text-muted-foreground">
+                actualizado {formatDistanceToNow(serie.updatedAt)}
+              </p>
+            )}
           </>
         )}
 
