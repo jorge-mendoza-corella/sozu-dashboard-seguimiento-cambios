@@ -181,8 +181,13 @@ def borrar_sobrantes(url: str, key: str, id_app: int, filas: list[dict]) -> str 
     generó el reporte— se quedaba en la tabla para siempre, sumando, aunque el
     sync dejara de emitirlo.
 
-    Solo actúa dentro del rango que la fuente acaba de cubrir y solo sobre lo
-    suyo: la siembra estimada y las otras fuentes no se tocan.
+    La serie que manda cada fuente es su histórico completo, así que lo que no
+    venga en ella y sea posterior a su primer día no existe. El corte por abajo
+    es lo único que se respeta: antes de que la fuente empezara a medir mandan
+    la siembra y las consolas, y eso no le toca borrarlo.
+
+    Solo actúa sobre lo suyo: la siembra estimada y las otras fuentes no se
+    tocan.
     """
     if not filas:
         return None
@@ -199,8 +204,7 @@ def borrar_sobrantes(url: str, key: str, id_app: int, filas: list[dict]) -> str 
                 "plataforma": f"eq.{plataforma}",
                 "fuente": f"eq.{fuente}",
                 "estimado": "is.false",
-                "fecha": f"gte.{vigentes[0]}",
-                "and": f"(fecha.lte.{vigentes[-1]},fecha.not.in.({','.join(vigentes)}))",
+                "and": f"(fecha.gte.{vigentes[0]},fecha.not.in.({','.join(vigentes)}))",
             },
             timeout=60,
         )
