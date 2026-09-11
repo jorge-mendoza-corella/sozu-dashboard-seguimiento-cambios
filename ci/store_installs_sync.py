@@ -607,7 +607,13 @@ def fetch_appstore_installs(token: str, bundle: str, previo: dict) -> tuple[dict
     #
     # Se indexa por instancia y no por fecha porque una instancia trae VARIOS
     # días: la fecha de cada dato vive dentro del reporte, no en la instancia.
-    dias: dict[str, dict] = dict(previo.get("dias") or {})
+    # Lo guardado por la versión anterior se descarta entero: fechaba los días
+    # con el `processingDate` de la instancia, así que sus claves no son fechas
+    # de descarga sino de generación del reporte. Conservarlas sumaba un día
+    # fantasma —56 descargas el 11 de septiembre— encima de las reales.
+    # `instancias` solo existe desde el arreglo, así que sirve de marca.
+    compatible = "instancias" in previo
+    dias: dict[str, dict] = dict(previo.get("dias") or {}) if compatible else {}
     leidas: set[str] = set(previo.get("instancias") or [])
     recientes_ids = {i["id"] for i in instancias[:3]}
 
