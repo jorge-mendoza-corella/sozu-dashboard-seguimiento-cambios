@@ -271,9 +271,6 @@ export function buildFailureMessage(build?: CodemagicBuild | null): string | nul
 // dashboard lo toma de Firestore — ver `lib/codemagicConsumo.ts`.
 // ---------------------------------------------------------------------------
 
-/** Minutos gratis de macOS M2 al mes. */
-export const MINUTOS_GRATIS_MES = 500;
-
 export const buildUrl = (appId: string, buildId: string) =>
   `https://codemagic.io/app/${appId}/build/${buildId}`;
 

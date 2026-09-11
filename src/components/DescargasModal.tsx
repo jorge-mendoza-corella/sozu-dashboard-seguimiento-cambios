@@ -11,7 +11,6 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { getInstallsDiarias, ultimosDias, type DiaInstalaciones } from "@/lib/installsDiarias";
 import { getConsumoCodemagic } from "@/lib/codemagicConsumo";
-import { MINUTOS_GRATIS_MES } from "@/lib/codemagic";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ChartTooltip, Filler);
 
@@ -262,7 +261,7 @@ export function DescargasModal({
           <div className="mt-4 border-t pt-3">
             <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
               <Cpu className="h-3.5 w-3.5" />
-              Consumo en Codemagic{consumo ? ` · ${consumo.ambito}` : ""}
+              Costo build &amp; deploy (iOS y Android)
             </h4>
 
             {cargandoConsumo && (
@@ -284,47 +283,29 @@ export function DescargasModal({
               </p>
             )}
 
-            {consumo && (<><div className="flex flex-wrap gap-2">
+            {/* Solo lo de ESTA app: el modal es de una app, y el total de la
+                cuenta y el cupo gratis son de todas. Mezclarlos obligaba a
+                restar mentalmente para llegar al número que se vino a ver. */}
+            {consumo?.reparto && (<><div className="flex flex-wrap gap-2">
               <Dato
-                label="Facturado este periodo"
-                valor={USD(consumo.actual.usd)}
-                hint={`${N(Math.round(consumo.actual.minutosPagados))} min cobrados`}
+                label="Costo de esta app"
+                valor={USD(consumo.reparto.usd)}
+                hint={`${N(Math.round(consumo.reparto.minutosApp))} min de máquina`}
               />
               <Dato
-                label="Del cupo gratis"
-                valor={`${N(Math.round(consumo.actual.minutosGratis))} min`}
-                hint={`de ${MINUTOS_GRATIS_MES} al mes`}
+                label="Peso en la cuenta"
+                valor={`${Math.round(consumo.reparto.parte * 100)}%`}
+                hint={`de ${consumo.reparto.apps} ${consumo.reparto.apps === 1 ? "app" : "apps"}`}
               />
-              {consumo.reparto && (
-                <Dato
-                  label="Parte de esta app"
-                  valor={USD(consumo.reparto.usd)}
-                  hint={`${Math.round(consumo.reparto.parte * 100)}% de los minutos`}
-                />
-              )}
             </div>
-            {consumo.anterior.usd > 0 && (
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                Periodo anterior: {USD(consumo.anterior.usd)} ·{" "}
-                {N(Math.round(consumo.anterior.minutosPagados))} min cobrados
-              </p>
-            )}
-            {/* De dónde sale cada número: el total es la factura; el reparto
-                por app es una cuenta nuestra, porque Codemagic factura por
-                cuenta y no desglosa por aplicación. */}
+            {/* De dónde sale el número: Codemagic factura por cuenta y no
+                desglosa por aplicación, así que esto es un reparto por minutos
+                de máquina y conviene que se pueda comprobar. */}
             <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
-              El total es lo que Codemagic reporta como facturado: cuenta solo los minutos
-              cobrados, no los del cupo gratis.
-              {consumo.reparto && (
-                <>
-                  {" "}
-                  La parte de esta app es un reparto por minutos de máquina —Codemagic no factura
-                  por aplicación—: {N(Math.round(consumo.reparto.minutosApp))} de{" "}
-                  {N(Math.round(consumo.reparto.minutosCuenta))} min entre{" "}
-                  {consumo.reparto.apps} {consumo.reparto.apps === 1 ? "app" : "apps"}, medidos
-                  sobre los últimos {consumo.reparto.dias} días.
-                </>
-              )}
+              Reparto de lo que {consumo.ambito} paga a Codemagic, por minutos de máquina —no
+              factura por aplicación—: {N(Math.round(consumo.reparto.minutosApp))} de{" "}
+              {N(Math.round(consumo.reparto.minutosCuenta))} min, sobre los últimos{" "}
+              {consumo.reparto.dias} días. Cuenta los builds fallidos, que también ocupan máquina.
             </p></>)}
           </div>
         )}
