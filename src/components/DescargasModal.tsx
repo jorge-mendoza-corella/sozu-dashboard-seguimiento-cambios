@@ -123,6 +123,26 @@ export function DescargasModal({
     retry: false,
   });
 
+  // Las plataformas con datos de pase, en orden estable.
+  const pases = useMemo(() => {
+    const p = consumo?.porPase ?? {};
+    return (["ios", "android"] as const)
+      .map((k) => [k, p[k]] as const)
+      .filter((x): x is readonly ["ios" | "android", NonNullable<typeof x[1]>] => !!x[1]);
+  }, [consumo]);
+
+  // El total solo se anuncia si las dos plataformas tienen el recorrido
+  // completo: con un paso ausente sería un número bajo que se leería como el
+  // costo real de publicar.
+  const ambas = useMemo(
+    () =>
+      pases.length === 2 && pases.every(([, p]) => p.completo)
+        ? pases.reduce((s, [, p]) => s + p.usd, 0)
+        : null,
+    [pases],
+  );
+
+
   const datasets = useMemo(() => {
     const series: { key: "android" | "ios"; label: string }[] =
       plataforma === "todas"
@@ -307,6 +327,48 @@ export function DescargasModal({
               los minutos que se cobran, no los del cupo gratis, e incluye los builds fallidos, que
               también ocupan máquina.
             </p></>)}
+
+            {/* Lo que cuesta mandar UNA versión a la tienda. El total del
+                periodo dice cuánto se lleva gastado; esto dice cuánto vale
+                cada publicación, que es lo que se puede decidir. */}
+            {pases.length > 0 && (
+              <div className="mt-3 border-t pt-3">
+                <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
+                  Costo de un pase a producción
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {pases.map(([plataforma, p]) => (
+                    <div key={plataforma} className="flex-1 rounded-xl border bg-muted/30 px-3 py-2">
+                      <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        {plataforma === "ios" ? <Apple className="h-3 w-3" /> : <Smartphone className="h-3 w-3" />}
+                        {plataforma === "ios" ? "iOS" : "Android"}
+                        {!p.completo && <span className="text-[10px]">· parcial</span>}
+                      </p>
+                      <p className="mt-0.5 font-mono text-lg font-semibold tabular-nums">
+                        {USD(p.usd)}
+                      </p>
+                      <p className="mt-0.5 text-[10px] text-muted-foreground">
+                        {p.pasos.map((x) => `${x.paso} ${Math.round(x.minutos)}m`).join(" · ")}
+                      </p>
+                    </div>
+                  ))}
+                  {ambas !== null && (
+                    <div className="flex-1 rounded-xl border border-foreground/25 bg-muted/60 px-3 py-2">
+                      <p className="text-[11px] text-muted-foreground">Las dos tiendas</p>
+                      <p className="mt-0.5 font-mono text-lg font-semibold tabular-nums">
+                        {USD(ambas)}
+                      </p>
+                      <p className="mt-0.5 text-[10px] text-muted-foreground">por versión publicada</p>
+                    </div>
+                  )}
+                </div>
+                <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
+                  Promedio de los builds exitosos de cada paso: construir, subir al canal de pruebas
+                  y mandarla a la tienda. Un reintento o un build que falla se cobran aparte, así
+                  que es el costo del camino limpio.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

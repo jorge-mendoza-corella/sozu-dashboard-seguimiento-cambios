@@ -49,6 +49,22 @@ PRECIO_POR_DEFECTO = 0.114
 # ventana del reparto: es solo un tope para no pedir builds de hace un año.
 DIAS_MAXIMOS = 120
 
+# Los pasos por los que pasa UNA versión hasta estar en la tienda. Son los
+# workflows del `codemagic.yaml` de las apps, en el orden en que ocurren.
+# Sumar su duración media da lo que cuesta un pase completo a producción.
+PASE_A_PRODUCCION = {
+    "ios": [
+        ("ios-release", "construir"),
+        ("ios-publish", "TestFlight"),
+        ("ios-appstore", "enviar a revisión"),
+    ],
+    "android": [
+        ("android-release", "construir"),
+        ("android-publish", "Play interno"),
+        ("android-production", "Play Store"),
+    ],
+}
+
 
 def fail(msg: str) -> None:
     print(f"::error::{msg}")
@@ -109,6 +125,8 @@ def builds_de_app(token: str, app_id: str, desde: datetime) -> list[dict]:
             "inicio": t0,
             "minutos": max(0.0, (t1 - t0).total_seconds() / 60),
             "maquina": b.get("instanceType") or "",
+            "workflow": b.get("fileWorkflowId") or b.get("workflowId") or "",
+            "status": b.get("status") or "",
         })
     return salida
 
@@ -138,6 +156,57 @@ def minutos_del_periodo(builds: list[dict], minutos_facturados: float) -> dict[s
         porApp[b["appId"]] = porApp.get(b["appId"], 0.0) + cabe
         acumulado += cabe
     return porApp
+
+
+def costo_por_pase(builds: list[dict]) -> dict:
+    """Lo que cuesta mandar UNA versión a cada tienda.
+
+    Una versión no llega a la tienda con un build: pasa por tres workflows
+    —construir, subir al canal de pruebas y mandarla a la tienda— y el importe
+    de ese recorrido es lo que se quiere estimar. Se promedia la duración de
+    cada paso y se suman los tres.
+
+    Solo se promedian los builds EXITOSOS: un paso que reventó a los dos
+    minutos no dice lo que tarda ese paso cuando funciona, y meterlo abarataría
+    el promedio justo por haber fallado. Los reintentos, en cambio, sí cuestan:
+    por eso se dice aparte que es el costo del camino limpio.
+    """
+    por_workflow: dict[str, list[float]] = {}
+    maquinas: dict[str, str] = {}
+    for b in builds:
+        if b["status"] not in ("finished", "success") or not b["workflow"]:
+            continue
+        por_workflow.setdefault(b["workflow"], []).append(b["minutos"])
+        maquinas.setdefault(b["workflow"], b["maquina"])
+
+    salida: dict[str, dict] = {}
+    for plataforma, pasos in PASE_A_PRODUCCION.items():
+        detalle = []
+        for workflow, etiqueta in pasos:
+            muestras = por_workflow.get(workflow) or []
+            if not muestras:
+                continue
+            minutos = sum(muestras) / len(muestras)
+            tarifa = PRECIO_POR_MINUTO.get(maquinas.get(workflow, ""), PRECIO_POR_DEFECTO)
+            detalle.append({
+                "paso": etiqueta,
+                "workflow": workflow,
+                "minutos": round(minutos, 2),
+                "usd": round(minutos * tarifa, 4),
+                "muestras": len(muestras),
+            })
+        if not detalle:
+            continue
+        salida[plataforma] = {
+            "pasos": detalle,
+            # Solo se anuncia el total cuando están los tres pasos: con uno
+            # ausente el número saldría bajo y parecería que publicar cuesta
+            # menos de lo que cuesta.
+            "completo": len(detalle) == len(pasos),
+            "minutos": round(sum(d["minutos"] for d in detalle), 2),
+            "usd": round(sum(d["usd"] for d in detalle), 4),
+        }
+    return salida
 
 
 def write_doc(token: str, app_id: str, payload: dict) -> None:
@@ -211,6 +280,11 @@ def main() -> None:
             f"{facturados:.0f} min cobrados repartidos entre {len(amb['apps'])} app(s)"
         )
 
+        # Los builds de cada app, para el costo de su pase a producción.
+        por_app_builds: dict[str, list[dict]] = {}
+        for b in builds:
+            por_app_builds.setdefault(b["appId"], []).append(b)
+
         for app_id in amb["apps"]:
             min_app = minutos.get(app_id, 0.0)
             parte = (min_app / total_min) if total_min > 0 else 0
@@ -225,6 +299,7 @@ def main() -> None:
                     "usd": round(actual["usd"] * parte, 4),
                     "apps": len(amb["apps"]),
                 } if total_min > 0 else None,
+                "porPase": costo_por_pase(por_app_builds.get(app_id) or []),
             })
             print(
                 f"  ✓ {app_id}: {min_app:.0f} min cobrados · "

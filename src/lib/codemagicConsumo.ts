@@ -32,6 +32,26 @@ export interface RepartoApp {
   apps: number;
 }
 
+/** Un paso del recorrido de una versión hasta la tienda. */
+export interface PasoPase {
+  /** Qué hace, en corto: "construir", "TestFlight", "Play Store"… */
+  paso: string;
+  workflow: string;
+  /** Minutos que tarda de media, sobre los builds exitosos. */
+  minutos: number;
+  usd: number;
+  /** Cuántos builds respaldan ese promedio. */
+  muestras: number;
+}
+
+export interface PasePlataforma {
+  pasos: PasoPase[];
+  /** false = falta algún paso por falta de historial; el total quedaría bajo. */
+  completo: boolean;
+  minutos: number;
+  usd: number;
+}
+
 export interface ConsumoCodemagic {
   /** Quién paga: el equipo, o la cuenta personal. */
   ambito: string;
@@ -39,6 +59,8 @@ export interface ConsumoCodemagic {
   anterior: ConsumoPeriodo;
   /** Null cuando no hubo minutos en la ventana y no hay nada que repartir. */
   reparto: RepartoApp | null;
+  /** Lo que cuesta mandar una versión a cada tienda. Vacío sin historial. */
+  porPase?: Partial<Record<"ios" | "android", PasePlataforma>>;
   /** Cuándo corrió el sync que lo escribió. */
   updatedAt: string | null;
 }
