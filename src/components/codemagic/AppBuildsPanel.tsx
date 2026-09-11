@@ -1510,9 +1510,39 @@ export function AppBuildsPanel({ appId, perms, project }: {
   const anyError = appsError || buildsError;
   const visibleBuilds = showAll ? filteredBuilds : filteredBuilds.slice(0, 5);
 
+  // El id guardado ya no corresponde a ninguna app de Codemagic.
+  //
+  // Pasa al mover una app a un team: Codemagic le da un id NUEVO y el que
+  // guarda el dashboard queda apuntando al viejo. La API sigue sirviendo los
+  // builds de la app vieja, así que el panel se veía normal —con historial y
+  // todo— pero de otra app: los botones lanzaban donde nadie mira y el
+  // consumo salía de una cuenta que ya no se usa. Un panel que miente en
+  // silencio es peor que uno vacío.
+  const appDesconocida = !app && apps.length > 0 && !appsError;
+
   return (
     <Card>
       <CardContent className="p-4">
+        {appDesconocida && (
+          <div
+            role="alert"
+            className="mb-3 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200"
+          >
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+            <span>
+              Codemagic ya no tiene ninguna app con el id{" "}
+              <code className="font-mono">{appId}</code>. Suele pasar al mover la app a un equipo:
+              le asigna un id nuevo. Actualízalo en Gestionar → este proyecto → app de Codemagic,
+              o lo de aquí abajo será de la app vieja.
+              {apps.length > 0 && (
+                <>
+                  {" "}
+                  Disponibles: {apps.map((a) => `${a.appName} (${a._id})`).join(", ")}.
+                </>
+              )}
+            </span>
+          </div>
+        )}
         {/* Header */}
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <h3 className="flex items-center gap-2 text-sm font-semibold">
