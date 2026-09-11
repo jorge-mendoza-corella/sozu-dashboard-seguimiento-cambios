@@ -15,7 +15,10 @@ import {
   PLATFORMS, WORKFLOW_LABELS, SYNC_TESTERS_WORKFLOW, getBuild, failedStepName,
   type CodemagicBuild, type PlatformDef,
 } from "@/lib/codemagic";
-import { getAppStoreStatus, appStoreChannels, buildStateLabel, versionStateInfo } from "@/lib/appStoreStatus";
+import {
+  getAppStoreStatus, appStoreChannels, appStoreEnCamino, appStoreLiveVersion,
+  buildStateLabel, versionStateInfo,
+} from "@/lib/appStoreStatus";
 import { useAuth } from "@/hooks/useAuth";
 import { getAllContributorPhones } from "@/lib/firestoreContributors";
 import { registerBuildForNotification } from "@/lib/buildNotifications";
@@ -1158,9 +1161,13 @@ export function AppBuildsPanel({ appId, perms, project }: {
   const etiquetaTiendaIos = useMemo(() => {
     const porDefecto = PLATFORMS.find((p) => p.key === "ios")!.promoteLabel;
     if (!appStoreDoc) return porDefecto;
-    const [, camino, produccion] = appStoreChannels(appStoreDoc);
-    if (camino.version) return "en revisión de Apple";
-    if (produccion.version) return "publicado en App Store";
+    // Solo lo que Apple tiene en la mano cuenta como "en revisión". Un
+    // borrador en la consola —`PREPARE_FOR_SUBMISSION`, que aparece en cuanto
+    // alguien empieza a preparar la siguiente entrega— hacía que un build ya
+    // publicado se anunciara como en revisión, con el número de una versión
+    // que Apple ni siquiera ha visto.
+    if (appStoreEnCamino(appStoreDoc)) return "en revisión de Apple";
+    if (appStoreLiveVersion(appStoreDoc)?.aLaVenta) return "publicado en App Store";
     return porDefecto;
   }, [appStoreDoc]);
 
@@ -1226,17 +1233,30 @@ export function AppBuildsPanel({ appId, perms, project }: {
       // mientras Apple revisa y, cuando ya no hay ninguna en camino, la que
       // quedó a la venta. Antes se prefería siempre producción, así que el
       // marcador del envío recién hecho mostraba la versión ANTERIOR.
-      const enCamino = !!camino.version;
-      const tienda = camino.version ?? produccion.version;
+      // La versión que el marcador debe enseñar es la que Apple tiene en la
+      // mano y, si no hay ninguna, la que quedó a la venta. Un borrador de la
+      // consola no manda: antes se prefería cualquier versión no publicada y
+      // un `PREPARE_FOR_SUBMISSION` tapaba la que el build acababa de sacar.
+      const enviada = appStoreEnCamino(appStoreDoc);
+      const aLaVenta = produccion.version;
+      const borrador = !enviada && camino.version && camino.version !== aLaVenta ? camino : null;
+      const tienda = enviada?.version ?? aLaVenta;
       if (tienda) {
         m.set(etiquetaTiendaIos, {
-          texto: `v${tienda}${enCamino ? ` · ${camino.estado.label}` : ""}`,
+          texto:
+            `v${tienda}` +
+            (enviada?.state ? ` · ${versionStateInfo(enviada.state).label}` : ""),
           leidoAt: appStoreDoc.updatedAt,
-          nota: enCamino
+          nota: enviada
             ? "Enviada a revisión. Apple tarda de unas horas a un par de días; cuando la apruebe, " +
               "sale a la venta sola y este marcador pasa a \"publicado en App Store\"."
             : "Apple la aprobó y salió a la venta sola (release AFTER_APPROVAL): nadie tuvo que " +
-              "publicarla a mano.",
+              "publicarla a mano." +
+              // Que exista un borrador se dice, pero aparte: es un dato útil y
+              // no cambia lo que este build logró.
+              (borrador
+                ? ` En App Store Connect hay una ${borrador.version} preparándose, todavía sin enviar.`
+                : ""),
         });
       }
     }
