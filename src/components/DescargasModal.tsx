@@ -111,11 +111,16 @@ export function DescargasModal({
 
   // Lo facturado de verdad, de la cuenta dueña de la app. No se estima:
   // Codemagic lo publica en `/user`, separando lo pagado de lo gratis.
-  const { data: consumo } = useQuery({
+  const {
+    data: consumo,
+    isLoading: cargandoConsumo,
+    error: errorConsumo,
+  } = useQuery({
     queryKey: ["codemagic-consumo", codemagicAppId],
     queryFn: () => getConsumoCodemagic(codemagicAppId!),
     enabled: !!codemagicAppId,
     staleTime: 10 * 60_000,
+    retry: false,
   });
 
   const datasets = useMemo(() => {
@@ -249,13 +254,36 @@ export function DescargasModal({
 
         {/* Consumo de Codemagic. Va en el mismo modal porque es la otra mitad
             de la pregunta: cuánto cuesta publicar lo que se baja. */}
-        {codemagicAppId && consumo && (
+        {/* La sección se pinta siempre que haya app de Codemagic, aunque la
+            consulta falle: escondiéndola, un error de la API se veía igual que
+            "esta app no gasta nada", que es justo lo contrario. */}
+        {codemagicAppId && (
           <div className="mt-4 border-t pt-3">
             <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
               <Cpu className="h-3.5 w-3.5" />
-              Consumo en Codemagic · {consumo.ambito}
+              Consumo en Codemagic{consumo ? ` · ${consumo.ambito}` : ""}
             </h4>
-            <div className="flex flex-wrap gap-2">
+
+            {cargandoConsumo && (
+              <p className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" /> leyendo la facturación…
+              </p>
+            )}
+
+            {errorConsumo && (
+              <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200">
+                No se pudo leer la facturación de Codemagic:{" "}
+                {errorConsumo instanceof Error ? errorConsumo.message : "error desconocido"}
+              </p>
+            )}
+
+            {!cargandoConsumo && !errorConsumo && !consumo && (
+              <p className="text-[11px] text-muted-foreground">
+                Codemagic no devolvió datos de facturación para esta cuenta.
+              </p>
+            )}
+
+            {consumo && (<><div className="flex flex-wrap gap-2">
               <Dato
                 label="Facturado este periodo"
                 valor={USD(consumo.actual.usd)}
@@ -296,7 +324,7 @@ export function DescargasModal({
                   sobre los últimos {consumo.reparto.dias} días.
                 </>
               )}
-            </p>
+            </p></>)}
           </div>
         )}
       </div>
