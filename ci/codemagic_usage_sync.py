@@ -16,10 +16,17 @@ Qué se guarda por app:
   · el REPARTO que le toca a esa app, por minutos de máquina. Eso sí es un
     cálculo nuestro: Codemagic factura por cuenta y no desglosa por aplicación.
 
+Se escribe en dos sitios, porque son dos tableros sobre bases distintas:
+  · Firestore `codemagicConsumo/{appId}` — el dashboard de CI/CD.
+  · Supabase `app_costos_codemagic` y `app_costos_codemagic_pase` — el Portal
+    Alta Dirección, que vive sobre Postgres y no ve Firestore.
+
 Variables de entorno:
-  FIRESTORE_TOKEN    access token de GCP para Firestore REST
-  CODEMAGIC_TOKEN    token de la API de Codemagic
-  GCP_PROJECT        id del proyecto Firebase (default: sozu-admin-dev)
+  FIRESTORE_TOKEN            access token de GCP para Firestore REST
+  CODEMAGIC_TOKEN            token de la API de Codemagic
+  SUPABASE_URL               base del portal; sin ella ese lado se salta
+  SUPABASE_SERVICE_ROLE_KEY  llave de servicio (salta RLS)
+  GCP_PROJECT                id del proyecto Firebase (default: sozu-admin-dev)
 """
 from __future__ import annotations
 
@@ -230,6 +237,102 @@ def analizar_cobrado(builds: list[dict]) -> tuple[dict, dict]:
     return por_pase, {k: round(v, 4) for k, v in merma.items()}
 
 
+# Ids de `public.apps` en Supabase. Son catálogo: 1 = clientes, 2 = agentes.
+APPS_SUPABASE = {"clientes": 1, "agentes": 2}
+
+
+def id_app_supabase(fs_token: str, codemagic_app_id: str) -> int | None:
+    """Id de `public.apps` que corresponde a esa app de Codemagic.
+
+    Se resuelve por el package, no por un mapa fijo de ids de Codemagic: al
+    mover una app a un equipo, Codemagic le asigna un id NUEVO, y un mapa
+    escrito a mano se quedaría apuntando al viejo sin que nada avisara —ya
+    pasó una vez con la app de clientes—.
+    """
+    r = requests.get(
+        f"{FS_BASE}/projects",
+        headers=fs_headers(fs_token), params={"pageSize": 200}, timeout=30,
+    )
+    if r.status_code != 200:
+        return None
+    for doc in r.json().get("documents", []):
+        f = doc.get("fields", {})
+        if (f.get("codemagicAppId") or {}).get("stringValue") != codemagic_app_id:
+            continue
+        ident = ((f.get("androidPackage") or {}).get("stringValue")
+                 or (f.get("iosBundleId") or {}).get("stringValue") or "").lower()
+        return next((v for k, v in APPS_SUPABASE.items() if k in ident), None)
+    return None
+
+
+def sb_upsert(url: str, key: str, tabla: str, conflicto: str, filas: list[dict]) -> str | None:
+    """UPSERT en Supabase. Devuelve el error, si lo hubo."""
+    if not filas:
+        return None
+    r = requests.post(
+        f"{url.rstrip('/')}/rest/v1/{tabla}",
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            # El sync reescribe el estado del periodo en cada corrida: sin esto
+            # chocaría con la llave en vez de actualizar.
+            "Prefer": "resolution=merge-duplicates,return=minimal",
+        },
+        params={"on_conflict": conflicto},
+        json=filas,
+        timeout=60,
+    )
+    if r.status_code not in (200, 201, 204):
+        return f"Supabase {tabla}: {r.status_code} {r.text[:200]}"
+    return None
+
+
+def write_supabase(url: str, key: str, id_app: int, codemagic_app_id: str, payload: dict) -> None:
+    """Deja el costo de esa app donde el Portal Alta Dirección puede leerlo."""
+    actual = payload.get("actual") or {}
+    reparto = payload.get("reparto") or {}
+    merma = payload.get("merma") or {}
+
+    error = sb_upsert(url, key, "app_costos_codemagic", "id_app", [{
+        "id_app": id_app,
+        "codemagic_app_id": codemagic_app_id,
+        "ambito": payload.get("ambito") or "",
+        "periodo_usd": actual.get("usd", 0),
+        "periodo_minutos_pagados": actual.get("minutosPagados", 0),
+        "periodo_minutos_gratis": actual.get("minutosGratis", 0),
+        "periodo_minutos_totales": actual.get("minutosTotales", 0),
+        "reparto_usd": reparto.get("usd", 0),
+        "reparto_minutos_app": reparto.get("minutosApp", 0),
+        "reparto_minutos_cuenta": reparto.get("minutosCuenta", 0),
+        "reparto_parte": reparto.get("parte", 0),
+        "reparto_apps": reparto.get("apps", 0),
+        "merma_usd": merma.get("usd", 0),
+        "merma_minutos": merma.get("minutos", 0),
+        "merma_fallidos": merma.get("fallidos", 0),
+        "merma_otros": merma.get("otros", 0),
+        "raw": payload,
+        "fecha_actualizacion": datetime.now(timezone.utc).isoformat(),
+    }])
+    if error:
+        print(f"  ⚠ {error}")
+        return
+
+    filas = [{
+        "id_app": id_app,
+        "plataforma": plataforma,
+        "usd": p.get("usd", 0),
+        "minutos": p.get("minutos", 0),
+        "pases": p.get("pases", 0),
+        "completo": p.get("completo", False),
+        "pasos": p.get("pasos") or [],
+        "fecha_actualizacion": datetime.now(timezone.utc).isoformat(),
+    } for plataforma, p in (payload.get("porPase") or {}).items()]
+    error = sb_upsert(url, key, "app_costos_codemagic_pase", "id_app,plataforma", filas)
+    if error:
+        print(f"  ⚠ {error}")
+
+
 def write_doc(token: str, app_id: str, payload: dict) -> None:
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     body = {
@@ -257,6 +360,13 @@ def main() -> None:
         # No es un error: el dashboard sigue funcionando sin el dato de costos.
         print("· Sin CODEMAGIC_TOKEN: no se sincroniza la facturación.")
         return
+
+    sb_url = os.environ.get("SUPABASE_URL", "").strip()
+    sb_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if not (sb_url and sb_key):
+        # El portal es un consumidor extra: sin llave se avisa y se sigue, en
+        # vez de dejar sin datos también al dashboard de CI/CD.
+        print("· Sin SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY: no se empuja al portal.")
 
     usuario = cm(cm_token, "/user").get("user") or {}
     teams = usuario.get("teams") or []
@@ -318,7 +428,7 @@ def main() -> None:
             # app. Es lo que garantiza que el pase nunca supere el total.
             pase_app, merma_app = analizar_cobrado(por_app_builds.get(app_id) or [])
             parte = (min_app / total_min) if total_min > 0 else 0
-            write_doc(fs_token, app_id, {
+            payload = {
                 "ambito": amb["nombre"],
                 "actual": actual,
                 "anterior": anterior,
@@ -331,7 +441,15 @@ def main() -> None:
                 } if total_min > 0 else None,
                 "porPase": pase_app,
                 "merma": merma_app,
-            })
+            }
+            write_doc(fs_token, app_id, payload)
+
+            if sb_url and sb_key:
+                id_app = id_app_supabase(fs_token, app_id)
+                if id_app:
+                    write_supabase(sb_url, sb_key, id_app, app_id, payload)
+                else:
+                    print(f"  · {app_id}: sin app equivalente en Supabase, no se empuja al portal")
             print(
                 f"  ✓ {app_id}: {min_app:.0f} min cobrados · "
                 f"{parte * 100:.0f}% · {actual['usd'] * parte:.2f} USD"
