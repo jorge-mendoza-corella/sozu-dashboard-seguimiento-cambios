@@ -110,6 +110,35 @@ const CERRADAS = new Set([
   "DEVELOPER_REMOVED_FROM_SALE",
 ]);
 
+/**
+ * Versiones que están EN MANOS DE APPLE: se enviaron y falta que conteste.
+ *
+ * No es lo mismo que "no publicada". Una versión en `PREPARE_FOR_SUBMISSION`
+ * es un borrador que alguien creó en la consola y nadie mandó —pasa al
+ * preparar la siguiente entrega— y tratarla como envío hacía que la tarjeta
+ * anunciara "en revisión de Apple" de algo que Apple ni siquiera ha visto,
+ * tapando la versión que sí acababa de publicarse.
+ *
+ * Los rechazos cuentan como enviados: hubo envío, y hay que reaccionar.
+ */
+const ENVIADAS = new Set([
+  "WAITING_FOR_REVIEW",
+  "IN_REVIEW",
+  "PENDING_APPLE_RELEASE",
+  "PENDING_DEVELOPER_RELEASE",
+  "PROCESSING_FOR_DISTRIBUTION",
+  "PROCESSING_FOR_APP_STORE",
+  "WAITING_FOR_EXPORT_COMPLIANCE",
+  "REJECTED",
+  "METADATA_REJECTED",
+  "INVALID_BINARY",
+]);
+
+/** ¿Esta versión ya se le mandó a Apple? */
+export function esEnviadaAApple(state?: string): boolean {
+  return !!state && ENVIADAS.has(state);
+}
+
 export interface AppStorePublished {
   version: string;
   state?: string;
@@ -145,9 +174,10 @@ export function appStoreLiveVersion(doc: AppStoreStatusDoc | null | undefined): 
  * tienda, y este dice qué viene detrás.
  */
 export function appStoreEnCamino(doc: AppStoreStatusDoc | null | undefined): AppStorePublished | null {
-  const enCamino = doc?.versions.find(
-    (v) => v.version?.trim() && v.state && !A_LA_VENTA.has(v.state) && !CERRADAS.has(v.state),
-  );
+  // Solo lo que está en manos de Apple. Un borrador sin enviar no es "lo que
+  // viene": es una versión que alguien empezó a preparar y puede quedarse ahí
+  // semanas.
+  const enCamino = doc?.versions.find((v) => v.version?.trim() && esEnviadaAApple(v.state));
   if (!enCamino?.version) return null;
   return { version: enCamino.version.trim(), state: enCamino.state, aLaVenta: false };
 }
