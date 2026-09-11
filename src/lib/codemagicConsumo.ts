@@ -52,6 +52,23 @@ export interface PasePlataforma {
   usd: number;
 }
 
+/**
+ * Minutos cobrados que no fueron el camino limpio de publicar.
+ *
+ * Un pase son seis builds; todo lo demás que corrió también se facturó. Se
+ * parte en tres porque cada uno se corrige distinto.
+ */
+export interface Merma {
+  minutos: number;
+  usd: number;
+  /** Builds que reventaron: se arregla la causa. */
+  fallidos: number;
+  /** El mismo paso corrido de nuevo: reintentos o pases extra. */
+  repetidos: number;
+  /** Workflows que no son del pase (web, sync de testers…). */
+  otros: number;
+}
+
 export interface ConsumoCodemagic {
   /** Quién paga: el equipo, o la cuenta personal. */
   ambito: string;
@@ -61,6 +78,8 @@ export interface ConsumoCodemagic {
   reparto: RepartoApp | null;
   /** Lo que cuesta mandar una versión a cada tienda. Vacío sin historial. */
   porPase?: Partial<Record<"ios" | "android", PasePlataforma>>;
+  /** Lo cobrado que no fue el camino limpio. */
+  merma?: Merma;
   /** Cuándo corrió el sync que lo escribió. */
   updatedAt: string | null;
 }

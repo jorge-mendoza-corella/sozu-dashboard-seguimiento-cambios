@@ -218,6 +218,48 @@ def costo_por_pase(builds: list[dict]) -> dict:
     return salida
 
 
+def merma_de(builds: list[dict]) -> dict:
+    """Los minutos cobrados que NO fueron el camino limpio.
+
+    Un pase a producción son seis builds: construir, canal de pruebas y tienda,
+    por plataforma. Todo lo demás que corrió en el periodo también se facturó
+    —un build que revienta ocupa máquina igual que uno que funciona— y hasta
+    ahora no se veía en ninguna parte: la tarjeta enseñaba lo cobrado y el
+    costo de un pase, y la diferencia entre ambos no tenía nombre.
+
+    Se parte en tres porque se corrigen distinto:
+      · fallidos  — reventaron; se arregla la causa
+      · repetidos — el mismo paso corrido de nuevo (reintentos, pases extra)
+      · otros     — workflows que no son del pase (web, sync de testers…)
+    """
+    pasos_del_pase = {wf for pasos in PASE_A_PRODUCCION.values() for wf, _ in pasos}
+    vistos: set[str] = set()
+    r = {"minutos": 0.0, "fallidos": 0.0, "repetidos": 0.0, "otros": 0.0, "usd": 0.0}
+
+    for b in sorted(builds, key=lambda x: x["inicio"], reverse=True):
+        minutos = b.get("minutosCobrados", b["minutos"])
+        tarifa = PRECIO_POR_MINUTO.get(b["maquina"], PRECIO_POR_DEFECTO)
+        exitoso = b["status"] in ("finished", "success")
+        wf = b["workflow"]
+
+        if not exitoso:
+            cubo = "fallidos"
+        elif wf not in pasos_del_pase:
+            cubo = "otros"
+        elif wf in vistos:
+            cubo = "repetidos"
+        else:
+            # El más reciente de cada paso ES el pase: no es merma.
+            vistos.add(wf)
+            continue
+
+        r[cubo] += minutos
+        r["minutos"] += minutos
+        r["usd"] += minutos * tarifa
+
+    return {k: round(v, 4) for k, v in r.items()}
+
+
 def write_doc(token: str, app_id: str, payload: dict) -> None:
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     body = {
@@ -314,6 +356,7 @@ def main() -> None:
                     "apps": len(amb["apps"]),
                 } if total_min > 0 else None,
                 "porPase": costo_por_pase(por_app_builds.get(app_id) or []),
+                "merma": merma_de(por_app_builds.get(app_id) or []),
             })
             print(
                 f"  ✓ {app_id}: {min_app:.0f} min cobrados · "
