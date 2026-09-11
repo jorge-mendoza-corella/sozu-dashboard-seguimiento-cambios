@@ -10,8 +10,7 @@ import { Apple, Smartphone, Download, X, Loader2, Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { getInstallsDiarias, ultimosDias, type DiaInstalaciones } from "@/lib/installsDiarias";
-import { useCodemagicBuilds } from "@/hooks/useCodemagic";
-import { getConsumoCodemagic, minutosDelPeriodo, MINUTOS_GRATIS_MES } from "@/lib/codemagic";
+import { getConsumoCodemagic, MINUTOS_GRATIS_MES } from "@/lib/codemagic";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ChartTooltip, Filler);
 
@@ -90,7 +89,6 @@ export function DescargasModal({
     queryFn: () => getInstallsDiarias(projectId),
     staleTime: 30 * 60_000,
   });
-  const { data: builds = [] } = useCodemagicBuilds(codemagicAppId ?? "");
 
   const puntos: DiaInstalaciones[] = useMemo(
     () => (serie ? ultimosDias(serie.dias, dias) : []),
@@ -119,18 +117,6 @@ export function DescargasModal({
     enabled: !!codemagicAppId,
     staleTime: 10 * 60_000,
   });
-
-  // Reparto por app: el importe es de la CUENTA, así que la parte de esta app
-  // se estima por su peso en minutos dentro del periodo. Se dice que es un
-  // reparto, no una factura por app — Codemagic no la da.
-  const reparto = useMemo(() => {
-    if (!consumo || consumo.actual.minutosTotales <= 0) return null;
-    const inicioPeriodo = new Date();
-    inicioPeriodo.setDate(inicioPeriodo.getDate() - 30);
-    const minApp = minutosDelPeriodo(builds, inicioPeriodo);
-    const parte = Math.min(1, minApp / consumo.actual.minutosTotales);
-    return { minApp, parte, usd: consumo.actual.usd * parte };
-  }, [consumo, builds]);
 
   const datasets = useMemo(() => {
     const series: { key: "android" | "ios"; label: string }[] =
@@ -280,11 +266,11 @@ export function DescargasModal({
                 valor={`${N(Math.round(consumo.actual.minutosGratis))} min`}
                 hint={`de ${MINUTOS_GRATIS_MES} al mes`}
               />
-              {reparto && (
+              {consumo.reparto && (
                 <Dato
                   label="Parte de esta app"
-                  valor={USD(reparto.usd)}
-                  hint={`${Math.round(reparto.parte * 100)}% de los minutos`}
+                  valor={USD(consumo.reparto.usd)}
+                  hint={`${Math.round(consumo.reparto.parte * 100)}% de los minutos`}
                 />
               )}
             </div>
@@ -299,9 +285,17 @@ export function DescargasModal({
                 cuenta y no desglosa por aplicación. */}
             <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
               El total es lo que Codemagic reporta como facturado: cuenta solo los minutos
-              cobrados, no los del cupo gratis. La parte de esta app es un reparto por minutos de
-              máquina —Codemagic no factura por aplicación— sobre los {builds.length} builds que
-              devuelve la API.
+              cobrados, no los del cupo gratis.
+              {consumo.reparto && (
+                <>
+                  {" "}
+                  La parte de esta app es un reparto por minutos de máquina —Codemagic no factura
+                  por aplicación—: {N(Math.round(consumo.reparto.minutosApp))} de{" "}
+                  {N(Math.round(consumo.reparto.minutosCuenta))} min entre{" "}
+                  {consumo.reparto.apps} {consumo.reparto.apps === 1 ? "app" : "apps"}, medidos
+                  sobre los últimos {consumo.reparto.dias} días.
+                </>
+              )}
             </p>
           </div>
         )}
