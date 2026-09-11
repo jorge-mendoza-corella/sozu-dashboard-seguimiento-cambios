@@ -634,6 +634,8 @@ export function DashboardPage() {
                         iosBundleId={p.isApp ? p.iosBundleId : undefined}
                         projectId={p.id}
                         installsManual={p.isApp ? p.installsManual : undefined}
+                        codemagicAppId={p.isApp ? p.codemagicAppId : undefined}
+                        nombreApp={p.name}
                         onRefetch={() => refetch()}
                         onReorder={handleReorder}
                       />

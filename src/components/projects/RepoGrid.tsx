@@ -32,6 +32,9 @@ interface Props {
   projectId?: string;
   /** Descargas leídas a mano de las consolas, como piso del número. */
   installsManual?: Project["installsManual"];
+  /** App de Codemagic, para el consumo del modal de descargas. */
+  codemagicAppId?: string;
+  nombreApp?: string;
   iosBundleId?: string;
   onRefetch: () => void;
   onReorder: (ids: string[]) => void;
@@ -39,7 +42,7 @@ interface Props {
 
 const keyOf = (r: MonitoredRepo) => `${r.owner}/${r.repo}`;
 
-export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontVersions = {}, renames, avisos, androidPackage, iosBundleId, projectId, installsManual, onRefetch, onReorder }: Props) {
+export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontVersions = {}, renames, avisos, androidPackage, iosBundleId, projectId, installsManual, codemagicAppId, nombreApp, onRefetch, onReorder }: Props) {
   const [items, setItems] = useState<MonitoredRepo[]>(repos);
   const dragFrom = useRef<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -114,6 +117,8 @@ export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canRe
               iosBundleId={r.frontUrl ? iosBundleId : undefined}
               projectId={r.frontUrl ? projectId : undefined}
               installsManual={r.frontUrl ? installsManual : undefined}
+              codemagicAppId={r.frontUrl ? codemagicAppId : undefined}
+              nombreApp={nombreApp}
             />
           </div>
         );

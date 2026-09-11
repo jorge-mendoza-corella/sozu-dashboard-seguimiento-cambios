@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { getPlayTracks } from "@/lib/playTracks";
 import { getGa4Installs, ultimosDias, type DiaInstalls } from "@/lib/ga4Installs";
+import { DescargasModal } from "./DescargasModal";
 import { compacto, exacto, fechaCorta, getAppStoreInstalls, getPlayInstalls } from "@/lib/storeInstalls";
 
 interface Props {
@@ -15,6 +16,10 @@ interface Props {
   projectId?: string;
   /** Descargas leídas a mano de las consolas, como piso del número. */
   installsManual?: { android?: number; ios?: number; fecha?: string };
+  /** App de Codemagic, para el consumo que se enseña en el modal. */
+  codemagicAppId?: string;
+  /** Nombre de la app, para el título del modal. */
+  nombre?: string;
 }
 
 /**
@@ -73,7 +78,10 @@ function BarrasDiarias({ dias }: { dias: DiaInstalls[] }) {
  * Si ninguna tienda tiene dato, no se pinta nada: un "—" más en la fila de
  * versiones sería ruido sin información.
  */
-export function InstallsBadge({ androidPackage, iosBundleId, projectId, installsManual }: Props) {
+export function InstallsBadge({
+  androidPackage, iosBundleId, projectId, installsManual, codemagicAppId, nombre,
+}: Props) {
+  const [detalle, setDetalle] = useState(false);
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const anchorRef = useRef<HTMLSpanElement>(null);
@@ -160,9 +168,14 @@ export function InstallsBadge({ androidPackage, iosBundleId, projectId, installs
 
   return (
     <span ref={anchorRef} onMouseEnter={show} onMouseLeave={hide} className="inline-flex">
-      <span
+      <button
+        type="button"
+        onClick={() => projectId && setDetalle(true)}
+        disabled={!projectId}
+        title={projectId ? "Ver el detalle diario y el consumo en Codemagic" : undefined}
         className={cn(
-          "flex cursor-default items-center gap-1 rounded-md border px-1.5 py-1 font-mono transition-colors",
+          "flex items-center gap-1 rounded-md border px-1.5 py-1 font-mono transition-colors",
+          projectId ? "cursor-pointer" : "cursor-default",
           !hayDato && !rangoPlay
             ? "border-dashed border-muted-foreground/40 text-muted-foreground"
             : "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-800/60 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/50",
@@ -173,7 +186,16 @@ export function InstallsBadge({ androidPackage, iosBundleId, projectId, installs
       >
         <Download className="h-3 w-3 shrink-0 opacity-80" />
         {hayDato ? compacto(total) : rangoPlay ?? "—"}
-      </span>
+      </button>
+
+      {detalle && projectId && (
+        <DescargasModal
+          projectId={projectId}
+          codemagicAppId={codemagicAppId}
+          nombre={nombre ?? "la app"}
+          onClose={() => setDetalle(false)}
+        />
+      )}
 
       {open && pos && createPortal(
         <div

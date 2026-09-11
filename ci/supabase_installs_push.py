@@ -171,6 +171,64 @@ def upsert(url: str, key: str, filas: list[dict]) -> str | None:
     return None
 
 
+def serie_de_supabase(url: str, key: str, id_app: int) -> tuple[list[dict], str | None]:
+    """La serie ya mezclada que guarda Supabase: lo real y lo estimado.
+
+    Se lee de vuelta en vez de reusar lo que se acaba de subir porque el
+    documento tiene que incluir la SIEMBRA —los totales que reportaban las
+    consolas antes de que las apps midieran—, que vive solo en Supabase: la
+    escribió la migración, no este sync.
+    """
+    r = requests.get(
+        f"{url.rstrip('/')}/rest/v1/app_instalaciones_diarias",
+        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        params={
+            "id_app": f"eq.{id_app}",
+            "select": "fecha,plataforma,instalaciones,estimado",
+            "order": "fecha.asc",
+            "limit": "5000",
+        },
+        timeout=60,
+    )
+    if r.status_code != 200:
+        return [], f"No se pudo releer la serie: {r.status_code} {r.text[:200]}"
+
+    dias: dict[str, dict] = {}
+    for f in r.json():
+        d = dias.setdefault(f["fecha"], {"fecha": f["fecha"], "android": 0, "ios": 0, "estimado": 0})
+        plat = "ios" if f["plataforma"] == "ios" else "android"
+        d[plat] += f["instalaciones"]
+        if f.get("estimado"):
+            d["estimado"] += f["instalaciones"]
+    return [dias[k] for k in sorted(dias)], None
+
+
+def guardar_serie_firestore(token: str, project_id: str, dias: list[dict]) -> None:
+    """Deja la serie en `installsDiarias/{projectId}` para el dashboard de CI/CD.
+
+    Supabase es la fuente —ahí se mezcla lo medido con la siembra— y esto es
+    una copia de lectura: el dashboard vive sobre Firestore y no tiene cliente
+    de Supabase. Sin la copia, los dos tableros enseñarían números distintos de
+    lo mismo, que es peor que no enseñarlos.
+    """
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    total = sum(d["android"] + d["ios"] for d in dias)
+    body = {
+        "fields": {
+            "projectId": {"stringValue": project_id},
+            "updatedAt": {"timestampValue": now},
+            "raw": {"stringValue": json.dumps({"dias": dias, "total": total}, ensure_ascii=False)},
+        }
+    }
+    mask = "&".join(f"updateMask.fieldPaths={k}" for k in body["fields"])
+    r = requests.patch(
+        f"{FS_BASE}/installsDiarias/{quote(project_id, safe='')}?{mask}",
+        headers=fs_headers(token), json=body, timeout=30,
+    )
+    if r.status_code not in (200, 201):
+        print(f"⚠ {project_id}: no se pudo guardar la serie en Firestore: {r.status_code}")
+
+
 def main() -> None:
     fs_token = os.environ.get("FIRESTORE_TOKEN", "").strip()
     url = os.environ.get("SUPABASE_URL", "").strip()
@@ -202,6 +260,19 @@ def main() -> None:
             f"✓ {app['package'] or app['bundleId']}: {len(filas)} filas "
             f"({fechas[0]} → {fechas[-1]}) al portal"
         )
+
+    # La copia para el dashboard se hace SIEMPRE, aunque no hubiera nada nuevo
+    # que subir: la siembra ya está en Supabase y el dashboard la necesita
+    # igual. Fuera del bucle de arriba por eso mismo.
+    for app in apps:
+        dias, error = serie_de_supabase(url, key, app["idApp"])
+        if error:
+            print(f"⚠ {app['projectId']}: {error}")
+            continue
+        if dias:
+            guardar_serie_firestore(fs_token, app["projectId"], dias)
+            print(f"· {app['projectId']}: serie de {len(dias)} días copiada al dashboard")
+
     print(f"· Total empujado: {total} filas.")
 
 
