@@ -572,15 +572,37 @@ function PlatformRow({
   // publicación -lo normal: se sigue trabajando mientras Apple revisa- decía "no
   // promovido" teniendo la versión en revisión, y el botón quedaba clicable.
   //
-  // La respuesta la da el estado de la versión en App Store Connect. Se reusa
-  // `versionStateInfo`, que ya agrupa los ~15 estados de Apple en cuatro tonos:
+  // La respuesta la da el estado en App Store Connect, pero de LA VERSIÓN QUE
+  // SE VA A ENVIAR, no de la primera de la lista.
+  //
+  // Mirar `versions[0]` bloqueaba el botón en el caso más normal que hay: con
+  // 1.0.20 recién subida a TestFlight y 1.0.14 publicada desde antes, la
+  // primera de la lista es la publicada y el panel decía "la versión 1.0.14 ya
+  // está en la tienda" — cierto, e irrelevante: lo que se quiere mandar es la
+  // 1.0.20, que Apple no ha visto.
+  //
+  // Lo que se va a enviar es el binario vivo de TestFlight, así que se busca su
+  // número entre las versiones de la tienda:
+  //   · no aparece            -> nunca se envió, se puede mandar
+  //   · aparece como enviada  -> ya está con Apple, no tocar
+  //   · aparece publicada     -> ese binario ya salió, no tocar
+  //
+  // `versionStateInfo` agrupa los ~15 estados de Apple en cuatro tonos:
   //   running  esperando revisión / en revisión / procesando / aprobada  -> no tocar
   //   success  publicada                                                -> no tocar
   //   draft    sin enviar / falta compliance / retirada                 -> se puede enviar
   //   halted   rechazada / binario inválido                             -> HAY que reenviar
-  const versionAsc = appStore?.versions?.[0];
+  const versionASubir = ultimoSubido?.shortVersion?.trim() || null;
+  const versionAsc = versionASubir
+    ? appStore?.versions?.find((v) => v.version?.trim() === versionASubir)
+    : appStore?.versions?.[0];
   const estadoAsc = versionAsc ? versionStateInfo(versionAsc.state) : null;
   const yaEnviada = estadoAsc?.tone === "running" || estadoAsc?.tone === "success";
+
+  // Apple revisa de una en una: con OTRA versión ya en su cola, mandar esta
+  // no la adelanta. Es un bloqueo distinto de "esta ya se envió" y se dice
+  // aparte, porque la acción que toca también es distinta —esperar, no nada—.
+  const otraEnRevision = !yaEnviada ? appStoreEnCamino(appStore) : null;
 
   // TestFlight es un PASO OBLIGATORIO, no un atajo opcional: el .ipa se prueba
   // ahi antes de mandarlo a revision. En la app de agentes salia TestFlight en
@@ -617,6 +639,8 @@ function PlatformRow({
       ? "Falta el bundle id de iOS del proyecto: sin él no se puede leer el estado en App Store Connect" :
     gateApple && yaEnviada
       ? `La versión ${versionAsc?.version ?? "—"} ya está en la tienda: ${estadoAsc?.label}.` :
+    gateApple && otraEnRevision
+      ? `Apple está revisando la ${otraEnRevision.version}: hay que esperar a que resuelva antes de mandar otra.` :
     gateApple && !appStore ? "Aún sin datos de App Store Connect: pulsa \"comprobar ahora\"" :
     gateApple && !ultimoSubido ? "App Store Connect no reporta ningún binario subido todavía" :
     gateApple && !binarioListo
