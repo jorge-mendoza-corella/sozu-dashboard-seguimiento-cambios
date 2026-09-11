@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Smartphone, Play, Loader2, ExternalLink, XCircle, Download, AlertCircle,
-  GitBranch, Upload, Clock, CheckCircle2, Rocket, Cloud,
+  GitBranch, Upload, Clock, CheckCircle2, Rocket, Cloud, AlertTriangle,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -758,6 +758,20 @@ function PlatformRow({
       {(buildDisabledReason || (modoSimpleAqui && storeDisabledReason)) && (
         <span className="w-full text-[10px] text-muted-foreground sm:w-auto">
           {buildDisabledReason ?? storeDisabledReason}
+        </span>
+      )}
+      {/* Lo mismo para el botón de PRUEBAS, que no lo tenía: su motivo vivía
+          solo en el `title`, y un botón deshabilitado no abre el modal ni
+          dispara nada al pulsarlo. Al avanzar `main` sin reconstruir, tanto
+          TestFlight como Play interno se apagan y parecía que el clic se
+          perdía; el motivo —"primero construye el artefacto"— estaba escrito
+          en un tooltip que hay que esperar dos segundos para ver.
+          No se repite si el botón final está bloqueado por lo mismo. */}
+      {platform.tresEtapas && perms.buildApp && publishDisabledReason &&
+        publishDisabledReason !== promoteDisabledReason && (
+        <span className="flex w-full items-center gap-1.5 text-[10px] text-muted-foreground">
+          <Clock className="h-3 w-3 shrink-0" />
+          <span>{publishDisabledReason}</span>
         </span>
       )}
       {/* El motivo por el que el boton final esta gris va ESCRITO, no solo en el
@@ -1560,6 +1574,31 @@ export function AppBuildsPanel({ appId, perms, project }: {
           ))}
         </div>
 
+        {/*
+          El error va PEGADO a los botones. Vivía al final del panel, debajo de
+          todo el historial: al fallar un lanzamiento el mensaje aparecía fuera
+          de la pantalla y el botón se veía como si no hiciera nada —se pulsaba
+          TestFlight o Play interno, el modal se cerraba y no pasaba nada
+          visible—. El motivo estaba escrito, pero a mil pixeles de distancia.
+        */}
+        {error && (
+          <div
+            role="alert"
+            className="mt-2 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+          >
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1">{error}</span>
+            <button
+              type="button"
+              onClick={() => setError("")}
+              className="shrink-0 rounded px-1 text-destructive/70 hover:text-destructive"
+              aria-label="Cerrar el aviso"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         {/* Builds en curso: card destacada con fases, cronómetro y progreso */}
         {(runningBuilds.length > 0 || Object.keys(pendingWorkflows).length > 0) && (
           <div className="mt-3 space-y-2">
@@ -2045,8 +2084,6 @@ Lo último que reporta: ${info.texto}.` : "")
             )}
           </div>
         )}
-
-        {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
 
         {/* Modal de subida del keystore Android (solo root) */}
         {ksOpen && (
