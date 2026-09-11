@@ -30,7 +30,6 @@ export interface RepartoApp {
   parte: number;
   usd: number;
   apps: number;
-  dias: number;
 }
 
 export interface ConsumoCodemagic {

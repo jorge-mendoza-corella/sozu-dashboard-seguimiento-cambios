@@ -45,10 +45,9 @@ PRECIO_POR_MINUTO = {
 # Lo desconocido no se cobra de menos: se usa la tarifa más cara.
 PRECIO_POR_DEFECTO = 0.114
 
-# Ventana con la que se mide el peso de cada app. Codemagic no publica las
-# fechas de su periodo de facturación, pero mientras el numerador y el
-# denominador usen la MISMA ventana, la proporción entre apps se sostiene.
-DIAS_REPARTO = 30
+# Hasta dónde se mira hacia atrás buscando los builds del periodo. No es la
+# ventana del reparto: es solo un tope para no pedir builds de hace un año.
+DIAS_MAXIMOS = 120
 
 
 def fail(msg: str) -> None:
@@ -87,13 +86,13 @@ def periodo_de(build_time: dict | None) -> dict:
     return {k: round(v, 4) for k, v in r.items()}
 
 
-def minutos_de_app(token: str, app_id: str, desde: datetime) -> float:
-    """Minutos de máquina de esa app desde `desde`.
+def builds_de_app(token: str, app_id: str, desde: datetime) -> list[dict]:
+    """Builds de esa app con su duración, del más nuevo al más viejo.
 
-    Cuenta los builds fallidos: también ocuparon máquina y también se pagan.
+    Se cuentan también los fallidos: ocuparon máquina y se pagan igual.
     """
     data = cm(token, "/builds", {"appId": app_id, "limit": 100})
-    total = 0.0
+    salida = []
     for b in data.get("builds") or []:
         ini, fin = b.get("startedAt"), b.get("finishedAt")
         if not ini or not fin:
@@ -105,8 +104,40 @@ def minutos_de_app(token: str, app_id: str, desde: datetime) -> float:
             continue
         if t0 < desde:
             continue
-        total += max(0.0, (t1 - t0).total_seconds() / 60)
-    return total
+        salida.append({
+            "appId": app_id,
+            "inicio": t0,
+            "minutos": max(0.0, (t1 - t0).total_seconds() / 60),
+            "maquina": b.get("instanceType") or "",
+        })
+    return salida
+
+
+def minutos_del_periodo(builds: list[dict], minutos_facturados: float) -> dict[str, float]:
+    """Reparte por app SOLO los minutos que entraron en el recibo.
+
+    Codemagic no dice qué builds componen el periodo ni cuándo empieza, pero sí
+    cuántos minutos de máquina lleva. Se recorren los builds del más nuevo al
+    más viejo hasta juntar esa cantidad: eso reconstruye el periodo sin tener
+    que adivinar una ventana.
+
+    Sin esto el reparto mezclaba peras con manzanas. Con una ventana fija de 30
+    días se contaban 425 minutos de dos apps que llevaban semanas en la cuenta
+    personal, mientras el recibo del equipo era de 55: la tarjeta decía "205
+    min de máquina · USD 2.52" cuando 205 minutos cuestan 19.47. Ahora los
+    minutos que se enseñan son los que de verdad se cobraron.
+    """
+    porApp: dict[str, float] = {}
+    acumulado = 0.0
+    for b in sorted(builds, key=lambda x: x["inicio"], reverse=True):
+        if acumulado >= minutos_facturados:
+            break
+        # El build que cruza el corte entra solo por la parte que cabe: el
+        # periodo empezó a mitad de ese build, no antes.
+        cabe = min(b["minutos"], minutos_facturados - acumulado)
+        porApp[b["appId"]] = porApp.get(b["appId"], 0.0) + cabe
+        acumulado += cabe
+    return porApp
 
 
 def write_doc(token: str, app_id: str, payload: dict) -> None:
@@ -161,37 +192,42 @@ def main() -> None:
             {"nombre": "cuenta personal", "apps": personales, "billing": usuario.get("billing") or {}}
         )
 
-    desde = datetime.now(timezone.utc) - timedelta(days=DIAS_REPARTO)
+    desde = datetime.now(timezone.utc) - timedelta(days=DIAS_MAXIMOS)
 
     for amb in ambitos:
         uso = (amb["billing"] or {}).get("usage") or {}
         actual = periodo_de((uso.get("currentPeriod") or {}).get("buildTime"))
         anterior = periodo_de((uso.get("previousPeriod") or {}).get("buildTime"))
 
-        minutos = {app_id: minutos_de_app(cm_token, app_id, desde) for app_id in amb["apps"]}
+        # El reparto va sobre los minutos QUE SE COBRAN, no sobre todo el
+        # tiempo de máquina: los del cupo gratis no cuestan y meterlos diluiría
+        # el importe de cada app.
+        facturados = actual["minutosPagados"]
+        builds = [b for app_id in amb["apps"] for b in builds_de_app(cm_token, app_id, desde)]
+        minutos = minutos_del_periodo(builds, facturados)
         total_min = sum(minutos.values())
         print(
-            f"· {amb['nombre']}: {actual['usd']:.2f} USD facturados · "
-            f"{len(amb['apps'])} app(s) · {total_min:.0f} min en {DIAS_REPARTO} días"
+            f"· {amb['nombre']}: {actual['usd']:.2f} USD · "
+            f"{facturados:.0f} min cobrados repartidos entre {len(amb['apps'])} app(s)"
         )
 
         for app_id in amb["apps"]:
-            parte = (minutos[app_id] / total_min) if total_min > 0 else 0
+            min_app = minutos.get(app_id, 0.0)
+            parte = (min_app / total_min) if total_min > 0 else 0
             write_doc(fs_token, app_id, {
                 "ambito": amb["nombre"],
                 "actual": actual,
                 "anterior": anterior,
                 "reparto": {
-                    "minutosApp": round(minutos[app_id], 2),
+                    "minutosApp": round(min_app, 2),
                     "minutosCuenta": round(total_min, 2),
                     "parte": round(parte, 6),
                     "usd": round(actual["usd"] * parte, 4),
                     "apps": len(amb["apps"]),
-                    "dias": DIAS_REPARTO,
                 } if total_min > 0 else None,
             })
             print(
-                f"  ✓ {app_id}: {minutos[app_id]:.0f} min · "
+                f"  ✓ {app_id}: {min_app:.0f} min cobrados · "
                 f"{parte * 100:.0f}% · {actual['usd'] * parte:.2f} USD"
             )
 

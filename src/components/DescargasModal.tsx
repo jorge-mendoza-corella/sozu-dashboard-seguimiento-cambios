@@ -290,12 +290,11 @@ export function DescargasModal({
               <Dato
                 label="Costo de esta app"
                 valor={USD(consumo.reparto.usd)}
-                hint={`${N(Math.round(consumo.reparto.minutosApp))} min de máquina`}
+                hint={`${N(Math.round(consumo.reparto.minutosApp))} min cobrados`}
               />
               <Dato
                 label="Peso en la cuenta"
                 valor={`${Math.round(consumo.reparto.parte * 100)}%`}
-                hint={`de ${consumo.reparto.apps} ${consumo.reparto.apps === 1 ? "app" : "apps"}`}
               />
             </div>
             {/* De dónde sale el número: Codemagic factura por cuenta y no
@@ -304,8 +303,9 @@ export function DescargasModal({
             <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
               Reparto de lo que {consumo.ambito} paga a Codemagic, por minutos de máquina —no
               factura por aplicación—: {N(Math.round(consumo.reparto.minutosApp))} de{" "}
-              {N(Math.round(consumo.reparto.minutosCuenta))} min, sobre los últimos{" "}
-              {consumo.reparto.dias} días. Cuenta los builds fallidos, que también ocupan máquina.
+              {N(Math.round(consumo.reparto.minutosCuenta))} min cobrados del periodo. Solo cuenta
+              los minutos que se cobran, no los del cupo gratis, e incluye los builds fallidos, que
+              también ocupan máquina.
             </p></>)}
           </div>
         )}
