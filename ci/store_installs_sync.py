@@ -526,23 +526,34 @@ PRIMERA_VEZ = "first-time download"
 REDESCARGA = "redownload"
 
 
-def sumar_descargas(texto: str) -> dict[str, int]:
-    """Suma las cuentas del TSV de Apple por tipo de descarga."""
-    total = {"primera": 0, "redescarga": 0, "otras": 0}
+def sumar_descargas(texto: str) -> dict[str, dict[str, int]]:
+    """Cuentas del TSV de Apple POR DÍA y por tipo de descarga.
+
+    La fecha sale de la columna `Date` del propio reporte, no de cuándo Apple
+    lo generó. Usar `processingDate` metía todos los días del reporte en la
+    fecha de generación: los 66 descargas de la app de clientes —repartidas
+    entre el 5 y el 10 de septiembre— aparecían como un pico de 56 el día 11,
+    que ni siquiera era el total. La gráfica mentía sobre cuándo pasó todo.
+    """
+    por_dia: dict[str, dict[str, int]] = {}
     lector = csv.DictReader(io.StringIO(texto), delimiter="\t")
     for fila in lector:
         try:
             n = int(float(fila.get("Counts") or 0))
         except ValueError:
             continue
+        fecha = (fila.get("Date") or "").strip()[:10]
+        if not fecha:
+            continue
+        dia = por_dia.setdefault(fecha, {"primera": 0, "redescarga": 0, "otras": 0})
         tipo = (fila.get("Download Type") or "").strip().lower()
         if tipo == PRIMERA_VEZ:
-            total["primera"] += n
+            dia["primera"] += n
         elif tipo == REDESCARGA:
-            total["redescarga"] += n
+            dia["redescarga"] += n
         else:
-            total["otras"] += n
-    return total
+            dia["otras"] += n
+    return por_dia
 
 
 def fetch_appstore_installs(token: str, bundle: str, previo: dict) -> tuple[dict | None, str | None]:
@@ -591,28 +602,27 @@ def fetch_appstore_installs(token: str, bundle: str, previo: dict) -> tuple[dict
         # antes, se conserva ese total en vez de borrarlo.
         return (previo or {"pendiente": True}), None
 
-    # Días ya sumados en corridas anteriores: solo se vuelven a bajar los tres
-    # más recientes, que Apple sigue corrigiendo. El resto se conserva tal cual
-    # para no bajar un año de reportes cada mañana.
+    # Instancias ya leídas en corridas anteriores: no se vuelven a bajar salvo
+    # las tres más recientes, que Apple sigue corrigiendo unos días.
+    #
+    # Se indexa por instancia y no por fecha porque una instancia trae VARIOS
+    # días: la fecha de cada dato vive dentro del reporte, no en la instancia.
     dias: dict[str, dict] = dict(previo.get("dias") or {})
-    frescos = {(hoy() - timedelta(days=i)).isoformat() for i in range(3)}
+    leidas: set[str] = set(previo.get("instancias") or [])
+    recientes_ids = {i["id"] for i in instancias[:3]}
 
     for inst in instancias:
-        attrs = inst.get("attributes") or {}
-        fecha = (attrs.get("processingDate") or "")[:10]
-        if not fecha:
-            continue
-        if fecha in dias and fecha not in frescos:
+        if inst["id"] in leidas and inst["id"] not in recientes_ids:
             continue
         textos, err = asc_descargar_segmentos(token, inst["id"])
         if err:
             return None, err
-        acumulado = {"primera": 0, "redescarga": 0, "otras": 0}
         for t in textos:
-            parcial = sumar_descargas(t)
-            for k in acumulado:
-                acumulado[k] += parcial[k]
-        dias[fecha] = acumulado
+            # Se REEMPLAZA el día, no se suma: releer una instancia que Apple
+            # corrigió tiene que dejar su cifra nueva, no el doble. Cada día
+            # vive en una sola instancia, así que no hay nada que acumular.
+            dias.update(sumar_descargas(t))
+        leidas.add(inst["id"])
 
     if not dias:
         return {"pendiente": True}, None
@@ -636,6 +646,7 @@ def fetch_appstore_installs(token: str, bundle: str, previo: dict) -> tuple[dict
         "desde": ordenados[0],
         "hasta": ordenados[-1],
         "dias": dias,
+        "instancias": sorted(leidas),
         "parcial": True,
         "pendiente": False,
     }, None
