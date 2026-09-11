@@ -48,6 +48,11 @@ export interface PasePlataforma {
   pasos: PasoPase[];
   /** false = falta algún paso por falta de historial; el total quedaría bajo. */
   completo: boolean;
+  /**
+   * Pases COMPLETOS detectados en el periodo: el mínimo de veces que corrió
+   * cada uno de los tres pasos. El importe es el promedio de esos pases.
+   */
+  pases: number;
   minutos: number;
   usd: number;
 }

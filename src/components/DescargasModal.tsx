@@ -367,6 +367,9 @@ export function DescargasModal({
                       {plataforma === "ios" ? "iOS" : "Android"}
                       <span className="font-mono text-foreground">{USD(p.usd)}</span>
                       <span>· {Math.round(p.minutos)} min</span>
+                      {/* Con más de un pase el número es un promedio, y eso
+                          cambia cómo se lee: conviene que se vea. */}
+                      {p.pases > 1 && <span>· media de {p.pases}</span>}
                     </span>
                   ))}
                 </div>
@@ -396,10 +399,10 @@ export function DescargasModal({
 
                 <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
                   Las dos tiendas: por plataforma son tres pasos —construir, subir al canal de
-                  pruebas y mandarla a la tienda—, promediados sobre los builds exitosos del mismo
-                  periodo cobrado de arriba. Con un solo pase en el periodo las dos cifras
-                  coinciden. Un reintento o un build que falla se cobran aparte, así que es el
-                  costo del camino limpio.
+                  pruebas y mandarla a la tienda—, sobre los builds exitosos del mismo periodo
+                  cobrado de arriba. Cuántos pases hubo es el mínimo de veces que corrió cada uno
+                  de esos tres pasos; si hubo varios, el importe es su promedio. Lo que sobra
+                  —reintentos y builds fallidos— va a la merma, no aquí.
                 </p>
               </div>
             )}
