@@ -140,7 +140,12 @@ export interface CodemagicBuild {
   finishedAt?: string;
   createdAt?: string;
   artefacts?: CodemagicArtefact[];
-  message?: string; // mensaje del commit
+  /**
+   * En un build FALLIDO, el motivo que da Codemagic ("No provisioning profile
+   * with reference 'x' were found…"). En los que terminan bien llega vacío.
+   * Viene ya en la lista de builds, no hace falta pedir el detalle.
+   */
+  message?: string;
   version?: string;
   index?: number; // número de build
   commit?: { hash?: string; sha?: string; commitMessage?: string };
@@ -241,6 +246,19 @@ export function failedStepName(build?: CodemagicBuild | null): string | null {
     (a) => a.status === "failed" || a.status === "timeout" || a.status === "error",
   );
   return fallido?.name?.trim() || null;
+}
+
+/**
+ * Por qué murió el build, según Codemagic.
+ *
+ * Hace falta aparte del paso que falló: cuando el build se cae ANTES de
+ * arrancar —firma de iOS que no existe, credencial que falta— `buildActions`
+ * llega vacío y el dashboard no podía decir nada, así que había que abrir
+ * Codemagic para leer una línea.
+ */
+export function buildFailureMessage(build?: CodemagicBuild | null): string | null {
+  if (!build || build.status === "finished" || build.status === "success") return null;
+  return build.message?.trim() || null;
 }
 
 export const buildUrl = (appId: string, buildId: string) =>

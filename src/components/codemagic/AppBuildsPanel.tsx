@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
 import { useCodemagicApps, useCodemagicBuilds, useBranchHead, useActiveDeploy } from "@/hooks/useCodemagic";
 import {
+  buildFailureMessage as motivoFallo,
   startBuild, cancelBuild, buildStatusInfo, buildUrl, buildCommitSha, appRepo,
   formatBuildDate, uploadAndroidKeystore, uploadPlayServiceAccount, PLAY_CREDENTIALS_VAR,
   listSecureVariableKeys, ANDROID_SIGNING_GROUP, KEYSTORE_VAR,
@@ -1957,6 +1958,19 @@ export function AppBuildsPanel({ appId, perms, project }: {
                   </span>
                   {wfName && <span className="font-medium">{wfName}</span>}
                   {info.tone === "failed" && <PasoQueFallo buildId={b._id} />}
+                  {/* El motivo, no solo el paso. Un build que se cae antes de
+                      arrancar —la firma de iOS que el Team no tiene— no deja
+                      ningún paso fallido, así que sin esto la fila decía
+                      "exitoso/falló" y nada más, y había que abrir Codemagic
+                      para leer una línea. */}
+                  {motivoFallo(b) && (
+                    <span
+                      title={motivoFallo(b) ?? undefined}
+                      className="min-w-0 max-w-[38ch] truncate text-red-700 dark:text-red-300"
+                    >
+                      {motivoFallo(b)}
+                    </span>
+                  )}
                   <span className="flex items-center gap-1 text-muted-foreground">
                     <GitBranch className="h-3 w-3" />{b.branch}
                   </span>
