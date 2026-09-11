@@ -83,6 +83,19 @@ jobs:
             i=$((i + 1))
           done
 
+          # Puente al Portal Alta Dirección (sozu-admin): la versión que quedó
+          # en Firestore se deja también en Supabase, que es lo único que ese
+          # portal puede leer desde el navegador. Va después de las pasadas,
+          # con el veredicto ya asentado.
+          # Secretos PROPIOS y no los `SUPABASE_*` que ya existían: esos son la
+          # config del front y apuntan a supabase-dev.sozu.com, así que el sync
+          # habría escrito en dev mientras el portal lee producción — y nadie lo
+          # habría notado, porque el paso no falla.
+          SUPABASE_URL="$(secret DASHBOARD_SUPABASE_URL)"
+          SUPABASE_SERVICE_ROLE_KEY="$(secret DASHBOARD_SUPABASE_SERVICE_ROLE_KEY)"
+          export SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY
+          python ci/supabase_versions_push.py
+
           # --- Canales de Firebase Hosting (drafts pendientes de publicar) ---
           # HOSTING_COMPARE es el respaldo cuando la cuenta de servicio no tiene
           # permiso sobre el sitio: compara el HTML del draft contra el de producción.
