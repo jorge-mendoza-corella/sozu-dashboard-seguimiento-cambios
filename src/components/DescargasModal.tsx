@@ -133,17 +133,6 @@ export function DescargasModal({
 
   const merma = consumo?.merma;
 
-  // El total solo se anuncia si las dos plataformas tienen el recorrido
-  // completo: con un paso ausente sería un número bajo que se leería como el
-  // costo real de publicar.
-  const ambas = useMemo(
-    () =>
-      pases.length === 2 && pases.every(([, p]) => p.completo)
-        ? pases.reduce((s, [, p]) => s + p.usd, 0)
-        : null,
-    [pases],
-  );
-
 
   const datasets = useMemo(() => {
     const series: { key: "android" | "ios"; label: string }[] =
@@ -345,13 +334,8 @@ export function DescargasModal({
                     Un pase a producción
                   </span>
                   <span className="font-mono text-xl font-semibold tabular-nums">
-                    {ambas !== null ? USD(ambas) : USD(pases.reduce((s, [, p]) => s + p.usd, 0))}
+                    {USD(pases.reduce((s, [, p]) => s + p.usd, 0))}
                   </span>
-                  {ambas === null && (
-                    <span className="text-[10px] text-amber-600 dark:text-amber-400">
-                      parcial · falta historial de algún paso
-                    </span>
-                  )}
                 </div>
 
                 <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
@@ -383,14 +367,13 @@ export function DescargasModal({
                     className="mt-1.5 flex cursor-help flex-wrap items-baseline gap-x-2 text-[11px] text-muted-foreground"
                     title={[
                       `builds fallidos: ${merma.fallidos.toFixed(1)} min`,
-                      `pasos repetidos: ${merma.repetidos.toFixed(1)} min`,
                       `otros workflows: ${merma.otros.toFixed(1)} min`,
                     ].join("\n")}
                   >
                     <span>Merma</span>
                     <span className="font-mono text-foreground">{USD(merma.usd)}</span>
                     <span>
-                      · {Math.round(merma.minutos)} min cobrados fuera del pase
+                      · {Math.round(merma.minutos)} min cobrados que no publicaron nada
                       {merma.fallidos > 0 &&
                         ` (${Math.round(merma.fallidos)} de builds fallidos)`}
                     </span>

@@ -66,10 +66,8 @@ export interface PasePlataforma {
 export interface Merma {
   minutos: number;
   usd: number;
-  /** Builds que reventaron: se arregla la causa. */
+  /** Builds que reventaron: ocuparon máquina y no produjeron nada. */
   fallidos: number;
-  /** El mismo paso corrido de nuevo: reintentos o pases extra. */
-  repetidos: number;
   /** Workflows que no son del pase (web, sync de testers…). */
   otros: number;
 }
