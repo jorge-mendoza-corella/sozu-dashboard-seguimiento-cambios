@@ -638,17 +638,18 @@ def fetch_appstore_installs(token: str, bundle: str, previo: dict) -> tuple[dict
     redes = sum(d["redescarga"] for d in dias.values())
     corte30 = (hoy() - timedelta(days=30)).isoformat()
     recientes = [d for f, d in dias.items() if f >= corte30]
+    # "Descargas" son las de PRIMERA VEZ, que es lo que App Store Connect pone
+    # como titular. Sumarle las redescargas daba 112 donde su pantalla decía
+    # 108, y el primer reflejo al ver dos números distintos es no creerle a
+    # ninguno. Las redescargas siguen guardadas aparte, que para eso están.
     return {
-        "descargas": primera + redes,
+        "descargas": primera,
         "primeraVez": primera,
         "redescargas": redes,
-        "descargas30d": sum(d["primera"] + d["redescarga"] for d in recientes),
+        "descargas30d": sum(d["primera"] for d in recientes),
         # La serie diaria, para pintar el día a día de iOS aunque las apps
         # todavía no manden nada a Analytics.
-        "serie": [
-            {"fecha": f, "descargas": dias[f]["primera"] + dias[f]["redescarga"]}
-            for f in ordenados
-        ],
+        "serie": [{"fecha": f, "descargas": dias[f]["primera"]} for f in ordenados],
         "desde": ordenados[0],
         "hasta": ordenados[-1],
         "dias": dias,
