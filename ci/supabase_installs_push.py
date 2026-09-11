@@ -244,8 +244,13 @@ def main() -> None:
         print("· Sin SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY: no se empuja al portal.")
         return
 
+    # La lista se guarda: la recorren DOS bucles —subir y luego copiar la serie
+    # de vuelta al dashboard— y consultarla otra vez sería pedirle a Firestore
+    # lo mismo dos veces en la misma corrida.
+    apps = list_apps(fs_token)
+
     total = 0
-    for app in list_apps(fs_token):
+    for app in apps:
         filas = filas_de(fs_token, app)
         if not filas:
             print(f"· {app['package'] or app['bundleId']}: todavía sin serie diaria que empujar.")
