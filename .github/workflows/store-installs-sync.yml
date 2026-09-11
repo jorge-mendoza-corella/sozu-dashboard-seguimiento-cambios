@@ -85,3 +85,10 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY="$(secret DASHBOARD_SUPABASE_SERVICE_ROLE_KEY)"
           export SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY
           python ci/supabase_installs_push.py
+
+          # Lo que Codemagic factura. Va aquí y no en el navegador porque
+          # `/user` —el único endpoint con el desglose— no manda cabeceras
+          # CORS: desde el dashboard contesta "Failed to fetch".
+          CODEMAGIC_TOKEN="$(secret DASHBOARD_CODEMAGIC_TOKEN)"
+          export CODEMAGIC_TOKEN
+          python ci/codemagic_usage_sync.py

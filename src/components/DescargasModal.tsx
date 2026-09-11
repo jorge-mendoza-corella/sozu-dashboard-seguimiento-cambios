@@ -10,7 +10,8 @@ import { Apple, Smartphone, Download, X, Loader2, Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { getInstallsDiarias, ultimosDias, type DiaInstalaciones } from "@/lib/installsDiarias";
-import { getConsumoCodemagic, MINUTOS_GRATIS_MES } from "@/lib/codemagic";
+import { getConsumoCodemagic } from "@/lib/codemagicConsumo";
+import { MINUTOS_GRATIS_MES } from "@/lib/codemagic";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ChartTooltip, Filler);
 
@@ -272,14 +273,14 @@ export function DescargasModal({
 
             {errorConsumo && (
               <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200">
-                No se pudo leer la facturación de Codemagic:{" "}
+                No se pudo leer la facturación:{" "}
                 {errorConsumo instanceof Error ? errorConsumo.message : "error desconocido"}
               </p>
             )}
 
             {!cargandoConsumo && !errorConsumo && !consumo && (
               <p className="text-[11px] text-muted-foreground">
-                Codemagic no devolvió datos de facturación para esta cuenta.
+                Todavía sin datos de facturación de esta app. Los escribe el sync una vez al día.
               </p>
             )}
 

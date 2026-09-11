@@ -221,6 +221,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Lo que Codemagic factura por app. Lo escribe el sync porque el
+    // endpoint de facturación no admite peticiones del navegador (sin CORS).
+    match /codemagicConsumo/{appId} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if false;
+    }
+
     // Serie diaria de instalaciones por proyecto (copia de lectura de lo que
     // vive en Supabase, que es donde se mezcla lo medido con la siembra).
     match /installsDiarias/{projectId} {
