@@ -131,21 +131,21 @@ def builds_de_app(token: str, app_id: str, desde: datetime) -> list[dict]:
     return salida
 
 
-def minutos_del_periodo(builds: list[dict], minutos_facturados: float) -> dict[str, float]:
-    """Reparte por app SOLO los minutos que entraron en el recibo.
+def builds_del_periodo(builds: list[dict], minutos_facturados: float) -> list[dict]:
+    """Los builds que componen el recibo, con los minutos que se les cobraron.
 
-    Codemagic no dice qué builds componen el periodo ni cuándo empieza, pero sí
-    cuántos minutos de máquina lleva. Se recorren los builds del más nuevo al
-    más viejo hasta juntar esa cantidad: eso reconstruye el periodo sin tener
-    que adivinar una ventana.
+    Codemagic no dice qué builds forman el periodo ni cuándo empieza, pero sí
+    cuántos minutos de máquina lleva cobrados. Se recorren del más nuevo al más
+    viejo hasta juntar esa cantidad: eso reconstruye el periodo sin adivinar
+    ninguna ventana.
 
-    Sin esto el reparto mezclaba peras con manzanas. Con una ventana fija de 30
-    días se contaban 425 minutos de dos apps que llevaban semanas en la cuenta
-    personal, mientras el recibo del equipo era de 55: la tarjeta decía "205
-    min de máquina · USD 2.52" cuando 205 minutos cuestan 19.47. Ahora los
-    minutos que se enseñan son los que de verdad se cobraron.
+    Devolver los BUILDS y no solo la suma es lo que mantiene coherentes las dos
+    cifras de la tarjeta. Antes el costo de la app salía de aquí y el costo de
+    un pase a producción de un promedio sobre 120 días de historial, así que un
+    pase (41 min) podía salir más caro que todo lo cobrado a esa app (32 min),
+    que es imposible si solo hubo un pase.
     """
-    porApp: dict[str, float] = {}
+    salida: list[dict] = []
     acumulado = 0.0
     for b in sorted(builds, key=lambda x: x["inicio"], reverse=True):
         if acumulado >= minutos_facturados:
@@ -153,9 +153,9 @@ def minutos_del_periodo(builds: list[dict], minutos_facturados: float) -> dict[s
         # El build que cruza el corte entra solo por la parte que cabe: el
         # periodo empezó a mitad de ese build, no antes.
         cabe = min(b["minutos"], minutos_facturados - acumulado)
-        porApp[b["appId"]] = porApp.get(b["appId"], 0.0) + cabe
+        salida.append({**b, "minutosCobrados": cabe})
         acumulado += cabe
-    return porApp
+    return salida
 
 
 def costo_por_pase(builds: list[dict]) -> dict:
@@ -166,17 +166,26 @@ def costo_por_pase(builds: list[dict]) -> dict:
     de ese recorrido es lo que se quiere estimar. Se promedia la duración de
     cada paso y se suman los tres.
 
-    Solo se promedian los builds EXITOSOS: un paso que reventó a los dos
-    minutos no dice lo que tarda ese paso cuando funciona, y meterlo abarataría
-    el promedio justo por haber fallado. Los reintentos, en cambio, sí cuestan:
-    por eso se dice aparte que es el costo del camino limpio.
+    Se promedia sobre los builds DEL PERIODO COBRADO, los mismos con los que se
+    calcula el costo de la app. Así las dos cifras hablan de lo mismo: con un
+    solo pase en el periodo, el pase cuesta exactamente lo que se le cobró a la
+    app. Promediar sobre el historial completo hacía que un pase saliera más
+    caro que todo lo facturado, que no puede ser.
+
+    Solo cuentan los builds EXITOSOS: un paso que reventó a los dos minutos no
+    dice lo que tarda ese paso cuando funciona, y meterlo abarataría el
+    promedio justo por haber fallado. Los reintentos sí cuestan, y por eso se
+    dice aparte que es el costo del camino limpio.
     """
     por_workflow: dict[str, list[float]] = {}
     maquinas: dict[str, str] = {}
     for b in builds:
         if b["status"] not in ("finished", "success") or not b["workflow"]:
             continue
-        por_workflow.setdefault(b["workflow"], []).append(b["minutos"])
+        # Los minutos COBRADOS, no los de reloj: el build que cruza el corte
+        # del periodo entró solo en parte, y usar su duración completa
+        # descuadraría el total contra lo facturado.
+        por_workflow.setdefault(b["workflow"], []).append(b.get("minutosCobrados", b["minutos"]))
         maquinas.setdefault(b["workflow"], b["maquina"])
 
     salida: dict[str, dict] = {}
@@ -273,16 +282,21 @@ def main() -> None:
         # el importe de cada app.
         facturados = actual["minutosPagados"]
         builds = [b for app_id in amb["apps"] for b in builds_de_app(cm_token, app_id, desde)]
-        minutos = minutos_del_periodo(builds, facturados)
+        del_periodo = builds_del_periodo(builds, facturados)
+        minutos: dict[str, float] = {}
+        for b in del_periodo:
+            minutos[b["appId"]] = minutos.get(b["appId"], 0.0) + b["minutosCobrados"]
         total_min = sum(minutos.values())
         print(
             f"· {amb['nombre']}: {actual['usd']:.2f} USD · "
             f"{facturados:.0f} min cobrados repartidos entre {len(amb['apps'])} app(s)"
         )
 
-        # Los builds de cada app, para el costo de su pase a producción.
+        # Para el costo del pase se usan los MISMOS builds del periodo cobrado
+        # que alimentan el reparto: si vinieran de otro conjunto, las dos
+        # cifras de la tarjeta se contradirían.
         por_app_builds: dict[str, list[dict]] = {}
-        for b in builds:
+        for b in del_periodo:
             por_app_builds.setdefault(b["appId"], []).append(b)
 
         for app_id in amb["apps"]:
