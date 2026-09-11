@@ -131,6 +131,8 @@ export function DescargasModal({
       .filter((x): x is readonly ["ios" | "android", NonNullable<typeof x[1]>] => !!x[1]);
   }, [consumo]);
 
+  const merma = consumo?.merma;
+
   // El total solo se anuncia si las dos plataformas tienen el recorrido
   // completo: con un paso ausente sería un número bajo que se leería como el
   // costo real de publicar.
@@ -368,6 +370,29 @@ export function DescargasModal({
                     </span>
                   ))}
                 </div>
+
+                {/* Lo cobrado que no fue el pase. Se enseña porque se paga
+                    igual y hasta ahora no aparecía en ningún lado: la tarjeta
+                    daba lo facturado y el costo de un pase, y la diferencia no
+                    tenía nombre. */}
+                {!!merma?.minutos && (
+                  <p
+                    className="mt-1.5 flex cursor-help flex-wrap items-baseline gap-x-2 text-[11px] text-muted-foreground"
+                    title={[
+                      `builds fallidos: ${merma.fallidos.toFixed(1)} min`,
+                      `pasos repetidos: ${merma.repetidos.toFixed(1)} min`,
+                      `otros workflows: ${merma.otros.toFixed(1)} min`,
+                    ].join("\n")}
+                  >
+                    <span>Merma</span>
+                    <span className="font-mono text-foreground">{USD(merma.usd)}</span>
+                    <span>
+                      · {Math.round(merma.minutos)} min cobrados fuera del pase
+                      {merma.fallidos > 0 &&
+                        ` (${Math.round(merma.fallidos)} de builds fallidos)`}
+                    </span>
+                  </p>
+                )}
 
                 <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
                   Las dos tiendas: por plataforma son tres pasos —construir, subir al canal de
