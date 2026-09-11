@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { getInstallsDiarias, ultimosDias, type DiaInstalaciones } from "@/lib/installsDiarias";
 import { useCodemagicBuilds } from "@/hooks/useCodemagic";
-import { costoDeBuilds, MINUTOS_GRATIS_MES } from "@/lib/codemagic";
+import { getConsumoCodemagic, minutosDelPeriodo, MINUTOS_GRATIS_MES } from "@/lib/codemagic";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ChartTooltip, Filler);
 
@@ -111,7 +111,26 @@ export function DescargasModal({
     };
   }, [serie, puntos, plataforma]);
 
-  const costo = useMemo(() => costoDeBuilds(builds), [builds]);
+  // Lo facturado de verdad, de la cuenta dueña de la app. No se estima:
+  // Codemagic lo publica en `/user`, separando lo pagado de lo gratis.
+  const { data: consumo } = useQuery({
+    queryKey: ["codemagic-consumo", codemagicAppId],
+    queryFn: () => getConsumoCodemagic(codemagicAppId!),
+    enabled: !!codemagicAppId,
+    staleTime: 10 * 60_000,
+  });
+
+  // Reparto por app: el importe es de la CUENTA, así que la parte de esta app
+  // se estima por su peso en minutos dentro del periodo. Se dice que es un
+  // reparto, no una factura por app — Codemagic no la da.
+  const reparto = useMemo(() => {
+    if (!consumo || consumo.actual.minutosTotales <= 0) return null;
+    const inicioPeriodo = new Date();
+    inicioPeriodo.setDate(inicioPeriodo.getDate() - 30);
+    const minApp = minutosDelPeriodo(builds, inicioPeriodo);
+    const parte = Math.min(1, minApp / consumo.actual.minutosTotales);
+    return { minApp, parte, usd: consumo.actual.usd * parte };
+  }, [consumo, builds]);
 
   const datasets = useMemo(() => {
     const series: { key: "android" | "ios"; label: string }[] =
@@ -242,43 +261,47 @@ export function DescargasModal({
           </>
         )}
 
-        {/* Costo de Codemagic de ESTA app. Va en el mismo modal porque es la
-            otra mitad de la pregunta: cuánto cuesta publicar lo que se baja. */}
-        {codemagicAppId && costo.builds > 0 && (
+        {/* Consumo de Codemagic. Va en el mismo modal porque es la otra mitad
+            de la pregunta: cuánto cuesta publicar lo que se baja. */}
+        {codemagicAppId && consumo && (
           <div className="mt-4 border-t pt-3">
             <h4 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
               <Cpu className="h-3.5 w-3.5" />
-              Consumo en Codemagic
+              Consumo en Codemagic · {consumo.ambito}
             </h4>
             <div className="flex flex-wrap gap-2">
               <Dato
-                label="Costo estimado"
-                valor={USD(costo.usd)}
-                hint={`${costo.builds} builds`}
+                label="Facturado este periodo"
+                valor={USD(consumo.actual.usd)}
+                hint={`${N(Math.round(consumo.actual.minutosPagados))} min cobrados`}
               />
               <Dato
-                label="Minutos de máquina"
-                valor={N(Math.round(costo.minutos))}
-                hint={`${MINUTOS_GRATIS_MES} gratis al mes`}
+                label="Del cupo gratis"
+                valor={`${N(Math.round(consumo.actual.minutosGratis))} min`}
+                hint={`de ${MINUTOS_GRATIS_MES} al mes`}
               />
+              {reparto && (
+                <Dato
+                  label="Parte de esta app"
+                  valor={USD(reparto.usd)}
+                  hint={`${Math.round(reparto.parte * 100)}% de los minutos`}
+                />
+              )}
             </div>
-            <div className="mt-2 space-y-0.5">
-              {costo.porMaquina.map((m) => (
-                <p key={m.instancia} className="flex justify-between text-[11px] text-muted-foreground">
-                  <span className="font-mono">{m.instancia}</span>
-                  <span>
-                    {N(Math.round(m.minutos))} min · {USD(m.usd)}
-                  </span>
-                </p>
-              ))}
-            </div>
-            {/* Que es una cuenta propia y no la factura: la API de Codemagic no
-                devuelve importes, así que esto sale de duración × tarifa. */}
+            {consumo.anterior.usd > 0 && (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Periodo anterior: {USD(consumo.anterior.usd)} ·{" "}
+                {N(Math.round(consumo.anterior.minutosPagados))} min cobrados
+              </p>
+            )}
+            {/* De dónde sale cada número: el total es la factura; el reparto
+                por app es una cuenta nuestra, porque Codemagic factura por
+                cuenta y no desglosa por aplicación. */}
             <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
-              Estimado a partir de la duración de cada build y la tarifa de su máquina — Codemagic
-              no expone importes por API. Cuenta los builds fallidos, que también consumen máquina,
-              y no descuenta los minutos gratis del mes. Sobre los últimos {builds.length} builds
-              que devuelve la API.
+              El total es lo que Codemagic reporta como facturado: cuenta solo los minutos
+              cobrados, no los del cupo gratis. La parte de esta app es un reparto por minutos de
+              máquina —Codemagic no factura por aplicación— sobre los {builds.length} builds que
+              devuelve la API.
             </p>
           </div>
         )}

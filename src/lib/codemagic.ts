@@ -264,13 +264,18 @@ export function buildFailureMessage(build?: CodemagicBuild | null): string | nul
 }
 
 // ---------------------------------------------------------------------------
-// Cuánto ha costado esta app en Codemagic.
+// Cuánto ha costado en Codemagic.
 //
-// La API NO devuelve importes: ni un campo de costo, ni de créditos, ni de
-// minutos. Lo único que da es la duración de cada build y en qué máquina
-// corrió, así que el importe se calcula aquí. Es una ESTIMACIÓN y así se
-// presenta: la factura real depende del plan, de los minutos gratis del mes y
-// de redondeos que Codemagic no publica.
+// La primera versión de esto multiplicaba la duración de TODOS los builds por
+// la tarifa de su máquina y daba $18.26 donde Codemagic facturó $5.23. El
+// error no era la tarifa: era contar como pagado lo que no lo es. Codemagic
+// reparte el tiempo en tres cubos —`_free` (los 500 min del mes), `_personal`
+// (crédito incluido) y `_paid` (lo que de verdad se cobra)— y solo el tercero
+// cuesta dinero.
+//
+// Ese desglose SÍ está en la API, en `/user`, aunque no esté documentado: por
+// cuenta y por team, del periodo en curso y del anterior, en SEGUNDOS. Es el
+// importe real, no una estimación, así que es el que se enseña.
 // ---------------------------------------------------------------------------
 
 /** USD por minuto de cada máquina (codemagic.io/pricing, revisado 2026-09-11). */
@@ -284,17 +289,78 @@ const PRECIO_POR_MINUTO: Record<string, number> = {
 /** Tarifa de la máquina más cara: lo desconocido no se cobra de menos. */
 const PRECIO_POR_DEFECTO = 0.114;
 
-/** Minutos gratis de macOS M2 al mes del plan free. */
+/** Minutos gratis de macOS M2 al mes. */
 export const MINUTOS_GRATIS_MES = 500;
 
-export interface CostoBuilds {
-  /** Minutos de máquina sumados. */
-  minutos: number;
-  /** USD estimados, sin descontar los minutos gratis. */
+export interface ConsumoPeriodo {
+  /** Minutos que de verdad se facturan. */
+  minutosPagados: number;
+  /** Minutos consumidos del cupo gratis del mes. */
+  minutosGratis: number;
+  /** Todo el tiempo de máquina, se cobre o no. */
+  minutosTotales: number;
+  /** USD del periodo: solo los minutos pagados, a la tarifa de su máquina. */
   usd: number;
-  builds: number;
-  /** Desglose por máquina, para ver de dónde sale el importe. */
-  porMaquina: { instancia: string; minutos: number; usd: number; builds: number }[];
+}
+
+export interface ConsumoCodemagic {
+  /** Dueño de la app: el team, o la cuenta personal. */
+  ambito: string;
+  actual: ConsumoPeriodo;
+  anterior: ConsumoPeriodo;
+}
+
+/** `{ mac_mini_m2_paid: 3300, … }` en segundos → minutos y dinero. */
+function periodoDe(buildTime: Record<string, number> | undefined): ConsumoPeriodo {
+  const r: ConsumoPeriodo = { minutosPagados: 0, minutosGratis: 0, minutosTotales: 0, usd: 0 };
+  for (const [clave, segundos] of Object.entries(buildTime ?? {})) {
+    if (!segundos) continue;
+    const min = segundos / 60;
+    r.minutosTotales += min;
+    // La clave es `<maquina>_<cubo>`: el cubo es el último tramo.
+    const corte = clave.lastIndexOf("_");
+    const maquina = clave.slice(0, corte);
+    const cubo = clave.slice(corte + 1);
+    if (cubo === "paid") {
+      r.minutosPagados += min;
+      r.usd += min * (PRECIO_POR_MINUTO[maquina] ?? PRECIO_POR_DEFECTO);
+    } else if (cubo === "free") {
+      r.minutosGratis += min;
+    }
+  }
+  return r;
+}
+
+interface UserResponse {
+  user?: {
+    billing?: { usage?: { currentPeriod?: { buildTime?: Record<string, number> }; previousPeriod?: { buildTime?: Record<string, number> } } };
+    teams?: {
+      name?: string;
+      applicationIds?: string[];
+      billing?: { usage?: { currentPeriod?: { buildTime?: Record<string, number> }; previousPeriod?: { buildTime?: Record<string, number> } } };
+    }[];
+  };
+}
+
+/**
+ * Consumo facturado de la cuenta que es dueña de esa app.
+ *
+ * Se busca el appId en los `applicationIds` de cada team; si no está en
+ * ninguno, la app es de la cuenta personal. Importa acertar: al mover una app
+ * a un team, su gasto deja de contar en la personal y empieza en el team, y
+ * enseñar el cubo equivocado daría cero justo cuando más se mira.
+ */
+export async function getConsumoCodemagic(appId: string): Promise<ConsumoCodemagic | null> {
+  const d = await request<UserResponse>("/user");
+  const u = d.user;
+  if (!u) return null;
+  const team = u.teams?.find((t) => t.applicationIds?.includes(appId));
+  const uso = (team ?? u).billing?.usage;
+  return {
+    ambito: team?.name ? `equipo ${team.name}` : "cuenta personal",
+    actual: periodoDe(uso?.currentPeriod?.buildTime),
+    anterior: periodoDe(uso?.previousPeriod?.buildTime),
+  };
 }
 
 /** Minutos que duró un build. 0 si todavía corre o si la API no fecha el fin. */
@@ -305,34 +371,16 @@ export function buildMinutos(b: CodemagicBuild): number {
 }
 
 /**
- * Costo estimado de un conjunto de builds.
+ * Minutos de máquina de esos builds dentro del periodo de facturación en curso.
  *
- * Se cobran TODOS, no solo los exitosos: Codemagic factura el tiempo de
- * máquina, y un build que falla a los diez minutos costó esos diez minutos.
+ * Sirve para repartir: el importe que cobra Codemagic es de la CUENTA, no de
+ * cada app, así que la parte de una app se estima por su peso en minutos. Se
+ * cuentan los fallidos, que también ocupan máquina.
  */
-export function costoDeBuilds(builds: CodemagicBuild[]): CostoBuilds {
-  const acc = new Map<string, { minutos: number; usd: number; builds: number }>();
-  for (const b of builds) {
-    const min = buildMinutos(b);
-    if (min <= 0) continue;
-    const instancia = b.instanceType ?? "desconocida";
-    const tarifa = PRECIO_POR_MINUTO[instancia] ?? PRECIO_POR_DEFECTO;
-    const prev = acc.get(instancia) ?? { minutos: 0, usd: 0, builds: 0 };
-    acc.set(instancia, {
-      minutos: prev.minutos + min,
-      usd: prev.usd + min * tarifa,
-      builds: prev.builds + 1,
-    });
-  }
-  const porMaquina = [...acc.entries()]
-    .map(([instancia, v]) => ({ instancia, ...v }))
-    .sort((a, b) => b.usd - a.usd);
-  return {
-    minutos: porMaquina.reduce((s, m) => s + m.minutos, 0),
-    usd: porMaquina.reduce((s, m) => s + m.usd, 0),
-    builds: porMaquina.reduce((s, m) => s + m.builds, 0),
-    porMaquina,
-  };
+export function minutosDelPeriodo(builds: CodemagicBuild[], desde: Date): number {
+  return builds
+    .filter((b) => b.startedAt && new Date(b.startedAt) >= desde)
+    .reduce((s, b) => s + buildMinutos(b), 0);
 }
 
 export const buildUrl = (appId: string, buildId: string) =>
