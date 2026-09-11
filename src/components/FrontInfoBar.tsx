@@ -21,6 +21,9 @@ interface Props {
   projectId?: string;
   /** Descargas leídas a mano de las consolas, como piso del número. */
   installsManual?: { android?: number; ios?: number; fecha?: string };
+  /** App de Codemagic, para el consumo del modal de descargas. */
+  codemagicAppId?: string;
+  nombre?: string;
 }
 
 /**
@@ -48,7 +51,7 @@ function EnRevision({ version }: { version: string }) {
  * sirviendo. En las apps se añaden las versiones publicadas en las tiendas, para
  * ver de un golpe si la web va por delante de lo que tiene la gente instalado.
  */
-export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundleId, projectId, installsManual }: Props) {
+export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundleId, projectId, installsManual, codemagicAppId, nombre }: Props) {
   const [copiado, setCopiado] = useState(false);
 
   const { data: play } = useQuery({
@@ -204,6 +207,8 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
             iosBundleId={iosBundleId}
             projectId={projectId}
             installsManual={installsManual}
+            codemagicAppId={codemagicAppId}
+            nombre={nombre}
           />
         </>
       )}

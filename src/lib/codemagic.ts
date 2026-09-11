@@ -148,6 +148,8 @@ export interface CodemagicBuild {
   message?: string;
   version?: string;
   index?: number; // número de build
+  /** Máquina en la que corrió (`mac_mini_m2`…). De aquí sale el costo. */
+  instanceType?: string;
   commit?: { hash?: string; sha?: string; commitMessage?: string };
   /** Pasos del build. Solo viene en el detalle (`/builds/{id}`), no en la lista. */
   buildActions?: CodemagicBuildAction[];
@@ -259,6 +261,78 @@ export function failedStepName(build?: CodemagicBuild | null): string | null {
 export function buildFailureMessage(build?: CodemagicBuild | null): string | null {
   if (!build || build.status === "finished" || build.status === "success") return null;
   return build.message?.trim() || null;
+}
+
+// ---------------------------------------------------------------------------
+// Cuánto ha costado esta app en Codemagic.
+//
+// La API NO devuelve importes: ni un campo de costo, ni de créditos, ni de
+// minutos. Lo único que da es la duración de cada build y en qué máquina
+// corrió, así que el importe se calcula aquí. Es una ESTIMACIÓN y así se
+// presenta: la factura real depende del plan, de los minutos gratis del mes y
+// de redondeos que Codemagic no publica.
+// ---------------------------------------------------------------------------
+
+/** USD por minuto de cada máquina (codemagic.io/pricing, revisado 2026-09-11). */
+const PRECIO_POR_MINUTO: Record<string, number> = {
+  mac_mini_m2: 0.095,
+  mac_mini_m4: 0.114,
+  linux_x2: 0.045,
+  windows_x2: 0.045,
+};
+
+/** Tarifa de la máquina más cara: lo desconocido no se cobra de menos. */
+const PRECIO_POR_DEFECTO = 0.114;
+
+/** Minutos gratis de macOS M2 al mes del plan free. */
+export const MINUTOS_GRATIS_MES = 500;
+
+export interface CostoBuilds {
+  /** Minutos de máquina sumados. */
+  minutos: number;
+  /** USD estimados, sin descontar los minutos gratis. */
+  usd: number;
+  builds: number;
+  /** Desglose por máquina, para ver de dónde sale el importe. */
+  porMaquina: { instancia: string; minutos: number; usd: number; builds: number }[];
+}
+
+/** Minutos que duró un build. 0 si todavía corre o si la API no fecha el fin. */
+export function buildMinutos(b: CodemagicBuild): number {
+  if (!b.startedAt || !b.finishedAt) return 0;
+  const ms = new Date(b.finishedAt).getTime() - new Date(b.startedAt).getTime();
+  return ms > 0 ? ms / 60_000 : 0;
+}
+
+/**
+ * Costo estimado de un conjunto de builds.
+ *
+ * Se cobran TODOS, no solo los exitosos: Codemagic factura el tiempo de
+ * máquina, y un build que falla a los diez minutos costó esos diez minutos.
+ */
+export function costoDeBuilds(builds: CodemagicBuild[]): CostoBuilds {
+  const acc = new Map<string, { minutos: number; usd: number; builds: number }>();
+  for (const b of builds) {
+    const min = buildMinutos(b);
+    if (min <= 0) continue;
+    const instancia = b.instanceType ?? "desconocida";
+    const tarifa = PRECIO_POR_MINUTO[instancia] ?? PRECIO_POR_DEFECTO;
+    const prev = acc.get(instancia) ?? { minutos: 0, usd: 0, builds: 0 };
+    acc.set(instancia, {
+      minutos: prev.minutos + min,
+      usd: prev.usd + min * tarifa,
+      builds: prev.builds + 1,
+    });
+  }
+  const porMaquina = [...acc.entries()]
+    .map(([instancia, v]) => ({ instancia, ...v }))
+    .sort((a, b) => b.usd - a.usd);
+  return {
+    minutos: porMaquina.reduce((s, m) => s + m.minutos, 0),
+    usd: porMaquina.reduce((s, m) => s + m.usd, 0),
+    builds: porMaquina.reduce((s, m) => s + m.builds, 0),
+    porMaquina,
+  };
 }
 
 export const buildUrl = (appId: string, buildId: string) =>
