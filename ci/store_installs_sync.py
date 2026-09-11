@@ -52,6 +52,12 @@ MESES_PLAY = 3
 # trae las mismas cuentas partidas en más dimensiones, y aquí solo se suman.
 ASC_REPORT = "App Downloads Standard"
 
+# Versión de cómo se guardan los días de Apple. Subirla obliga a rearmar la
+# caché desde los reportes en la siguiente corrida. Es el único modo de tirar
+# cifras mal fechadas: la caché sobrevive a los arreglos de código, así que un
+# día inventado por una versión anterior se queda ahí para siempre.
+ESQUEMA_DIAS = 2
+
 
 def fail(msg: str) -> None:
     print(f"::error::{msg}")
@@ -612,9 +618,13 @@ def fetch_appstore_installs(token: str, bundle: str, previo: dict) -> tuple[dict
     # de descarga sino de generación del reporte. Conservarlas sumaba un día
     # fantasma —56 descargas el 11 de septiembre— encima de las reales.
     # `instancias` solo existe desde el arreglo, así que sirve de marca.
-    compatible = "instancias" in previo
+    compatible = previo.get("esquemaDias") == ESQUEMA_DIAS
     dias: dict[str, dict] = dict(previo.get("dias") or {}) if compatible else {}
-    leidas: set[str] = set(previo.get("instancias") or [])
+    # De qué instancia salió cada día. Sin esto no hay manera de retirar un día
+    # que Apple dejó de reportar: la caché guarda el número pero no de dónde
+    # vino, así que una cifra equivocada solo se puede sumar, nunca quitar.
+    origen: dict[str, str] = dict(previo.get("origenDias") or {}) if compatible else {}
+    leidas: set[str] = set(previo.get("instancias") or []) if compatible else set()
     recientes_ids = {i["id"] for i in instancias[:3]}
 
     for inst in instancias:
@@ -623,11 +633,23 @@ def fetch_appstore_installs(token: str, bundle: str, previo: dict) -> tuple[dict
         textos, err = asc_descargar_segmentos(token, inst["id"])
         if err:
             return None, err
+        # Los segmentos son trozos del MISMO reporte: dentro de una instancia se
+        # suman, porque un día puede venir partido entre dos.
+        nuevos: dict[str, dict] = {}
         for t in textos:
-            # Se REEMPLAZA el día, no se suma: releer una instancia que Apple
-            # corrigió tiene que dejar su cifra nueva, no el doble. Cada día
-            # vive en una sola instancia, así que no hay nada que acumular.
-            dias.update(sumar_descargas(t))
+            for fecha, cuenta in sumar_descargas(t).items():
+                acc = nuevos.setdefault(fecha, {"primera": 0, "redescarga": 0, "otras": 0})
+                for k, v in cuenta.items():
+                    acc[k] += v
+        # Lo que esta instancia había dejado antes se borra entero y se vuelve a
+        # escribir. Si Apple rehace el reporte y un día desaparece, aquí también
+        # tiene que desaparecer; pisarlo solo donde coincide lo dejaría vivo.
+        for fecha in [f for f, i in origen.items() if i == inst["id"]]:
+            dias.pop(fecha, None)
+            origen.pop(fecha, None)
+        for fecha, cuenta in nuevos.items():
+            dias[fecha] = cuenta
+            origen[fecha] = inst["id"]
         leidas.add(inst["id"])
 
     if not dias:
@@ -653,7 +675,9 @@ def fetch_appstore_installs(token: str, bundle: str, previo: dict) -> tuple[dict
         "desde": ordenados[0],
         "hasta": ordenados[-1],
         "dias": dias,
+        "origenDias": origen,
         "instancias": sorted(leidas),
+        "esquemaDias": ESQUEMA_DIAS,
         "parcial": True,
         "pendiente": False,
     }, None

@@ -172,6 +172,43 @@ def upsert(url: str, key: str, filas: list[dict]) -> str | None:
     return None
 
 
+def borrar_sobrantes(url: str, key: str, id_app: int, filas: list[dict]) -> str | None:
+    """Retira los días medidos que la fuente ya no reporta.
+
+    El UPSERT pisa lo que coincide y no sabe nada de lo que sobra. Un día que se
+    escribió mal —y pasó: la app de clientes tuvo un 11 de septiembre con 54
+    descargas, que eran los días 9 y 10 sumados bajo la fecha en que Apple
+    generó el reporte— se quedaba en la tabla para siempre, sumando, aunque el
+    sync dejara de emitirlo.
+
+    Solo actúa dentro del rango que la fuente acaba de cubrir y solo sobre lo
+    suyo: la siembra estimada y las otras fuentes no se tocan.
+    """
+    if not filas:
+        return None
+    grupos: dict[tuple[str, str], list[str]] = {}
+    for f in filas:
+        grupos.setdefault((f["plataforma"], f["fuente"]), []).append(f["fecha"])
+    for (plataforma, fuente), fechas in grupos.items():
+        vigentes = sorted(set(fechas))
+        r = requests.delete(
+            f"{url.rstrip('/')}/rest/v1/app_instalaciones_diarias",
+            headers={"apikey": key, "Authorization": f"Bearer {key}", "Prefer": "return=minimal"},
+            params={
+                "id_app": f"eq.{id_app}",
+                "plataforma": f"eq.{plataforma}",
+                "fuente": f"eq.{fuente}",
+                "estimado": "is.false",
+                "fecha": f"gte.{vigentes[0]}",
+                "and": f"(fecha.lte.{vigentes[-1]},fecha.not.in.({','.join(vigentes)}))",
+            },
+            timeout=60,
+        )
+        if r.status_code not in (200, 204):
+            return f"Supabase {r.status_code} al limpiar días retirados: {r.text[:300]}"
+    return None
+
+
 def serie_de_supabase(url: str, key: str, id_app: int) -> tuple[list[dict], str | None]:
     """La serie ya mezclada que guarda Supabase: lo real y lo estimado.
 
@@ -260,6 +297,11 @@ def main() -> None:
         if error:
             print(f"⚠ {app['package'] or app['bundleId']}: {error}")
             continue
+        # Después del UPSERT, no antes: si la limpieza corriera primero y la
+        # subida fallara, la tabla se quedaría sin los días buenos.
+        error = borrar_sobrantes(url, key, app["idApp"], filas)
+        if error:
+            print(f"⚠ {app['package'] or app['bundleId']}: {error}")
         total += len(filas)
         fechas = sorted({f["fecha"] for f in filas})
         print(
