@@ -308,6 +308,23 @@ export interface ConsumoCodemagic {
   ambito: string;
   actual: ConsumoPeriodo;
   anterior: ConsumoPeriodo;
+  /** Cuánto de lo facturado le toca a esta app. Null si no se pudo repartir. */
+  reparto: RepartoApp | null;
+}
+
+export interface RepartoApp {
+  /** Minutos de máquina de ESTA app en la ventana medida. */
+  minutosApp: number;
+  /** Minutos de TODAS las apps de la cuenta en la misma ventana. */
+  minutosCuenta: number;
+  /** Fracción 0..1 que le toca a esta app. */
+  parte: number;
+  /** USD que le corresponden de lo facturado. */
+  usd: number;
+  /** Cuántas apps comparten la factura. */
+  apps: number;
+  /** Días de la ventana con la que se midió el peso. */
+  dias: number;
 }
 
 /** `{ mac_mini_m2_paid: 3300, … }` en segundos → minutos y dinero. */
@@ -330,6 +347,18 @@ function periodoDe(buildTime: Record<string, number> | undefined): ConsumoPeriod
   }
   return r;
 }
+
+/**
+ * Días hacia atrás con los que se mide el peso de cada app.
+ *
+ * Codemagic NO publica las fechas de su periodo de facturación, así que no se
+ * puede recortar exactamente. No hace falta: mientras el numerador y el
+ * denominador usen la MISMA ventana, la proporción entre apps se sostiene
+ * aunque la ventana no coincida con la del recibo. Lo que no se puede es
+ * comparar minutos de una ventana contra el total de otra, que es lo que hacía
+ * la primera versión.
+ */
+const DIAS_REPARTO = 30;
 
 interface UserResponse {
   user?: {
@@ -356,10 +385,70 @@ export async function getConsumoCodemagic(appId: string): Promise<ConsumoCodemag
   if (!u) return null;
   const team = u.teams?.find((t) => t.applicationIds?.includes(appId));
   const uso = (team ?? u).billing?.usage;
+  const actual = periodoDe(uso?.currentPeriod?.buildTime);
+
   return {
     ambito: team?.name ? `equipo ${team.name}` : "cuenta personal",
-    actual: periodoDe(uso?.currentPeriod?.buildTime),
+    actual,
     anterior: periodoDe(uso?.previousPeriod?.buildTime),
+    reparto: await repartoDe(appId, team?.applicationIds, actual.usd),
+  };
+}
+
+/**
+ * Qué parte de la factura le toca a esta app, por minutos de máquina.
+ *
+ * Codemagic cobra por CUENTA y no desglosa por aplicación, así que el reparto
+ * es una cuenta nuestra. Se mide el peso de cada app sobre la misma ventana de
+ * días —numerador y denominador— y esa fracción se aplica al importe real.
+ *
+ * Se cuentan los builds fallidos: también ocuparon máquina y también se pagan.
+ */
+async function repartoDe(
+  appId: string,
+  appsDelTeam: string[] | undefined,
+  usdFacturado: number,
+): Promise<RepartoApp | null> {
+  // Las apps que comparten la factura. En un team las da el propio team; en la
+  // cuenta personal son todas las que el token ve y no pertenecen a ninguno.
+  let hermanas = appsDelTeam;
+  if (!hermanas) {
+    try {
+      hermanas = (await getCodemagicApps()).map((a) => a._id);
+    } catch {
+      return null;
+    }
+  }
+  if (!hermanas?.length) return null;
+
+  const desde = new Date();
+  desde.setDate(desde.getDate() - DIAS_REPARTO);
+
+  const minutos = await Promise.all(
+    hermanas.map(async (id) => {
+      try {
+        return { id, min: minutosDelPeriodo(await getRecentBuilds(id), desde) };
+      } catch {
+        // Una app que no se puede leer no invalida el reparto: se queda en
+        // cero y la fracción de las demás sube. Devolver null perdería el
+        // dato completo por una app.
+        return { id, min: 0 };
+      }
+    }),
+  );
+
+  const minutosCuenta = minutos.reduce((s, m) => s + m.min, 0);
+  if (minutosCuenta <= 0) return null;
+  const minutosApp = minutos.find((m) => m.id === appId)?.min ?? 0;
+  const parte = minutosApp / minutosCuenta;
+
+  return {
+    minutosApp,
+    minutosCuenta,
+    parte,
+    usd: usdFacturado * parte,
+    apps: hermanas.length,
+    dias: DIAS_REPARTO,
   };
 }
 
