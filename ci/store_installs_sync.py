@@ -758,7 +758,16 @@ def sync_appstore(fs_token: str, app: dict, tokens: dict) -> None:
     elif payload.get("pendiente"):
         print(f"· {bundle}: Apple todavía está generando el reporte de descargas (tarda ~1 día).")
     else:
-        print(f"✓ {bundle}: {payload['descargas']} descargas desde {payload['desde']}")
+        print(
+            f"✓ {bundle}: {payload['descargas']} descargas del {payload['desde']} "
+            f"al {payload['hasta']}"
+        )
+        # El desglose por día en el log: es lo único que permite cotejar contra
+        # App Store Connect sin bajar el reporte a mano, y ya hizo falta dos
+        # veces para cazar un desfase de fechas.
+        for f, d in sorted((payload.get("dias") or {}).items())[-10:]:
+            extra = f" · {d['otras']} otras" if d.get("otras") else ""
+            print(f"    {f}: {d['primera']} primera vez · {d['redescarga']} redescargas{extra}")
 
 
 def main() -> None:
