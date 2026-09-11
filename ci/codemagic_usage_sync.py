@@ -172,10 +172,13 @@ def analizar_pases(builds: list[dict]) -> tuple[dict, dict]:
     reportado como minutos tirados. Ahora los N pases entran al promedio, que
     es justo lo que se quiere saber: cuánto cuesta publicar, de media.
 
-    Lo que sobra sí es merma, y va partida en tres porque se corrige distinto:
-      · fallidos  — reventaron; se arregla la causa
-      · repetidos — reintentos de un paso, por encima de los pases completos
-      · otros     — workflows ajenos al pase (web, sync de testers…)
+    Se mide sobre el HISTORIAL, no sobre el periodo facturado. Atarlo al
+    periodo parecía más coherente —el pase nunca saldría más caro que lo
+    cobrado— pero el periodo del equipo son 55 minutos y un pase son seis
+    builds: casi nunca cabe entero, así que salían cero pases completos y la
+    tarjeta se pasaba la vida diciendo "parcial". Son dos preguntas distintas y
+    forzarlas a dar el mismo número rompía la única que se puede accionar:
+    cuánto cuesta publicar.
     """
     recientes = sorted(builds, key=lambda x: x["inicio"], reverse=True)
     minutos_de = lambda b: b.get("minutosCobrados", b["minutos"])
@@ -186,7 +189,6 @@ def analizar_pases(builds: list[dict]) -> tuple[dict, dict]:
             exitosos.setdefault(b["workflow"], []).append(b)
 
     por_pase: dict[str, dict] = {}
-    usados: set[int] = set()
 
     for plataforma, pasos in PASE_A_PRODUCCION.items():
         cuentas = [len(exitosos.get(wf, [])) for wf, _ in pasos]
@@ -201,8 +203,6 @@ def analizar_pases(builds: list[dict]) -> tuple[dict, dict]:
             corridas = exitosos.get(wf, [])[:muestras_por_paso]
             if not corridas:
                 continue
-            for b in corridas:
-                usados.add(id(b))
             promedio = sum(minutos_de(b) for b in corridas) / len(corridas)
             tarifa = PRECIO_POR_MINUTO.get(corridas[0]["maquina"], PRECIO_POR_DEFECTO)
             detalle.append({
@@ -224,22 +224,33 @@ def analizar_pases(builds: list[dict]) -> tuple[dict, dict]:
             "usd": round(sum(d["usd"] for d in detalle), 4),
         }
 
-    pasos_del_pase = {wf for pasos in PASE_A_PRODUCCION.values() for wf, _ in pasos}
-    merma = {"minutos": 0.0, "fallidos": 0.0, "repetidos": 0.0, "otros": 0.0, "usd": 0.0}
-    for b in recientes:
-        if id(b) in usados:
-            continue  # forma parte de un pase: no es merma
-        minutos = minutos_de(b)
-        cubo = (
-            "fallidos" if b["status"] not in ("finished", "success")
-            else "otros" if b["workflow"] not in pasos_del_pase
-            else "repetidos"
-        )
-        merma[cubo] += minutos
-        merma["minutos"] += minutos
-        merma["usd"] += minutos * PRECIO_POR_MINUTO.get(b["maquina"], PRECIO_POR_DEFECTO)
 
-    return por_pase, {k: round(v, 4) for k, v in merma.items()}
+    return por_pase
+
+
+def merma_de(builds: list[dict]) -> dict:
+    """Minutos cobrados que no llevan una versión a la tienda.
+
+    Solo dos cosas cuentan, y las dos son inequívocas:
+      · fallidos — el build reventó; ocupó máquina y no produjo nada
+      · otros    — workflows ajenos al pase (web, sync de testers…)
+
+    Antes había un tercer cubo, "repetidos", con los pasos corridos de más.
+    Se quitó porque no se puede distinguir un reintento de una segunda
+    publicación sin ver el pase completo, y llamarle merma a publicar otra vez
+    es justo lo contrario de lo que pasó.
+    """
+    pasos_del_pase = {wf for pasos in PASE_A_PRODUCCION.values() for wf, _ in pasos}
+    r = {"minutos": 0.0, "fallidos": 0.0, "otros": 0.0, "usd": 0.0}
+    for b in builds:
+        exitoso = b["status"] in ("finished", "success")
+        if exitoso and b["workflow"] in pasos_del_pase:
+            continue
+        minutos = b.get("minutosCobrados", b["minutos"])
+        r["fallidos" if not exitoso else "otros"] += minutos
+        r["minutos"] += minutos
+        r["usd"] += minutos * PRECIO_POR_MINUTO.get(b["maquina"], PRECIO_POR_DEFECTO)
+    return {k: round(v, 4) for k, v in r.items()}
 
 
 def write_doc(token: str, app_id: str, payload: dict) -> None:
@@ -323,9 +334,16 @@ def main() -> None:
         for b in del_periodo:
             por_app_builds.setdefault(b["appId"], []).append(b)
 
+        por_app_historial: dict[str, list[dict]] = {}
+        for b in builds:
+            por_app_historial.setdefault(b["appId"], []).append(b)
+
         for app_id in amb["apps"]:
             min_app = minutos.get(app_id, 0.0)
-            pase_app, merma_app = analizar_pases(por_app_builds.get(app_id) or [])
+            # El pase sale del historial —ahí caben pases completos— y la
+            # merma de lo cobrado, que es lo que se está pagando.
+            pase_app = analizar_pases(por_app_historial.get(app_id) or [])
+            merma_app = merma_de(por_app_builds.get(app_id) or [])
             parte = (min_app / total_min) if total_min > 0 else 0
             write_doc(fs_token, app_id, {
                 "ambito": amb["nombre"],
