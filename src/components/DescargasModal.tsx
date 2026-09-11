@@ -371,9 +371,10 @@ export function DescargasModal({
 
                 <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
                   Las dos tiendas: por plataforma son tres pasos —construir, subir al canal de
-                  pruebas y mandarla a la tienda—, promediados sobre sus builds exitosos. Un
-                  reintento o un build que falla se cobran aparte, así que es el costo del camino
-                  limpio.
+                  pruebas y mandarla a la tienda—, promediados sobre los builds exitosos del mismo
+                  periodo cobrado de arriba. Con un solo pase en el periodo las dos cifras
+                  coinciden. Un reintento o un build que falla se cobran aparte, así que es el
+                  costo del camino limpio.
                 </p>
               </div>
             )}
