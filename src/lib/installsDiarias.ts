@@ -48,10 +48,10 @@ export async function getInstallsDiarias(projectId: string): Promise<InstallsDia
 /**
  * Hasta qué día llega la medición. `null` si la serie viene vacía.
  *
- * Nunca es hoy: las tiendas publican el reporte de un día al día siguiente. La
- * gráfica se corta aquí en vez de llegar hasta la fecha de hoy, porque un día
- * que todavía nadie ha contado se dibujaba como una caída a cero —y una caída a
- * cero se lee como que dejaron de bajar la app, no como que falta el dato.
+ * Suele ser ayer: la tienda publica el reporte de un día al día siguiente y
+ * Analytics tarda unas horas en consolidar el día en curso. No recorta la
+ * gráfica —hoy se dibuja igual, porque un día de hoy que falta también es una
+ * respuesta— pero sí es lo que el pie usa para decir hasta dónde hay lectura.
  */
 export function corteDe(dias: DiaInstalaciones[]): string | null {
   let max: string | null = null;
@@ -60,29 +60,26 @@ export function corteDe(dias: DiaInstalaciones[]): string | null {
 }
 
 /**
- * Los últimos `n` días hasta el corte, rellenando los que no tienen registro.
+ * Los últimos `n` días, hasta HOY, rellenando los que no tienen registro.
  *
  * Un día sin instalaciones no viene en la serie, y sin rellenarlo la curva
  * uniría dos fechas separadas por semanas como si fueran consecutivas: mentiría
- * sobre el ritmo, que es justo lo que se está mirando. Eso vale para los huecos
- * de en medio; el hueco del final no es un hueco, es que el dato aún no existe.
+ * sobre el ritmo, que es justo lo que se está mirando.
+ *
+ * Hoy se dibuja aunque vaya en cero. Cortar la serie en el último día medido
+ * escondía el día que más se mira, y "hoy no llevamos ninguna" es una respuesta
+ * tan buena como cualquier otra: lo que hacía falta no era quitar el punto,
+ * sino que el pie de la gráfica diga hasta dónde hay lectura de verdad.
  */
 export function ultimosDias(dias: DiaInstalaciones[], n: number): DiaInstalaciones[] {
   const porFecha = new Map(dias.map((d) => [d.fecha, d]));
   const salida: DiaInstalaciones[] = [];
-  const corte = corteDe(dias);
-  const fin = corte ? new Date(`${corte}T00:00:00Z`) : ayerUTC();
+  const hoy = new Date();
   for (let i = n - 1; i >= 0; i--) {
-    const f = new Date(fin);
+    const f = new Date(hoy);
     f.setUTCDate(f.getUTCDate() - i);
     const fecha = f.toISOString().slice(0, 10);
     salida.push(porFecha.get(fecha) ?? { fecha, android: 0, ios: 0, estimado: 0 });
   }
   return salida;
-}
-
-function ayerUTC(): Date {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d;
 }
