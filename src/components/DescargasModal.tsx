@@ -225,29 +225,34 @@ export function DescargasModal({
               <span
                 className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-normal text-muted-foreground"
                 title={
-                  `Google Analytics, últimos ${enVivo.ventanaMinutos} minutos. ` +
-                  "Es lo único que se puede leer al momento: las descargas de las tiendas " +
-                  "llegan al día siguiente, así que este número va aparte y no se suma a la gráfica."
+                  `Instalaciones estrenadas en los últimos ${enVivo.ventanaMinutos} minutos, ` +
+                  "medidas por Google Analytics: cuenta a quien ABRE la app por primera vez " +
+                  "después de instalarla. No es la descarga de la tienda —quien baja la app y " +
+                  "no la abre no aparece aquí— pero es lo único que se puede saber al momento: " +
+                  "Apple y Play publican sus cifras al día siguiente. Por eso va aparte y no se " +
+                  "suma a la gráfica. El segundo número, si aparece, es gente con la app abierta."
                 }
               >
                 <span className="relative flex h-1.5 w-1.5">
-                  {activos > 0 && (
+                  {aperturas > 0 && (
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                   )}
                   <span
                     className={cn(
                       "relative inline-flex h-1.5 w-1.5 rounded-full",
-                      activos > 0 ? "bg-emerald-500" : "bg-muted-foreground/40",
+                      aperturas > 0 ? "bg-emerald-500" : "bg-muted-foreground/40",
                     )}
                   />
                 </span>
-                {activos > 0 || aperturas > 0 ? (
+                {aperturas > 0 ? (
                   <>
-                    {N(activos)} en la app
-                    {aperturas > 0 && <> · {N(aperturas)} recién instalada{aperturas === 1 ? "" : "s"}</>}
+                    {N(aperturas)} recién instalada{aperturas === 1 ? "" : "s"}
                   </>
                 ) : (
-                  <>sin actividad ahora</>
+                  <>sin instalaciones ahora</>
+                )}
+                {activos > 0 && (
+                  <span className="text-muted-foreground/70"> · {N(activos)} en la app</span>
                 )}
               </span>
             )}
