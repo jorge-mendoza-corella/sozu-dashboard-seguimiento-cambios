@@ -20,6 +20,23 @@ export interface DiaInstalls {
   ios: number;
 }
 
+/**
+ * El pulso de la app: lo que Analytics ve en los últimos 30 minutos.
+ *
+ * Es la única lectura de GA4 que es de verdad al momento. El reporte diario no
+ * publica el día en curso hasta consolidarlo, y eso tarda horas. No se suma a
+ * nada: otra métrica, otra ventana.
+ */
+export interface Ga4EnVivo {
+  ventanaMinutos: number;
+  /** Primeras aperturas —instalaciones estrenadas— en la ventana. */
+  aperturas: { android: number; ios: number };
+  /** Gente con la app abierta en la ventana. */
+  activos: { android: number; ios: number };
+  /** Cuándo se leyó, ISO. */
+  medidoEn: string;
+}
+
 export interface Ga4Installs {
   property: string;
   dias: DiaInstalls[];
@@ -31,6 +48,7 @@ export interface Ga4Installs {
   hasta: string;
   /** GA4 todavía no registra ninguna primera apertura. */
   pendiente?: boolean;
+  enVivo?: Ga4EnVivo;
 }
 
 export interface Ga4Doc {
@@ -46,7 +64,14 @@ export async function getGa4Installs(projectId: string): Promise<Ga4Doc | null> 
   let data: Ga4Installs | null;
   try {
     const raw = d.raw ? JSON.parse(d.raw) : null;
-    data = raw && raw.dias ? (raw as Ga4Installs) : null;
+    // Vale con que traiga el pulso: cuando GA4 aún no tiene serie, es lo único
+    // que hay, y descartarlo dejaba la pantalla igual que si no midiera nada.
+    data =
+      raw && (raw.dias || raw.enVivo)
+        // `dias` se normaliza a lista: quien la recorre no tiene por qué saber
+        // que el documento puede venir solo con el pulso.
+        ? ({ ...raw, dias: raw.dias ?? [] } as Ga4Installs)
+        : null;
   } catch {
     data = null;
   }
