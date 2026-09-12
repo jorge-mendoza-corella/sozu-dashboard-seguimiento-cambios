@@ -4,12 +4,15 @@ name: Sync descargas de las apps (Play / App Store)
 #   · Google Play — Play Developer Reporting API (instalaciones por día)
 #   · App Store   — Analytics Reports de App Store Connect (descargas por mes)
 #
-# Va aparte del sync de estado de tiendas y corre una vez al día: un total de
-# descargas no cambia de un minuto a otro, y los reportes de Apple se generan
-# una vez al día y pesan (hay que bajarlos y sumarlos).
+# Corre cada tres horas. Antes era una vez al día, que bastaba mientras la
+# única fuente eran las tiendas: sus reportes salen una vez al día y pesan. Con
+# GA4 midiendo ya no basta —Analytics va consolidando el día en curso durante el
+# día, y con una sola corrida de madrugada ese dato se veía mañana—. Los
+# reportes de Apple ya leídos no se vuelven a bajar, así que las corridas de más
+# son baratas.
 on:
   schedule:
-    - cron: "40 6 * * *" # 06:40 UTC, con los reportes del día anterior ya listos
+    - cron: "40 */3 * * *" # 06:40 UTC cae dentro, con los reportes del día anterior listos
   workflow_dispatch: # botón "actualizar" del dashboard
 
 concurrency:

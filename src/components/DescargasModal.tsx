@@ -10,6 +10,7 @@ import { Apple, Smartphone, Download, X, Loader2, Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { corteDe, getInstallsDiarias, ultimosDias, type DiaInstalaciones } from "@/lib/installsDiarias";
+import { getGa4Installs } from "@/lib/ga4Installs";
 import { getConsumoCodemagic } from "@/lib/codemagicConsumo";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ChartTooltip, Filler);
@@ -94,6 +95,19 @@ export function DescargasModal({
     () => (serie ? ultimosDias(serie.dias, dias) : []),
     [serie, dias],
   );
+
+  // El pulso: lo único de GA4 que es al momento. Se refresca solo, porque un
+  // número que dice "ahora mismo" y lleva media hora quieto miente más que no
+  // enseñarlo.
+  const { data: ga4 } = useQuery({
+    queryKey: ["ga4-en-vivo", projectId],
+    queryFn: () => getGa4Installs(projectId),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const enVivo = ga4?.data?.enVivo ?? null;
+  const activos = enVivo ? enVivo.activos.android + enVivo.activos.ios : 0;
+  const aperturas = enVivo ? enVivo.aperturas.android + enVivo.aperturas.ios : 0;
 
   // Hasta dónde llega la medición. La ventana termina aquí y no en la fecha de
   // hoy: el día en curso no lo ha contado nadie todavía y se dibujaba como una
@@ -202,6 +216,36 @@ export function DescargasModal({
           <h3 className="flex items-center gap-2 text-base font-semibold">
             <Download className="h-4 w-4 text-violet-500" />
             Descargas de {nombre}
+            {enVivo && (
+              <span
+                className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-normal text-muted-foreground"
+                title={
+                  `Google Analytics, últimos ${enVivo.ventanaMinutos} minutos. ` +
+                  "Es lo único que se puede leer al momento: las descargas de las tiendas " +
+                  "llegan al día siguiente, así que este número va aparte y no se suma a la gráfica."
+                }
+              >
+                <span className="relative flex h-1.5 w-1.5">
+                  {activos > 0 && (
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  )}
+                  <span
+                    className={cn(
+                      "relative inline-flex h-1.5 w-1.5 rounded-full",
+                      activos > 0 ? "bg-emerald-500" : "bg-muted-foreground/40",
+                    )}
+                  />
+                </span>
+                {activos > 0 || aperturas > 0 ? (
+                  <>
+                    {N(activos)} en la app
+                    {aperturas > 0 && <> · {N(aperturas)} recién instalada{aperturas === 1 ? "" : "s"}</>}
+                  </>
+                ) : (
+                  <>sin actividad ahora</>
+                )}
+              </span>
+            )}
           </h3>
           <div className="flex items-center gap-3">
             <div className="flex gap-1">

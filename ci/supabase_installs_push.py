@@ -115,38 +115,46 @@ def list_apps(token: str) -> list[dict]:
 
 
 def filas_de(token: str, app: dict) -> list[dict]:
-    """Las filas diarias de esa app, ya en la forma de la tabla de Supabase."""
-    filas: list[dict] = []
+    """Las filas diarias de esa app, ya en la forma de la tabla de Supabase.
+
+    Manda la tienda y GA4 rellena, día por día y plataforma por plataforma.
+
+    Las dos fuentes no cuentan lo mismo: la tienda cuenta descargas y GA4 cuenta
+    `first_open`, la primera vez que alguien ABRE la app. Quien la baja y no la
+    abre existe para Apple y no para Analytics, así que donde hay dato de tienda
+    ese es el que vale —es el que cuadra con lo que enseña la consola, que es
+    contra lo que cualquiera va a comparar—. GA4 aporta lo que la tienda todavía
+    no publicó y, en Android, todo: Play solo da informe al cerrar el mes.
+    """
+    por_clave: dict[tuple[str, str], dict] = {}
 
     ga4 = raw_de(token, "ga4Installs", app["projectId"])
     for dia in ga4.get("dias") or []:
         for plat in ("android", "ios"):
             if dia.get(plat):
-                filas.append({
+                por_clave[(dia["fecha"], plat)] = {
                     "id_app": app["idApp"],
                     "fecha": dia["fecha"],
                     "plataforma": plat,
                     "instalaciones": dia[plat],
                     "estimado": False,
                     "fuente": "ga4",
-                })
+                }
 
-    # Apple sólo si GA4 todavía no cubre iOS: si los dos hablan del mismo día,
-    # el de Analytics es el que mide las dos plataformas con el mismo criterio.
-    if not any(f["plataforma"] == "ios" for f in filas) and app["bundleId"]:
+    if app["bundleId"]:
         ios = raw_de(token, "appStoreInstalls", app["bundleId"])
         for punto in ios.get("serie") or []:
             if punto.get("descargas"):
-                filas.append({
+                por_clave[(punto["fecha"], "ios")] = {
                     "id_app": app["idApp"],
                     "fecha": punto["fecha"],
                     "plataforma": "ios",
                     "instalaciones": punto["descargas"],
                     "estimado": False,
                     "fuente": "app_store",
-                })
+                }
 
-    return filas
+    return [por_clave[k] for k in sorted(por_clave)]
 
 
 def upsert(url: str, key: str, filas: list[dict]) -> str | None:

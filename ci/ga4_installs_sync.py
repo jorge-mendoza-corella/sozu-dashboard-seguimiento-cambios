@@ -197,6 +197,67 @@ def run_report(token: str, prop: str, desde: str, hasta: str) -> tuple[list[dict
     return filas, None
 
 
+def run_realtime(token: str, prop: str, streams: dict) -> dict | None:
+    """Lo que está pasando AHORA: últimos 30 minutos, por plataforma.
+
+    Es la única lectura de GA4 que merece llamarse en vivo. El reporte normal
+    —el que arma la serie diaria— no publica el día en curso hasta que Analytics
+    lo consolida, y eso tarda horas: preguntándole a media mañana por el día de
+    hoy contesta que no hay nada, que no es lo mismo que un cero.
+
+    No entra en la serie ni se suma a nada: son dos métricas distintas leídas en
+    ventanas distintas. Se enseña aparte, como el pulso de la app.
+    """
+    por_stream = {v: k for k, v in (streams or {}).items() if v}
+    salida = {
+        "ventanaMinutos": 30,
+        "aperturas": {"android": 0, "ios": 0},
+        "activos": {"android": 0, "ios": 0},
+    }
+
+    consultas = (
+        ("aperturas", "eventCount", {
+            "filter": {
+                "fieldName": "eventName",
+                "stringFilter": {"matchType": "EXACT", "value": "first_open"},
+            }
+        }),
+        ("activos", "activeUsers", None),
+    )
+    for clave, metrica, filtro in consultas:
+        cuerpo: dict = {
+            "dimensions": [{"name": "streamId"}],
+            "metrics": [{"name": metrica}],
+            "minuteRanges": [{"startMinutesAgo": 29, "endMinutesAgo": 0}],
+            "limit": 100,
+        }
+        if filtro:
+            cuerpo["dimensionFilter"] = filtro
+        r = requests.post(
+            f"{GA4_BASE}/properties/{prop}:runRealtimeReport",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=cuerpo,
+            timeout=30,
+        )
+        # El pulso es un extra: si falla, la serie diaria —que es el dato -- sigue
+        # subiendo igual. Callarlo es peor que no tenerlo, así que se avisa.
+        if r.status_code != 200:
+            print(f"  · sin lectura en vivo de {metrica}: GA4 {r.status_code} {r.text[:160]}")
+            continue
+        for fila in r.json().get("rows", []):
+            stream = (fila.get("dimensionValues") or [{}])[0].get("value")
+            plataforma = por_stream.get(stream)
+            if not plataforma:
+                continue
+            try:
+                salida[clave][plataforma] += int(float((fila.get("metricValues") or [{}])[0].get("value", "0")))
+            except ValueError:
+                continue
+
+    salida["medidoEn"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return salida
+
+
 def serie_diaria(filas: list[dict], streams: dict) -> list[dict]:
     """Una fila por día con lo de cada plataforma, en orden."""
     por_stream = {v: k for k, v in streams.items() if v}
@@ -267,9 +328,13 @@ def main() -> None:
             print(f"⚠ {app['projectId']}: {error}")
             continue
 
+        # El pulso se lee siempre, aunque la serie venga vacía: el día que las
+        # apps empiecen a mandar datos, esto lo enseña antes que nada.
+        en_vivo = run_realtime(token, app["property"], app["streams"])
+
         dias = serie_diaria(filas, app["streams"])
         if not dias:
-            write_doc(fs_token, app["projectId"], {"pendiente": True}, None)
+            write_doc(fs_token, app["projectId"], {"pendiente": True, "enVivo": en_vivo}, None)
             print(f"· {app['projectId']}: GA4 todavía no reporta ninguna primera apertura.")
             print(f"  · streams configurados: {app['streams']}")
             diagnostico(token, app["property"], desde.isoformat(), hasta.isoformat())
@@ -286,12 +351,20 @@ def main() -> None:
             "ios30d": sum(d["ios"] for d in recientes),
             "desde": dias[0]["fecha"],
             "hasta": dias[-1]["fecha"],
+            "enVivo": en_vivo,
         }
         write_doc(fs_token, app["projectId"], payload, None)
         print(
             f"✓ {app['projectId']}: {payload['android'] + payload['ios']} primeras aperturas "
             f"({payload['android']} Android, {payload['ios']} iOS) del {payload['desde']} al {payload['hasta']}"
         )
+        if en_vivo:
+            v = en_vivo
+            print(
+                f"  · ahora mismo: {v['activos']['android'] + v['activos']['ios']} activos, "
+                f"{v['aperturas']['android'] + v['aperturas']['ios']} aperturas nuevas "
+                f"(últimos {v['ventanaMinutos']} min)"
+            )
 
 
 if __name__ == "__main__":
