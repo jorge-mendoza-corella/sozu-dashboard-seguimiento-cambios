@@ -180,6 +180,47 @@ def upsert(url: str, key: str, filas: list[dict]) -> str | None:
     return None
 
 
+def upsert_pulso(url: str, key: str, token: str, app: dict) -> str | None:
+    """Deja el pulso en vivo de esa app —lo que GA4 ve en los últimos 30 min.
+
+    Va a su propia tabla y no a la serie diaria: es una ventana de media hora,
+    no un día, y sumarla mezclaría dos métricas en la misma línea. Cada corrida
+    pisa la fila anterior; no es histórico.
+    """
+    ga4 = raw_de(token, "ga4Installs", app["projectId"])
+    vivo = ga4.get("enVivo")
+    if not vivo:
+        return None
+    fila = {
+        "id_app": app["idApp"],
+        "ventana_minutos": vivo.get("ventanaMinutos") or 30,
+        "aperturas_android": (vivo.get("aperturas") or {}).get("android", 0),
+        "aperturas_ios": (vivo.get("aperturas") or {}).get("ios", 0),
+        "activos_android": (vivo.get("activos") or {}).get("android", 0),
+        "activos_ios": (vivo.get("activos") or {}).get("ios", 0),
+        "medido_en": vivo.get("medidoEn"),
+    }
+    r = requests.post(
+        f"{url.rstrip('/')}/rest/v1/app_actividad_en_vivo",
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=minimal",
+        },
+        params={"on_conflict": "id_app"},
+        json=[fila],
+        timeout=30,
+    )
+    # Mientras la migración no esté aplicada la tabla no existe. Es un extra: se
+    # avisa y se sigue, en vez de tumbar el empuje de la serie, que sí importa.
+    if r.status_code == 404 or "PGRST205" in r.text:
+        return "la tabla app_actividad_en_vivo todavía no existe (falta aplicar la migración)"
+    if r.status_code not in (200, 201, 204):
+        return f"Supabase {r.status_code} al escribir el pulso: {r.text[:200]}"
+    return None
+
+
 def borrar_sobrantes(url: str, key: str, id_app: int, filas: list[dict]) -> str | None:
     """Retira los días medidos que la fuente ya no reporta.
 
@@ -301,6 +342,12 @@ def main() -> None:
 
     total = 0
     for app in apps:
+        # Antes del `continue` de abajo: el pulso existe aunque la serie diaria
+        # todavía no, y es justo entonces cuando es lo único que hay.
+        error = upsert_pulso(url, key, fs_token, app)
+        if error:
+            print(f"⚠ {app['package'] or app['bundleId']}: {error}")
+
         filas = filas_de(fs_token, app)
         if not filas:
             print(f"· {app['package'] or app['bundleId']}: todavía sin serie diaria que empujar.")
