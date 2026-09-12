@@ -9,7 +9,7 @@ import { Line } from "react-chartjs-2";
 import { Apple, Smartphone, Download, X, Loader2, Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
-import { getInstallsDiarias, ultimosDias, type DiaInstalaciones } from "@/lib/installsDiarias";
+import { corteDe, getInstallsDiarias, ultimosDias, type DiaInstalaciones } from "@/lib/installsDiarias";
 import { getConsumoCodemagic } from "@/lib/codemagicConsumo";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ChartTooltip, Filler);
@@ -94,6 +94,11 @@ export function DescargasModal({
     () => (serie ? ultimosDias(serie.dias, dias) : []),
     [serie, dias],
   );
+
+  // Hasta dónde llega la medición. La ventana termina aquí y no en la fecha de
+  // hoy: el día en curso no lo ha contado nadie todavía y se dibujaba como una
+  // caída a cero, que es lo contrario de lo que pasa.
+  const corte = useMemo(() => (serie ? corteDe(serie.dias) : null), [serie]);
 
   const totales = useMemo(() => {
     const base = serie?.dias ?? [];
@@ -251,12 +256,14 @@ export function DescargasModal({
             {/* La nota de "repartidas por estimación" se quitó: con los
                 reportes reales de las tiendas ya llegando, explicar la siembra
                 cada vez que se abre el modal cuenta algo que dejó de ser el
-                caso normal. Queda cuándo se leyó, que sí cambia todos los días. */}
-            {serie.updatedAt && (
-              <p className="mt-2 text-[10px] text-muted-foreground">
-                actualizado {formatDistanceToNow(serie.updatedAt)}
-              </p>
-            )}
+                caso normal. Queda el corte, que es lo que hay que saber para
+                leer la curva, y cuándo se leyó. */}
+            <p className="mt-2 text-[10px] text-muted-foreground">
+              {corte && <>Corte al {fmtFecha(corte)}. </>}
+              Las tiendas publican el reporte de un día al día siguiente, así que el día
+              en curso todavía no existe.
+              {serie.updatedAt && <> · actualizado {formatDistanceToNow(serie.updatedAt)}</>}
+            </p>
           </>
         )}
 
