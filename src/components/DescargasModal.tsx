@@ -114,6 +114,11 @@ export function DescargasModal({
   // caída a cero, que es lo contrario de lo que pasa.
   const corte = useMemo(() => (serie ? corteDe(serie.dias) : null), [serie]);
 
+  // Si el último punto es el de hoy, es un día a medias: Analytics lo va
+  // consolidando durante el día. Se dibuja igual —el dato existe y se quiere
+  // ver— pero decirlo evita leer como caída lo que solo es un día sin terminar.
+  const corteEsHoy = corte === new Date().toISOString().slice(0, 10);
+
   const totales = useMemo(() => {
     const base = serie?.dias ?? [];
     return {
@@ -304,8 +309,9 @@ export function DescargasModal({
                 leer la curva, y cuándo se leyó. */}
             <p className="mt-2 text-[10px] text-muted-foreground">
               {corte && <>Corte al {fmtFecha(corte)}. </>}
-              Las tiendas publican el reporte de un día al día siguiente, así que el día
-              en curso todavía no existe.
+              {corteEsHoy
+                ? "El día en curso va incompleto: Analytics lo consolida durante el día y las tiendas publican el suyo hasta mañana."
+                : "Las tiendas publican el reporte de un día al día siguiente, y Analytics tarda unas horas en consolidar el día en curso."}
               {serie.updatedAt && <> · actualizado {formatDistanceToNow(serie.updatedAt)}</>}
             </p>
           </>
