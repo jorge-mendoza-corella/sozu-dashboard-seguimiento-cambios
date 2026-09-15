@@ -17,6 +17,29 @@ import { esRolOperativo, type AppUser } from "@/lib/firestoreUsers";
 const AVISO_PCT = 75;
 const ALERTA_PCT = 90;
 
+const MESES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
+/**
+ * "septiembre" a secas si el dato cubre el mes hasta hoy, y "septiembre, al 14"
+ * si GitHub todavía no consolidó los últimos días.
+ *
+ * La distinción importa: un consumo "de septiembre" que en realidad va hasta el
+ * 14 se compara mal contra el presupuesto del mes entero, y quien lo mire de
+ * reojo sacará la conclusión contraria a la buena.
+ */
+function etiquetaPeriodo(p: { anio: number; mes: number; hasta: string | null } | null): string {
+  if (!p) return "";
+  const mes = MESES[p.mes - 1] ?? `mes ${p.mes}`;
+  if (!p.hasta) return mes;
+  const dia = Number(p.hasta.slice(8, 10));
+  const hoy = new Date();
+  const alDia = hoy.getUTCDate() - dia <= 1 && hoy.getUTCMonth() + 1 === p.mes;
+  return alDia ? mes : `${mes}, al ${dia}`;
+}
+
 const N = (v: number) => v.toLocaleString("es-MX");
 const USD = (v: number) =>
   v.toLocaleString("es-MX", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
@@ -62,10 +85,19 @@ export function ActionsUsoBadge({ appUser }: { appUser: AppUser | null }) {
     .map(([maquina, min]) => `${maquina.toLowerCase()}: ${N(min)} min`)
     .join(" · ");
 
+  const periodo = etiquetaPeriodo(data.periodo);
+
   const titulo = [
     `GitHub Actions de ${data.usuario}`,
+    periodo &&
+      (data.periodo?.desde
+        ? `Consumo de ${periodo} (del ${data.periodo.desde} al ${data.periodo.hasta})`
+        : `Consumo de ${periodo}`),
     data.minutosIncluidos
-      ? `${N(data.minutosUsados)} de ${N(data.minutosIncluidos)} minutos del plan${pct !== null ? ` (${pct}%)` : ""}`
+      ? `${N(data.minutosUsados)} de ${N(data.minutosIncluidos)} minutos de presupuesto${pct !== null ? ` (${pct}%)` : ""}` +
+        (data.plataforma === "nueva"
+          ? " — el presupuesto es un objetivo de la casa, no un límite de GitHub: pasarse no corta nada."
+          : "")
       : `${N(data.minutosUsados)} minutos usados`,
     // En la facturación nueva el importe lo da GitHub calculado, así que no se
     // presenta como estimación; en la vieja sí lo era, porque solo daba minutos.
@@ -97,6 +129,10 @@ export function ActionsUsoBadge({ appUser }: { appUser: AppUser | null }) {
         {data.minutosIncluidos > 0 && <span className="opacity-60">/{N(data.minutosIncluidos)}</span>}
         <span className="ml-1 opacity-60">min</span>
       </span>
+
+      {/* De qué mes habla. Sin esto el número flota: 25,000 minutos pueden ser
+          de un mes o de todo el año, y son lecturas opuestas. */}
+      {periodo && <span className="opacity-60">· {periodo}</span>}
 
       {/* La barra solo cuando hay cupo contra el que medir: sin plan incluido,
           un "0%" diría que no se ha gastado nada, que es lo contrario. */}

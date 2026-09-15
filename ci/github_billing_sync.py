@@ -38,6 +38,17 @@ USUARIO = os.environ.get("GH_BILLING_USER", "jorgeIMendoza").strip()
 # que no dice si eso es mucho o poco — un minuto de macOS cuesta diez veces uno
 # de Linux, y es justo donde se va el presupuesto sin que nadie lo note.
 # https://docs.github.com/billing/managing-billing-for-github-actions
+# Presupuesto propio de minutos al mes, para tener contra qué medir.
+#
+# La facturación nueva de GitHub no habla de "minutos incluidos": habla de lo
+# que el plan descuenta, que es otra cosa y no da un tope. Sin un número contra
+# el que comparar, "25,199 minutos" no dice si vamos bien o mal —y esa es la
+# única pregunta que se le hace a este badge de reojo.
+#
+# Es un objetivo de la casa, no un límite de GitHub: pasarse no corta nada, solo
+# significa que este mes se gastó más de lo previsto. Se cambia aquí.
+PRESUPUESTO_MIN = int(os.environ.get("GH_BILLING_PRESUPUESTO_MIN", "30000"))
+
 TARIFA_USD = {
     "UBUNTU": 0.008,
     "MACOS": 0.08,
@@ -78,6 +89,7 @@ def leer_billing_nuevo(token: str) -> tuple[dict | None, str | None]:
     la migración. Devuelve líneas de consumo con importe ya calculado —no hay
     que estimar tarifas—, así que cuando existe es mejor dato que el legacy.
     """
+    hoy = datetime.now(timezone.utc)
     r = requests.get(
         f"https://api.github.com/users/{USUARIO}/settings/billing/usage",
         headers={
@@ -85,6 +97,11 @@ def leer_billing_nuevo(token: str) -> tuple[dict | None, str | None]:
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         },
+        # Se pide el mes EXPLÍCITAMENTE. Sin parámetros el endpoint elige el
+        # periodo por su cuenta, y entonces el tablero no puede afirmar "este
+        # mes" —que es justo lo que hay que poder afirmar para que el número
+        # signifique algo.
+        params={"year": hoy.year, "month": hoy.month},
         timeout=30,
     )
     if r.status_code != 200:
@@ -113,14 +130,26 @@ def analizar_nuevo(datos: dict) -> dict:
             clave = "UBUNTU"
         por_maquina[clave] = por_maquina.get(clave, 0) + int(float(u.get("quantity") or 0))
 
+    # Qué días cubre de verdad lo que llegó. Se saca de los propios datos y no
+    # de lo que se pidió: si GitHub devuelve menos días de los del mes —porque
+    # el mes va empezando, o porque hay retraso en consolidar— el tablero tiene
+    # que decir hasta dónde llega, no dar por hecho que es el mes entero.
+    fechas = sorted(str(u.get("date")) for u in lineas if u.get("date"))
+
     return {
         "usuario": USUARIO,
         # La plataforma nueva no habla de cupo incluido: habla de lo descontado.
-        # Se deja en 0 y el tablero, que ya lo contempla, no dibuja barra.
-        "minutosIncluidos": 0,
+        # El tope contra el que medir lo pone la casa, en PRESUPUESTO_MIN.
+        "minutosIncluidos": PRESUPUESTO_MIN,
+        "periodo": {
+            "anio": datetime.now(timezone.utc).year,
+            "mes": datetime.now(timezone.utc).month,
+            "desde": fechas[0] if fechas else None,
+            "hasta": fechas[-1] if fechas else None,
+        },
         "minutosUsados": int(minutos),
         "minutosPagados": int(minutos) if neto > 0 else 0,
-        "pctCupo": None,
+        "pctCupo": round(minutos / PRESUPUESTO_MIN * 100, 1) if PRESUPUESTO_MIN else None,
         "minutosPorMaquina": por_maquina,
         # Aquí el importe NO se estima: lo da GitHub.
         "costoAproximado": round(neto, 2),
@@ -228,8 +257,11 @@ def main() -> None:
         resumen = analizar_nuevo(datos_nuevo)
         write_doc(fs_token, resumen, None)
         maquinas = " · ".join(f"{k.lower()} {v}" for k, v in resumen["minutosPorMaquina"].items() if v)
+        per = resumen["periodo"]
+        rango = f"{per['desde']} → {per['hasta']}" if per["desde"] else f"{per['anio']}-{per['mes']:02d}"
         print(
-            f"✓ {resumen['usuario']} (facturación nueva): {resumen['minutosUsados']} min"
+            f"✓ {resumen['usuario']} (facturación nueva) [{rango}]: {resumen['minutosUsados']} min"
+            + (f" de {resumen['minutosIncluidos']} de presupuesto ({resumen['pctCupo']}%)" if resumen["minutosIncluidos"] else "")
             + (f" · {resumen['costoAproximado']} USD netos" if resumen["costoAproximado"] else " · sin cargo")
             + (f" · {maquinas}" if maquinas else "")
         )
