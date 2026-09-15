@@ -46,6 +46,12 @@ export interface GithubActionsUso {
   descuento: number;
   /** "nueva" cuando el dato viene del endpoint de usage. */
   plataforma: string | null;
+  /**
+   * Qué periodo cubre el número. `desde`/`hasta` salen de los propios datos y
+   * no del mes pedido: si GitHub todavía no consolidó los últimos días, el
+   * tablero dice hasta dónde llega en vez de dar por hecho el mes entero.
+   */
+  periodo: { anio: number; mes: number; desde: string | null; hasta: string | null } | null;
   updatedAt: string | null;
   /** Por qué no hay datos, cuando no los hay. */
   error: string | null;
@@ -80,6 +86,7 @@ export async function getGithubActionsUso(): Promise<GithubActionsUso | null> {
             costoBruto: 0,
             descuento: 0,
             plataforma: null,
+            periodo: null,
             updatedAt,
             error: d.error,
           }
@@ -97,6 +104,7 @@ export async function getGithubActionsUso(): Promise<GithubActionsUso | null> {
       costoBruto: raw.costoBruto ?? 0,
       descuento: raw.descuento ?? 0,
       plataforma: raw.plataforma ?? null,
+      periodo: raw.periodo ?? null,
       updatedAt,
       error: d.error ?? null,
     };

@@ -57,4 +57,10 @@ jobs:
           export GH_BILLING_TOKEN
           export GH_BILLING_USER="${GH_BILLING_USER:-jorgeIMendoza}"
 
+          # Presupuesto propio de minutos al mes. GitHub ya no da un cupo contra
+          # el que medir —su facturación nueva habla de descuento, no de tope—,
+          # así que el objetivo lo pone la casa. Se cambia aquí o con el secreto.
+          GH_BILLING_PRESUPUESTO_MIN="$(secret DASHBOARD_GH_BILLING_PRESUPUESTO_MIN)"
+          export GH_BILLING_PRESUPUESTO_MIN="${GH_BILLING_PRESUPUESTO_MIN:-30000}"
+
           python ci/github_billing_sync.py
