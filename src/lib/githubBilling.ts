@@ -35,6 +35,17 @@ export interface GithubActionsUso {
   /** Días que faltan para que el ciclo de facturación reinicie. */
   ciclo: number | null;
   /**
+   * Mes al que corresponde el consumo, "YYYY-MM".
+   *
+   * El endpoint devuelve el ciclo EN CURSO pero no lo nombra, y el tablero
+   * enseñaba el número a secas: 25,199 minutos sin fecha se leen como acumulado
+   * histórico. Sale de la fecha de las propias líneas de consumo.
+   */
+  periodo: string | null;
+  /** Primer y último día con consumo del ciclo. `null` en la plataforma vieja. */
+  periodoDesde: string | null;
+  periodoHasta: string | null;
+  /**
    * Lo que costaría sin descuentos, y lo descontado. Solo en la plataforma de
    * facturación nueva; en la vieja no existen y quedan en 0.
    *
@@ -77,6 +88,9 @@ export async function getGithubActionsUso(): Promise<GithubActionsUso | null> {
             minutosPorMaquina: {},
             costoAproximado: 0,
             ciclo: null,
+            periodo: null,
+            periodoDesde: null,
+            periodoHasta: null,
             costoBruto: 0,
             descuento: 0,
             plataforma: null,
@@ -94,6 +108,9 @@ export async function getGithubActionsUso(): Promise<GithubActionsUso | null> {
       minutosPorMaquina: raw.minutosPorMaquina ?? {},
       costoAproximado: raw.costoAproximado ?? 0,
       ciclo: raw.ciclo ?? null,
+      periodo: raw.periodo ?? null,
+      periodoDesde: raw.periodoDesde ?? null,
+      periodoHasta: raw.periodoHasta ?? null,
       costoBruto: raw.costoBruto ?? 0,
       descuento: raw.descuento ?? 0,
       plataforma: raw.plataforma ?? null,
