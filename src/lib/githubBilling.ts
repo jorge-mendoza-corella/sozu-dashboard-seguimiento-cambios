@@ -34,6 +34,18 @@ export interface GithubActionsUso {
   costoAproximado: number;
   /** Días que faltan para que el ciclo de facturación reinicie. */
   ciclo: number | null;
+  /**
+   * Lo que costaría sin descuentos, y lo descontado. Solo en la plataforma de
+   * facturación nueva; en la vieja no existen y quedan en 0.
+   *
+   * Vale la pena enseñarlos: la diferencia entre el bruto y el neto es lo que
+   * el plan está absorbiendo, y sin verla no se entiende por qué 25,000
+   * minutos se cobran como 37 dólares.
+   */
+  costoBruto: number;
+  descuento: number;
+  /** "nueva" cuando el dato viene del endpoint de usage. */
+  plataforma: string | null;
   updatedAt: string | null;
   /** Por qué no hay datos, cuando no los hay. */
   error: string | null;
@@ -65,6 +77,9 @@ export async function getGithubActionsUso(): Promise<GithubActionsUso | null> {
             minutosPorMaquina: {},
             costoAproximado: 0,
             ciclo: null,
+            costoBruto: 0,
+            descuento: 0,
+            plataforma: null,
             updatedAt,
             error: d.error,
           }
@@ -79,6 +94,9 @@ export async function getGithubActionsUso(): Promise<GithubActionsUso | null> {
       minutosPorMaquina: raw.minutosPorMaquina ?? {},
       costoAproximado: raw.costoAproximado ?? 0,
       ciclo: raw.ciclo ?? null,
+      costoBruto: raw.costoBruto ?? 0,
+      descuento: raw.descuento ?? 0,
+      plataforma: raw.plataforma ?? null,
       updatedAt,
       error: d.error ?? null,
     };
