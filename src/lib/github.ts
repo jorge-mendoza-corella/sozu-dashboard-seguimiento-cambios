@@ -188,6 +188,18 @@ export interface WorkflowRun {
   actor?: string | null;
   /** Id del run en GitHub: la llave con la que el CI anota a quién avisó. */
   runId?: number;
+  /**
+   * Cuándo EMPEZÓ a ejecutarse, que no es cuándo se creó.
+   *
+   * Entre las dos hay cola —a veces segundos, a veces minutos—, y medir el
+   * avance desde `createdAt` hacía que la barra corriera mientras el run
+   * todavía esperaba runner, y luego pareciera retroceder al arrancar.
+   */
+  runStartedAt?: string | null;
+  /** Última vez que GitHub tocó el run. En uno terminado, cuándo terminó. */
+  updatedAt?: string | null;
+  /** Qué workflow es. Dos workflows distintos no tardan lo mismo. */
+  workflowId?: number;
 }
 
 export interface RepoStatus {
@@ -197,6 +209,11 @@ export interface RepoStatus {
   branches: BranchInfo[];
   openPRs: PullRequest[];
   latestRuns: WorkflowRun[];
+  /**
+   * Deploys ya terminados con éxito, solo para estimar cuánto tarda cada
+   * workflow. No se pintan.
+   */
+  runsTerminados?: WorkflowRun[];
   error?: string;
 }
 
@@ -579,13 +596,59 @@ async function getAheadBy(owner: string, repo: string, base: string, head: strin
   }
 }
 
+// Ids de los workflows de deploy de cada repo. Se cachea porque la lista de
+// workflows de un repo cambia cada varios meses, y preguntarla en cada refresco
+// gastaba una llamada de rate limit para recibir siempre lo mismo.
+const workflowsDeployCache = new Map<string, number[]>();
+
+/**
+ * Los workflows cuyo nombre habla de deploy.
+ *
+ * Hace falta porque el listado general de runs viene ordenado por fecha y sin
+ * filtrar: en un repo con syncs periódicos —este mismo corre cuatro— los
+ * últimos veinte runs son todos de sync y el deploy no aparece por ningún
+ * lado, aunque haya corrido hace diez minutos. Pidiendo los runs DE ESOS
+ * workflows el ruido deja de competir.
+ */
+async function idsDeWorkflowsDeploy(owner: string, repo: string): Promise<number[]> {
+  const clave = `${owner}/${repo}`;
+  const hit = workflowsDeployCache.get(clave);
+  if (hit) return hit;
+  try {
+    const { data } = await octokit.actions.listRepoWorkflows({ owner, repo, per_page: 100 });
+    const ids = data.workflows
+      .filter((w) => /deploy/i.test(w.name ?? ""))
+      .map((w) => w.id);
+    workflowsDeployCache.set(clave, ids);
+    return ids;
+  } catch {
+    // Sin la lista se sigue adelante con el listado general: peor cobertura,
+    // pero el resto de la tarjeta no tiene por qué caerse por esto.
+    return [];
+  }
+}
+
 export async function fetchRepoStatus(owner: string, repo: string, label: string): Promise<RepoStatus> {
   try {
-    const [branchesResp, prsResp, runsResp] = await Promise.all([
+    const idsDeploy = await idsDeWorkflowsDeploy(owner, repo);
+
+    const [branchesResp, prsResp, ...runsPorWorkflow] = await Promise.all([
       octokit.repos.listBranches({ owner, repo, per_page: 100 }),
       octokit.pulls.list({ owner, repo, state: "open", per_page: 20 }),
-      octokit.actions.listWorkflowRunsForRepo({ owner, repo, per_page: 20 }),
+      // Un listado por workflow de deploy. Si el repo no tiene ninguno con ese
+      // nombre, se cae al listado general de siempre.
+      ...(idsDeploy.length
+        ? idsDeploy.map((id) =>
+            octokit.actions.listWorkflowRuns({ owner, repo, workflow_id: id, per_page: 20 }),
+          )
+        : [octokit.actions.listWorkflowRunsForRepo({ owner, repo, per_page: 20 })]),
     ]);
+
+    const todosLosRuns = runsPorWorkflow
+      .flatMap((r) => r.data.workflow_runs)
+      // Varios workflows de deploy se mezclan sin orden entre sí: la lista se
+      // reordena para que "los últimos deploys" sean de verdad los últimos.
+      .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
 
     // listBranches devuelve las ramas en orden alfabético y paginado, así que
     // en repos con muchas ramas (cambios_*, feat/*) "main" puede quedar fuera.
@@ -695,28 +758,43 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
       }),
     );
 
-    const latestRuns: WorkflowRun[] = runsResp.data.workflow_runs
+    const aRun = (r: (typeof todosLosRuns)[number]): WorkflowRun => ({
+      name: r.name ?? "Workflow",
+      status: r.status ?? "unknown",
+      conclusion: r.conclusion ?? null,
+      createdAt: r.created_at,
+      url: r.html_url,
+      headBranch: r.head_branch ?? null,
+      headSha: r.head_sha,
+      actor: r.triggering_actor?.login ?? r.actor?.login ?? null,
+      runId: r.id,
+      runStartedAt: r.run_started_at ?? null,
+      updatedAt: r.updated_at ?? null,
+      workflowId: r.workflow_id,
+    });
+
+    const deploys = todosLosRuns
       .filter((r) => (r.name ?? "").toLowerCase().includes("deploy"))
       // Solo deploys de las ramas reales (main/dev). Runs en ramas de feature
       // o PR no deben marcar el repo como fallando ni mostrarse como deploy.
-      .filter((r) => ["main", "dev"].includes(r.head_branch ?? ""))
-      .slice(0, 3)
-      .map((r) => ({
-        name: r.name ?? "Workflow",
-        status: r.status ?? "unknown",
-        conclusion: r.conclusion ?? null,
-        createdAt: r.created_at,
-        url: r.html_url,
-        headBranch: r.head_branch ?? null,
-        headSha: r.head_sha,
-        actor: r.triggering_actor?.login ?? r.actor?.login ?? null,
-        runId: r.id,
-      }));
+      .filter((r) => ["main", "dev"].includes(r.head_branch ?? ""));
 
-    return { owner, repo, label, branches, openPRs, latestRuns };
+    const latestRuns: WorkflowRun[] = deploys.slice(0, 3).map(aRun);
+
+    // Los ya terminados, para saber cuánto suele tardar cada workflow. Van
+    // aparte de `latestRuns` a propósito: ahí solo caben tres —los que se
+    // pintan— y con tres no se estima nada. Esta lista no se enseña, se
+    // promedia, así que puede ser más larga sin ensuciar la tarjeta. Y sale
+    // de la misma respuesta que ya estaba en memoria: ni una llamada más.
+    const runsTerminados: WorkflowRun[] = deploys
+      .filter((r) => r.status === "completed" && r.conclusion === "success")
+      .slice(0, 20)
+      .map(aRun);
+
+    return { owner, repo, label, branches, openPRs, latestRuns, runsTerminados };
   } catch (err: unknown) {
     return {
-      owner, repo, label, branches: [], openPRs: [], latestRuns: [],
+      owner, repo, label, branches: [], openPRs: [], latestRuns: [], runsTerminados: [],
       error: mensajeDeError(err),
     };
   }

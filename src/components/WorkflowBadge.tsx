@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { CheckCircle2, XCircle, Loader2, HelpCircle, GitBranch, Rocket, Info, GitCommit, ExternalLink, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WorkflowRun, PRWithCommits } from "@/lib/github";
+import { DeployProgressBar } from "@/components/DeployProgressBar";
 import { getDeployPRChain } from "@/lib/github";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { createPortal } from "react-dom";
@@ -10,6 +11,8 @@ interface Props {
   run: WorkflowRun;
   owner: string;
   repo: string;
+  /** Deploys buenos anteriores: con ellos el chip puede decir cuánto falta. */
+  terminados?: WorkflowRun[];
   /** Con valor: el usuario NO tiene permiso "ver cambios de otros" — los PRs
    *  ajenos del deploy se muestran sin título ni commits. */
   selfLogin?: string | null;
@@ -22,7 +25,7 @@ function getBranchTier(branch: string | null): "main" | "dev" | "other" {
   return "other";
 }
 
-export function WorkflowBadge({ run, owner, repo, selfLogin = null }: Props) {
+export function WorkflowBadge({ run, owner, repo, terminados, selfLogin = null }: Props) {
   const isSuccess = run.conclusion === "success";
   const isFailure = run.conclusion === "failure" || run.conclusion === "cancelled";
   const isPending = run.status === "in_progress" || run.status === "queued";
@@ -248,6 +251,19 @@ export function WorkflowBadge({ run, owner, repo, selfLogin = null }: Props) {
 
           <span className="text-[10px] opacity-60 shrink-0">{formatDistanceToNow(run.createdAt)}</span>
         </div>
+
+        {/* Corriendo: bajo el chip, una barra fina de lo que lleva. Aquí no
+            caben ni el reloj ni el porcentaje —el chip mide lo que mide— pero
+            el avance sí se ve, y es lo que se estaba preguntando. */}
+        {isPending && (
+          <DeployProgressBar
+            run={run}
+            terminados={terminados}
+            destino={isMain ? "prd" : "dev"}
+            compacto
+            className="mt-0.5"
+          />
+        )}
       </a>
 
       {/* botón info separado */}
