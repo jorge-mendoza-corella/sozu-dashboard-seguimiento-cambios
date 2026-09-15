@@ -67,9 +67,15 @@ export function ActionsUsoBadge({ appUser }: { appUser: AppUser | null }) {
     data.minutosIncluidos
       ? `${N(data.minutosUsados)} de ${N(data.minutosIncluidos)} minutos del plan${pct !== null ? ` (${pct}%)` : ""}`
       : `${N(data.minutosUsados)} minutos usados`,
-    data.minutosPagados
-      ? `${N(data.minutosPagados)} minutos por encima del cupo ≈ ${USD(data.costoAproximado)} (estimado: GitHub da minutos, no importes)`
-      : "Nada por encima del cupo: sin cargo",
+    // En la facturación nueva el importe lo da GitHub calculado, así que no se
+    // presenta como estimación; en la vieja sí lo era, porque solo daba minutos.
+    data.plataforma === "nueva"
+      ? data.costoBruto > data.costoAproximado
+        ? `${USD(data.costoAproximado)} a pagar — de ${USD(data.costoBruto)} brutos, el plan absorbe ${USD(data.descuento)}`
+        : `${USD(data.costoAproximado)} a pagar`
+      : data.minutosPagados
+        ? `${N(data.minutosPagados)} minutos por encima del cupo ≈ ${USD(data.costoAproximado)} (estimado: GitHub da minutos, no importes)`
+        : "Nada por encima del cupo: sin cargo",
     porMaquina && `Por máquina — ${porMaquina}. Un minuto de macOS cuesta diez veces uno de Linux.`,
     "Los repos públicos no consumen cuota; lo que se factura son los privados.",
     data.ciclo !== null && `El ciclo reinicia en ${data.ciclo} días.`,
