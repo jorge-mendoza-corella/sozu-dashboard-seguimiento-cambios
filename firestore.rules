@@ -229,6 +229,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Quién está usando la app en este momento: copia de lectura de
+    // `portal_sesiones` (Supabase), que es donde las apps dejan su latido.
+    // Solo el sync escribe; aquí nadie, ni siquiera un usuario válido.
+    match /portalOnline/{projectId} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if false;
+    }
+
     // Serie diaria de instalaciones por proyecto (copia de lectura de lo que
     // vive en Supabase, que es donde se mezcla lo medido con la siembra).
     match /installsDiarias/{projectId} {
