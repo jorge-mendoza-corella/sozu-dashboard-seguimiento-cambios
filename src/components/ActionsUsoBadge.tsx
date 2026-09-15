@@ -18,6 +18,32 @@ const AVISO_PCT = 75;
 const ALERTA_PCT = 90;
 
 const N = (v: number) => v.toLocaleString("es-MX");
+
+/** "2026-09" -> "sep 2026" para el badge, "septiembre de 2026" para el título. */
+function mesDe(periodo: string | null, largo = false): string | null {
+  if (!periodo) return null;
+  const [anio, mes] = periodo.split("-").map(Number);
+  if (!anio || !mes) return null;
+  // Día 15 y no 1: a la medianoche del primero, el desfase de zona horaria
+  // devuelve el mes anterior.
+  const fecha = new Date(Date.UTC(anio, mes - 1, 15));
+  const texto = fecha.toLocaleDateString("es-MX", {
+    month: largo ? "long" : "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  return texto.replace(".", "");
+}
+
+/** "2026-09-01" -> "1 de sep". Para decir hasta qué día llega el consumo. */
+function diaDe(fecha: string | null): string | null {
+  if (!fecha) return null;
+  const [anio, mes, dia] = fecha.split("-").map(Number);
+  if (!anio || !mes || !dia) return null;
+  return new Date(Date.UTC(anio, mes - 1, dia))
+    .toLocaleDateString("es-MX", { day: "numeric", month: "short", timeZone: "UTC" })
+    .replace(".", "");
+}
 const USD = (v: number) =>
   v.toLocaleString("es-MX", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
@@ -62,8 +88,20 @@ export function ActionsUsoBadge({ appUser }: { appUser: AppUser | null }) {
     .map(([maquina, min]) => `${maquina.toLowerCase()}: ${N(min)} min`)
     .join(" · ");
 
+  const mesCorto = mesDe(data.periodo);
+  const mesLargo = mesDe(data.periodo, true);
+  const desde = diaDe(data.periodoDesde);
+  const hasta = diaDe(data.periodoHasta);
+
   const titulo = [
     `GitHub Actions de ${data.usuario}`,
+    // Primero de qué periodo es: sin esto, el resto del tooltip describe un
+    // número del que no se sabe si es del mes o de toda la vida de la cuenta.
+    mesLargo
+      ? `Consumo de ${mesLargo} — el ciclo es mensual y empieza de cero cada mes${
+          desde && hasta && desde !== hasta ? ` (registrado del ${desde} al ${hasta})` : ""
+        }`
+      : "Consumo del ciclo de facturación en curso (mensual)",
     data.minutosIncluidos
       ? `${N(data.minutosUsados)} de ${N(data.minutosIncluidos)} minutos del plan${pct !== null ? ` (${pct}%)` : ""}`
       : `${N(data.minutosUsados)} minutos usados`,
@@ -92,6 +130,9 @@ export function ActionsUsoBadge({ appUser }: { appUser: AppUser | null }) {
       title={titulo}
     >
       <Gauge className="h-3.5 w-3.5 shrink-0" />
+      {/* El mes va ANTES del número: leerlo después ya no evita entender 25,199
+          como un acumulado histórico. */}
+      {mesCorto && <span className="opacity-60">{mesCorto}</span>}
       <span className="tabular-nums">
         {N(data.minutosUsados)}
         {data.minutosIncluidos > 0 && <span className="opacity-60">/{N(data.minutosIncluidos)}</span>}

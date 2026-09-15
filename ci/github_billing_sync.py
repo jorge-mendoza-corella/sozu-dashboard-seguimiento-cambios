@@ -113,11 +113,26 @@ def analizar_nuevo(datos: dict) -> dict:
             clave = "UBUNTU"
         por_maquina[clave] = por_maquina.get(clave, 0) + int(float(u.get("quantity") or 0))
 
+    # De qué mes es todo esto. `/settings/billing/usage` sin parámetros
+    # devuelve el ciclo EN CURSO, pero no dice cuál es: el tablero enseñaba
+    # 25,199 min sin decir de cuándo, y un número así se lee como acumulado
+    # histórico. Cada línea trae su `date` (YYYY-MM-DD), así que el mes sale de
+    # ahí; si alguna viniera sin fecha, se cae al mes UTC de hoy, que es el que
+    # la API estaba devolviendo de todos modos.
+    fechas = sorted(str(u.get("date") or "") for u in lineas if u.get("date"))
+    periodo = fechas[-1][:7] if fechas else datetime.now(timezone.utc).strftime("%Y-%m")
+
     return {
         "usuario": USUARIO,
         # La plataforma nueva no habla de cupo incluido: habla de lo descontado.
         # Se deja en 0 y el tablero, que ya lo contempla, no dibuja barra.
         "minutosIncluidos": 0,
+        # "2026-09": el mes al que corresponde el consumo.
+        "periodo": periodo,
+        # Primer y último día con consumo registrado en el ciclo. Sirve para
+        # decir "del 1 al 15" cuando el mes va a medias.
+        "periodoDesde": fechas[0] if fechas else None,
+        "periodoHasta": fechas[-1] if fechas else None,
         "minutosUsados": int(minutos),
         "minutosPagados": int(minutos) if neto > 0 else 0,
         "pctCupo": None,
@@ -185,6 +200,12 @@ def analizar(datos: dict) -> dict:
         "minutosPorMaquina": desglose,
         "costoAproximado": round(costo, 2),
         "ciclo": datos.get("days_left_in_billing_cycle"),
+        # La plataforma vieja tampoco nombra el ciclo; solo dice cuántos días le
+        # quedan. El mes de hoy es la mejor aproximación y evita que el tablero
+        # tenga dos formas de no decir de cuándo es el número.
+        "periodo": datetime.now(timezone.utc).strftime("%Y-%m"),
+        "periodoDesde": None,
+        "periodoHasta": None,
     }
 
 
