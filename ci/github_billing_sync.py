@@ -49,6 +49,88 @@ def fs_headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
+def scopes_del_token(token: str) -> str:
+    """Qué permisos trae el token, según GitHub.
+
+    Va en el diagnóstico porque un 404 de billing tiene dos causas muy
+    distintas —falta de permiso o endpoint retirado— y se arreglan en sitios
+    opuestos. Preguntárselo a GitHub cuesta una llamada y ahorra adivinar.
+    """
+    r = requests.get(
+        "https://api.github.com/user",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+        timeout=20,
+    )
+    if r.status_code != 200:
+        return f"no se pudo consultar ({r.status_code})"
+    # Un PAT clásico declara sus scopes en la cabecera; uno fine-grained no trae
+    # ninguna, y ahí la ausencia también es información.
+    scopes = r.headers.get("x-oauth-scopes")
+    if scopes is None:
+        return "token fine-grained (sin cabecera de scopes)"
+    return scopes or "(ninguno)"
+
+
+def leer_billing_nuevo(token: str) -> tuple[dict | None, str | None]:
+    """Plataforma de facturación NUEVA: `/settings/billing/usage`.
+
+    GitHub está migrando las cuentas a este endpoint, y el viejo desaparece con
+    la migración. Devuelve líneas de consumo con importe ya calculado —no hay
+    que estimar tarifas—, así que cuando existe es mejor dato que el legacy.
+    """
+    r = requests.get(
+        f"https://api.github.com/users/{USUARIO}/settings/billing/usage",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        timeout=30,
+    )
+    if r.status_code != 200:
+        return None, f"{r.status_code}"
+    return r.json(), None
+
+
+def analizar_nuevo(datos: dict) -> dict:
+    """Resume las líneas de consumo de Actions de la plataforma nueva."""
+    lineas = [
+        u for u in (datos.get("usageItems") or [])
+        if (u.get("product") or "").lower() == "actions"
+    ]
+    minutos = sum(float(u.get("quantity") or 0) for u in lineas)
+    bruto = sum(float(u.get("grossAmount") or 0) for u in lineas)
+    neto = sum(float(u.get("netAmount") or 0) for u in lineas)
+    descuento = sum(float(u.get("discountAmount") or 0) for u in lineas)
+
+    por_maquina: dict[str, int] = {}
+    for u in lineas:
+        # `sku` trae cosas como "Actions Linux" o "Actions macOS": basta con
+        # mirar qué máquina nombra para armar el desglose.
+        sku = (u.get("sku") or "").upper()
+        clave = next((m for m in ("MACOS", "WINDOWS", "UBUNTU", "LINUX") if m in sku), "OTRO")
+        if clave == "LINUX":
+            clave = "UBUNTU"
+        por_maquina[clave] = por_maquina.get(clave, 0) + int(float(u.get("quantity") or 0))
+
+    return {
+        "usuario": USUARIO,
+        # La plataforma nueva no habla de cupo incluido: habla de lo descontado.
+        # Se deja en 0 y el tablero, que ya lo contempla, no dibuja barra.
+        "minutosIncluidos": 0,
+        "minutosUsados": int(minutos),
+        "minutosPagados": int(minutos) if neto > 0 else 0,
+        "pctCupo": None,
+        "minutosPorMaquina": por_maquina,
+        # Aquí el importe NO se estima: lo da GitHub.
+        "costoAproximado": round(neto, 2),
+        "costoBruto": round(bruto, 2),
+        "descuento": round(descuento, 2),
+        "ciclo": None,
+        "plataforma": "nueva",
+    }
+
+
 def leer_billing(token: str) -> tuple[dict | None, str | None]:
     r = requests.get(
         f"https://api.github.com/users/{USUARIO}/settings/billing/actions",
@@ -138,10 +220,31 @@ def main() -> None:
         print("· Sin GH_BILLING_TOKEN: no se puede leer el consumo de Actions.")
         return
 
+    # Primero la plataforma nueva: si la cuenta ya migró, el endpoint legacy
+    # contesta 404 y su mensaje de error no distingue eso de un token sin
+    # permisos. Probando en este orden, el caso bueno ni siquiera llega al 404.
+    datos_nuevo, err_nuevo = leer_billing_nuevo(gh_token)
+    if datos_nuevo is not None:
+        resumen = analizar_nuevo(datos_nuevo)
+        write_doc(fs_token, resumen, None)
+        maquinas = " · ".join(f"{k.lower()} {v}" for k, v in resumen["minutosPorMaquina"].items() if v)
+        print(
+            f"✓ {resumen['usuario']} (facturación nueva): {resumen['minutosUsados']} min"
+            + (f" · {resumen['costoAproximado']} USD netos" if resumen["costoAproximado"] else " · sin cargo")
+            + (f" · {maquinas}" if maquinas else "")
+        )
+        return
+
     datos, error = leer_billing(gh_token)
     if error:
-        print(f"⚠ {error}")
-        write_doc(fs_token, None, error)
+        # Los dos fallaron: se dice qué contestó cada uno y qué permisos trae
+        # el token, que es lo que hace falta para saber dónde está el problema.
+        detalle = (
+            f"{error} · /settings/billing/usage contestó {err_nuevo}"
+            f" · scopes del token: {scopes_del_token(gh_token)}"
+        )
+        print(f"⚠ {detalle}")
+        write_doc(fs_token, None, detalle)
         return
 
     resumen = analizar(datos or {})
