@@ -14,6 +14,7 @@ import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
 import { DeployMetaTooltip } from "./DeployMetaTooltip";
 import { AvisoDeploy } from "./AvisoDeploy";
+import { DeployProgressBar, RelojDeploy } from "@/components/DeployProgressBar";
 import type { AvisosDelProyecto } from "@/hooks/useAvisos";
 import { FrontInfoBar } from "./FrontInfoBar";
 import type { FrontVersion } from "@/lib/frontVersions";
@@ -305,6 +306,29 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
       )} />
 
       {/* ══════════════════════════════════════════════
+          FRANJA DEPLOY → DEV  (solo cuando activo)
+          ══════════════════════════════════════════════
+          Dev no lleva el banner grande —no es el deploy que quita el sueño—
+          pero sí la misma barra: la pregunta de cuánto falta es idéntica, y
+          el chip del encabezado no tiene sitio para responderla. */}
+      {isDeployingToDev && !isDeployingToMain && runEnCurso && (
+        <div className="border-b border-sky-500/20 bg-sky-500/[0.06] px-4 py-2.5">
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <Loader2 className="h-3 w-3 shrink-0 animate-spin text-sky-600 dark:text-sky-400" />
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-sky-700 dark:text-sky-300">
+              Deploy en progreso
+            </span>
+            <span className="text-[11px] font-bold text-sky-900/70 dark:text-sky-200/70">DEV</span>
+          </div>
+          <DeployProgressBar
+            run={runEnCurso}
+            terminados={status.runsTerminados}
+            destino="dev"
+          />
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════
           BANNER DEPLOY → MAIN  (solo cuando activo)
           ══════════════════════════════════════════════ */}
       {isDeployingToMain && (
@@ -331,8 +355,24 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                 </div>
               </div>
             </div>
-            <Loader2 className="h-5 w-5 text-white/80 animate-spin shrink-0" />
+            {/* El cronómetro se lee de un vistazo desde lejos; el spinner
+                que estaba aquí no decía nada que no dijera ya el cohete. */}
+            {runEnCurso && <RelojDeploy run={runEnCurso} />}
           </div>
+
+          {/* La barra: cuánto lleva y a qué altura va de lo que suele tardar.
+              Sobre el verde del banner va en blanco, que es el único color que
+              se ve bien encima. */}
+          {runEnCurso && (
+            <div className="relative mt-2.5">
+              <DeployProgressBar
+                run={runEnCurso}
+                terminados={status.runsTerminados}
+                destino="prd"
+                enBannerOscuro
+              />
+            </div>
+          )}
           {/* A quién le va a llegar el aviso cuando termine. Es justo lo que uno
               se pregunta mirando la barra correr, y estaba escondido tras el
               hover de un icono de 12px. */}
@@ -852,7 +892,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
               ? <p className="text-xs text-muted-foreground">Sin deploys recientes</p>
               : status.latestRuns.map((r, i) => (
                   <DeployMetaTooltip key={i} owner={status.owner} repo={status.repo} run={r} avisos={avisos}>
-                    <WorkflowBadge run={r} owner={status.owner} repo={status.repo} selfLogin={canViewOthers ? null : selfLogin} />
+                    <WorkflowBadge run={r} owner={status.owner} repo={status.repo} terminados={status.runsTerminados} selfLogin={canViewOthers ? null : selfLogin} />
                   </DeployMetaTooltip>
                 ))}
           </div>
