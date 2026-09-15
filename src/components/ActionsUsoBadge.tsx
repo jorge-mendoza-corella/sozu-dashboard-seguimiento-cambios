@@ -40,6 +40,12 @@ function etiquetaPeriodo(p: { anio: number; mes: number; hasta: string | null } 
   return alDia ? mes : `${mes}, al ${dia}`;
 }
 
+/** "sep", para la barra: ahí cada carácter compite con la navegación. */
+function mesCorto(p: { mes: number } | null): string {
+  if (!p) return "";
+  return (MESES[p.mes - 1] ?? "").slice(0, 3);
+}
+
 const N = (v: number) => v.toLocaleString("es-MX");
 const USD = (v: number) =>
   v.toLocaleString("es-MX", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
@@ -88,7 +94,8 @@ export function ActionsUsoBadge({ appUser }: { appUser: AppUser | null }) {
   const periodo = etiquetaPeriodo(data.periodo);
 
   const titulo = [
-    `GitHub Actions de ${data.usuario}`,
+    `Gasto de GitHub Actions${periodo ? ` — ${periodo}` : ""}`,
+    `Cuenta: ${data.usuario}`,
     periodo &&
       (data.periodo?.desde
         ? `Consumo de ${periodo} (del ${data.periodo.desde} al ${data.periodo.hasta})`
@@ -110,6 +117,9 @@ export function ActionsUsoBadge({ appUser }: { appUser: AppUser | null }) {
         : "Nada por encima del cupo: sin cargo",
     porMaquina && `Por máquina — ${porMaquina}. Un minuto de macOS cuesta diez veces uno de Linux.`,
     "Los repos públicos no consumen cuota; lo que se factura son los privados.",
+    pct !== null && pct >= AVISO_PCT
+      ? `Va en ${pct}% del presupuesto del mes: por eso el importe aparece resaltado.`
+      : null,
     data.ciclo !== null && `El ciclo reinicia en ${data.ciclo} días.`,
   ]
     .filter(Boolean)
@@ -124,29 +134,11 @@ export function ActionsUsoBadge({ appUser }: { appUser: AppUser | null }) {
       title={titulo}
     >
       <Gauge className="h-3.5 w-3.5 shrink-0" />
-      <span className="tabular-nums">
-        {N(data.minutosUsados)}
-        {data.minutosIncluidos > 0 && <span className="opacity-60">/{N(data.minutosIncluidos)}</span>}
-        <span className="ml-1 opacity-60">min</span>
-      </span>
-
-      {/* De qué mes habla. Sin esto el número flota: 25,000 minutos pueden ser
-          de un mes o de todo el año, y son lecturas opuestas. */}
-      {periodo && <span className="opacity-60">· {periodo}</span>}
-
-      {/* La barra solo cuando hay cupo contra el que medir: sin plan incluido,
-          un "0%" diría que no se ha gastado nada, que es lo contrario. */}
-      {pct !== null && (
-        <span className="h-1 w-8 overflow-hidden rounded-full bg-current/20" aria-hidden>
-          <span
-            className="block h-full rounded-full bg-current transition-[width] duration-700"
-            style={{ width: `${Math.min(100, pct)}%` }}
-          />
-        </span>
-      )}
-
-      {data.minutosPagados > 0 && (
-        <span className="font-medium">{USD(data.costoAproximado)}</span>
+      <span className="tabular-nums font-medium">{USD(data.costoAproximado)}</span>
+      {/* De qué mes es el gasto. Sin eso, un importe en la barra se lee como
+          "lo que llevamos" sin más, que puede ser el mes o el año. */}
+      {mesCorto(data.periodo) && (
+        <span className="opacity-60">{mesCorto(data.periodo)}</span>
       )}
     </span>
   );
