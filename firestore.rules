@@ -229,6 +229,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Consumo de GitHub Actions de la cuenta. Es dato de administración: lo
+    // lee quien administra —global o de empresa—, no cualquier usuario válido.
+    // El badge además no lo pide si no toca, pero la regla no se apoya en eso.
+    match /githubActionsUso/{doc} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email))
+        && perfil().role in ['superuser', 'client_admin'];
+      allow write: if false;
+    }
+
     // Quién está usando la app en este momento: copia de lectura de
     // `portal_sesiones` (Supabase), que es donde las apps dejan su latido.
     // Solo el sync escribe; aquí nadie, ni siquiera un usuario válido.
