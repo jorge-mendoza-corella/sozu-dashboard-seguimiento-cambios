@@ -1,0 +1,59 @@
+name: Sync conectados ahora (portal_sesiones)
+
+# Quién está usando las apps en este momento.
+#
+# Va en su propio workflow y no dentro del sync de descargas porque la cadencia
+# es otra: aquel corre cada tres horas —un total de descargas no cambia de un
+# minuto a otro— y esto dice "ahora", así que a las tres horas ya no dice nada.
+# Es una sola llamada a una RPC y una escritura por app: dura segundos.
+#
+# El repo es público, así que estos minutos de Actions no se facturan.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: portal-online-sync
+  cancel-in-progress: true # si se encima, la corrida nueva trae el dato bueno
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_GCP_DEV }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install --quiet requests
+
+      - name: Sync
+        env:
+          GCP_PROJECT: sozu-admin-dev
+        run: |
+          FIRESTORE_TOKEN="$(gcloud auth print-access-token)"
+          export FIRESTORE_TOKEN
+
+          secret() {
+            gcloud secrets versions access latest --secret="$1" --project=sozu-admin-dev 2>/dev/null || true
+          }
+
+          # Los mismos secretos propios del resto de puentes: apuntan a la base
+          # de PRODUCCIÓN, que es la que usan las apps de verdad.
+          SUPABASE_URL="$(secret DASHBOARD_SUPABASE_URL)"
+          SUPABASE_SERVICE_ROLE_KEY="$(secret DASHBOARD_SUPABASE_SERVICE_ROLE_KEY)"
+          export SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY
+
+          python ci/portal_online_sync.py

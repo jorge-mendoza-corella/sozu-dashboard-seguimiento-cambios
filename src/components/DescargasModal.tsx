@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { corteDe, getInstallsDiarias, ultimosDias, type DiaInstalaciones } from "@/lib/installsDiarias";
 import { getGa4Installs } from "@/lib/ga4Installs";
+import { getPortalOnline } from "@/lib/portalOnline";
 import { getConsumoCodemagic } from "@/lib/codemagicConsumo";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ChartTooltip, Filler);
@@ -106,8 +107,18 @@ export function DescargasModal({
     staleTime: 30_000,
   });
   const enVivo = ga4?.data?.enVivo ?? null;
-  const activos = enVivo ? enVivo.activos.android + enVivo.activos.ios : 0;
   const aperturas = enVivo ? enVivo.aperturas.android + enVivo.aperturas.ios : 0;
+
+  // Quién está DENTRO de la app ahora. Sale de `portal_sesiones` —la sesión que
+  // la app abre al entrar y mantiene con un latido—, que es lo mismo que cuenta
+  // el Portal Alta Dirección. Antes se usaba `activeUsers` de GA4: otros
+  // usuarios, otra ventana, otro universo, y por eso nunca cuadraron.
+  const { data: online } = useQuery({
+    queryKey: ["portal-online", projectId],
+    queryFn: () => getPortalOnline(projectId),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
 
   // Hasta dónde llega la medición. La ventana termina aquí y no en la fecha de
   // hoy: el día en curso no lo ha contado nadie todavía y se dibujaba como una
@@ -221,16 +232,24 @@ export function DescargasModal({
           <h3 className="flex items-center gap-2 text-base font-semibold">
             <Download className="h-4 w-4 text-violet-500" />
             Descargas de {nombre}
-            {enVivo && (
+            {(enVivo || online) && (
               <span
                 className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-normal text-muted-foreground"
                 title={
-                  `Instalaciones estrenadas en los últimos ${enVivo.ventanaMinutos} minutos, ` +
-                  "medidas por Google Analytics: cuenta a quien ABRE la app por primera vez " +
-                  "después de instalarla. No es la descarga de la tienda —quien baja la app y " +
-                  "no la abre no aparece aquí— pero es lo único que se puede saber al momento: " +
-                  "Apple y Play publican sus cifras al día siguiente. Por eso va aparte y no se " +
-                  "suma a la gráfica. El segundo número, si aparece, es gente con la app abierta."
+                  (enVivo
+                    ? `Instalaciones estrenadas en los últimos ${enVivo.ventanaMinutos} minutos, ` +
+                      "medidas por Google Analytics: cuenta a quien ABRE la app por primera vez " +
+                      "después de instalarla. No es la descarga de la tienda —quien baja la app y " +
+                      "no la abre no aparece aquí— pero es lo único que se puede saber al momento: " +
+                      "Apple y Play publican sus cifras al día siguiente. "
+                    : "") +
+                  (online
+                    ? `${online.usuarios} ${online.usuarios === 1 ? "persona con sesión abierta" : "personas con sesión abierta"} ` +
+                      `en los últimos ${online.ventanaMinutos} minutos (${online.desdeApp} desde la app, ` +
+                      `${online.desdeWeb} desde el navegador). Es la misma medición que enseña el ` +
+                      "Portal Alta Dirección: la sesión que la app abre al entrar y mantiene con un latido."
+                    : "") +
+                  " Nada de esto se suma a la gráfica: son otras métricas y otras ventanas."
                 }
               >
                 <span className="relative flex h-1.5 w-1.5">
@@ -251,8 +270,10 @@ export function DescargasModal({
                 ) : (
                   <>sin instalaciones ahora</>
                 )}
-                {activos > 0 && (
-                  <span className="text-muted-foreground/70"> · {N(activos)} en la app</span>
+                {online && online.usuarios > 0 && (
+                  <span className="text-muted-foreground/70">
+                    {" "}· {N(online.usuarios)} en línea
+                  </span>
                 )}
               </span>
             )}
