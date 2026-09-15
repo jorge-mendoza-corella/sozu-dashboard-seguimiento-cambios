@@ -38,6 +38,14 @@ const fmtFecha = (iso: string) => {
   return `${Number(d)} ${MESES[Number(m) - 1] ?? m}`;
 };
 const N = (v: number) => v.toLocaleString("es-MX");
+/** "8 min" o "1 h 12 min": 72.4 minutos no se lee de un vistazo. */
+const duracionCorta = (min: number) => {
+  const total = Math.round(min);
+  if (total < 60) return `${total} min`;
+  const h = Math.floor(total / 60);
+  const resto = total % 60;
+  return resto ? `${h} h ${resto} min` : `${h} h`;
+};
 const USD = (v: number) =>
   v.toLocaleString("es-MX", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
@@ -320,6 +328,39 @@ export function DescargasModal({
               <Dato label="Android" valor={N(totales.android)} hint="histórico" />
               <Dato label="iOS" valor={N(totales.ios)} hint="histórico" />
             </div>
+
+            {/* Cuánto se USA, no cuánto se bajó. Va pegado a las descargas
+                porque es la segunda mitad de la misma pregunta: una app que se
+                baja mucho y no se abre nunca no es una buena noticia. Sale de
+                `portal_sesiones`, lo mismo que enseña el Portal Alta Dirección,
+                así que los dos tableros dicen el mismo número. */}
+            {online && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                <Dato
+                  label="En línea"
+                  valor={N(online.usuarios)}
+                  hint={
+                    online.usuarios > 0
+                      ? `${N(online.desdeApp)} en app · ${N(online.desdeWeb)} en web`
+                      : `sin actividad en ${online.ventanaMinutos} min`
+                  }
+                />
+                {online.mes && (
+                  <>
+                    <Dato
+                      label="Por sesión"
+                      valor={duracionCorta(online.mes.duracionPromedioMin)}
+                      hint="promedio del mes"
+                    />
+                    <Dato
+                      label="Usuarios del mes"
+                      valor={N(online.mes.usuarios)}
+                      hint={`${N(online.mes.sesiones)} ${online.mes.sesiones === 1 ? "sesión" : "sesiones"}`}
+                    />
+                  </>
+                )}
+              </div>
+            )}
 
             <div style={{ height: 240 }}>
               <Line

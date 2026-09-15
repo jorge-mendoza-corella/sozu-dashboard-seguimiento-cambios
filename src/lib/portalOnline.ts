@@ -32,6 +32,12 @@ export interface PortalOnline {
   ultimaActividad: string | null;
   /** Cuándo corrió el sync que lo escribió. */
   updatedAt: string | null;
+  /**
+   * Uso del mes en curso del portal de esa app: personas, sesiones y cuánto
+   * dura una sesión. Incluye web, porque la RPC agrega por portal — el "en
+   * línea" de arriba sí distingue.
+   */
+  mes: { usuarios: number; sesiones: number; duracionPromedioMin: number } | null;
 }
 
 /**
@@ -63,6 +69,7 @@ export async function getPortalOnline(projectId: string): Promise<PortalOnline |
       ventanaMinutos: raw.ventanaMinutos ?? 30,
       ultimaActividad: raw.ultimaActividad ?? null,
       updatedAt: updatedAt.toISOString(),
+      mes: raw.mes ?? null,
     };
   } catch {
     return null;

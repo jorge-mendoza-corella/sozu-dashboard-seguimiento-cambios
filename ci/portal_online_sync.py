@@ -113,6 +113,66 @@ def sesiones_activas(url: str, key: str, portal: str) -> tuple[list[dict] | None
     return r.json(), None
 
 
+def del_mes(url: str, key: str, portal: str) -> dict | None:
+    """Uso del mes en curso de ese portal: gente, sesiones y cuánto dura una.
+
+    Misma RPC que el Portal Alta Dirección usa para su resumen mensual, así que
+    los dos tableros enseñan el mismo número y no hay que explicar por qué
+    difieren. Devuelve None si la RPC falla: es un extra al lado del "ahora".
+    """
+    ahora = datetime.now(timezone.utc)
+    desde = ahora.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    r = requests.post(
+        f"{url.rstrip('/')}/rest/v1/rpc/visitas_historicas_por_portal",
+        headers={"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json={"p_desde": desde.isoformat(), "p_hasta": None},
+        timeout=30,
+    )
+    if r.status_code != 200:
+        print(f"  · sin resumen del mes: Supabase {r.status_code} {r.text[:120]}")
+        return None
+    for fila in r.json():
+        if fila.get("portal") == portal:
+            return {
+                "usuarios": fila.get("usuarios_unicos") or 0,
+                "sesiones": fila.get("total_sesiones") or 0,
+                "duracionPromedioMin": float(fila.get("duracion_promedio_min") or 0),
+            }
+    # El portal existe pero nadie entró este mes: eso es un cero, no un fallo.
+    return {"usuarios": 0, "sesiones": 0, "duracionPromedioMin": 0.0}
+
+
+def cerrar_abandonadas(url: str, key: str) -> None:
+    """Cierra las sesiones que nadie cerró.
+
+    `close_portal_session` solo corre al cerrar sesión a propósito; quien mata
+    la app o cierra la pestaña de golpe deja su fila con `sesion_fin` vacío para
+    siempre. Ninguna cifra de hoy depende de eso —las RPC filtran por
+    `ultima_actividad`— pero `sesion_fin IS NULL` LEE como "sigue dentro", y es
+    el criterio que cualquiera escribiría en la siguiente consulta.
+
+    Va aquí, en el sync que ya corre cada diez minutos, en vez de en un cron de
+    base de datos: es una llamada y no hay que mantener otra pieza.
+    """
+    r = requests.post(
+        f"{url.rstrip('/')}/rest/v1/rpc/cerrar_sesiones_abandonadas",
+        headers={"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json={"p_minutos": 120},
+        timeout=30,
+    )
+    if r.status_code != 200:
+        # Mientras la migración no esté aplicada la función no existe. Es
+        # higiene: se avisa y se sigue.
+        print(f"· no se pudieron cerrar sesiones abandonadas: {r.status_code} {r.text[:120]}")
+        return
+    try:
+        n = int(r.json())
+    except (ValueError, TypeError):
+        return
+    if n:
+        print(f"· {n} sesiones abandonadas cerradas")
+
+
 def resumir(filas: list[dict]) -> dict:
     """Personas, sesiones y de dónde entran."""
     personas: set[str] = set()
@@ -173,6 +233,8 @@ def main() -> None:
         print("· Sin SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY: no se puede leer quién está en línea.")
         return
 
+    cerrar_abandonadas(url, key)
+
     for app in list_apps(fs_token):
         filas, error = sesiones_activas(url, key, app["portal"])
         if error:
@@ -180,6 +242,7 @@ def main() -> None:
             write_doc(fs_token, app["projectId"], {}, error)
             continue
         datos = resumir(filas or [])
+        datos["mes"] = del_mes(url, key, app["portal"])
         write_doc(fs_token, app["projectId"], datos, None)
         print(
             f"✓ {app['etiqueta']}: {datos['usuarios']} en línea "
