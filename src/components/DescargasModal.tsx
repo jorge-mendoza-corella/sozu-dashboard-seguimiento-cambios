@@ -263,11 +263,13 @@ export function DescargasModal({
                 className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-normal text-muted-foreground"
                 title={
                   (enVivo
-                    ? `Instalaciones estrenadas en los últimos ${enVivo.ventanaMinutos} minutos, ` +
-                      "medidas por Google Analytics: cuenta a quien ABRE la app por primera vez " +
-                      "después de instalarla. No es la descarga de la tienda —quien baja la app y " +
-                      "no la abre no aparece aquí— pero es lo único que se puede saber al momento: " +
-                      "Apple y Play publican sus cifras al día siguiente. "
+                    ? `Instalaciones estrenadas en los últimos ${enVivo.ventanaMinutos} minutos ` +
+                      "(no en todo el día: para eso está la gráfica de abajo). Las mide Google " +
+                      "Analytics con el evento `first_open`, que cuenta cada instalación nueva que " +
+                      "se ABRE por primera vez, no cada persona: quien reinstala, o instala en un " +
+                      "segundo aparato, vuelve a contar. No es la descarga de la tienda —quien baja " +
+                      "la app y no la abre no aparece aquí— pero es lo único que se puede saber al " +
+                      "momento: Apple y Play publican sus cifras al día siguiente. "
                     : "") +
                   (online
                     ? `${online.usuarios} ${online.usuarios === 1 ? "persona con sesión abierta" : "personas con sesión abierta"} ` +
@@ -292,9 +294,15 @@ export function DescargasModal({
                 {aperturas > 0 ? (
                   <>
                     {N(aperturas)} recién instalada{aperturas === 1 ? "" : "s"}
+                    {/* La ventana, pegada al número. Sin ella se lee como "hoy"
+                        —que es lo que dice la gráfica de al lado— y son dos
+                        cosas distintas: esto son los últimos minutos. */}
+                    <span className="opacity-60">
+                      {" "}· {enVivo?.ventanaMinutos ?? 30} min
+                    </span>
                   </>
                 ) : (
-                  <>sin instalaciones ahora</>
+                  <>sin instalaciones en {enVivo?.ventanaMinutos ?? 30} min</>
                 )}
                 {online && online.usuarios > 0 && (
                   <span className="text-muted-foreground/70">
