@@ -868,16 +868,26 @@ export function UsersPage() {
               <div key={u.email} className="border-b last:border-0">
                 <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-6">
                   <div className="flex-1 min-w-0">
-                    <p className="flex items-center gap-1.5 text-sm font-medium truncate">
-                      {u.email}
-                      {isSelf && <span className="text-xs text-muted-foreground">(tú)</span>}
+                    <p className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
+                      {/* El correo manda sobre lo que viene detrás: recorta él y
+                          no los adornos, y lleva `title` para leerlo entero sin
+                          tener que abrir la fila. */}
+                      <span className="truncate" title={u.email}>
+                        {u.email}
+                      </span>
+                      {isSelf && <span className="shrink-0 text-xs text-muted-foreground">(tú)</span>}
                       {!isRoot && !u.githubToken && (
                         <span title="Sin API key de GitHub — verá el bloqueo al entrar">
                           <KeyRound className="h-3.5 w-3.5 shrink-0 text-amber-500" />
                         </span>
                       )}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    {/* También recorta: partía el correo de quien invitó por la
+                        mitad, que se lee como una dirección distinta. */}
+                    <p
+                      className="truncate text-xs text-muted-foreground"
+                      title={isRoot ? undefined : `Invitado por ${u.addedBy}`}
+                    >
                       {isRoot ? "Superusuario raíz · todos los proyectos" : `Invitado por ${u.addedBy}`}
                     </p>
                     {/* Empresas a las que pertenece, por nombre (el id no le dice nada a nadie). */}
@@ -900,7 +910,7 @@ export function UsersPage() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
                     <button
                       onClick={() => setExpanded(isOpen ? null : u.email)}
                       className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
@@ -936,7 +946,7 @@ export function UsersPage() {
 
                     {editable ? (
                       <SelectNative
-                        className="w-52"
+                        className="w-40 lg:w-52"
                         value={u.role}
                         disabled={busy === u.email}
                         onChange={(e) => handleRole(u, e.target.value as UserRole)}
