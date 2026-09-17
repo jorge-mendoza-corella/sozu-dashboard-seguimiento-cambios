@@ -9,7 +9,7 @@ import { Line } from "react-chartjs-2";
 import { Apple, Smartphone, Download, X, Loader2, Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
-import { corteDe, getInstallsDiarias, ultimosDias, type DiaInstalaciones } from "@/lib/installsDiarias";
+import { corteDe, getInstallsDiarias, sinLectura, ultimosDias, type DiaInstalaciones } from "@/lib/installsDiarias";
 import { getGa4Installs } from "@/lib/ga4Installs";
 import { getPortalOnline } from "@/lib/portalOnline";
 import { getConsumoCodemagic } from "@/lib/codemagicConsumo";
@@ -184,7 +184,10 @@ export function DescargasModal({
         : [{ key: plataforma, label: plataforma === "ios" ? "iOS" : "Android" }];
     return series.map((s) => ({
       label: s.label,
-      data: puntos.map((p) => p[s.key]),
+      // `null` y no 0 en los días que nadie ha contado todavía: la línea se
+      // corta ahí. Un cero dibuja una caída a plomo que no ocurrió, y es lo
+      // primero que se ve al abrir la gráfica por la mañana.
+      data: puntos.map((p) => (sinLectura(p.fecha, corte) ? null : p[s.key])),
       borderColor: COLOR[s.key],
       backgroundColor: `${COLOR[s.key]}22`,
       borderWidth: 2,
@@ -197,7 +200,7 @@ export function DescargasModal({
       // nada y `fill: true` basta.
       stack: "apps",
     }));
-  }, [puntos, plataforma]);
+  }, [puntos, plataforma, corte]);
 
   const opciones: ChartOptions<"line"> = useMemo(
     () => ({
