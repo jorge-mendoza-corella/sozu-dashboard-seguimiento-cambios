@@ -19,6 +19,18 @@ export interface DiaInstalaciones {
   ios: number;
   /** Cuántas de ese día son reparto estimado, no medición. */
   estimado: number;
+  /**
+   * El día ya tiene algo, pero todavía no ha cerrado: falta el reporte de la
+   * tienda, que llega al día siguiente. Lo que se ve puede crecer.
+   *
+   * No es lo mismo que un día sin lectura —ese no tiene nada— ni que un día
+   * flojo. Sin distinguirlo, la curva se desploma cada mañana y esa caída se
+   * lee como real: pasó el 16 de septiembre, con Android puesto y iOS aún sin
+   * llegar.
+   */
+  parcial?: boolean;
+  /** De dónde salió lo de ese día: `ga4`, `app_store`, `play_console`… */
+  fuentes?: string[];
 }
 
 export interface InstallsDiarias {
