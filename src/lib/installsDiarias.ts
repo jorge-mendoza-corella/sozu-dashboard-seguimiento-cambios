@@ -77,9 +77,31 @@ export function ultimosDias(dias: DiaInstalaciones[], n: number): DiaInstalacion
   const hoy = new Date();
   for (let i = n - 1; i >= 0; i--) {
     const f = new Date(hoy);
-    f.setUTCDate(f.getUTCDate() - i);
-    const fecha = f.toISOString().slice(0, 10);
-    salida.push(porFecha.get(fecha) ?? { fecha, android: 0, ios: 0, estimado: 0 });
+    // En local, no en UTC. Con `setUTCDate` + `toISOString`, a partir de las
+    // 18:00 de México el navegador ya cree que es mañana y la serie añadía un
+    // día que aún no ha empezado: un cero garantizado al final de la curva.
+    f.setDate(f.getDate() - i);
+    salida.push(porFecha.get(isoLocal(f)) ?? { fecha: isoLocal(f), android: 0, ios: 0, estimado: 0 });
   }
   return salida;
+}
+
+/** La fecha en la zona del navegador, que es como vienen fechadas las filas. */
+export function isoLocal(d: Date): string {
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
+/**
+ * ¿Ese día está todavía sin contar?
+ *
+ * No es lo mismo que "ese día nadie bajó la app". Las tiendas publican el
+ * reporte de un día al día siguiente y Analytics consolida el día en curso con
+ * horas de retraso, así que el último tramo de la serie no tiene lectura: no
+ * tiene un cero. Dibujarlo como cero enseña una caída a plomo que no ocurrió,
+ * y es lo primero que ve quien abre la gráfica por la mañana.
+ */
+export function sinLectura(fecha: string, corte: string | null): boolean {
+  return !corte || fecha > corte;
 }
