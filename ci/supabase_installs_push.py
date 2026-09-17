@@ -275,7 +275,7 @@ def serie_de_supabase(url: str, key: str, id_app: int) -> tuple[list[dict], str 
         headers={"apikey": key, "Authorization": f"Bearer {key}"},
         params={
             "id_app": f"eq.{id_app}",
-            "select": "fecha,plataforma,instalaciones,estimado",
+            "select": "fecha,plataforma,instalaciones,estimado,fuente",
             "order": "fecha.asc",
             "limit": "5000",
         },
@@ -285,13 +285,36 @@ def serie_de_supabase(url: str, key: str, id_app: int) -> tuple[list[dict], str 
         return [], f"No se pudo releer la serie: {r.status_code} {r.text[:200]}"
 
     dias: dict[str, dict] = {}
+    # Qué fuentes aportaron cada día. Hace falta para saber si un día está
+    # CERRADO o solo a medias: la tienda publica el reporte de un día durante el
+    # siguiente, así que hay una ventana en la que el día ya tiene lo de
+    # Analytics y todavía le falta lo de Apple. Dibujarlo como día completo
+    # enseña un desplome que no ocurrió —pasó el 16 de septiembre, con Android
+    # puesto y iOS aún sin llegar.
+    fuentes_por_dia: dict[str, set[str]] = {}
     for f in r.json():
         d = dias.setdefault(f["fecha"], {"fecha": f["fecha"], "android": 0, "ios": 0, "estimado": 0})
         plat = "ios" if f["plataforma"] == "ios" else "android"
         d[plat] += f["instalaciones"]
         if f.get("estimado"):
             d["estimado"] += f["instalaciones"]
-    return [dias[k] for k in sorted(dias)], None
+        if f.get("fuente"):
+            fuentes_por_dia.setdefault(f["fecha"], set()).add(f["fuente"])
+
+    # El último día que trajo dato de TIENDA. De ahí en adelante, lo que haya es
+    # provisional: puede crecer cuando el reporte llegue.
+    de_tienda = {"app_store", "play_console"}
+    cerrados = [fecha for fecha, fs in fuentes_por_dia.items() if fs & de_tienda]
+    ultimo_cerrado = max(cerrados) if cerrados else None
+
+    ordenados = sorted(dias)
+    for fecha in ordenados:
+        dias[fecha]["fuentes"] = sorted(fuentes_por_dia.get(fecha, set()))
+        # Parcial = ya tiene algo, pero su día no ha cerrado. Un día sin nada
+        # no es parcial: es que no hay lectura, y eso se dice de otra manera.
+        dias[fecha]["parcial"] = bool(ultimo_cerrado and fecha > ultimo_cerrado)
+
+    return [dias[k] for k in ordenados], None
 
 
 def guardar_serie_firestore(token: str, project_id: str, dias: list[dict]) -> None:

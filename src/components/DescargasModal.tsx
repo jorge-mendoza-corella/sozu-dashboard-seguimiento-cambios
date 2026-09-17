@@ -138,6 +138,13 @@ export function DescargasModal({
   // la ha contado se dibujan igual, y son cosas distintas.
   const corteEsHoy = corte === new Date().toISOString().slice(0, 10);
 
+  // Los días que ya tienen algo pero no han cerrado. Se nombran en el pie: un
+  // punteado sin explicación es un adorno, no información.
+  const parciales = useMemo(
+    () => puntos.filter((p) => p.parcial && !sinLectura(p.fecha, corte)).map((p) => p.fecha),
+    [puntos, corte],
+  );
+
   const totales = useMemo(() => {
     const base = serie?.dias ?? [];
     return {
@@ -191,6 +198,14 @@ export function DescargasModal({
       borderColor: COLOR[s.key],
       backgroundColor: `${COLOR[s.key]}22`,
       borderWidth: 2,
+      // Punteado desde el primer día que aún no ha cerrado. La tienda publica
+      // el reporte de un día durante el siguiente, así que hay una ventana en
+      // la que el día ya tiene lo de Analytics y le falta lo de Apple: dibujarlo
+      // como día cerrado enseña un desplome que no ocurrió.
+      segment: {
+        borderDash: (ctx: { p1DataIndex: number }) =>
+          puntos[ctx.p1DataIndex]?.parcial ? [4, 3] : undefined,
+      },
       pointRadius: 0,
       pointHoverRadius: 3,
       tension: 0.35,
@@ -381,6 +396,12 @@ export function DescargasModal({
               {corteEsHoy
                 ? "Hoy va incompleto: lo que se ve es lo que Analytics lleva contado del día, y la cifra de la tienda lo sustituye mañana."
                 : `Hoy todavía sin lecturas${corte ? ` — la última es del ${fmtFecha(corte)}` : ""}. Analytics tarda unas horas en consolidar el día y las tiendas publican el suyo al día siguiente.`}
+              {parciales.length > 0 && (
+                <>
+                  {" "}El tramo punteado ({parciales.map(fmtFecha).join(", ")}) todavía no cierra:
+                  falta el reporte de la tienda, así que esos días pueden subir.
+                </>
+              )}
               {serie.updatedAt && <> · actualizado {formatDistanceToNow(serie.updatedAt)}</>}
             </p>
           </>
