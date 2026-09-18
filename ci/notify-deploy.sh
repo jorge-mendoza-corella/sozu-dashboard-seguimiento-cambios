@@ -160,9 +160,12 @@ if [ -z "$WA_INSTANCE" ] || [ -z "$WA_WEBHOOK" ] || [ -z "$WA_APIKEY" ]; then
 fi
 echo "Empresa '${CLIENT_ID}' (proyecto '${PROJECT_ID}') | instancia: '${WA_INSTANCE}'"
 
-send_wa() { # $1 = telefono E.164 ; $2 = etiqueta para el log
+send_wa() { # $1 = telefono E.164 ; $2 = etiqueta ; $3 = mensaje (opcional)
   cuerpo="$(mktemp)"
-  payload="$(jq -nc --arg tel "$1" --arg msg "$MENSAJE" --arg inst "$WA_INSTANCE" '{tipo:"wa",telefono:$tel,mensajeWA:$msg,instanciaWA:$inst}')"
+  # Cada autor recibe lo que entró EN SUS PRs; quien no tenga desglose
+  # propio —el aprobador— recibe el general. Sin tercer parámetro, el fijo.
+  local msg="${3:-$MENSAJE}"
+  payload="$(jq -nc --arg tel "$1" --arg msg "$msg" --arg inst "$WA_INSTANCE" '{tipo:"wa",telefono:$tel,mensajeWA:$msg,instanciaWA:$inst}')"
   codigo="$(curl -s -o "$cuerpo" -w '%{http_code}' --max-time 20 -X POST "$WA_WEBHOOK" -H "apikey: $WA_APIKEY" -H "Content-Type: application/json" -d "$payload" || echo 000)"
   # n8n contesta 200 aunque el mensaje NO se haya entregado: acepta la peticion
   # y mete el fallo de la instancia de WhatsApp en el cuerpo. Mirando solo el
@@ -179,6 +182,61 @@ send_wa() { # $1 = telefono E.164 ; $2 = etiqueta para el log
   return 1
 }
 
+# ── Descripciones de lo que entró ────────────────────────────────────────────
+# El aviso decía qué traía cada deploy hasta que la reescritura del 22 de agosto
+# se llevó por delante esta parte y quedó un MENSAJE fijo. Esto es lo de antes,
+# sobre la estructura nueva.
+
+# Autores marcados a mano en el cuerpo del PR con "<!-- pr_author: login -->".
+# Hace falta porque quien abre el PR no siempre es quien escribió el cambio.
+extract_pr_authors_b64() { # $1 = body en base64
+  printf '%s' "$1" | base64 -d 2>/dev/null \
+    | grep -oE '<!-- pr_author: [A-Za-z0-9._-]+ -->' 2>/dev/null \
+    | sed -E 's/<!-- pr_author: ([A-Za-z0-9._-]+) -->/\1/' | sort -u || true
+}
+
+# El cuerpo del PR en una línea legible: fuera los marcadores internos, las
+# citas y la firma del generador, que no le dicen nada a quien lee el WhatsApp.
+clean_desc_b64() { # $1 = body en base64
+  printf '%s' "$1" | base64 -d 2>/dev/null \
+    | grep -v '^<!--' | grep -v '^> ' | grep -v 'Generated with' \
+    | sed '/^[[:space:]]*$/d' | tr '\n' ' ' | head -c 250 || true
+}
+
+declare -A DESCS_POR_AUTOR=()
+ALL_DESCS=""
+
+# Acumula un PR: a quién avisar y qué contaba.
+add_pr() { # $1 = login de quien lo abrió ; $2 = body en base64 ; $3 = título
+  local marcados desc autores l
+  marcados="$(extract_pr_authors_b64 "$2")"
+  desc="$(clean_desc_b64 "$2")"
+  # Sin cuerpo, el título: peor que una descripción, mejor que nada.
+  [ -z "$desc" ] && desc="$3"
+  autores="${marcados:-$1}"
+  [ -n "$desc" ] && ALL_DESCS="${ALL_DESCS}- ${desc}
+"
+  while IFS= read -r l; do
+    [ -z "$l" ] && continue
+    logins+=("$l")
+    # Cada quien recibe lo suyo; el aprobador recibe todo.
+    [ -n "$desc" ] && DESCS_POR_AUTOR[$l]="${DESCS_POR_AUTOR[$l]:-}- ${desc}
+"
+  done <<< "$autores"
+}
+
+# El texto final. Con descripciones dice qué entró; sin ellas, lo de siempre.
+mensaje_para() { # $1 = bloque de descripciones (puede venir vacío)
+  if [ "$STATUS" != "success" ]; then
+    printf 'FALLO el deploy en %s del repo %s. Logs: %s' "$ENVIRONMENT" "$REPO_NAME" "$RUN_URL"
+  elif [ -n "$1" ]; then
+    printf 'Ha quedado listo tu deploy en %s del repo %s. Contiene:\n%sPuedes revisar.' \
+      "$ENVIRONMENT" "$REPO_NAME" "$1"
+  else
+    printf 'Ha quedado listo tu deploy en %s del repo %s, puedes revisar.' "$ENVIRONMENT" "$REPO_NAME"
+  fi
+}
+
 logins=()
 if [ "$ENVIRONMENT" = "PROD" ]; then
   # PROD: notificar a TODOS los autores de PRs mergeados a dev desde el último
@@ -188,24 +246,35 @@ if [ "$ENVIRONMENT" = "PROD" ]; then
   PREV_MAIN_DATE="$(git log HEAD^1 --format="%cI" -1 2>/dev/null || true)"
   if [ -n "$PREV_MAIN_DATE" ]; then
     echo "Buscando PRs a dev mergeados después de: ${PREV_MAIN_DATE}"
-    mapfile -t logins < <(
-      pulls_json "$API/repos/$GITHUB_REPOSITORY/pulls?state=closed&base=dev&sort=updated&direction=desc&per_page=50" \
-        | jq -r --arg since "$PREV_MAIN_DATE" \
-            '[.[] | select(.merged_at != null and .merged_at > $since)] | .[].user.login' \
-        | sort -u
-    )
+    # Antes solo se sacaba el login. Con el cuerpo y el título se puede
+    # contar QUÉ entró, que es la otra mitad del aviso.
+    while IFS=$'\t' read -r login body_b64 title_b64; do
+      [ -z "$login" ] && continue
+      add_pr "$login" "$body_b64" "$(printf '%s' "$title_b64" | base64 -d 2>/dev/null || true)"
+    done < <(pulls_json "$API/repos/$GITHUB_REPOSITORY/pulls?state=closed&base=dev&sort=updated&direction=desc&per_page=50" \
+      | jq -r --arg since "$PREV_MAIN_DATE" \
+        '[.[] | select(.merged_at != null and .merged_at > $since)][]
+         | [.user.login, (.body // "" | @base64), (.title // "" | @base64)] | @tsv')
     echo "Autores a notificar (${#logins[@]}): ${logins[*]:-ninguno}"
   else
     echo "No se pudo obtener fecha del deploy anterior; usando último PR a dev."
-    a="$(pulls_json "$API/repos/$GITHUB_REPOSITORY/pulls?state=closed&base=dev&sort=updated&direction=desc&per_page=10" \
-        | jq -r '[.[] | select(.merged_at != null)] | .[0].user.login // empty')"
-    [ -n "$a" ] && logins+=("$a")
+    PR_JSON="$(pulls_json "$API/repos/$GITHUB_REPOSITORY/pulls?state=closed&base=dev&sort=updated&direction=desc&per_page=10" \
+        | jq -c 'if type == "array" then ([.[] | select(.merged_at != null)] | .[0]) else empty end' 2>/dev/null || true)"
+    if [ -n "$PR_JSON" ] && [ "$PR_JSON" != "null" ]; then
+      add_pr "$(printf '%s' "$PR_JSON" | jq -r '.user.login')" \
+             "$(printf '%s' "$PR_JSON" | jq -r '.body // "" | @base64')" \
+             "$(printf '%s' "$PR_JSON" | jq -r '.title // ""')"
+    fi
   fi
 else
   # DEV: solo el autor del PR que entró en este push.
-  a="$(pulls_json "$API/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
-      | jq -r '[.[] | select(.merged_at != null)] | .[0].user.login // empty')"
-  [ -n "$a" ] && logins+=("$a")
+  PR_JSON="$(pulls_json "$API/repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+      | jq -c 'if type == "array" then ([.[] | select(.merged_at != null)] | .[0]) else empty end' 2>/dev/null || true)"
+  if [ -n "$PR_JSON" ] && [ "$PR_JSON" != "null" ]; then
+    add_pr "$(printf '%s' "$PR_JSON" | jq -r '.user.login')" \
+           "$(printf '%s' "$PR_JSON" | jq -r '.body // "" | @base64')" \
+           "$(printf '%s' "$PR_JSON" | jq -r '.title // ""')"
+  fi
 fi
 
 if [ "${#logins[@]}" -gt 0 ]; then
@@ -213,7 +282,7 @@ if [ "${#logins[@]}" -gt 0 ]; then
   for login in "${recipients[@]}"; do
     phone="$(telefono_de "$login")"
     if [ -n "$phone" ]; then
-      if send_wa "$phone" "$login"; then
+      if send_wa "$phone" "$login" "$(mensaje_para "${DESCS_POR_AUTOR[$login]:-}")"; then
         AVISADOS="${AVISADOS}${login},"
       else
         anotar_fallo "$login" "el webhook de n8n no acepto el mensaje"
@@ -255,7 +324,7 @@ if [ -z "$APROBADOR_TEL" ]; then
   registrar true ""
   exit 0
 fi
-if send_wa "$APROBADOR_TEL" "aprobador @${APROBADOR_LOGIN}"; then
+if send_wa "$APROBADOR_TEL" "aprobador @${APROBADOR_LOGIN}" "$(mensaje_para "$ALL_DESCS")"; then
   AVISADOS="${AVISADOS}${APROBADOR_LOGIN},"
 else
   anotar_fallo "$APROBADOR_LOGIN" "el webhook de n8n no acepto el mensaje"
