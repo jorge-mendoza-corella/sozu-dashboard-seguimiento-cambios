@@ -79,7 +79,11 @@ pulls_json() { # $1 = URL del endpoint de PRs
   if [ "$tipo" = "array" ]; then
     printf '%s' "$cuerpo"
   else
-    echo "No se pudo listar PRs (respuesta ${tipo}): ${cuerpo:0:200}" >&2
+    echo "::error::No se pudieron listar los PRs (respuesta ${tipo}): ${cuerpo:0:200}" >&2
+    # La causa casi siempre es la misma y no se adivina leyendo el mensaje de
+    # GitHub: al workflow le falta declarar el permiso. Sin `permissions:`, el
+    # token solo trae contents, metadata y packages.
+    echo "::error::Si dice 'Resource not accessible by integration', al workflow le falta 'permissions: pull-requests: read'." >&2
     echo '[]'
   fi
 }
