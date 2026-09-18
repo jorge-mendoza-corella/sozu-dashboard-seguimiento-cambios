@@ -10,7 +10,6 @@ import { Apple, Smartphone, Download, X, Loader2, Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { corteDe, getInstallsDiarias, isoLocal, sinLectura, ultimosDias, type DiaInstalaciones } from "@/lib/installsDiarias";
-import { getGa4Installs } from "@/lib/ga4Installs";
 import { getPortalOnline } from "@/lib/portalOnline";
 import { getConsumoCodemagic } from "@/lib/codemagicConsumo";
 
@@ -142,21 +141,7 @@ export function DescargasModal({
   // El pulso: lo único de GA4 que es al momento. Se refresca solo, porque un
   // número que dice "ahora mismo" y lleva media hora quieto miente más que no
   // enseñarlo.
-  const { data: ga4 } = useQuery({
-    queryKey: ["ga4-en-vivo", projectId],
-    queryFn: () => getGa4Installs(projectId),
-    refetchInterval: 60_000,
-    staleTime: 30_000,
-  });
-  const enVivo = ga4?.data?.enVivo ?? null;
-  const aperturas = enVivo ? enVivo.aperturas.android + enVivo.aperturas.ios : 0;
 
-  // Cuánto hace que se midió el pulso. Se calla por debajo de dos minutos.
-  const antiguedadPulso = useMemo(() => {
-    if (!enVivo?.medidoEn) return null;
-    const min = Math.round((Date.now() - new Date(enVivo.medidoEn).getTime()) / 60_000);
-    return min >= 2 ? `hace ${min} min` : null;
-  }, [enVivo]);
 
   // Quién está DENTRO de la app ahora. Sale de `portal_sesiones` —la sesión que
   // la app abre al entrar y mantiene con un latido—, que es lo mismo que cuenta
@@ -332,71 +317,37 @@ export function DescargasModal({
           <h3 className="flex items-center gap-2 text-base font-semibold">
             <Download className="h-4 w-4 text-violet-500" />
             Descargas de {nombre}
-            {(enVivo || online) && (
+            {/* Solo "en línea". El chip de instalaciones de los últimos 30
+                minutos se quitó: con este volumen estaba en cero casi siempre
+                aunque funcionara bien —media hora es una ventana muy estrecha—
+                y competía con el recuadro "Hoy", que responde la misma pregunta
+                mejor. Un indicador que casi nunca dice nada enseña a no mirarlo. */}
+            {online && (
               <span
                 className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-normal text-muted-foreground"
                 title={
-                  (enVivo
-                    ? `Instalaciones estrenadas en los últimos ${enVivo.ventanaMinutos} minutos ` +
-                      "(no en todo el día: para eso está la gráfica de abajo). Las mide Google " +
-                      "Analytics con el evento `first_open`, que cuenta cada instalación nueva que " +
-                      "se ABRE por primera vez, no cada persona: quien reinstala, o instala en un " +
-                      "segundo aparato, vuelve a contar. No es la descarga de la tienda —quien baja " +
-                      "la app y no la abre no aparece aquí— pero es lo único que se puede saber al " +
-                      "momento: Apple y Play publican sus cifras al día siguiente. "
-                    : "") +
-                  (online
-                    ? `${online.usuarios} ${online.usuarios === 1 ? "persona con sesión abierta" : "personas con sesión abierta"} ` +
-                      `en los últimos ${online.ventanaMinutos} minutos (${online.desdeApp} desde la app, ` +
-                      `${online.desdeWeb} desde el navegador). Es la misma medición que enseña el ` +
-                      "Portal Alta Dirección: la sesión que la app abre al entrar y mantiene con un latido."
-                    : "") +
-                  " Nada de esto se suma a la gráfica: son otras métricas y otras ventanas."
+                  `${online.usuarios} ${online.usuarios === 1 ? "persona con sesión abierta" : "personas con sesión abierta"} ` +
+                  `en los últimos ${online.ventanaMinutos} minutos (${online.desdeApp} desde la app, ` +
+                  `${online.desdeWeb} desde el navegador). Es la misma medición que enseña el ` +
+                  "Portal Alta Dirección: la sesión que la app abre al entrar y mantiene con un " +
+                  "latido. No se suma a la gráfica: son otra métrica y otra ventana."
                 }
               >
                 <span className="relative flex h-1.5 w-1.5">
-                  {aperturas > 0 && (
+                  {online.usuarios > 0 && (
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                   )}
                   <span
                     className={cn(
                       "relative inline-flex h-1.5 w-1.5 rounded-full",
-                      aperturas > 0 ? "bg-emerald-500" : "bg-muted-foreground/40",
+                      online.usuarios > 0 ? "bg-emerald-500" : "bg-muted-foreground/40",
                     )}
                   />
                 </span>
-                {aperturas > 0 ? (
-                  <>
-                    {N(aperturas)} recién instalada{aperturas === 1 ? "" : "s"}
-                    {/* La ventana, pegada al número. Sin ella se lee como "hoy"
-                        —que es lo que dice la gráfica de al lado— y son dos
-                        cosas distintas: esto son los últimos minutos. */}
-                    <span className="opacity-60">
-                      {" "}· {enVivo?.ventanaMinutos ?? 30} min
-                    </span>
-                  </>
-                ) : (
-                  <>sin instalaciones en {enVivo?.ventanaMinutos ?? 30} min</>
-                )}
-                {/* De cuándo es la lectura. La ventana son 30 minutos, pero el
-                    dato puede ser más viejo que eso: sin decirlo, un cero de
-                    hace horas se lee como "ahora mismo no hay nadie". */}
-                {antiguedadPulso && (
-                  <span className="opacity-70"> ({antiguedadPulso})</span>
-                )}
-                {online && online.usuarios > 0 && (
-                  <span className="text-muted-foreground/70">
-                    {" "}· {N(online.usuarios)} en línea
-                    {/* Cuándo se leyó. Este número viene de una copia que el
-                        sync refresca cada diez minutos, mientras el Portal Alta
-                        Dirección consulta la base en vivo: sin la antigüedad,
-                        los dos parecen contradecirse cuando en realidad hablan
-                        de dos instantes distintos. */}
-                    {antiguedadOnline && (
-                      <span className="opacity-70"> ({antiguedadOnline})</span>
-                    )}
-                  </span>
-                )}
+                {online.usuarios > 0
+                  ? `${N(online.usuarios)} en línea`
+                  : "nadie en línea"}
+                {antiguedadOnline && <span className="opacity-70"> ({antiguedadOnline})</span>}
               </span>
             )}
           </h3>
