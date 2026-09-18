@@ -46,8 +46,13 @@ export interface PortalOnline {
  * El sync corre cada diez minutos; si la última escritura es mucho más vieja,
  * algo dejó de correr. Un "0 en línea" viejo se lee como "no hay nadie", que es
  * una afirmación que en ese momento nadie puede sostener: mejor callar.
+ *
+ * Veinte minutos y no treinta y cinco: este número se compara a ojo con el del
+ * Portal Alta Dirección, que consulta la base en vivo cada quince segundos. Una
+ * lectura de media hora al lado de una de hace un segundo no es que esté vieja,
+ * es que parece un error de cálculo.
  */
-const CADUCA_MINUTOS = 35;
+const CADUCA_MINUTOS = 20;
 
 export async function getPortalOnline(projectId: string): Promise<PortalOnline | null> {
   const snap = await getDoc(doc(db, "portalOnline", projectId));
