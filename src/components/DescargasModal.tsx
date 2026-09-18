@@ -251,10 +251,23 @@ export function DescargasModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border bg-background p-5 shadow-2xl"
+        className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border bg-background p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        {/* La X, fija en la esquina. Iba al final de la fila de chips, así que
+            se movía con ellos: cuando la fila envolvía, acababa a media altura
+            y en mitad del ancho. `sticky` la mantiene a la vista aunque el
+            modal se haya desplazado, que es cuando más se busca. */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="sticky top-0 z-10 float-right -mr-1 -mt-1 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label="Cerrar"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 pr-8">
           <h3 className="flex items-center gap-2 text-base font-semibold">
             <Download className="h-4 w-4 text-violet-500" />
             Descargas de {nombre}
@@ -328,14 +341,6 @@ export function DescargasModal({
                 <Chip key={r} activo={dias === r} onClick={() => setDias(r)}>{r} d</Chip>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="Cerrar"
-            >
-              <X className="h-4 w-4" />
-            </button>
           </div>
         </div>
 
