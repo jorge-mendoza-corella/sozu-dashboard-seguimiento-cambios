@@ -924,13 +924,23 @@ export function UsersPage() {
                   <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
                     <button
                       onClick={() => setExpanded(isOpen ? null : u.email)}
+                      aria-expanded={isOpen}
                       className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-                      title={isRoot ? "API key de GitHub" : "Proyectos y permisos"}
+                      title={
+                        isRoot
+                          ? "Ver y cambiar la API key de GitHub con la que salen tus PRs y merges"
+                          : "Ver y cambiar sus proyectos y permisos"
+                      }
                     >
                       {isRoot ? (
                         <>
                           <KeyRound className="h-3.5 w-3.5" />
-                          API key
+                          {/* "API key" a secas parecía un desplegable para
+                              ELEGIR una, cuando lo que hace es abrir la de esta
+                              persona para verla o cambiarla. El verbo delante lo
+                              dice, y deja el botón en el mismo registro que el
+                              de al lado, que describe lo que hay dentro. */}
+                          {isOpen ? "Ocultar API key" : "Ver API key"}
                         </>
                       ) : (
                         <>
