@@ -661,8 +661,16 @@ export function UsersPage() {
     );
   }
 
+  // Ancho de la página. Eran 672 px (`max-w-2xl`) para cualquier pantalla, y en
+
+  // esa anchura no caben un correo y sus controles a la vez: el correo se comía
+
+  // todos los recortes y acababa en "eduardo.ar...". Con 1024 entran enteros los
+
+  // dos, y sigue sin quedar una línea de texto tan larga que cueste seguirla.
+
   return (
-    <div className="p-4 sm:p-6 max-w-2xl">
+    <div className="max-w-5xl p-4 sm:p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Gestión de Accesos</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
@@ -866,8 +874,11 @@ export function UsersPage() {
             const isOpen = expanded === u.email;
             return (
               <div key={u.email} className="border-b last:border-0">
-                <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-6">
-                  <div className="flex-1 min-w-0">
+                <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 sm:px-6">
+                  {/* Pide 18rem y crece. Si con eso y los controles no cabe la
+                      fila, envuelven ellos: el correo es lo que identifica al
+                      usuario y es lo último que debe recortarse. */}
+                  <div className="min-w-0 flex-1 sm:basis-72">
                     <p className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
                       {/* El correo manda sobre lo que viene detrás: recorta él y
                           no los adornos, y lleva `title` para leerlo entero sin
