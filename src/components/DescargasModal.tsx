@@ -128,6 +128,16 @@ export function DescargasModal({
     staleTime: 30_000,
   });
 
+
+  // Cuánto hace que se leyó lo de "en línea". Se calla por debajo de dos
+  // minutos: ahí "en línea" y "hace un momento" son lo mismo y el paréntesis
+  // solo estorba.
+  const antiguedadOnline = useMemo(() => {
+    if (!online?.updatedAt) return null;
+    const min = Math.round((Date.now() - new Date(online.updatedAt).getTime()) / 60_000);
+    return min >= 2 ? `hace ${min} min` : null;
+  }, [online]);
+
   // Hasta dónde llega la medición. La ventana termina aquí y no en la fecha de
   // hoy: el día en curso no lo ha contado nadie todavía y se dibujaba como una
   // caída a cero, que es lo contrario de lo que pasa.
@@ -320,6 +330,14 @@ export function DescargasModal({
                 {online && online.usuarios > 0 && (
                   <span className="text-muted-foreground/70">
                     {" "}· {N(online.usuarios)} en línea
+                    {/* Cuándo se leyó. Este número viene de una copia que el
+                        sync refresca cada diez minutos, mientras el Portal Alta
+                        Dirección consulta la base en vivo: sin la antigüedad,
+                        los dos parecen contradecirse cuando en realidad hablan
+                        de dos instantes distintos. */}
+                    {antiguedadOnline && (
+                      <span className="opacity-70"> ({antiguedadOnline})</span>
+                    )}
                   </span>
                 )}
               </span>
