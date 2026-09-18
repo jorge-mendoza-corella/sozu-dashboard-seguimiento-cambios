@@ -121,6 +121,35 @@
 }
 
 /* Barra indeterminada de builds en curso (Deploy Apps) */
+/* El dato que todavía se está moviendo: respira.
+   Un halo verde que entra y sale, lento. Lento a propósito —tres segundos— para
+   que se note de reojo sin llamar la atención cada vez que uno mira la tarjeta:
+   compite con los números de al lado, que son los que se leen.
+   Va en `box-shadow` y no en escala para no empujar a sus vecinos cada ciclo. */
+@keyframes respirar {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgb(16 185 129 / 0.35);
+    border-color: rgb(16 185 129 / 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgb(16 185 129 / 0);
+    border-color: rgb(16 185 129 / 0.7);
+  }
+}
+
+.respira {
+  animation: respirar 3s ease-in-out infinite;
+}
+
+/* Quien pide menos movimiento no quiere esto latiendo en pantalla todo el rato.
+   Se queda el color, que es lo que distingue el dato; se va el latido. */
+@media (prefers-reduced-motion: reduce) {
+  .respira {
+    animation: none;
+    border-color: rgb(16 185 129 / 0.6);
+  }
+}
+
 @keyframes indeterminate {
   0% { margin-left: -35%; }
   100% { margin-left: 100%; }
