@@ -197,11 +197,16 @@ def main() -> None:
         guardar_acumulado(fs_token, app["projectId"], previo)
 
         total = previo["android"] + previo["ios"]
-        if nuevas["android"] or nuevas["ios"]:
-            print(
-                f"✓ {app['projectId']}: +{nuevas['android'] + nuevas['ios']} en los últimos "
-                f"{VENTANA_MIN} min · hoy ({fecha}) van {total}"
-            )
+        # Se informa siempre, también con cero. Un silencio no distingue "no
+        # hubo instalaciones" de "el paso no llegó a correr", y es justo lo que
+        # hay que poder distinguir cuando alguien pregunte por qué no ve su
+        # descarga.
+        nuevo = nuevas["android"] + nuevas["ios"]
+        print(
+            f"✓ {app['projectId']}: +{nuevo} en los últimos {VENTANA_MIN} min · "
+            f"hoy ({fecha}) van {total} ({previo['android']} Android, {previo['ios']} iOS) "
+            f"en {previo['ventanas']} lecturas"
+        )
 
         # El projectId de Firestore es opaco y no dice de qué app es. El mapeo
         # projectId -> id de Supabase ya lo resuelve el puente de la serie
