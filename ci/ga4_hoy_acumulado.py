@@ -37,13 +37,7 @@ from urllib.parse import quote
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ga4_installs_sync import (  # noqa: E402
-    GA4_BASE,
-    fs_headers,
-    ga4_token,
-    list_apps_ga4,
-    run_realtime,
-)
+from ga4_installs_sync import GA4_BASE, fs_headers, ga4_token, list_apps_ga4  # noqa: E402
 from supabase_installs_push import (  # noqa: E402
     guardar_serie_firestore,
     list_apps as list_apps_supabase,
@@ -173,42 +167,6 @@ def escribir_supabase(url: str, key: str, id_app: int, fecha: str, acum: dict) -
         print(f"::error::Supabase {r.status_code}: {r.text[:200]}")
 
 
-def refrescar_pulso(token_fs: str, token_ga4: str, app: dict) -> None:
-    """Actualiza el pulso de 30 minutos que enseña el chip del dashboard.
-
-    Lo escribía `ga4_installs_sync`, que corre cada TRES HORAS: el chip decía
-    "sin instalaciones en 30 min" mostrando una ventana de media hora tomada
-    hace hasta tres. Casi siempre salía en cero, y cuando no, tampoco era
-    "ahora". Aquí se refresca cada diez minutos, que es lo que hace que la
-    palabra "ahora" signifique algo.
-
-    Se toca SOLO el campo `enVivo`: el resto del documento —la serie diaria de
-    `first_open`— lo sigue escribiendo el sync de tres horas, que es su ritmo.
-    """
-    r = requests.get(
-        f"{FS_BASE}/ga4Installs/{quote(app['projectId'], safe='')}",
-        headers=fs_headers(token_fs), timeout=30,
-    )
-    if r.status_code != 200:
-        return
-    try:
-        campos = r.json().get("fields") or {}
-        previo = json.loads(campos.get("raw", {}).get("stringValue") or "{}")
-    except (ValueError, AttributeError):
-        return
-
-    vivo = run_realtime(token_ga4, app["property"], app["streams"])
-    if not vivo:
-        return
-    previo["enVivo"] = vivo
-
-    body = {"fields": {"raw": {"stringValue": json.dumps(previo, ensure_ascii=False)}}}
-    requests.patch(
-        f"{FS_BASE}/ga4Installs/{quote(app['projectId'], safe='')}?updateMask.fieldPaths=raw",
-        headers=fs_headers(token_fs), json=body, timeout=30,
-    )
-
-
 def main() -> None:
     fs_token = os.environ.get("FIRESTORE_TOKEN", "").strip()
     if not fs_token:
@@ -230,8 +188,6 @@ def main() -> None:
         nuevas = aperturas_de_la_ventana(token, app["property"], app["streams"])
         if nuevas is None:
             continue
-
-        refrescar_pulso(fs_token, token, app)
 
         previo = leer_acumulado(fs_token, app["projectId"])
         # Día nuevo, cuenta desde cero. Sin esto, el acumulado de ayer se
