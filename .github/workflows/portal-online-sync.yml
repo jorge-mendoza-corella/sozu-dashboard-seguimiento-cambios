@@ -37,7 +37,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install deps
-        run: pip install --quiet requests
+        # `pyjwt[crypto]` para firmar el token de Analytics: el acumulado de hoy
+        # sale de GA4, y esa API no acepta el token de gcloud.
+        run: pip install --quiet "pyjwt[crypto]" requests
 
       - name: Sync
         env:
@@ -57,3 +59,10 @@ jobs:
           export SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY
 
           python ci/portal_online_sync.py
+
+          # Las instalaciones de HOY, sumadas de a poco. Ninguna fuente sabe
+          # decir cuántas lleva el día en curso —las tiendas publican al día
+          # siguiente y el reporte diario de GA4 tampoco trae hoy—, así que se
+          # arma sumando la ventana de Realtime en cada pasada. La ventana es
+          # igual al cron (10 min) para no contar dos veces al mismo.
+          python ci/ga4_hoy_acumulado.py
