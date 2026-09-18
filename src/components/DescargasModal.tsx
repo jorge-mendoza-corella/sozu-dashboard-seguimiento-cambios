@@ -151,6 +151,13 @@ export function DescargasModal({
   const enVivo = ga4?.data?.enVivo ?? null;
   const aperturas = enVivo ? enVivo.aperturas.android + enVivo.aperturas.ios : 0;
 
+  // Cuánto hace que se midió el pulso. Se calla por debajo de dos minutos.
+  const antiguedadPulso = useMemo(() => {
+    if (!enVivo?.medidoEn) return null;
+    const min = Math.round((Date.now() - new Date(enVivo.medidoEn).getTime()) / 60_000);
+    return min >= 2 ? `hace ${min} min` : null;
+  }, [enVivo]);
+
   // Quién está DENTRO de la app ahora. Sale de `portal_sesiones` —la sesión que
   // la app abre al entrar y mantiene con un latido—, que es lo mismo que cuenta
   // el Portal Alta Dirección. Antes se usaba `activeUsers` de GA4: otros
@@ -370,6 +377,12 @@ export function DescargasModal({
                   </>
                 ) : (
                   <>sin instalaciones en {enVivo?.ventanaMinutos ?? 30} min</>
+                )}
+                {/* De cuándo es la lectura. La ventana son 30 minutos, pero el
+                    dato puede ser más viejo que eso: sin decirlo, un cero de
+                    hace horas se lee como "ahora mismo no hay nadie". */}
+                {antiguedadPulso && (
+                  <span className="opacity-70"> ({antiguedadPulso})</span>
                 )}
                 {online && online.usuarios > 0 && (
                   <span className="text-muted-foreground/70">

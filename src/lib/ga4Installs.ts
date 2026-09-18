@@ -33,7 +33,13 @@ export interface Ga4EnVivo {
   aperturas: { android: number; ios: number };
   /** Gente con la app abierta en la ventana. */
   activos: { android: number; ios: number };
-  /** Cuándo se leyó, ISO. */
+  /**
+   * Cuándo se leyó, ISO.
+   *
+   * Importa enseñarlo: la ventana son 30 minutos, pero la lectura puede tener
+   * su propia antigüedad. Un "sin instalaciones en 30 min" de hace tres horas
+   * no dice nada de los últimos 30 minutos.
+   */
   medidoEn: string;
 }
 
