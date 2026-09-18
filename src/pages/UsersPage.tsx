@@ -936,11 +936,10 @@ export function UsersPage() {
                         <>
                           <KeyRound className="h-3.5 w-3.5" />
                           {/* "API key" a secas parecía un desplegable para
-                              ELEGIR una, cuando lo que hace es abrir la de esta
-                              persona para verla o cambiarla. El verbo delante lo
-                              dice, y deja el botón en el mismo registro que el
-                              de al lado, que describe lo que hay dentro. */}
-                          {isOpen ? "Ocultar API key" : "Ver API key"}
+                              ELEGIR una. "Ver detalles" dice lo que el botón
+                              hace —abrir— sin prometer un contenido concreto,
+                              que además puede crecer: hoy dentro está la key. */}
+                          {isOpen ? "Ocultar detalles" : "Ver detalles"}
                         </>
                       ) : (
                         <>
