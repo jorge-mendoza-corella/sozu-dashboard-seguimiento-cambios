@@ -229,7 +229,10 @@ add_pr() { # $1 = login de quien lo abrió ; $2 = body en base64 ; $3 = título
 mensaje_para() { # $1 = bloque de descripciones (puede venir vacío)
   if [ "$STATUS" != "success" ]; then
     printf 'FALLO el deploy en %s del repo %s. Logs: %s' "$ENVIRONMENT" "$REPO_NAME" "$RUN_URL"
-  elif [ -n "$1" ]; then
+  # Solo en PROD. En DEV el deploy es de un PR suelto y el autor acaba de
+  # escribir eso mismo: contárselo de vuelta es ruido. Lo que se quiere saber
+  # de un release a producción es qué trae, y ahí sí.
+  elif [ -n "$1" ] && [ "$ENVIRONMENT" = "PROD" ]; then
     printf 'Ha quedado listo tu deploy en %s del repo %s. Contiene:\n%sPuedes revisar.' \
       "$ENVIRONMENT" "$REPO_NAME" "$1"
   else
