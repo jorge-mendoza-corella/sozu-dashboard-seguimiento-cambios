@@ -82,7 +82,14 @@ function Dato({
   late?: boolean;
 }) {
   return (
-    <div className="flex-1 rounded-xl border bg-muted/30 px-3 py-2">
+    <div
+      className={cn(
+        "flex-1 rounded-xl border bg-muted/30 px-3 py-2",
+        // Respira el recuadro entero, no un puntito: es lo que hace que se note
+        // sin tener que buscarlo.
+        late && "respira border-emerald-500/40 bg-emerald-500/[0.06]",
+      )}
+    >
       <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
         {/* Late el punto, no el número: un número parpadeando cuesta leerlo. */}
         {late && (
@@ -93,7 +100,14 @@ function Dato({
         )}
         {label}
       </p>
-      <p className="mt-0.5 font-mono text-lg font-semibold tabular-nums">{valor}</p>
+      <p
+        className={cn(
+          "mt-0.5 font-mono text-lg font-semibold tabular-nums",
+          late && "text-emerald-700 dark:text-emerald-300",
+        )}
+      >
+        {valor}
+      </p>
       {hint && <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>}
     </div>
   );
