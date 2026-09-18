@@ -9,7 +9,7 @@ import { Line } from "react-chartjs-2";
 import { Apple, Smartphone, Download, X, Loader2, Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
-import { corteDe, getInstallsDiarias, sinLectura, ultimosDias, type DiaInstalaciones } from "@/lib/installsDiarias";
+import { corteDe, getInstallsDiarias, isoLocal, sinLectura, ultimosDias, type DiaInstalaciones } from "@/lib/installsDiarias";
 import { getGa4Installs } from "@/lib/ga4Installs";
 import { getPortalOnline } from "@/lib/portalOnline";
 import { getConsumoCodemagic } from "@/lib/codemagicConsumo";
@@ -69,10 +69,30 @@ function Chip({ activo, onClick, children }: {
   );
 }
 
-function Dato({ label, valor, hint }: { label: string; valor: string; hint?: string }) {
+function Dato({
+  label,
+  valor,
+  hint,
+  late = false,
+}: {
+  label: string;
+  valor: string;
+  hint?: string;
+  /** Un punto latiendo junto a la etiqueta: este número aún se está moviendo. */
+  late?: boolean;
+}) {
   return (
     <div className="flex-1 rounded-xl border bg-muted/30 px-3 py-2">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        {/* Late el punto, no el número: un número parpadeando cuesta leerlo. */}
+        {late && (
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          </span>
+        )}
+        {label}
+      </p>
       <p className="mt-0.5 font-mono text-lg font-semibold tabular-nums">{valor}</p>
       {hint && <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>}
     </div>
@@ -146,7 +166,17 @@ export function DescargasModal({
   // La gráfica llega siempre a hoy, con cero si hace falta. Lo que cambia es
   // qué se dice debajo: un cero porque nadie bajó la app y un cero porque nadie
   // la ha contado se dibujan igual, y son cosas distintas.
-  const corteEsHoy = corte === new Date().toISOString().slice(0, 10);
+  const corteEsHoy = corte === isoLocal(new Date());
+
+  // Lo que va contado hoy. Sale de la misma serie que pinta la gráfica y
+  // respeta el filtro de plataforma, así que no puede discrepar con ella.
+  const hoy = useMemo(() => {
+    const dia = (serie?.dias ?? []).find((d) => d.fecha === isoLocal(new Date()));
+    if (!dia) return 0;
+    return plataforma === "android" ? dia.android
+      : plataforma === "ios" ? dia.ios
+      : dia.android + dia.ios;
+  }, [serie, plataforma]);
 
   // Los días que ya tienen algo pero no han cerrado. Se nombran en el pie: un
   // punteado sin explicación es un adorno, no información.
@@ -373,6 +403,16 @@ export function DescargasModal({
         ) : (
           <>
             <div className="mb-3 flex flex-wrap gap-2">
+              {/* Hoy va primero: es el único de la fila que se mueve durante el
+                  día. Los demás son totales que no cambian hasta mañana. */}
+              {hoy > 0 && (
+                <Dato
+                  label="Hoy"
+                  valor={N(hoy)}
+                  hint="en curso · lo sustituye la tienda mañana"
+                  late
+                />
+              )}
               <Dato label={`Últimos ${dias} días`} valor={N(totales.enRango)} />
               <Dato label="Android" valor={N(totales.android)} hint="histórico" />
               <Dato label="iOS" valor={N(totales.ios)} hint="histórico" />
