@@ -187,12 +187,20 @@ send_wa() { # $1 = telefono E.164 ; $2 = etiqueta ; $3 = mensaje (opcional)
 # se llevó por delante esta parte y quedó un MENSAJE fijo. Esto es lo de antes,
 # sobre la estructura nueva.
 
-# Autores marcados a mano en el cuerpo del PR con "<!-- pr_author: login -->".
+# Autores marcados a mano en el cuerpo del PR, cada uno en SU PROPIA LÍNEA.
 # Hace falta porque quien abre el PR no siempre es quien escribió el cambio.
+#
+# El ancla de inicio de línea no es un detalle: sin ella, un PR que MENCIONA el
+# marcador dentro de una frase —explicando cómo funciona esto, por ejemplo—
+# daba de alta a un autor llamado "login", y el dashboard acababa avisando de
+# que "@login no recibió el aviso: sin teléfono en Contribuidores". La lista de
+# palabras descartadas cubre el resto de plantillas de ejemplo.
 extract_pr_authors_b64() { # $1 = body en base64
   printf '%s' "$1" | base64 -d 2>/dev/null \
-    | grep -oE '<!-- pr_author: [A-Za-z0-9._-]+ -->' 2>/dev/null \
-    | sed -E 's/<!-- pr_author: ([A-Za-z0-9._-]+) -->/\1/' | sort -u || true
+    | grep -oE '^[[:space:]]*<!-- pr_author: [A-Za-z0-9._-]+ -->' 2>/dev/null \
+    | sed -E 's/^[[:space:]]*<!-- pr_author: ([A-Za-z0-9._-]+) -->/\1/' \
+    | grep -vwE 'login|usuario|username|autor|author' \
+    | sort -u || true
 }
 
 # El cuerpo del PR en una línea legible: fuera los marcadores internos, las
