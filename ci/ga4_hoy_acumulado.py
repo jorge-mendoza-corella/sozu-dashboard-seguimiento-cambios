@@ -38,7 +38,11 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ga4_installs_sync import GA4_BASE, fs_headers, ga4_token, list_apps_ga4  # noqa: E402
-from supabase_installs_push import list_apps as list_apps_supabase  # noqa: E402
+from supabase_installs_push import (  # noqa: E402
+    guardar_serie_firestore,
+    list_apps as list_apps_supabase,
+    serie_de_supabase,
+)
 
 GCP_PROJECT = os.environ.get("GCP_PROJECT", "sozu-admin-dev")
 FS_BASE = f"https://firestore.googleapis.com/v1/projects/{GCP_PROJECT}/databases/(default)/documents"
@@ -214,6 +218,17 @@ def main() -> None:
         id_app = ids_supabase.get(app["projectId"])
         if url and key and id_app and total > 0:
             escribir_supabase(url, key, id_app, fecha, previo)
+
+            # Y se refresca la copia que lee el dashboard de CI/CD. Sin esto, el
+            # día en curso aparecía en el Portal Alta Dirección —que consulta
+            # Supabase directo— y no en el dashboard, que vive sobre Firestore y
+            # solo recibía la copia en el sync de cada tres horas. Dos tableros
+            # con el mismo dato y distinta frescura es peor que no tenerlo.
+            dias, err = serie_de_supabase(url, key, id_app)
+            if err:
+                print(f"  ⚠ no se pudo refrescar la copia del dashboard: {err}")
+            elif dias:
+                guardar_serie_firestore(fs_token, app["projectId"], dias)
 
 
 if __name__ == "__main__":
