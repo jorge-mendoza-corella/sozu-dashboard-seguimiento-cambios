@@ -423,7 +423,7 @@ export function DescargasModal({
                 <Dato
                   label="Hoy"
                   valor={N(hoy)}
-                  hint="en curso · lo sustituye la tienda mañana"
+                  hint="en curso · se actualiza mañana por la tienda"
                   late
                 />
               )}
