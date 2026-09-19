@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -196,6 +196,25 @@ export function DashboardPage() {
 
   const [activeProject, setActiveProject] = useState<string>("");
   const [showAdd, setShowAdd] = useState(false);
+
+  // "Actualizar" vive en el encabezado, que se va con el scroll: bajando a las
+  // tarjetas quedaba fuera de alcance justo cuando uno quiere ver si ya cambió
+  // algo. En vez de dejar la barra entera pegada —que en móvil se come media
+  // pantalla— aparece un botón flotante SOLO cuando el de arriba deja de verse.
+  const btnActualizar = useRef<HTMLSpanElement>(null);
+  const [actualizarALaVista, setActualizarALaVista] = useState(true);
+
+  useEffect(() => {
+    const el = btnActualizar.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const obs = new IntersectionObserver(([e]) => setActualizarALaVista(e.isIntersecting), {
+      // Un pelo de margen: el flotante entra cuando el original ya se fue de
+      // verdad, no mientras asoma medio píxel.
+      rootMargin: "-8px 0px 0px 0px",
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
   const [showManage, setShowManage] = useState(false);
   const [seeding, setSeeding] = useState(false);
   // Vista interna del tab de proyecto: repos (default) o deploy de la app.
@@ -407,10 +426,21 @@ export function DashboardPage() {
                 </Button>
               </>
             )}
-            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} className="bg-white/80 dark:bg-slate-900/80">
+            {/* El ref va en el envoltorio y no en el Button: ese componente no
+                reenvía ref, y cambiarlo tocaría todos los botones de la app
+                por un detalle de esta pantalla. */}
+            <span ref={btnActualizar}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="bg-white/80 dark:bg-slate-900/80"
+            >
               <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""} mr-1.5`} />
               {isFetching ? "Actualizando…" : "Actualizar"}
             </Button>
+            </span>
           </div>
         </div>
       </div>
@@ -652,6 +682,23 @@ export function DashboardPage() {
 
       {showAdd && <AddRepoModal onClose={() => setShowAdd(false)} defaultProjectId={activeProject || undefined} />}
       {showManage && <ManageModal onClose={() => setShowManage(false)} />}
+      {/* El mismo botón, a mano. Solo cuando el de arriba no se ve: si los dos
+          estuvieran a la vez, el flotante sería un estorbo tapando contenido.
+          Abajo a la derecha y con hueco para la barra del sistema en móvil. */}
+      {!actualizarALaVista && (
+        <button
+          type="button"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          aria-label={isFetching ? "Actualizando" : "Actualizar"}
+          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border bg-background/95 px-4 py-3 text-sm font-medium shadow-lg backdrop-blur transition-colors hover:bg-muted disabled:opacity-70 sm:bottom-6 sm:right-6"
+          style={{ marginBottom: "env(safe-area-inset-bottom)" }}
+        >
+          <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+          <span className="hidden sm:inline">{isFetching ? "Actualizando…" : "Actualizar"}</span>
+        </button>
+      )}
+
     </div>
   );
 }
