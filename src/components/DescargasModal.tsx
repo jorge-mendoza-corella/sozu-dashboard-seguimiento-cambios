@@ -73,12 +73,21 @@ function Dato({
   valor,
   hint,
   late = false,
+  enCurso,
 }: {
   label: string;
   valor: string;
   hint?: string;
   /** Un punto latiendo junto a la etiqueta: este número aún se está moviendo. */
   late?: boolean;
+  /**
+   * Qué parte del total todavía no está cerrada, en tono claro al lado.
+   *
+   * El total incluye el día de hoy, que sigue contándose. Sin decirlo, alguien
+   * compara ese número con el de ayer y saca una conclusión sobre una cifra
+   * que aún va a crecer.
+   */
+  enCurso?: string;
 }) {
   return (
     <div
@@ -106,6 +115,11 @@ function Dato({
         )}
       >
         {valor}
+        {enCurso && (
+          <span className="ml-1.5 align-baseline text-xs font-medium text-emerald-600/70 dark:text-emerald-400/70">
+            {enCurso}
+          </span>
+        )}
       </p>
       {hint && <p className="mt-0.5 text-[10px] text-muted-foreground">{hint}</p>}
     </div>
@@ -391,7 +405,12 @@ export function DescargasModal({
                   late
                 />
               )}
-              <Dato label={`Últimos ${dias} días`} valor={N(totales.enRango)} />
+              <Dato
+                label={`Últimos ${dias} días`}
+                valor={N(totales.enRango)}
+                enCurso={hoy > 0 ? `incl. ${N(hoy)} de hoy` : undefined}
+                hint={hoy > 0 ? "lo de hoy aún puede subir" : undefined}
+              />
               <Dato label="Android" valor={N(totales.android)} hint="histórico" />
               <Dato label="iOS" valor={N(totales.ios)} hint="histórico" />
             </div>
