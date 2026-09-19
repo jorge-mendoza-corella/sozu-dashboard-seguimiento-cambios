@@ -74,6 +74,7 @@ function Dato({
   hint,
   late = false,
   enCurso,
+  destacado = false,
 }: {
   label: string;
   valor: string;
@@ -88,6 +89,8 @@ function Dato({
    * que aún va a crecer.
    */
   enCurso?: string;
+  /** El número que manda de la fila: se lee antes que sus vecinos. */
+  destacado?: boolean;
 }) {
   return (
     <div
@@ -110,7 +113,8 @@ function Dato({
       </p>
       <p
         className={cn(
-          "mt-0.5 font-mono text-lg font-semibold tabular-nums",
+          "mt-0.5 font-mono font-semibold tabular-nums",
+          destacado ? "text-2xl" : "text-lg",
           late && "text-emerald-700 dark:text-emerald-300",
         )}
       >
@@ -405,11 +409,18 @@ export function DescargasModal({
                   late
                 />
               )}
+              {/* Manda el histórico: es la cifra que se cita fuera de esta
+                  pantalla —"cuántas descargas llevamos"— y no cambia al mover
+                  el rango. Lo del periodo baja a contexto de la gráfica. */}
               <Dato
-                label={`Últimos ${dias} días`}
-                valor={N(totales.enRango)}
-                enCurso={hoy > 0 ? `incl. ${N(hoy)} de hoy` : undefined}
-                hint={hoy > 0 ? "lo de hoy aún puede subir" : undefined}
+                label="Histórico"
+                valor={N(totales.android + totales.ios)}
+                destacado
+                hint={
+                  hoy > 0
+                    ? `${N(totales.enRango)} en ${dias} días · incl. ${N(hoy)} de hoy`
+                    : `${N(totales.enRango)} en los últimos ${dias} días`
+                }
               />
               <Dato label="Android" valor={N(totales.android)} hint="histórico" />
               <Dato label="iOS" valor={N(totales.ios)} hint="histórico" />
