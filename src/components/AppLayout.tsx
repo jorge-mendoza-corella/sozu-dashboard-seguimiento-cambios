@@ -2,8 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Activity, GitBranch, Users, GitCommit, LogOut, LayoutDashboard, HardHat, ExternalLink,
-  TrendingUp, Settings, Eye, X, Menu,
-} from "lucide-react";
+  TrendingUp, Settings, Eye, X, Menu, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useImpersonation } from "@/hooks/useImpersonation";
@@ -14,6 +13,7 @@ import { canAdminister, isRootAdmin } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
 import { AvancesDraftBadge } from "@/components/AvancesDraftBadge";
 import { ActionsUsoBadge } from "@/components/ActionsUsoBadge";
+import { useNuevaVersion } from "@/hooks/useNuevaVersion";
 import { BuildNotifier } from "@/components/codemagic/BuildNotifier";
 
 // Cada item dice quién lo ve: el root, cualquier administrador (global o de
@@ -76,6 +76,10 @@ export function AppLayout({ children }: Props) {
   // Ver avances es una feature que se contrata por cliente: si ninguno de los
   // clientes del usuario la tiene prendida, el link no aparece.
   const avances = useAvancesAccess(appUser);
+  // Una pestaña abierta se queda con el JS que cargó, y eso ya costó dos
+  // confusiones: un "no se pudo cargar la página" y un arreglo que "no
+  // funcionaba". Las dos veces el tablero tenía razón y la pestaña no.
+  const hayVersionNueva = useNuevaVersion();
   // La URL viene de Firestore y termina en un href: se revalida el esquema aquí
   // también, no solo al guardarla, para que un `javascript:` escrito por fuera
   // del dashboard no se convierta en un link ejecutable.
@@ -155,12 +159,24 @@ export function AppLayout({ children }: Props) {
             <ActionsUsoBadge appUser={appUser} />
           </nav>
           <div className="ml-auto flex items-center gap-3">
-            <span
-              className="hidden font-mono text-[10px] text-muted-foreground/60 md:block"
-              title="Versión desplegada (se genera en cada deploy)"
-            >
-              v{__APP_BUILD__}
-            </span>
+            {hayVersionNueva ? (
+              <button
+                type="button"
+                onClick={() => location.reload()}
+                className="flex items-center gap-1.5 rounded-full border border-amber-400/60 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800 transition-colors hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-900/40"
+                title={`Esta pestaña tiene la versión v${__APP_BUILD__}. Hay una más nueva publicada: al recargar verás los últimos cambios.`}
+              >
+                <RefreshCw className="h-3 w-3" />
+                versión nueva · recargar
+              </button>
+            ) : (
+              <span
+                className="hidden font-mono text-[10px] text-muted-foreground/60 md:block"
+                title="Versión desplegada (se genera en cada deploy)"
+              >
+                v{__APP_BUILD__}
+              </span>
+            )}
             <span className="text-xs text-muted-foreground hidden sm:block">{appUser?.email}</span>
             <Button variant="ghost" size="icon" onClick={logout} title="Cerrar sesión">
               <LogOut className="h-4 w-4" />
