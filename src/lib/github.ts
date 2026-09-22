@@ -1430,6 +1430,17 @@ export function aggregateByRepo(commits: CommitRecord[], prs: PRRecord[]): RepoM
 // que mire el repo lo encuentra, no escondido en otra base.
 // ---------------------------------------------------------------------------
 
+/**
+ * ¿Son el mismo commit? Se compara por prefijo porque los dos lados no traen el
+ * mismo largo: el sha de la rama llega abreviado a siete caracteres desde la
+ * lista de ramas, y el del run llega completo desde la API de Actions.
+ */
+export function mismoCommit(a?: string, b?: string): boolean {
+  if (!a || !b) return false;
+  const n = Math.min(a.length, b.length);
+  return n >= 7 && a.slice(0, n) === b.slice(0, n);
+}
+
 /** ¿Se despliega solo al mergear a dev? Sin variable definida, sí. */
 export async function getAutoDeployDev(owner: string, repo: string): Promise<boolean> {
   try {
