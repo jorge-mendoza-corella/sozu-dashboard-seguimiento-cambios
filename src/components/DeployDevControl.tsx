@@ -60,7 +60,16 @@ export function DeployDevControl({
 
   // Sin los dos commits no se puede afirmar nada, y ante la duda es mejor
   // dejar el botón: lanzar de más molesta menos que no poder lanzar.
-  const alDia = !!shaDev && !!shaPublicado && shaDev === shaPublicado;
+  //
+  // Se comparan por prefijo porque los dos lados no traen el mismo largo: el de
+  // la rama llega abreviado a siete caracteres desde la lista de ramas, y el del
+  // run llega completo desde la API de Actions. Compararlos tal cual daba
+  // siempre distinto, y el botón se ofrecía incluso con dev ya publicado.
+  const mismoCommit = (a: string, b: string) => {
+    const n = Math.min(a.length, b.length);
+    return n >= 7 && a.slice(0, n) === b.slice(0, n);
+  };
+  const alDia = !!shaDev && !!shaPublicado && mismoCommit(shaDev, shaPublicado);
 
   const cambiar = async () => {
     setGuardando(true);
