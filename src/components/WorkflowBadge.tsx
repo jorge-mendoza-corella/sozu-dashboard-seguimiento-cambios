@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { CheckCircle2, XCircle, Loader2, HelpCircle, GitBranch, Rocket, Info, GitCommit, ExternalLink, ChevronDown, ChevronRight } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, HelpCircle, GitBranch, Rocket, Info, GitCommit, ExternalLink, ChevronDown, ChevronRight, Ban } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WorkflowRun, PRWithCommits } from "@/lib/github";
 import { DeployProgressBar } from "@/components/DeployProgressBar";
@@ -27,7 +27,11 @@ function getBranchTier(branch: string | null): "main" | "dev" | "other" {
 
 export function WorkflowBadge({ run, owner, repo, terminados, selfLogin = null }: Props) {
   const isSuccess = run.conclusion === "success";
-  const isFailure = run.conclusion === "failure" || run.conclusion === "cancelled";
+  const isFailure = run.conclusion === "failure";
+  // Cancelado NO es fallo, y desde que los deploys se cancelan entre sí al
+  // entrar uno nuevo, pintarlo en rojo sería alarmar varias veces al día por
+  // lo que se supone que pase. Va en gris y con su propio icono.
+  const isCancelled = run.conclusion === "cancelled";
   const isPending = run.status === "in_progress" || run.status === "queued";
   const tier = getBranchTier(run.headBranch);
   const isMain = tier === "main";
@@ -62,7 +66,13 @@ export function WorkflowBadge({ run, owner, repo, terminados, selfLogin = null }
     },
   };
 
-  const stateKey = isSuccess ? "success" : isFailure ? "failure" : isPending ? "pending" : "unknown";
+  const stateKey =
+    isSuccess ? "success"
+    : isFailure ? "failure"
+    : isPending ? "pending"
+    // Cancelado comparte el gris de "sin estado": ni bien ni mal, simplemente
+    // no llegó a decir nada.
+    : "unknown";
   const colorClass = stateColors[tier][stateKey];
   const branchLabel = { main: "PRD", dev: "DEV", other: run.headBranch ?? "?" }[tier];
   const branchChipClass = {
@@ -221,7 +231,17 @@ export function WorkflowBadge({ run, owner, repo, terminados, selfLogin = null }
 
   return (
     <div className="inline-flex items-center group">
-      <a href={run.url} target="_blank" rel="noopener noreferrer" className="no-underline">
+      <a
+        href={run.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="no-underline"
+        title={
+          isCancelled
+            ? "Cancelado. Lo normal es que entrara un deploy más nuevo de la misma rama y este dejara de hacer falta: el último contiene lo de los anteriores."
+            : undefined
+        }
+      >
         <div
           className={cn(
             "inline-flex items-center gap-1.5 rounded-l-md px-2 py-1 text-xs font-medium transition-opacity group-hover:opacity-80",
@@ -234,8 +254,9 @@ export function WorkflowBadge({ run, owner, repo, terminados, selfLogin = null }
           {isMain && isPending  && <Rocket   className="h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-400" />}
           {!(isMain && isPending) && isSuccess && <CheckCircle2 className="h-3 w-3 shrink-0" />}
           {!(isMain && isPending) && isFailure && <XCircle      className="h-3 w-3 shrink-0" />}
+          {!(isMain && isPending) && isCancelled && <Ban className="h-3 w-3 shrink-0" />}
           {!(isMain && isPending) && isPending && <Loader2      className="h-3 w-3 shrink-0 animate-spin" />}
-          {!isSuccess && !isFailure && !isPending && <HelpCircle className="h-3 w-3 shrink-0" />}
+          {!isSuccess && !isFailure && !isCancelled && !isPending && <HelpCircle className="h-3 w-3 shrink-0" />}
 
           <span className="max-w-[110px] truncate">{run.name}</span>
 
