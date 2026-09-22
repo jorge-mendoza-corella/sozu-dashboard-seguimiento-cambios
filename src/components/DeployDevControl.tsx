@@ -23,6 +23,7 @@ export function DeployDevControl({
   puedeTocar,
   shaDev,
   shaPublicado,
+  desplegando = false,
 }: {
   owner: string;
   repo: string;
@@ -36,6 +37,13 @@ export function DeployDevControl({
   shaDev?: string;
   /** Lo último que se publicó en dev, si se publicó bien. */
   shaPublicado?: string;
+  /**
+   * Ya hay un deploy de dev en marcha.
+   *
+   * Pulsar entonces no adelanta nada: con la cola activa, el nuevo cancela al
+   * que está corriendo y se empieza de cero. Sale más tarde que si se espera.
+   */
+  desplegando?: boolean;
 }) {
   const qc = useQueryClient();
   const [guardando, setGuardando] = useState(false);
@@ -124,7 +132,12 @@ export function DeployDevControl({
         // arriba que abajo— el botón invitaba a lanzar un deploy que reconstruye
         // y vuelve a subir exactamente lo mismo: minutos gastados para dejar el
         // entorno como estaba.
-        (alDia ? (
+        (desplegando ? (
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            desplegando dev…
+          </span>
+        ) : alDia ? (
           <span className="text-muted-foreground" title={`dev está publicado en su último commit (${shaDev?.slice(0, 7)}).`}>
             dev al día
           </span>
