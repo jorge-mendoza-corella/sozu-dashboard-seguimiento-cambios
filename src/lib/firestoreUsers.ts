@@ -35,7 +35,7 @@ export interface CicdPermissions {
   mergeDev: boolean; // hacer merge de PRs hacia dev
   mergeMain: boolean; // hacer merge de PRs hacia main (PRD)
   buildApp: boolean; // disparar/cancelar builds de apps en Codemagic
-  // Encender y apagar el deploy automático a dev, y lanzarlo a mano. Es un
+  // El SWITCH del deploy a dev: encenderlo, apagarlo y lanzarlo a mano. Es un
   // permiso aparte de `mergeDev` porque son decisiones distintas: una es "este
   // cambio entra", la otra es "el entorno de dev se publica ahora". Quien
   // mergea a diario no tiene por qué decidir cuándo se publica para todos.
