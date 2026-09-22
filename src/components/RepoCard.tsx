@@ -899,7 +899,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           </div>
           {/* Cuándo se despliega dev. Aquí y no en Configuración: se decide
               mirando los deploys de arriba, no en otra pantalla. */}
-          <DeployDevControl owner={status.owner} repo={status.repo} puedeTocar={perms.mergeDev} />
+          <DeployDevControl owner={status.owner} repo={status.repo} puedeTocar={perms.deployDev} />
 
           {/* Del último terminado, a quién se le avisó. Solo del último: una
               línea por cada deploy de la lista sería ruido, y el resto sigue
