@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle, CheckCircle2, RefreshCw, Loader2,
   GitBranch, GitPullRequest, Zap,
@@ -20,7 +21,7 @@ import type { AvisosDelProyecto } from "@/hooks/useAvisos";
 import { FrontInfoBar } from "./FrontInfoBar";
 import type { FrontVersion } from "@/lib/frontVersions";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
-import { createPR, hasFailingDeploy, deployEnCurso, getBranchCommitAuthors, getPendingReleasePRs, type ApproverAuth, type PRWithCommits } from "@/lib/github";
+import { createPR, hasFailingDeploy, deployEnCurso, getBranchCommitAuthors, getPendingReleasePRs, repoDespliegaDev, mismoCommit, type ApproverAuth, type PRWithCommits } from "@/lib/github";
 import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
 
 // SIN LISTA POR DEFECTO. Cuando el proyecto no tiene `notifyAuthors`, aquí no se
@@ -273,6 +274,31 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
     (r) => r.status === "completed" && r.conclusion !== "skipped",
   );
 
+  // ── dev con cosas sin publicar ────────────────────────────────────────────
+  // "Dev por pasar a PRD" y "dev sin publicar" son estados distintos y se
+  // confundían: el primero mira dev contra main, el segundo mira dev contra lo
+  // que hay de verdad corriendo en el entorno de dev. Desde que los merges no
+  // despliegan solos, lo segundo pasa a diario y no se veía sin bajar al pie de
+  // la tarjeta. De ahí el borde punteado: lo que está en dev todavía no está
+  // publicado.
+  //
+  // Misma consulta que usa el control de abajo: react-query la comparte por
+  // clave, así que no cuesta una llamada más.
+  const { data: repoConDeployDev } = useQuery({
+    queryKey: ["repo-despliega-dev", status.owner, status.repo],
+    queryFn: () => repoDespliegaDev(status.owner, status.repo),
+    staleTime: 60 * 60_000,
+  });
+  const shaDevPublicado = (status.runsTerminados ?? []).find(
+    (r) => r.headBranch === "dev",
+  )?.headSha;
+  const devSinPublicar =
+    repoConDeployDev === true &&
+    !isDeployingToDev &&
+    !!devBranch?.lastCommitSha &&
+    !!shaDevPublicado &&
+    !mismoCommit(devBranch.lastCommitSha, shaDevPublicado);
+
   const stateConfig = {
     ok:         { icon: CheckCircle2,   color: "text-green-600",        label: "Todo en orden",          badge: "success"     as const },
     devPending: { icon: ArrowUpCircle,  color: "text-blue-600",         label: "Dev por pasar a PRD",    badge: "info"        as const },
@@ -298,13 +324,24 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
         }[state];
 
   return (
-    <Card className={cn(
-      "flex flex-col h-full transition-all",
-      isDeployingToMain && "ring-4 ring-emerald-500 ring-offset-2 shadow-xl shadow-emerald-500/25",
-      isDeployingToDev && !isDeployingToMain && "ring-2 ring-blue-400 ring-offset-2",
-      !isDeployingToMain && !isDeployingToDev && state === "devPending" && "ring-2 ring-blue-400 ring-offset-2",
-      !isDeployingToMain && !isDeployingToDev && hasPRs && "ring-2 ring-amber-400 ring-offset-2",
-    )}>
+    <Card
+      className={cn(
+        "flex flex-col h-full transition-all",
+        isDeployingToMain && "ring-4 ring-emerald-500 ring-offset-2 shadow-xl shadow-emerald-500/25",
+        isDeployingToDev && !isDeployingToMain && "ring-2 ring-blue-400 ring-offset-2",
+        !isDeployingToMain && !isDeployingToDev && state === "devPending" && "ring-2 ring-blue-400 ring-offset-2",
+        !isDeployingToMain && !isDeployingToDev && hasPRs && "ring-2 ring-amber-400 ring-offset-2",
+        // Punteado y no otro color: el color ya está diciendo en qué estado
+        // está el repo, y un segundo color competiría con él. La línea rota se
+        // lee como lo que significa —falta algo por cerrar— sin robarle sitio.
+        devSinPublicar && "border-2 border-dashed border-sky-400 dark:border-sky-500",
+      )}
+      title={
+        devSinPublicar
+          ? "dev tiene commits que todavía no se han publicado en el entorno de dev. Usa «Desplegar dev», abajo."
+          : undefined
+      }
+    >
       {/* Acento superior — animado cuando hay deploy a main */}
       <div className={cn(
         "h-1.5 w-full bg-gradient-to-r",
