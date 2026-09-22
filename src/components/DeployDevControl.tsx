@@ -21,16 +21,21 @@ export function DeployDevControl({
   owner,
   repo,
   puedeTocar,
+  shaDev,
+  shaPublicado,
 }: {
   owner: string;
   repo: string;
   /**
-   * Permiso "Publicar dev". Va aparte de `mergeDev` porque son decisiones
-   * distintas: una es "este cambio entra", la otra es "el entorno que usa todo
-   * el mundo se publica ahora". Quien mergea a diario no tiene por qué decidir
-   * lo segundo.
+   * Permiso "Switch deploy a dev". Va aparte de `mergeDev` porque son
+   * decisiones distintas: una es "este cambio entra", la otra es "el entorno
+   * que usa todo el mundo se publica ahora".
    */
   puedeTocar: boolean;
+  /** Punta de la rama dev. */
+  shaDev?: string;
+  /** Lo último que se publicó en dev, si se publicó bien. */
+  shaPublicado?: string;
 }) {
   const qc = useQueryClient();
   const [guardando, setGuardando] = useState(false);
@@ -44,6 +49,10 @@ export function DeployDevControl({
   });
 
   if (!puedeTocar || automatico === undefined) return null;
+
+  // Sin los dos commits no se puede afirmar nada, y ante la duda es mejor
+  // dejar el botón: lanzar de más molesta menos que no poder lanzar.
+  const alDia = !!shaDev && !!shaPublicado && shaDev === shaPublicado;
 
   const cambiar = async () => {
     setGuardando(true);
@@ -110,17 +119,31 @@ export function DeployDevControl({
 
       {/* El botón solo cuando hace falta: con el automático encendido, pulsarlo
           sería repetir lo que ya va a pasar solo. */}
-      {!automatico && (
-        <button
-          type="button"
-          onClick={lanzar}
-          disabled={lanzando}
-          className="flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
-        >
-          {lanzando ? <Loader2 className="h-3 w-3 animate-spin" /> : <Rocket className="h-3 w-3" />}
-          {lanzando ? "Lanzando…" : "Desplegar dev"}
-        </button>
-      )}
+      {!automatico &&
+        // Y solo si hay algo que publicar. Con dev ya desplegado —mismo commit
+        // arriba que abajo— el botón invitaba a lanzar un deploy que reconstruye
+        // y vuelve a subir exactamente lo mismo: minutos gastados para dejar el
+        // entorno como estaba.
+        (alDia ? (
+          <span className="text-muted-foreground" title={`dev está publicado en su último commit (${shaDev?.slice(0, 7)}).`}>
+            dev al día
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={lanzar}
+            disabled={lanzando}
+            className="flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-60"
+            title={
+              shaDev
+                ? `Publica dev en su commit actual (${shaDev.slice(0, 7)}).`
+                : "Publica la rama dev tal y como está ahora."
+            }
+          >
+            {lanzando ? <Loader2 className="h-3 w-3 animate-spin" /> : <Rocket className="h-3 w-3" />}
+            {lanzando ? "Lanzando…" : "Desplegar dev"}
+          </button>
+        ))}
 
       {aviso && <span className="w-full text-[11px] text-muted-foreground">{aviso}</span>}
     </div>
