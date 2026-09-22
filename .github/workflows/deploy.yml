@@ -14,6 +14,21 @@ permissions:
   contents: read
   pull-requests: read
 
+# Un deploy a la vez, y el nuevo manda. Mergeando varios PRs seguidos —cosa que
+# aquí pasa a diario— cada uno lanzaba su deploy y se ponían en fila para
+# publicar estados intermedios que ya nadie quiere ver: el último contiene a
+# todos los anteriores.
+#
+# Cancelar a mitad no deja el sitio roto: Firebase Hosting publica de forma
+# atómica, así que o entra la versión entera o no entra ninguna.
+#
+# No lleva el interruptor de "deploy automático" que sí tienen los otros repos:
+# ese solo aplica a `dev`, y este repo no tiene rama dev —se despliega desde
+# main y ya está.
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
