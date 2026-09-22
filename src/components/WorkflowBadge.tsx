@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { CheckCircle2, XCircle, Loader2, HelpCircle, GitBranch, Rocket, Info, GitCommit, ExternalLink, ChevronDown, ChevronRight, Ban } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, HelpCircle, GitBranch, Rocket, Info, GitCommit, ExternalLink, ChevronDown, ChevronRight, Ban, MinusCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WorkflowRun, PRWithCommits } from "@/lib/github";
 import { DeployProgressBar } from "@/components/DeployProgressBar";
@@ -32,6 +32,10 @@ export function WorkflowBadge({ run, owner, repo, terminados, selfLogin = null }
   // entrar uno nuevo, pintarlo en rojo sería alarmar varias veces al día por
   // lo que se supone que pase. Va en gris y con su propio icono.
   const isCancelled = run.conclusion === "cancelled";
+  // Saltado: el run arrancó y su job no corrió porque el automático a dev está
+  // apagado. Se veía como un deploy más, en gris, con el nombre del workflow —y
+  // entonces parece un deploy que salió raro, cuando no hubo deploy ninguno.
+  const isSkipped = run.conclusion === "skipped";
   const isPending = run.status === "in_progress" || run.status === "queued";
   const tier = getBranchTier(run.headBranch);
   const isMain = tier === "main";
@@ -237,9 +241,11 @@ export function WorkflowBadge({ run, owner, repo, terminados, selfLogin = null }
         rel="noopener noreferrer"
         className="no-underline"
         title={
-          isCancelled
-            ? "Cancelado. Lo normal es que entrara un deploy más nuevo de la misma rama y este dejara de hacer falta: el último contiene lo de los anteriores."
-            : undefined
+          isSkipped
+            ? `${run.name}: no desplegó. El deploy automático a dev está apagado, así que el merge solo mergeó. Usa «Desplegar dev» cuando quieras publicar lo acumulado.`
+            : isCancelled
+              ? "Cancelado. Lo normal es que entrara un deploy más nuevo de la misma rama y este dejara de hacer falta: el último contiene lo de los anteriores."
+              : undefined
         }
       >
         <div
@@ -255,10 +261,15 @@ export function WorkflowBadge({ run, owner, repo, terminados, selfLogin = null }
           {!(isMain && isPending) && isSuccess && <CheckCircle2 className="h-3 w-3 shrink-0" />}
           {!(isMain && isPending) && isFailure && <XCircle      className="h-3 w-3 shrink-0" />}
           {!(isMain && isPending) && isCancelled && <Ban className="h-3 w-3 shrink-0" />}
+          {!(isMain && isPending) && isSkipped && <MinusCircle className="h-3 w-3 shrink-0" />}
           {!(isMain && isPending) && isPending && <Loader2      className="h-3 w-3 shrink-0 animate-spin" />}
-          {!isSuccess && !isFailure && !isCancelled && !isPending && <HelpCircle className="h-3 w-3 shrink-0" />}
+          {!isSuccess && !isFailure && !isCancelled && !isSkipped && !isPending && <HelpCircle className="h-3 w-3 shrink-0" />}
 
-          <span className="max-w-[110px] truncate">{run.name}</span>
+          {/* El nombre del workflow cede el sitio a lo único que importa de un
+              run saltado: que no publicó nada. El nombre sigue en el título. */}
+          <span className={cn("max-w-[110px] truncate", isSkipped && "italic")}>
+            {isSkipped ? "no desplegó" : run.name}
+          </span>
 
           <span
             className={cn(
