@@ -265,7 +265,13 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
   const runEnCurso = status.latestRuns.find(
     (r) => r.status === "in_progress" || r.status === "queued",
   );
-  const ultimoTerminado = status.latestRuns.find((r) => r.status === "completed");
+  // El último deploy que de verdad terminó. Los saltados —el automático a dev
+  // apagado— quedan fuera: no publicaron nada, así que no tienen a quién haber
+  // avisado, y de primeros de la lista dejaban la línea de avisos en blanco
+  // tapando la del deploy bueno anterior.
+  const ultimoTerminado = status.latestRuns.find(
+    (r) => r.status === "completed" && r.conclusion !== "skipped",
+  );
 
   const stateConfig = {
     ok:         { icon: CheckCircle2,   color: "text-green-600",        label: "Todo en orden",          badge: "success"     as const },
