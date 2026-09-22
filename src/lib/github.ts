@@ -1447,6 +1447,86 @@ export async function getAutoDeployDev(owner: string, repo: string): Promise<boo
   }
 }
 
+/**
+ * ¿Este repo despliega dev, siquiera?
+ *
+ * Hay repos que solo publican main —las apps, el dashboard, n8n—: su rama dev
+ * existe para acumular PRs y nada más. Ahí el interruptor y el botón no es que
+ * estén de más: prometen algo que no puede pasar, y el botón devolvería un
+ * error al pulsarlo.
+ *
+ * Se decide leyendo los propios workflows en vez de con una lista escrita a
+ * mano: la lista se queda vieja el día que un repo estrena entorno de dev, y
+ * nadie se acuerda de venir a tocarla. Si el workflow dice `push: branches:
+ * [dev]`, el repo despliega dev; si no, no.
+ */
+const despliegaDevCache = new Map<string, boolean>();
+
+/** Las ramas que disparan un workflow, leídas de su bloque `on:`. */
+function ramasQueDisparan(yaml: string): string[] {
+  const inicio = yaml.search(/^on:/m);
+  if (inicio < 0) return [];
+  const resto = yaml.slice(inicio + 3);
+  // El bloque termina en la siguiente clave de primer nivel (`jobs:`, `env:`).
+  const fin = resto.search(/^[A-Za-z_]+:/m);
+  // Sin los comentarios: estos workflows los llevan largos, y una frase que
+  // menciona dev de pasada no es un disparador.
+  const lineas = (fin < 0 ? resto : resto.slice(0, fin))
+    .split("\n")
+    .map((l) => l.replace(/#.*$/, ""));
+
+  const ramas: string[] = [];
+  lineas.forEach((linea, i) => {
+    // `branches-ignore` no se mira a propósito: dice dónde NO corre.
+    const m = linea.match(/^\s*branches:\s*(.*)$/);
+    if (!m) return;
+    const enLinea = m[1].trim();
+    if (enLinea.startsWith("[")) {
+      ramas.push(...enLinea.replace(/[[\]'"]/g, "").split(",").map((r) => r.trim()));
+      return;
+    }
+    // Forma de lista: los guiones que siguen, hasta que deja de haberlos.
+    for (let j = i + 1; j < lineas.length; j++) {
+      const item = lineas[j].match(/^\s*-\s*['"]?([^'"\s]+)/);
+      if (!item) break;
+      ramas.push(item[1]);
+    }
+  });
+  return ramas.filter(Boolean);
+}
+
+export async function repoDespliegaDev(owner: string, repo: string): Promise<boolean> {
+  const clave = `${owner}/${repo}`;
+  const hit = despliegaDevCache.get(clave);
+  if (hit !== undefined) return hit;
+
+  try {
+    const { data } = await octokit.actions.listRepoWorkflows({ owner, repo, per_page: 100 });
+    const candidatos = data.workflows.filter(
+      (w) => /deploy/i.test(w.name ?? "") || /deploy/i.test(w.path ?? ""),
+    );
+
+    const textos = await Promise.all(
+      candidatos.map(async (w) => {
+        try {
+          const { data: archivo } = await octokit.repos.getContent({ owner, repo, path: w.path });
+          return "content" in archivo && archivo.content ? atob(archivo.content.replace(/\n/g, "")) : "";
+        } catch {
+          return "";
+        }
+      }),
+    );
+
+    const sirve = textos.some((t) => ramasQueDisparan(t).includes("dev"));
+    despliegaDevCache.set(clave, sirve);
+    return sirve;
+  } catch {
+    // Sin poder leerlos no se esconde nada: ocultar el control por un fallo de
+    // red dejaría sin desplegar a quien sí puede, y sin explicación.
+    return true;
+  }
+}
+
 export async function setAutoDeployDev(owner: string, repo: string, activo: boolean): Promise<void> {
   const value = activo ? "true" : "false";
   try {
