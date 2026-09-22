@@ -150,6 +150,31 @@
   }
 }
 
+/* Lo mismo en ámbar, para lo que está atrasado y no en movimiento: la versión
+   de una tienda que se quedó detrás de la web. El verde dice "esto va llegando";
+   este dice "esto falta". */
+@keyframes respirar_ambar {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgb(245 158 11 / 0.35);
+    border-color: rgb(245 158 11 / 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgb(245 158 11 / 0);
+    border-color: rgb(245 158 11 / 0.9);
+  }
+}
+
+.respira-ambar {
+  animation: respirar_ambar 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .respira-ambar {
+    animation: none;
+    border-color: rgb(245 158 11 / 0.7);
+  }
+}
+
 @keyframes indeterminate {
   0% { margin-left: -35%; }
   100% { margin-left: 100%; }

@@ -6,7 +6,6 @@ import {
   MessageCircle, MessageCircleOff,
 } from "lucide-react";
 import { AppBuildsPanel } from "@/components/codemagic/AppBuildsPanel";
-import { ActiveBuildChips } from "@/components/codemagic/ActiveBuildChips";
 import { TabBuildChip } from "@/components/codemagic/TabBuildChip";
 import { isCodemagicConfigured } from "@/lib/codemagic";
 import { useGitHubStatus } from "@/hooks/useGitHubStatus";
@@ -22,7 +21,8 @@ import { empresasDeProyectos } from "@/lib/empresas";
 import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, deployEnCurso, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
-import { getFrontVersions } from "@/lib/frontVersions";
+import { getFrontVersions, type FrontVersion } from "@/lib/frontVersions";
+import { DeployAppTabButton } from "@/components/codemagic/DeployAppTabButton";
 import { isRootAdmin, resolvePermissions, getVisibleUsers , scopeKeyOf} from "@/lib/firestoreUsers";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,21 @@ function computeSummary(data: RepoStatus[]) {
     withPRs: data.filter((r) => r.openPRs.length > 0).length,
     failing: data.filter((r) => hasFailingDeploy(r.latestRuns)).length,
   };
+}
+
+/**
+ * La versión que sirve el front del proyecto.
+ *
+ * Un proyecto app tiene varios repos, pero uno solo publica el sitio: ese es el
+ * que marca el paso, y contra él se comparan las tiendas. Si hubiera más de uno
+ * con front, gana el primero — que es el que se ve arriba en la tarjeta.
+ */
+function versionWebDelProyecto(
+  repos: { id: string; frontUrl?: string }[],
+  frontVersions: Record<string, FrontVersion>,
+): string | null {
+  const front = repos.find((r) => r.frontUrl);
+  return front ? (frontVersions[front.id]?.version ?? null) : null;
 }
 
 export function DashboardPage() {
@@ -596,28 +611,30 @@ export function DashboardPage() {
                   )}
                   {showDeployTab && (
                     <div className="mb-4 flex gap-1 border-b">
-                      {([
-                        { key: "repos", label: "Repositorios", icon: GitBranch },
-                        { key: "deploy", label: "Deploy App", icon: Smartphone },
-                      ] as const).map(({ key, label, icon: Icon }) => (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => setProjectView(key)}
-                          className={cn(
-                            "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors -mb-px",
-                            view === key
-                              ? "border-primary text-primary"
-                              : "border-transparent text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          <Icon className="h-4 w-4" />
-                          {label}
-                          {key === "deploy" && p.codemagicAppId && (
-                            <ActiveBuildChips appId={p.codemagicAppId} compact />
-                          )}
-                        </button>
-                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setProjectView("repos")}
+                        className={cn(
+                          "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors -mb-px",
+                          view === "repos"
+                            ? "border-primary text-primary"
+                            : "border-transparent text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        <GitBranch className="h-4 w-4" />
+                        Repositorios
+                      </button>
+                      {/* La de apps lleva su propio componente porque avisa: se
+                          pinta en ámbar cuando la web ya va por delante de las
+                          tiendas, que es cuando hay que entrar a construir. */}
+                      <DeployAppTabButton
+                        activo={view === "deploy"}
+                        onClick={() => setProjectView("deploy")}
+                        codemagicAppId={p.codemagicAppId}
+                        versionWeb={versionWebDelProyecto(projectRepos, frontVersions)}
+                        androidPackage={p.androidPackage}
+                        iosBundleId={p.iosBundleId}
+                      />
                     </div>
                   )}
 
