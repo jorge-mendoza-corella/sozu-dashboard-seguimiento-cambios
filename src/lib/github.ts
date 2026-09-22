@@ -1419,3 +1419,62 @@ export function aggregateByRepo(commits: CommitRecord[], prs: PRRecord[]): RepoM
     .map(([repo, e]) => ({ repo, ...e }))
     .sort((a, b) => b.total - a.total || b.prs - a.prs);
 }
+
+// ---------------------------------------------------------------------------
+// Deploy a dev: interruptor y disparo manual.
+//
+// Cada merge a dev lanzaba su deploy, y con varios PRs seguidos había que
+// esperarlos todos. El interruptor vive en una variable del propio repositorio
+// —`AUTO_DEPLOY_DEV`— y no en Firestore, por dos razones: el workflow la lee
+// con `vars.` sin pedir credenciales a nadie, y el estado queda donde cualquiera
+// que mire el repo lo encuentra, no escondido en otra base.
+// ---------------------------------------------------------------------------
+
+/** ¿Se despliega solo al mergear a dev? Sin variable definida, sí. */
+export async function getAutoDeployDev(owner: string, repo: string): Promise<boolean> {
+  try {
+    const { data } = await octokit.actions.getRepoVariable({
+      owner,
+      repo,
+      name: "AUTO_DEPLOY_DEV",
+    });
+    return data.value !== "false";
+  } catch {
+    // 404 = nunca se tocó, que es el comportamiento de siempre: desplegar.
+    // Cualquier otro fallo también cae aquí y se asume lo mismo, porque
+    // enseñarlo apagado invitaría a encenderlo y a pisar la variable real.
+    return true;
+  }
+}
+
+export async function setAutoDeployDev(owner: string, repo: string, activo: boolean): Promise<void> {
+  const value = activo ? "true" : "false";
+  try {
+    await octokit.actions.updateRepoVariable({ owner, repo, name: "AUTO_DEPLOY_DEV", value });
+  } catch {
+    // No existía: se crea. Es más barato intentarlo y caer aquí que preguntar
+    // antes por una variable que casi siempre va a existir tras el primer uso.
+    await octokit.actions.createRepoVariable({ owner, repo, name: "AUTO_DEPLOY_DEV", value });
+  }
+}
+
+/**
+ * Lanza el deploy de dev a mano.
+ *
+ * Busca el workflow de deploy del repo y lo dispara sobre `dev`. Devuelve el
+ * nombre del que disparó, para poder decirlo en la interfaz: en un repo con
+ * varios workflows de deploy, "se lanzó el deploy" a secas no dice cuál.
+ */
+export async function dispararDeployDev(owner: string, repo: string): Promise<string> {
+  const { data } = await octokit.actions.listRepoWorkflows({ owner, repo, per_page: 100 });
+  // El de producción se descarta por nombre: dispararlo desde el botón de dev
+  // sería justo lo contrario de lo que pide quien lo pulsa.
+  const candidatos = data.workflows.filter(
+    (w) => /deploy/i.test(w.name ?? "") && !/prod|prd|production/i.test(w.name ?? ""),
+  );
+  const wf = candidatos.find((w) => /dev/i.test(w.name ?? "")) ?? candidatos[0];
+  if (!wf) throw new Error("Este repo no tiene ningún workflow de deploy que se pueda disparar.");
+
+  await octokit.actions.createWorkflowDispatch({ owner, repo, workflow_id: wf.id, ref: "dev" });
+  return wf.name ?? "deploy";
+}

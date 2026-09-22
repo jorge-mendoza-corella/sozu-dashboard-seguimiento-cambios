@@ -15,6 +15,7 @@ import { WorkflowBadge } from "./WorkflowBadge";
 import { DeployMetaTooltip } from "./DeployMetaTooltip";
 import { AvisoDeploy } from "./AvisoDeploy";
 import { DeployProgressBar, RelojDeploy } from "@/components/DeployProgressBar";
+import { DeployDevControl } from "@/components/DeployDevControl";
 import type { AvisosDelProyecto } from "@/hooks/useAvisos";
 import { FrontInfoBar } from "./FrontInfoBar";
 import type { FrontVersion } from "@/lib/frontVersions";
@@ -896,6 +897,10 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
                   </DeployMetaTooltip>
                 ))}
           </div>
+          {/* Cuándo se despliega dev. Aquí y no en Configuración: se decide
+              mirando los deploys de arriba, no en otra pantalla. */}
+          <DeployDevControl owner={status.owner} repo={status.repo} puedeTocar={perms.mergeDev} />
+
           {/* Del último terminado, a quién se le avisó. Solo del último: una
               línea por cada deploy de la lista sería ruido, y el resto sigue
               disponible en el tooltip de su badge. */}
