@@ -7,6 +7,7 @@ import type { FrontVersion } from "@/lib/frontVersions";
 import { getPlayTracks, playPublishedVersion, playEnCamino, releaseStatusInfo } from "@/lib/playTracks";
 import { getAppStoreStatus, appStoreLiveVersion, appStoreEnCamino, versionStateInfo } from "@/lib/appStoreStatus";
 import { InstallsBadge } from "./InstallsBadge";
+import { rezagoDeTiendas } from "@/lib/versionesApp";
 
 interface Props {
   /** URL del front. Sin ella no se pinta nada: el repo no es front. */
@@ -102,6 +103,47 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
   const iosEnCamino = appStoreEnCamino(appStore);
   const esApp = !!androidPackage || !!iosBundleId;
 
+  // ¿La web va por delante de las tiendas? Entonces toca construir, y se dice
+  // aquí mismo: la web en verde —está adelante, y eso está bien— y la tienda
+  // que se quedó atrás respirando en ámbar. Comparar tres números a ojo cada
+  // vez que uno pasa por la tarjeta era justo lo que nadie hacía.
+  const rezago = rezagoDeTiendas(version, play, appStore, {
+    conAndroid: !!androidPackage,
+    conIos: !!iosBundleId,
+  });
+
+  // El "falta construir" se dice en el título de la tienda que va atrasada, no
+  // en uno aparte: es ahí donde se mira cuando se ve el chip parpadear.
+  const faltaConstruir = (tienda: string) =>
+    rezago.hayQueConstruir ? `\nLa web va en ${version}: falta construir y subir a ${tienda}.` : "";
+
+  const tituloAndroid =
+    (play?.error
+      ? `No se pudo leer Google Play: ${play.error}`
+      : playPub
+        ? `Google Play · track ${playPub.track}` +
+          (playPub.status ? ` · ${releaseStatusInfo(playPub.status).label}` : "") +
+          (playPub.esProduccion ? "" : " (aún no está en producción)") +
+          (playCamino
+            ? `\nEn revisión: ${playCamino} — enviada a producción, Google todavía no la sirve`
+            : "")
+        : "Aún no hay ninguna versión subida a Google Play, o falta la cuenta de servicio para leerlo") +
+    (rezago.android?.pendiente ? faltaConstruir("Google Play") : "");
+
+  const tituloIos =
+    (appStore?.error
+      ? `No se pudo leer App Store Connect: ${appStore.error}`
+      : iosVersion
+        ? (iosVersion.aLaVenta ? "A la venta en el App Store" : "Enviada al App Store, aún no a la venta") +
+          `: ${iosVersion.version}` +
+          (iosVersion.state ? ` · ${versionStateInfo(iosVersion.state).label}` : "") +
+          (iosVersion.aLaVenta && iosEnCamino
+            ? `\nEn camino: ${iosEnCamino.version}` +
+              (iosEnCamino.state ? ` · ${versionStateInfo(iosEnCamino.state).label}` : "")
+            : "")
+        : "Aún no hay ninguna versión en App Store Connect, o falta la llave para leerlo") +
+    (rezago.ios?.pendiente ? faltaConstruir("el App Store") : "");
+
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-xs">
       <a
@@ -133,12 +175,21 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
 
       {/* Versión del sitio, pegada al link: es la pregunta que sigue a "¿cuál es la URL?" */}
       <span
-        title={versionTitle}
+        title={
+          versionTitle +
+          (rezago.hayQueConstruir
+            ? "\nVa por delante de las tiendas: toca construir y subir la app."
+            : "")
+        }
         className={cn(
           "rounded-md border px-1.5 py-1 font-mono",
           version
             ? "border-transparent bg-muted text-foreground/80"
             : "border-dashed border-muted-foreground/40 text-muted-foreground",
+          // Delante de las tiendas: en verde. No es una alarma —la web está
+          // donde tiene que estar— sino el punto de partida de la comparación.
+          rezago.hayQueConstruir &&
+            "border-emerald-400 bg-emerald-50 text-emerald-700 dark:border-emerald-700/60 dark:bg-emerald-950/40 dark:text-emerald-300",
         )}
       >
         {esApp && <span className="mr-1 font-sans text-[10px] uppercase text-muted-foreground">web</span>}
@@ -149,23 +200,16 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
         <>
           {androidPackage && (
             <span
-              title={
-                play?.error
-                  ? `No se pudo leer Google Play: ${play.error}`
-                  : playPub
-                    ? `Google Play · track ${playPub.track}` +
-                      (playPub.status ? ` · ${releaseStatusInfo(playPub.status).label}` : "") +
-                      (playPub.esProduccion ? "" : " (aún no está en producción)") +
-                      (playCamino
-                        ? `\nEn revisión: ${playCamino} — enviada a producción, Google todavía no la sirve`
-                        : "")
-                    : "Aún no hay ninguna versión subida a Google Play, o falta la cuenta de servicio para leerlo"
-              }
+              title={tituloAndroid}
               className={cn(
                 "flex items-center gap-1 rounded-md border border-transparent bg-muted px-1.5 py-1 font-mono text-foreground/80",
                 // Lo que no está en producción no es lo que la gente tiene
                 // instalado: se distingue en lugar de darlo por publicado.
                 playPub && !playPub.esProduccion && "border-dashed border-muted-foreground/40",
+                // Atrás de la web y sin nada enviado que lo cubra: respira en
+                // ámbar hasta que salga el build. Si ya se envió, no respira —
+                // esperar a Google no es una tarea de nadie.
+                rezago.android?.pendiente && "respira-ambar border-amber-400",
               )}
             >
               <Smartphone className="h-3 w-3 text-muted-foreground" />
@@ -178,22 +222,11 @@ export function FrontInfoBar({ frontUrl, frontVersion, androidPackage, iosBundle
           )}
           {iosBundleId && (
             <span
-              title={
-                appStore?.error
-                  ? `No se pudo leer App Store Connect: ${appStore.error}`
-                  : iosVersion
-                    ? (iosVersion.aLaVenta ? "A la venta en el App Store" : "Enviada al App Store, aún no a la venta") +
-                      `: ${iosVersion.version}` +
-                      (iosVersion.state ? ` · ${versionStateInfo(iosVersion.state).label}` : "") +
-                      (iosVersion.aLaVenta && iosEnCamino
-                        ? `\nEn camino: ${iosEnCamino.version}` +
-                          (iosEnCamino.state ? ` · ${versionStateInfo(iosEnCamino.state).label}` : "")
-                        : "")
-                    : "Aún no hay ninguna versión en App Store Connect, o falta la llave para leerlo"
-              }
+              title={tituloIos}
               className={cn(
                 "flex items-center gap-1 rounded-md border border-transparent bg-muted px-1.5 py-1 font-mono text-foreground/80",
                 iosVersion && !iosVersion.aLaVenta && "border-dashed border-muted-foreground/40",
+                rezago.ios?.pendiente && "respira-ambar border-amber-400",
               )}
             >
               <Apple className="h-3 w-3 text-muted-foreground" />
