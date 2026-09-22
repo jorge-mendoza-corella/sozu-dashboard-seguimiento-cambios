@@ -909,6 +909,11 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
             shaPublicado={
               (status.runsTerminados ?? []).find((r) => r.headBranch === "dev")?.headSha
             }
+            // Con uno en marcha, lanzar otro solo lo retrasa: el nuevo cancela
+            // al que corre y se empieza de cero.
+            desplegando={status.latestRuns.some(
+              (r) => r.headBranch === "dev" && (r.status === "in_progress" || r.status === "queued"),
+            )}
           />
 
           {/* Del último terminado, a quién se le avisó. Solo del último: una
