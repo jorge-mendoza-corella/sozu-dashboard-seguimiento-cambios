@@ -2,7 +2,12 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Rocket } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getAutoDeployDev, setAutoDeployDev, dispararDeployDev } from "@/lib/github";
+import {
+  getAutoDeployDev,
+  setAutoDeployDev,
+  dispararDeployDev,
+  repoDespliegaDev,
+} from "@/lib/github";
 
 // ---------------------------------------------------------------------------
 // Cuándo se despliega dev.
@@ -50,13 +55,26 @@ export function DeployDevControl({
   const [lanzando, setLanzando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
 
+  // ¿Este repo despliega dev? Las apps, el dashboard y n8n solo publican main:
+  // su dev acumula PRs y ya. Ahí el control prometía algo que no ocurre nunca, y
+  // el botón devolvía un error al pulsarlo.
+  const { data: tieneDeployDev } = useQuery({
+    queryKey: ["repo-despliega-dev", owner, repo],
+    queryFn: () => repoDespliegaDev(owner, repo),
+    // Los workflows de un repo cambian cada varios meses; preguntarlo seguido
+    // sería gastar rate limit para recibir siempre lo mismo.
+    staleTime: 60 * 60_000,
+  });
+
   const { data: automatico } = useQuery({
     queryKey: ["auto-deploy-dev", owner, repo],
     queryFn: () => getAutoDeployDev(owner, repo),
+    // Sin deploy de dev no hay variable que consultar ni nada que enseñar.
+    enabled: tieneDeployDev === true,
     staleTime: 5 * 60_000,
   });
 
-  if (!puedeTocar || automatico === undefined) return null;
+  if (!puedeTocar || !tieneDeployDev || automatico === undefined) return null;
 
   // Sin los dos commits no se puede afirmar nada, y ante la duda es mejor
   // dejar el botón: lanzar de más molesta menos que no poder lanzar.
