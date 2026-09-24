@@ -39,9 +39,6 @@ export interface Project {
   ascCredentialsUpdatedBy?: string;
   androidPackage?: string; // applicationId de Android (ej. com.sozu.clientes_app); se inyecta al build de Codemagic
   iosBundleId?: string; // bundle id de iOS (ej. com.sozu.sozuClienteApp); para leer el estado en App Store Connect
-  // "simple" (default): construir y publicar directo en la tienda, en un clic.
-  // "avanzado": flujo por etapas (Play interno / TestFlight → tienda) + testers.
-  deployMode?: "simple" | "avanzado";
   /**
    * Descargas leídas A MANO de las consolas, con su fecha.
    *
@@ -152,7 +149,6 @@ export async function setProjectIosBundleId(id: string, bundleId: string | null)
   });
 }
 
-/** Alterna entre el flujo de un clic ("simple") y el flujo por etapas ("avanzado"). */
 /** Guarda las descargas leídas a mano de las consolas. */
 export async function setProjectInstallsManual(
   id: string,
@@ -175,10 +171,6 @@ export async function setProjectInstallsManual(
       actualizadoPor: email,
     },
   });
-}
-
-export async function setProjectDeployMode(id: string, mode: "simple" | "avanzado") {
-  await updateDoc(doc(db, "projects", id), { deployMode: mode });
 }
 
 /** Marca cuándo se subió el keystore Android desde el dashboard (solo informativo). */
