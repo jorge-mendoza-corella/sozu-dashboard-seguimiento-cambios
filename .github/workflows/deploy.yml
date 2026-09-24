@@ -35,10 +35,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22: desde firebase-tools 15.31.0 una dependencia (stream-chain) exige node >= 22
+      # aunque firebase-tools declare >= 20; con Node 20 npm aborta con EBADENGINE.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
 
       - name: Authenticate to Google Cloud
@@ -95,7 +97,7 @@ jobs:
         # No bloquea el deploy de hosting: si el service account no tiene permisos
         # (serviceusage.services.get / firebaserules.admin), despliega las reglas a mano.
         continue-on-error: true
-        run: npx -y firebase-tools@latest deploy --only firestore:rules --project sozu-admin-dev --non-interactive
+        run: npx -y firebase-tools@15.31.0 deploy --only firestore:rules --project sozu-admin-dev --non-interactive
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -105,6 +107,8 @@ jobs:
           projectId: sozu-admin-dev
           target: sozu-dashboard-dev
           channelId: live
+          # Versión fija (el default es la última): una nueva rompió el deploy sin aviso.
+          firebaseToolsVersion: 15.31.0
 
       # ─────────────────────────────────────────────────────────────────────
       # Aviso de WhatsApp: el MISMO script que los demás repos monitoreados.
