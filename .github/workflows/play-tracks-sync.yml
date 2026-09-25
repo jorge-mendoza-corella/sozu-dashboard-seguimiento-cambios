@@ -104,7 +104,7 @@ jobs:
           AVANCES_ESTADO_TOKEN="$(secret DASHBOARD_AVANCES_ESTADO_TOKEN)"
           export AVANCES_ESTADO_TOKEN
           HOSTING_SITES=sozu-avances \
-          HOSTING_COMPARE="sozu-avances|https://avances.sozu.com|https://sozu-avances--draft-u1wqsh7o.web.app" \
+          HOSTING_COMPARE="sozu-avances|https://avances.sozu.com|https://sozu-avances--draft-aj8x8l7i.web.app" \
             python ci/hosting_channels_sync.py
 
           # --- Versión que sirve cada front (repos con frontUrl) ---
