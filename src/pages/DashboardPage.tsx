@@ -674,6 +674,7 @@ export function DashboardPage() {
                         approver={approverByProject.get(p.id) ?? null}
                         codeOwnerAuths={codeOwnerAuths}
                         selfLogin={isRoot ? null : appUser?.githubLogin ?? null}
+                        myLogin={appUser?.githubLogin ?? null}
                         notifyAuthors={p.notifyAuthors ?? []}
                         frontVersions={frontVersions}
                         renames={renames}
