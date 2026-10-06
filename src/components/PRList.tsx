@@ -35,9 +35,15 @@ interface Props {
   codeOwnerAuths?: ApproverAuth[];
   /** Con valor: sin permiso "ver cambios de otros" — detalle ajeno oculto. */
   selfLogin?: string | null;
+  /** Login de quien está logueado (aunque vea todo): sus PRs se resaltan. */
+  myLogin?: string | null;
 }
 
-export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, avisos }: Props) {
+/** Pastilla para el login de quien está logueado. */
+const MIO_CLASS = "rounded px-1 bg-fuchsia-100 text-fuchsia-700 font-semibold dark:bg-fuchsia-900/50 dark:text-fuchsia-300";
+
+export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, myLogin = null, avisos }: Props) {
+  const esMio = (login?: string | null) => !!myLogin && !!login && login.toLowerCase() === myLogin.toLowerCase();
   const [openPanel, setOpenPanel] = useState<{ prNumber: number; mode: PanelMode } | null>(null);
   const [activeEvent, setActiveEvent] = useState<ReviewEvent | null>(null);
   const [comment, setComment] = useState("");
@@ -279,7 +285,14 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                         title={`Cambios de ${pr.authors.map((a) => "@" + a).join(", ")} (autores de los commits)`}
                       >
                         <User className="h-2.5 w-2.5" />
-                        <span className="font-mono">{pr.authors.join(", ")}</span>
+                        {/* El login propio va en pastilla de color: así se ve
+                            de un vistazo qué PRs son de quien está logueado. */}
+                        {pr.authors.map((a, i) => (
+                          <span key={a} className="font-mono">
+                            <span className={cn(esMio(a) && MIO_CLASS)}>{a}</span>
+                            {i < pr.authors.length - 1 && ", "}
+                          </span>
+                        ))}
                       </span>
                     )}
                     {pr.author && !pr.authors.includes(pr.author) && (
@@ -288,7 +301,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                         title={`@${pr.author} abrió el PR, pero los cambios son de ${pr.authors.map((a) => "@" + a).join(", ")}`}
                       >
                         <GitPullRequest className="h-2.5 w-2.5" />
-                        <span className="font-mono">abrió {pr.author}</span>
+                        <span className="font-mono">abrió <span className={cn(esMio(pr.author) && MIO_CLASS)}>{pr.author}</span></span>
                       </span>
                     )}
                     {pr.requestedReviewers.length > 0 && (
@@ -639,7 +652,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                                       </div>
                                       <div className="flex items-center gap-1 mt-0.5">
                                         <User className="h-2.5 w-2.5 text-muted-foreground" />
-                                        <span className="text-[10px] text-muted-foreground font-mono">{devPR.author}</span>
+                                        <span className={cn("text-[10px] text-muted-foreground font-mono", esMio(devPR.author) && MIO_CLASS)}>{devPR.author}</span>
                                         <span className="text-[10px] text-muted-foreground">·</span>
                                         <GitCommit className="h-2.5 w-2.5 text-muted-foreground" />
                                         <span className="text-[10px] text-muted-foreground">{devPR.commits.length} commit{devPR.commits.length !== 1 ? "s" : ""}</span>
@@ -728,7 +741,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                               </div>
                               <div className="flex items-center gap-1 mt-0.5">
                                 <User className="h-2.5 w-2.5 text-muted-foreground" />
-                                <span className="text-[10px] text-muted-foreground font-mono">{devPR.author}</span>
+                                <span className={cn("text-[10px] text-muted-foreground font-mono", esMio(devPR.author) && MIO_CLASS)}>{devPR.author}</span>
                                 <span className="text-[10px] text-muted-foreground">·</span>
                                 <GitCommit className="h-2.5 w-2.5 text-muted-foreground" />
                                 <span className="text-[10px] text-muted-foreground">{devPR.commits.length} commit{devPR.commits.length !== 1 ? "s" : ""}</span>

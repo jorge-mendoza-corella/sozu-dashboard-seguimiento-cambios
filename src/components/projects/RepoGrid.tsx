@@ -19,6 +19,8 @@ interface Props {
   approver?: ApproverAuth | null;
   codeOwnerAuths?: ApproverAuth[];
   selfLogin?: string | null;
+  /** Login de quien está logueado, aunque sea root: resalta lo suyo. */
+  myLogin?: string | null;
   notifyAuthors?: string[];
   /** Versión que sirve cada front, por id de repo (`owner__repo`). */
   frontVersions?: Record<string, FrontVersion>;
@@ -42,7 +44,7 @@ interface Props {
 
 const keyOf = (r: MonitoredRepo) => `${r.owner}/${r.repo}`;
 
-export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontVersions = {}, renames, avisos, androidPackage, iosBundleId, projectId, installsManual, codemagicAppId, nombreApp, onRefetch, onReorder }: Props) {
+export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canReorder, approver = null, codeOwnerAuths = [], selfLogin = null, myLogin = null, notifyAuthors = [], frontVersions = {}, renames, avisos, androidPackage, iosBundleId, projectId, installsManual, codemagicAppId, nombreApp, onRefetch, onReorder }: Props) {
   const [items, setItems] = useState<MonitoredRepo[]>(repos);
   const dragFrom = useRef<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -107,6 +109,7 @@ export function RepoGrid({ repos, statusByKey, isLoading, isViewer, perms, canRe
               approver={approver}
               codeOwnerAuths={codeOwnerAuths}
               selfLogin={selfLogin}
+              myLogin={myLogin}
               notifyAuthors={notifyAuthors}
               frontUrl={r.frontUrl}
               frontVersion={frontVersions[r.id] ?? null}

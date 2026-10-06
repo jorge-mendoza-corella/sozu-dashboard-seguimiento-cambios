@@ -84,6 +84,8 @@ interface Props {
   nombreApp?: string;
   /** Login de GitHub del usuario logueado — para el permiso "ver cambios de otros". */
   selfLogin?: string | null;
+  /** Login de quien está logueado, aunque sea root: resalta sus PRs. */
+  myLogin?: string | null;
   /** Logins seleccionables como autor extra al crear PR (configurados por proyecto). */
   notifyAuthors?: string[];
   /**
@@ -99,7 +101,7 @@ interface Props {
   avisos?: AvisosDelProyecto;
 }
 
-export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, notifyAuthors = [], frontUrl, frontVersion = null, androidPackage, iosBundleId, projectId, installsManual, codemagicAppId, nombreApp, renamedTo = null, avisos }: Props) {
+export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMISSIONS, approver = null, codeOwnerAuths = [], selfLogin = null, myLogin = null, notifyAuthors = [], frontUrl, frontVersion = null, androidPackage, iosBundleId, projectId, installsManual, codemagicAppId, nombreApp, renamedTo = null, avisos }: Props) {
   // Sin el permiso viewOthers el usuario solo ve SUS ramas y PRs
   // (main/dev siempre visibles: son estado compartido del repo).
   const canViewOthers = perms.viewOthers || !selfLogin;
@@ -923,7 +925,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             <GitPullRequest className="h-3.5 w-3.5" /> PRs abiertos ({scopedPRs.length})
           </h4>
-          <PRList prs={scopedPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} perms={perms} approver={approver} codeOwnerAuths={codeOwnerAuths} selfLogin={canViewOthers ? null : selfLogin} avisos={avisos} />
+          <PRList prs={scopedPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} perms={perms} approver={approver} codeOwnerAuths={codeOwnerAuths} selfLogin={canViewOthers ? null : selfLogin} myLogin={myLogin} avisos={avisos} />
         </div>
 
         {/* Últimos deploys */}
