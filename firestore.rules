@@ -248,6 +248,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Conexión de la instancia de WhatsApp (Evolution API) de cada empresa.
+    // La escribe el monitor con cuenta de servicio; aquí solo se lee.
+    match /whatsappStatus/{clientId} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if false;
+    }
+
     // Serie diaria de instalaciones por proyecto (copia de lectura de lo que
     // vive en Supabase, que es donde se mezcla lo medido con la siembra).
     match /installsDiarias/{projectId} {
