@@ -114,6 +114,16 @@ registrar() { # $1 = seMando (true|false) ; $2 = motivo
 anotar_fallo() { # $1 = login ; $2 = motivo
   FALLIDOS="$(printf '%s' "$FALLIDOS" | jq -c --arg l "$1" --arg m "$2" '. + [{login:$l,motivo:$m}]')"
 }
+# Un deploy CANCELADO no fallo: casi siempre lo reemplazo otro mas nuevo de la
+# misma rama (`concurrency: cancel-in-progress`), y ese otro avisara por su
+# cuenta. `job.status` llega como "cancelled" y antes caia en el mismo saco que
+# "failure", asi que mandaba "FALLO el deploy" por algo que no habia fallado.
+if [ "$STATUS" = "cancelled" ]; then
+  echo "Deploy cancelado (probablemente lo reemplazo otro mas nuevo): no se notifica."
+  registrar false "El deploy se cancelo (lo reemplazo otro mas nuevo de la misma rama); no fallo, no se aviso."
+  exit 0
+fi
+
 FS="https://firestore.googleapis.com/v1/projects/${FIRESTORE_PROJECT}/databases/(default)/documents"
 leer() { curl -s --max-time 20 -H "Authorization: Bearer $ACCESS_TOKEN" "${FS}/$1"; }
 campo() { printf '%s' "$1" | jq -r --arg f "$2" '.fields[$f].stringValue // empty'; }
@@ -288,11 +298,19 @@ else
   fi
 fi
 
+# Telefonos ya avisados. Una misma persona puede tener dos cuentas de GitHub
+# con el mismo numero (p. ej. autor con una y aprobador con otra); deduplicar
+# solo por login le mandaba el mismo mensaje dos veces.
+TELS_AVISADOS=" "
 if [ "${#logins[@]}" -gt 0 ]; then
   mapfile -t recipients < <(printf '%s\n' "${logins[@]}" | awk 'NF' | sort -u)
   for login in "${recipients[@]}"; do
     phone="$(telefono_de "$login")"
-    if [ -n "$phone" ]; then
+    if [ -n "$phone" ] && [[ "$TELS_AVISADOS" == *" $phone "* ]]; then
+      echo "El telefono de '$login' ya recibio el aviso con otra cuenta; se omite."
+      AVISADOS="${AVISADOS}${login},"
+    elif [ -n "$phone" ]; then
+      TELS_AVISADOS="${TELS_AVISADOS}${phone} "
       if send_wa "$phone" "$login" "$(mensaje_para "${DESCS_POR_AUTOR[$login]:-}")"; then
         AVISADOS="${AVISADOS}${login},"
       else
@@ -335,7 +353,10 @@ if [ -z "$APROBADOR_TEL" ]; then
   registrar true ""
   exit 0
 fi
-if send_wa "$APROBADOR_TEL" "aprobador @${APROBADOR_LOGIN}" "$(mensaje_para "$ALL_DESCS")"; then
+if [[ "$TELS_AVISADOS" == *" $APROBADOR_TEL "* ]]; then
+  echo "El aprobador @${APROBADOR_LOGIN} ya recibio el aviso con otra cuenta (mismo telefono)."
+  AVISADOS="${AVISADOS}${APROBADOR_LOGIN},"
+elif send_wa "$APROBADOR_TEL" "aprobador @${APROBADOR_LOGIN}" "$(mensaje_para "$ALL_DESCS")"; then
   AVISADOS="${AVISADOS}${APROBADOR_LOGIN},"
 else
   anotar_fallo "$APROBADOR_LOGIN" "el webhook de n8n no acepto el mensaje"
