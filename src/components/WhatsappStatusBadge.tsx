@@ -1,7 +1,10 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { adminClientIds, canAdminister, type AppUser } from "@/lib/firestoreUsers";
-import { estaViejo, getWhatsappStatuses, type WhatsappStatus } from "@/lib/whatsappStatus";
+import {
+  dispararRevisionWhatsapp, estaViejo, getWhatsappStatuses, pideRevision, type WhatsappStatus,
+} from "@/lib/whatsappStatus";
 
 // ---------------------------------------------------------------------------
 // Conexión de WhatsApp (Evolution API), en la barra de arriba.
@@ -65,6 +68,13 @@ export function WhatsappStatusBadge({ appUser }: { appUser: AppUser | null }) {
     refetchIntervalInBackground: true,
   });
 
+  // El cron de GitHub casi nunca corre en este repo: la pestaña abierta pide la
+  // revisión cuando el dato envejece, y el refetch de cada minuto la recoge.
+  const hayQueRevisar = !!data && pideRevision(data);
+  useEffect(() => {
+    if (esAdmin && hayQueRevisar) void dispararRevisionWhatsapp();
+  }, [esAdmin, hayQueRevisar]);
+
   if (!esAdmin || !data) return null;
 
   const suyas = adminClientIds(appUser);
@@ -94,7 +104,7 @@ export function WhatsappStatusBadge({ appUser }: { appUser: AppUser | null }) {
     "Conexión de WhatsApp (Evolution API)",
     ...visibles.map(lineaDe),
     peor === "rojo" && "Mientras siga desconectado, los avisos por WhatsApp NO llegan.",
-    "Se revisa cada ~5 minutos.",
+    "Se revisa cada ~5 minutos mientras el dashboard esté abierto.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -104,7 +114,7 @@ export function WhatsappStatusBadge({ appUser }: { appUser: AppUser | null }) {
       className={cn(
         "flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium",
         peor === "rojo"
-          ? "border border-red-400 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-950/50 dark:text-red-300"
+          ? "animate-pulse border border-red-500 bg-red-100 font-semibold text-red-700 motion-reduce:animate-none dark:border-red-600 dark:bg-red-950/60 dark:text-red-300"
           : peor === "ambar"
             ? "text-amber-700 dark:text-amber-300"
             : "text-muted-foreground",
@@ -112,7 +122,7 @@ export function WhatsappStatusBadge({ appUser }: { appUser: AppUser | null }) {
       title={titulo}
       role="status"
     >
-      <span className="relative flex h-2.5 w-2.5 shrink-0">
+      <span className={cn("relative flex shrink-0", peor === "rojo" ? "h-3.5 w-3.5" : "h-2.5 w-2.5")}>
         {(peor === "verde" || peor === "rojo") && (
           <span
             className={cn(
@@ -121,7 +131,13 @@ export function WhatsappStatusBadge({ appUser }: { appUser: AppUser | null }) {
             )}
           />
         )}
-        <span className={cn("relative inline-flex h-2.5 w-2.5 rounded-full", COLOR_PUNTO[peor])} />
+        <span
+          className={cn(
+            "relative inline-flex h-full w-full rounded-full",
+            COLOR_PUNTO[peor],
+            peor === "rojo" && "ring-2 ring-red-300 dark:ring-red-800",
+          )}
+        />
       </span>
       {/* En verde basta el punto en pantallas chicas; el rojo siempre se lee. */}
       <span className={cn(peor === "verde" && "hidden lg:inline")}>{texto}</span>
