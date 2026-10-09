@@ -214,6 +214,11 @@ export interface RepoStatus {
    * workflow. No se pintan.
    */
   runsTerminados?: WorkflowRun[];
+  /**
+   * Documentación automática (workflow "Update Documentation"). null: el repo
+   * no la genera, o aún no ha corrido en main.
+   */
+  docs?: DocsStatus | null;
   error?: string;
 }
 
@@ -596,45 +601,84 @@ async function getAheadBy(owner: string, repo: string, base: string, head: strin
   }
 }
 
-// Ids de los workflows de deploy de cada repo. Se cachea porque la lista de
-// workflows de un repo cambia cada varios meses, y preguntarla en cada refresco
-// gastaba una llamada de rate limit para recibir siempre lo mismo.
-const workflowsDeployCache = new Map<string, number[]>();
+// Workflows de deploy y de documentación de cada repo. Se cachea porque la
+// lista de workflows de un repo cambia cada varios meses, y preguntarla en cada
+// refresco gastaba una llamada de rate limit para recibir siempre lo mismo.
+interface WorkflowsDelRepo {
+  deploy: number[];
+  /** El que regenera la documentación en sozu-docs. null: el repo no tiene. */
+  docs: number | null;
+}
+const workflowsCache = new Map<string, WorkflowsDelRepo>();
 
 /**
- * Los workflows cuyo nombre habla de deploy.
+ * Los workflows cuyo nombre habla de deploy, y el de documentación.
  *
- * Hace falta porque el listado general de runs viene ordenado por fecha y sin
- * filtrar: en un repo con syncs periódicos —este mismo corre cuatro— los
- * últimos veinte runs son todos de sync y el deploy no aparece por ningún
- * lado, aunque haya corrido hace diez minutos. Pidiendo los runs DE ESOS
+ * Los de deploy hacen falta porque el listado general de runs viene ordenado
+ * por fecha y sin filtrar: en un repo con syncs periódicos —este mismo corre
+ * cuatro— los últimos veinte runs son todos de sync y el deploy no aparece por
+ * ningún lado, aunque haya corrido hace diez minutos. Pidiendo los runs DE ESOS
  * workflows el ruido deja de competir.
  */
-async function idsDeWorkflowsDeploy(owner: string, repo: string): Promise<number[]> {
+async function workflowsDelRepo(owner: string, repo: string): Promise<WorkflowsDelRepo> {
   const clave = `${owner}/${repo}`;
-  const hit = workflowsDeployCache.get(clave);
+  const hit = workflowsCache.get(clave);
   if (hit) return hit;
   try {
     const { data } = await octokit.actions.listRepoWorkflows({ owner, repo, per_page: 100 });
-    const ids = data.workflows
-      .filter((w) => /deploy/i.test(w.name ?? ""))
-      .map((w) => w.id);
-    workflowsDeployCache.set(clave, ids);
-    return ids;
+    const docs = data.workflows.find(
+      (w) => w.path.endsWith("/update-docs.yml") || /documentation/i.test(w.name ?? ""),
+    );
+    const res: WorkflowsDelRepo = {
+      deploy: data.workflows.filter((w) => /deploy/i.test(w.name ?? "")).map((w) => w.id),
+      docs: docs?.state === "active" ? docs.id : null,
+    };
+    workflowsCache.set(clave, res);
+    return res;
   } catch {
     // Sin la lista se sigue adelante con el listado general: peor cobertura,
     // pero el resto de la tarjeta no tiene por qué caerse por esto.
-    return [];
+    return { deploy: [], docs: null };
   }
+}
+
+/**
+ * Cómo va la documentación automática de un repo.
+ *
+ * - `ok`: el último run en main terminó bien y es del commit que hoy está en main.
+ * - `actualizando`: hay uno corriendo o en cola.
+ * - `fallo`: el último terminó mal (la llave de Anthropic vencida da 401 aquí).
+ * - `desactualizada`: el último terminó bien, pero main ya avanzó y no hay run
+ *   para ese commit — el push no la disparó, o se canceló antes de empezar.
+ */
+export type EstadoDocs = "ok" | "actualizando" | "fallo" | "desactualizada";
+
+export interface DocsStatus {
+  estado: EstadoDocs;
+  run: WorkflowRun;
+}
+
+export function estadoDocs(run: WorkflowRun, shaMain?: string): EstadoDocs {
+  if (run.status === "in_progress" || run.status === "queued" || run.status === "waiting") return "actualizando";
+  if (run.conclusion !== "success") return "fallo";
+  if (shaMain && !mismoCommit(run.headSha, shaMain)) return "desactualizada";
+  return "ok";
 }
 
 export async function fetchRepoStatus(owner: string, repo: string, label: string): Promise<RepoStatus> {
   try {
-    const idsDeploy = await idsDeWorkflowsDeploy(owner, repo);
+    const { deploy: idsDeploy, docs: idDocs } = await workflowsDelRepo(owner, repo);
 
-    const [branchesResp, prsResp, ...runsPorWorkflow] = await Promise.all([
+    const [branchesResp, prsResp, docsResp, ...runsPorWorkflow] = await Promise.all([
       octokit.repos.listBranches({ owner, repo, per_page: 100 }),
       octokit.pulls.list({ owner, repo, state: "open", per_page: 20 }),
+      // Solo el último run en main: la documentación se genera de lo que está
+      // en producción. Si falla, la tarjeta sigue sin el punto de docs.
+      idDocs !== null
+        ? octokit.actions
+            .listWorkflowRuns({ owner, repo, workflow_id: idDocs, branch: "main", per_page: 1 })
+            .catch(() => null)
+        : Promise.resolve(null),
       // Un listado por workflow de deploy. Si el repo no tiene ninguno con ese
       // nombre, se cae al listado general de siempre.
       ...(idsDeploy.length
@@ -791,7 +835,13 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
       .slice(0, 20)
       .map(aRun);
 
-    return { owner, repo, label, branches, openPRs, latestRuns, runsTerminados };
+    const ultimoDocs = docsResp?.data.workflow_runs[0];
+    const docsRun = ultimoDocs ? aRun(ultimoDocs) : null;
+    const docs: DocsStatus | null = docsRun
+      ? { run: docsRun, estado: estadoDocs(docsRun, branches.find((b) => b.name === "main")?.lastCommitSha) }
+      : null;
+
+    return { owner, repo, label, branches, openPRs, latestRuns, runsTerminados, docs };
   } catch (err: unknown) {
     return {
       owner, repo, label, branches: [], openPRs: [], latestRuns: [], runsTerminados: [],
