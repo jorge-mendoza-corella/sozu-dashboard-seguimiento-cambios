@@ -20,28 +20,90 @@
  */
 import { useEffect, useRef, useState } from "react";
 import "./personaje.css";
+import { EVENTO_FESTEJO, type DetalleFestejo } from "@/lib/festejoDeploy";
 
-type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar";
+const COLORES_CONFETI = ["#f59e0b", "#ef4444", "#22d3ee", "#a855f7", "#22c55e", "#facc15", "#3b82f6", "#ec4899"];
+
+/** Lluvia de confeti a pantalla completa (WAAPI: transform/opacity, se limpia solo). */
+function lanzarConfeti() {
+  const capa = document.createElement("div");
+  capa.setAttribute("aria-hidden", "true");
+  capa.style.cssText = "position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:60";
+  document.body.appendChild(capa);
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  let ultimo = 0;
+  for (let i = 0; i < 160; i++) {
+    const p = document.createElement("i");
+    const w = 6 + Math.random() * 6;
+    p.style.cssText = `position:absolute;left:0;top:0;width:${w}px;height:${w * (Math.random() < 0.5 ? 1.6 : 0.6)}px;` +
+      `background:${COLORES_CONFETI[i % COLORES_CONFETI.length]};border-radius:${Math.random() < 0.3 ? "50%" : "1px"}`;
+    capa.appendChild(p);
+    const x0 = Math.random() * W;
+    const deriva = (Math.random() - 0.5) * 260;
+    const giro = (Math.random() - 0.5) * 1440;
+    const dur = 3400 + Math.random() * 2600;
+    const espera = Math.random() * 1400;
+    ultimo = Math.max(ultimo, dur + espera);
+    p.animate(
+      [
+        { transform: `translate(${x0}px, -20px) rotate(0deg)`, opacity: 1 },
+        { transform: `translate(${x0 + deriva * 0.6}px, ${H * 0.55}px) rotate(${giro * 0.6}deg)`, opacity: 1, offset: 0.6 },
+        { transform: `translate(${x0 + deriva}px, ${H + 30}px) rotate(${giro}deg)`, opacity: 0 },
+      ],
+      // Caída pareja (lineal): es movimiento constante, no una entrada de UI.
+      { duration: dur, delay: espera, easing: "linear", fill: "both" },
+    );
+  }
+  setTimeout(() => capa.remove(), ultimo + 200);
+}
+
+type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo";
 export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido";
 type Dialogo = { id: number; texto: string; tipo: "grito" | "habla" | "zzz" };
 
-/** Lo que dice según lo que hace. Las groserías son de oficina, leves. */
+/** Lo que dice según lo que hace. Groserías de oficina mexicana: leves, nada de insultos. */
 const FRASES = {
-  volar: ["¡Wiiiii!", "¡Yujuuu!", "¡Ahí voy!", "¡Al infinito… y a prod!", "¡Más rápido que un hotfix!", "¡Arribaaa!", "¡Esto sí es deploy continuo!"],
-  techo: ["¡Uff!", "¡Ay, mi cabeza!", "¡Rebote!"],
-  aterrizar: ["Aterrizaje perfecto.", "Pies en la tierra.", "¡Tierra firme!"],
-  caminar: [
-    "¿Alguien revisó ese PR?",
-    "Hmm… ¿y si refactorizo?",
-    "Los docs no se escriben solos.",
-    "Ese bug lo vi venir.",
-    "Todo verde en CI… por ahora.",
-    "Paso a pasito, commit a commit.",
+  volar: [
+    "¡Wiiiii!", "¡Yujuuu!", "¡Ahí voy, cabrones!", "¡Al infinito… y a prod!", "¡Más rápido que un hotfix!",
+    "¡Arribaaa!", "¡Esto sí es deploy continuo!", "¡A huevo, a volar!", "¡No mames, qué vista!",
+    "¡Quítense que llevo prisa!", "¡Soy un pinche cohete!", "¡Vuelo más alto que el uptime!",
+    "¡Wuuu, sin tests ni miedo!", "¡Qué chingón es volar!",
   ],
-  aburrido: ["Qué hueva…", "¡Chin! Nadie me pregunta nada.", "Me lleva… qué aburrido.", "¿Y si mejor me echo un deploy?", "¡Ah, caray! Ni un bug.", "Pinche silencio."],
-  hover: ["¿En qué te ayudo?", "¿Le pregunto al código?", "¡Pregúntame!"],
+  techo: ["¡Uff!", "¡Ay, mi cabeza!", "¡Rebote!", "¡Uta madre, el techo!", "¡Chale, otra vez el techo!", "¡Auch, cabrón!"],
+  pared: ["¡Vuelta en U!", "¡Pared a la vista!", "¡Ups, por acá no!", "¡Ni madres, me regreso!"],
+  aterrizar: ["Aterrizaje perfecto.", "Pies en la tierra.", "¡Tierra firme!", "¡Clavado, a huevo!", "10 de 10 el aterrizaje.", "¡Ni se despeinó el copete!"],
+  caminar: [
+    "¿Alguien revisó ese PR?", "Hmm… ¿y si refactorizo?", "Los docs no se escriben solos.", "Ese bug lo vi venir.",
+    "Todo verde en CI… por ahora.", "Paso a pasito, commit a commit.", "¿Qué pedo con ese merge?",
+    "Pinche conflicto de merge…", "Ese console.log no se va a borrar solo.", "¿Quién dejó un TODO del 2024?",
+    "Estimé dos días… ya van tres semanas.", "Funciona en mi máquina, ¿eh?", "Chale, otro hotfix el viernes.",
+    "Me vale, yo hago rebase.",
+  ],
+  aburrido: [
+    "Qué hueva…", "¡Chin! Nadie me pregunta nada.", "Me lleva… qué aburrido.", "¿Y si mejor me echo un deploy?",
+    "¡Ah, caray! Ni un bug.", "Pinche silencio.", "Ni madres, ¿nadie tiene dudas?", "Me estoy oxidando, cabrón.",
+    "¿Qué pedo, ya nadie programa?", "Uta, ni un PR en horas.", "Chale, puro scroll y nada de preguntas.",
+    "Ya ni el CI me pela.", "Me vale madre, me voy a dormir.",
+  ],
+  hover: ["¿En qué te ayudo?", "¿Le pregunto al código?", "¡Pregúntame!", "¿Qué pedo, qué necesitas?", "A ver, suéltalo.", "¿Otro bug, cabrón?"],
 } as const;
-const una = (l: readonly string[]) => l[Math.floor(Math.random() * l.length)];
+
+/** Gritos de festejo cuando un repo llega a PRD. */
+const FRASES_DEPLOY = [
+  (r: string) => `¡${r} en PRD, a huevo!`,
+  (r: string) => `¡Deploy chingón de ${r}!`,
+  (r: string) => `¡No mames, ${r} ya está en producción!`,
+  (r: string) => `¡${r} sin rollback, cabrones!`,
+  (r: string) => `¡Otro deploy limpio de ${r}!`,
+  (r: string) => `¡Aumento para el equipo de ${r}!`,
+  (r: string) => `¡${r} vuela como yo!`,
+  (r: string) => `¡Qué pinche nivel, ${r}!`,
+  (r: string) => `¡${r} en vivo y ni un error!`,
+  (r: string) => `¡Viernes de deploy y ${r} ni tembló!`,
+];
+const signoAzar = () => (Math.random() < 0.5 ? -1 : 1) as 1 | -1;
+const una = <T,>(l: readonly T[]): T => l[Math.floor(Math.random() * l.length)];
 
 interface Props {
   /** El chat está abierto: el personaje se queda quieto donde está. */
@@ -82,10 +144,21 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     const derecha = () => window.innerWidth - TAM - MARGEN;
 
     if (reducido) {
+      // Sin huracán ni confeti: solo el grito.
+      const alFestejo = (e: Event) => {
+        const repo = (e as CustomEvent<DetalleFestejo>).detail?.repo ?? "el repo";
+        setAnimo("feliz");
+        setDialogo({ id: Date.now(), texto: una(FRASES_DEPLOY)(repo), tipo: "grito" });
+        setTimeout(() => setDialogo(null), 4000);
+      };
+      window.addEventListener(EVENTO_FESTEJO, alFestejo);
       const colocar = () => { el.style.transform = `translate3d(${MARGEN + 8}px, ${piso()}px, 0)`; };
       colocar();
       window.addEventListener("resize", colocar);
-      return () => window.removeEventListener("resize", colocar);
+      return () => {
+        window.removeEventListener("resize", colocar);
+        window.removeEventListener(EVENTO_FESTEJO, alFestejo);
+      };
     }
 
     // Arranca entrando desde la izquierda, a media altura.
@@ -99,6 +172,10 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       pose: "volar" as Pose,
       hasta: 0, // fin de la pose temporal (ms)
       siguiente: "despegar" as Pose, // qué sigue después de agacharse
+      festejos: [] as string[], // repos por festejar (llegan por evento)
+      festejoRepo: "",
+      festejoInicio: 0,
+      festejoTheta: 0,
       proximaCurva: 0,
       ganasDeAterrizar: performance.now() + azar(14_000, 26_000),
       inclinado: 0, // grados, suavizado
@@ -151,6 +228,18 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       previo = ahora;
       if (pausaRef.current) return;
 
+      // Festejo pendiente: interrumpe lo que esté haciendo.
+      if (s.festejos.length && s.pose !== "festejo") {
+        s.festejoRepo = s.festejos.shift()!;
+        s.festejoInicio = ahora;
+        s.festejoTheta = Math.atan2(s.y - window.innerHeight / 2, s.x - window.innerWidth / 2);
+        cambiarPose("festejo", 6500);
+        ponerAnimo("grito");
+        lanzarConfeti();
+        decir(una(FRASES_DEPLOY)(s.festejoRepo), "grito", 2000);
+        proximaFrase = ahora + 2100;
+      }
+
       const fin = s.hasta && ahora >= s.hasta;
 
       switch (s.pose) {
@@ -184,6 +273,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
             s.dir = (s.x <= MARGEN ? 1 : -1) as 1 | -1;
             s.angulo = Math.max(-1, Math.min(1, -s.angulo * 0.5 + azar(-0.45, 0.45)));
             s.vel = azar(...VEL_VUELO);
+            if (!finDialogo && Math.random() < 0.25) decir(una(FRASES.pared), "habla", 1400);
           }
           // Techo: voltereta.
           if (s.y <= TECHO && s.pose === "volar") {
@@ -205,6 +295,30 @@ export function AgenteVolador({ pausado, onClick }: Props) {
               cambiarPose("agachar", 150);
               s.siguiente = "despegar";
             }
+          }
+          break;
+        }
+        case "festejo": {
+          // Huracán: espiral alrededor del centro, el radio crece y se cierra.
+          const t = Math.min(1, (ahora - s.festejoInicio) / 6500);
+          const cx = window.innerWidth / 2 - TAM / 2;
+          const cy = Math.max(TECHO + 120, window.innerHeight / 2 - TAM / 2);
+          const radio = 40 + Math.sin(t * Math.PI) * Math.min(260, window.innerWidth / 4);
+          s.festejoTheta += dt * 7.5;
+          const tx = cx + Math.cos(s.festejoTheta) * radio;
+          const ty = cy + Math.sin(s.festejoTheta) * radio * 0.55;
+          s.x += (tx - s.x) * Math.min(1, dt * 6);
+          s.y += (ty - s.y) * Math.min(1, dt * 6);
+          s.dir = (Math.sin(s.festejoTheta) > 0 ? -1 : 1) as 1 | -1;
+          if (!finDialogo && ahora >= proximaFrase) {
+            decir(una(FRASES_DEPLOY)(s.festejoRepo), "grito", 1900);
+            proximaFrase = ahora + 2000;
+          }
+          if (fin) {
+            cambiarPose("volar");
+            s.angulo = azar(-0.9, 0.3);
+            s.vel = 260;
+            s.dir = signoAzar();
           }
           break;
         }
@@ -248,7 +362,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         setDialogo(null);
         if (animoActual === "grito") ponerAnimo("feliz");
       }
-      if (!finDialogo && ahora >= proximaFrase) {
+      if (!finDialogo && ahora >= proximaFrase && s.pose !== "festejo") {
         if (s.pose === "volar") {
           if (Math.random() < 0.6) {
             ponerAnimo("grito");
@@ -275,7 +389,9 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       const objetivo =
         s.pose === "volar" || s.pose === "despegar"
           ? Math.max(25, Math.min(155, 90 + (s.angulo * 180) / Math.PI))
-          : 0;
+          : s.pose === "festejo"
+            ? 70
+            : 0;
       s.inclinado += (objetivo - s.inclinado) * Math.min(1, dt * 7);
 
       el.style.transform = `translate3d(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px, 0)`;
@@ -289,6 +405,14 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       if (orientacion.current) orientacion.current.style.transform = `scaleX(${s.dir})`;
     };
 
+    const alFestejo = (e: Event) => {
+      const repo = (e as CustomEvent<DetalleFestejo>).detail?.repo ?? "el repo";
+      // Con el chat abierto (pausa) solo cae el confeti; el huracán espera.
+      if (pausaRef.current) lanzarConfeti();
+      s.festejos.push(repo);
+    };
+    window.addEventListener(EVENTO_FESTEJO, alFestejo);
+
     frame = requestAnimationFrame(paso);
     const alRedimensionar = () => {
       s.x = Math.min(s.x, derecha());
@@ -298,6 +422,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     return () => {
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", alRedimensionar);
+      window.removeEventListener(EVENTO_FESTEJO, alFestejo);
     };
   }, []);
 
