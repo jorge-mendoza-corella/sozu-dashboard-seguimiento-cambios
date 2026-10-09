@@ -1,5 +1,5 @@
 import {
-  Settings, Building2, FolderTree, Receipt, Coins, MessageSquare, Palette,
+  Settings, Building2, FolderTree, Receipt, Coins, MessageSquare, Palette, Bot,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
@@ -10,6 +10,7 @@ import { PricingFeaturesSection } from "@/components/config/PricingFeaturesSecti
 import { FacturapiSection } from "@/components/config/FacturapiSection";
 import { NotificationsSection } from "@/components/config/NotificationsSection";
 import { BrandingSection } from "@/components/config/BrandingSection";
+import { AgenteAccesoSection } from "@/components/config/AgenteAccesoSection";
 import { useClientScope } from "@/hooks/useClients";
 
 /**
@@ -26,6 +27,7 @@ const TABS = [
   { value: "marca", label: "Marca", icon: Palette, soloGlobal: false },
   { value: "notificaciones", label: "Notificaciones", icon: MessageSquare, soloGlobal: false },
   { value: "facturacion", label: "Facturación", icon: Receipt, soloGlobal: true },
+  { value: "agente", label: "Agente IA", icon: Bot, soloGlobal: true },
 ] as const;
 
 /**
@@ -83,6 +85,9 @@ export function ConfiguracionPage() {
             </TabsContent>
             <TabsContent value="facturacion">
               <FacturapiSection />
+            </TabsContent>
+            <TabsContent value="agente">
+              <AgenteAccesoSection />
             </TabsContent>
           </>
         )}

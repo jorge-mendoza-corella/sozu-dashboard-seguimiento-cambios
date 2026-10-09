@@ -16,6 +16,7 @@ import { ActionsUsoBadge } from "@/components/ActionsUsoBadge";
 import { WhatsappStatusBadge } from "@/components/WhatsappStatusBadge";
 import { useNuevaVersion } from "@/hooks/useNuevaVersion";
 import { BuildNotifier } from "@/components/codemagic/BuildNotifier";
+import { AgenteRepos } from "@/components/agente/AgenteRepos";
 
 // Cada item dice quién lo ve: el root, cualquier administrador (global o de
 // empresa), o todo el mundo. Las rutas repiten el corte en App.tsx.
@@ -272,6 +273,9 @@ export function AppLayout({ children }: Props) {
       </footer>
       {/* Avisos de builds y publicaciones de apps, en cualquier pestaña. */}
       <BuildNotifier />
+      {/* Agente de repos: con el usuario REAL, no el impersonado — la función
+          valida el token de quien está logueado. */}
+      <AgenteRepos email={realUser?.email} />
     </div>
   );
 }

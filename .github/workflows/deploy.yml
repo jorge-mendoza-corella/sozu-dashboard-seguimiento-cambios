@@ -34,6 +34,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Historia suficiente para comparar contra el push anterior
+          # (el paso de Cloud Functions solo corre si cambió functions/).
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -96,6 +100,21 @@ jobs:
         # (serviceusage.services.get / firebaserules.admin), despliega las reglas a mano.
         continue-on-error: true
         run: npx -y firebase-tools@latest deploy --only firestore:rules --project sozu-admin-dev --non-interactive
+
+      - name: Deploy Cloud Functions (agente de repos)
+        # Solo cuando cambió algo en functions/: un deploy de funciones tarda
+        # minutos y no tiene caso repetirlo en cada cambio del front. Igual que
+        # las reglas, no bloquea el hosting: si el service account no tiene
+        # roles de Cloud Functions / Secret Manager, falla aquí y se ve en el log.
+        continue-on-error: true
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && \
+             ! git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" -- functions firebase.json | grep -q .; then
+            echo "Sin cambios en functions/; se omite."
+            exit 0
+          fi
+          npm ci --prefix functions
+          npx -y firebase-tools@latest deploy --only functions --project sozu-admin-dev --non-interactive --force
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
