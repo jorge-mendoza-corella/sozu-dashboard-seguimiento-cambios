@@ -57,7 +57,7 @@
 
 /* ── Volar: puño robótico al frente, piernas atrás, capa ondeando ─────────── */
 /* Ligeramente por delante de la cara (hacia el pecho): puño estirado, no tapándola. */
-[data-pose="volar"] .pj-brazo-robot { transform: rotate(-160deg); }
+[data-pose="volar"] .pj-brazo-robot { transform: rotate(-163deg) translateY(17px); }
 [data-pose="volar"] .pj-antebrazo   { transform-box: view-box; transform-origin: 58.1px 51.6px; transition: transform 240ms var(--ease-out); }
 .pj-brazo       { transform: rotate(14deg); }
 [data-pose="volar"] .pj-pierna-a    { transform: rotate(10deg); }
