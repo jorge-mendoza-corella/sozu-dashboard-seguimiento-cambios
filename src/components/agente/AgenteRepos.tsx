@@ -24,6 +24,7 @@ import {
   MAX_TITULO, mensajeDeError, permisosAgente, preguntar, renombrarConversacion, SUGERENCIAS,
   type ConversacionAgente, type DocumentoAgente, type HerramientaUsada, type MensajeAgente, type PermisosAgente,
 } from "@/lib/agenteRepos";
+import { AgenteVolador } from "./AgenteVolador";
 
 /**
  * Documentos citados: con el permiso "Ver documentación" son enlaces que abren
@@ -64,22 +65,9 @@ export function AgenteRepos({ email }: Props) {
 
   return (
     <Dialog.Root open={abierto} onOpenChange={setAbierto}>
-      <Dialog.Trigger asChild>
-        <button
-          type="button"
-          aria-keyshortcuts="Alt+K"
-          title="Agente de repos (Alt+K)"
-          className={cn(
-            "fixed bottom-5 right-5 z-40 inline-flex h-12 items-center gap-2 rounded-full border bg-background/95 px-4 text-sm font-semibold",
-            "shadow-[0_8px_24px_-10px_hsl(var(--primary)/0.55)] backdrop-blur transition-[box-shadow,transform] duration-200",
-            "hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-10px_hsl(var(--primary)/0.65)]",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-          )}
-        >
-          <Bot className="h-5 w-5 text-primary" />
-          <span className="hidden sm:inline">Agente de repos</span>
-        </button>
-      </Dialog.Trigger>
+      {/* El personaje vuela por la pantalla; clic abre el chat. Va en z-30,
+          debajo de los botones flotantes del dashboard (Actualizar, z-40). */}
+      <AgenteVolador pausado={abierto} onClick={() => setAbierto(true)} />
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         <Dialog.Content

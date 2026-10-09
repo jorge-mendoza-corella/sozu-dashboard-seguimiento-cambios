@@ -4,8 +4,9 @@ import {
   UserPlus, Trash2, Shield, Eye, Loader2, FolderGit2, ChevronDown, ChevronUp, GitBranch,
   GitPullRequest, UserCheck, GitMerge, Rocket, Smartphone, KeyRound, ExternalLink, Building2, Eye as EyeIcon,
   Search, X,
-  MessageCircle,
+  MessageCircle, Bot,
 } from "lucide-react";
+import { PermisosIaChips } from "@/components/agente/PermisosIaChips";
 import { cn } from "@/lib/utils";
 import { validateGithubToken } from "@/lib/githubAuth";
 import { Button } from "@/components/ui/button";
@@ -1152,6 +1153,16 @@ export function UsersPage() {
                       <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
                         Sin permisos explícitos: por compatibilidad, {u.role === "viewer" ? "Viewer = nada permitido" : `${ROLE_LABEL[u.role]} = todo permitido`}. Al tocar un chip se fijan explícitos.
                       </p>
+                    )}
+
+                    {/* Permisos de IA: solo el root los reparte (agente_config/acceso). */}
+                    {esRootReal && (
+                      <>
+                        <p className="mb-2 mt-4 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                          <Bot className="h-3.5 w-3.5" /> Permisos de IA
+                        </p>
+                        <PermisosIaChips email={u.email} disabled={busy === u.email} />
+                      </>
                     )}
                       </>
                     )}

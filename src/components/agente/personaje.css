@@ -1,0 +1,139 @@
+/*
+ * Personaje del agente de repos (AgenteVolador.tsx).
+ *
+ * La física (posición, inclinación, hacia dónde mira) la mueve JS por frame
+ * con `transform`; aquí solo viven las POSES, que cambian pocas veces por
+ * segundo: el SVG lleva `data-pose` y cada parte se acomoda con transiciones.
+ * Las piezas giran sobre su articulación con `transform-box: view-box` y un
+ * `transform-origin` en coordenadas del viewBox (96×96).
+ */
+
+.agente-volador {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 80px;
+  height: 80px;
+  will-change: transform;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.agente-volador:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: 9999px;
+}
+
+.agente-volador__orientacion {
+  width: 100%;
+  height: 100%;
+  transition: transform 180ms var(--ease-out);
+}
+.agente-volador__inclinacion {
+  width: 100%;
+  height: 100%;
+}
+.agente-volador__sprite {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.28));
+  transform-origin: 50% 92%;
+  transition: transform 160ms var(--ease-out);
+}
+
+/* Articulaciones */
+.pj-brazo-robot { transform-box: view-box; transform-origin: 58px 39px; transition: transform 240ms var(--ease-out); }
+.pj-antebrazo   { transform-box: view-box; transform-origin: 58.1px 51.6px; transition: transform 240ms var(--ease-out); }
+.pj-brazo       { transform-box: view-box; transform-origin: 38px 39px; transition: transform 240ms var(--ease-out); }
+.pj-pierna-a    { transform-box: view-box; transform-origin: 45px 63px; transition: transform 200ms var(--ease-out); }
+.pj-pierna-b    { transform-box: view-box; transform-origin: 52px 63px; transition: transform 200ms var(--ease-out); }
+.pj-capa        { transform-box: view-box; transform-origin: 48px 37px; }
+
+/* ── Volar: puño robótico al frente, piernas atrás, capa ondeando ─────────── */
+/* Ligeramente por delante de la cara (hacia el pecho): puño estirado, no tapándola. */
+[data-pose="volar"] .pj-brazo-robot { transform: rotate(-160deg); }
+[data-pose="volar"] .pj-antebrazo   { transform-box: view-box; transform-origin: 58.1px 51.6px; transition: transform 240ms var(--ease-out); }
+.pj-brazo       { transform: rotate(14deg); }
+[data-pose="volar"] .pj-pierna-a    { transform: rotate(10deg); }
+[data-pose="volar"] .pj-pierna-b    { transform: rotate(-4deg); }
+[data-pose="volar"] .pj-capa        { animation: pj-capa 420ms ease-in-out infinite alternate; }
+@keyframes pj-capa {
+  from { transform: skewX(-10deg) scaleY(1.04); }
+  to   { transform: skewX(6deg) scaleY(0.96); }
+}
+
+/* ── Caminar: piernas y brazos alternados ─────────────────────────────────── */
+[data-pose="caminar"] .pj-pierna-a    { animation: pj-paso 520ms ease-in-out infinite alternate; }
+[data-pose="caminar"] .pj-pierna-b    { animation: pj-paso 520ms ease-in-out infinite alternate-reverse; }
+[data-pose="caminar"] .pj-antebrazo   { transform-box: view-box; transform-origin: 58.1px 51.6px; transition: transform 240ms var(--ease-out); }
+.pj-brazo       { animation: pj-paso 520ms ease-in-out infinite alternate-reverse; }
+[data-pose="caminar"] .pj-brazo-robot { animation: pj-braceo 520ms ease-in-out infinite alternate; }
+[data-pose="caminar"] .agente-volador__cuerpo { animation: pj-rebote 260ms ease-in-out infinite alternate; }
+@keyframes pj-paso   { from { transform: rotate(-22deg); } to { transform: rotate(22deg); } }
+@keyframes pj-braceo { from { transform: rotate(-16deg); } to { transform: rotate(16deg); } }
+@keyframes pj-rebote { from { transform: translateY(0); } to { transform: translateY(-1.5px); } }
+
+/* ── Quieto: respira, con el puño robótico en la barbilla (pensativo) ──────── */
+[data-pose="quieto"] .pj-brazo-robot { transform: rotate(-12deg); }
+[data-pose="quieto"] .pj-antebrazo   { transform: rotate(-150deg); }
+[data-pose="quieto"] .agente-volador__cuerpo { animation: pj-respira 2.4s ease-in-out infinite alternate; }
+@keyframes pj-respira { from { transform: translateY(0); } to { transform: translateY(-1px); } }
+
+/* ── Agacharse antes de brincar / al aterrizar ───────────────────────────── */
+.agente-volador__sprite[data-pose="agachar"] { transform: scale(1.1, 0.84); }
+[data-pose="agachar"] .pj-brazo-robot { transform: rotate(-30deg); }
+[data-pose="agachar"] .pj-antebrazo   { transform-box: view-box; transform-origin: 58.1px 51.6px; transition: transform 240ms var(--ease-out); }
+.pj-brazo       { transform: rotate(30deg); }
+
+/* ── Despegar: estirado, puño arriba ─────────────────────────────────────── */
+.agente-volador__sprite[data-pose="despegar"] { transform: scale(0.92, 1.1); }
+[data-pose="despegar"] .pj-brazo-robot { transform: rotate(-150deg); }
+
+/* ── Girar: voltereta al tocar el techo para impulsarse hacia abajo ───────── */
+.agente-volador__sprite[data-pose="girar"] { animation: pj-giro 520ms var(--ease-in-out); transform-origin: 50% 50%; }
+[data-pose="girar"] .pj-brazo-robot { transform: rotate(-150deg); }
+@keyframes pj-giro { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* Ojo robótico: late suave, siempre (es lo "vivo" incluso quieto). */
+.pj-ojo-robot { animation: pj-ojo 1.8s ease-in-out infinite alternate; }
+@keyframes pj-ojo { from { opacity: 0.55; } to { opacity: 1; } }
+
+/* Globo con el nombre al pasar el mouse o enfocarlo. */
+.agente-volador__globo {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  translate: -50% 0;
+  white-space: nowrap;
+  border-radius: 9999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: hsl(var(--foreground));
+  color: hsl(var(--background));
+  opacity: 0;
+  transform: translateY(4px) scale(0.96);
+  transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
+  pointer-events: none;
+}
+.agente-volador:focus-visible .agente-volador__globo,
+.agente-volador[data-pausa] .agente-volador__globo { opacity: 1; transform: none; }
+
+@media (hover: hover) and (pointer: fine) {
+  .agente-volador:hover .agente-volador__sprite { scale: 1.06; }
+}
+
+/* Movimiento reducido: el personaje se queda parado; nada de piernas ni capa.
+   El ojo sigue latiendo (es solo opacidad). */
+@media (prefers-reduced-motion: reduce) {
+  .agente-volador__sprite,
+  .agente-volador__sprite *,
+  .agente-volador__orientacion { animation: none !important; transition: none !important; }
+  .pj-ojo-robot { animation: pj-ojo 1.8s ease-in-out infinite alternate !important; }
+}
