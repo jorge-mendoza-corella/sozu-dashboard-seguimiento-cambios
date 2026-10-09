@@ -466,5 +466,41 @@ service cloud.firestore {
       allow write: if request.auth != null
         && request.auth.token.email == 'jorge.mendoza@sozu.com';
     }
+
+    // ── Agente de repos (Cloud Function `agenteRepos`) ──────────────────────
+    // Quién lo usa: `agente_config/acceso.emails`. Solo el root lo escribe; cada
+    // persona de la lista puede leer el doc para saber que tiene acceso (el
+    // botón del agente se pinta con eso). La función revalida en el servidor.
+    match /agente_config/{docId} {
+      allow get: if esRootVerificado()
+        || (docId == 'acceso' && request.auth != null
+            && resource.data.emails is list
+            && request.auth.token.email in resource.data.emails);
+      allow write: if esRootVerificado();
+    }
+
+    // Cupo por hora: solo lo toca la función (admin SDK).
+    match /agente_uso/{email} {
+      allow read, write: if false;
+    }
+
+    // Conversaciones: las crea y llena la función. El dueño las lee, las
+    // renombra o fija, y las borra (mensajes incluidos).
+    match /agente_conversaciones/{id} {
+      allow read, delete: if request.auth != null
+        && resource.data.owner == request.auth.token.email;
+      allow update: if request.auth != null
+        && resource.data.owner == request.auth.token.email
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['titulo', 'fijada'])
+        && request.resource.data.titulo is string
+        && request.resource.data.titulo.size() > 0
+        && request.resource.data.titulo.size() <= 80
+        && request.resource.data.fijada is bool;
+
+      match /mensajes/{mensajeId} {
+        allow read, delete: if request.auth != null
+          && get(/databases/$(database)/documents/agente_conversaciones/$(id)).data.owner == request.auth.token.email;
+      }
+    }
   }
 }
