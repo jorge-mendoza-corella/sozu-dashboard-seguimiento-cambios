@@ -249,110 +249,152 @@ export function AgenteVolador({ pausado, onClick }: Props) {
   );
 }
 
-/** Dibujo de pie y mirando a la derecha; las poses las mueve personaje.css. */
+/**
+ * Dibujo de pie y mirando a la derecha; las poses las mueve personaje.css.
+ * Proporciones de héroe: torso en V, extremidades que se adelgazan, todo con
+ * curvas. Las articulaciones (hombros 38/58,39 · codo 58.1,51.6 · caderas
+ * 45/52,63 · capa 48,37) están fijas: personaje.css gira sobre ellas.
+ */
 export function Personaje({ pose }: { pose: Pose }) {
   return (
     <svg viewBox="0 0 96 96" className="agente-volador__sprite" data-pose={pose} aria-hidden>
       <defs>
         <linearGradient id="pj-laton" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#f3d27a" />
-          <stop offset="0.55" stopColor="#c99a3b" />
+          <stop offset="0" stopColor="#fbe3a0" />
+          <stop offset="0.45" stopColor="#d4a446" />
           <stop offset="1" stopColor="#7a5418" />
         </linearGradient>
-        <linearGradient id="pj-metal" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#52525b" />
+        <linearGradient id="pj-metal" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#1f1f23" />
+          <stop offset="0.5" stopColor="#4b4b55" />
           <stop offset="1" stopColor="#18181b" />
         </linearGradient>
-        <linearGradient id="pj-camisa" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#8b929c" />
-          <stop offset="1" stopColor="#5f6670" />
-        </linearGradient>
         <linearGradient id="pj-acero" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#d4d4d8" />
-          <stop offset="1" stopColor="#71717a" />
+          <stop offset="0" stopColor="#e4e4e7" />
+          <stop offset="0.6" stopColor="#a1a1aa" />
+          <stop offset="1" stopColor="#52525b" />
+        </linearGradient>
+        <linearGradient id="pj-piel" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#f0c4a0" />
+          <stop offset="1" stopColor="#c98c65" />
+        </linearGradient>
+        <linearGradient id="pj-camisa" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#7d8591" />
+          <stop offset="0.55" stopColor="#9aa1ab" />
+          <stop offset="1" stopColor="#5c636e" />
+        </linearGradient>
+        <linearGradient id="pj-jean" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#1b3352" />
+          <stop offset="0.5" stopColor="#2b4f7a" />
+          <stop offset="1" stopColor="#172b45" />
+        </linearGradient>
+        <linearGradient id="pj-capa-g" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#b91c1c" />
+          <stop offset="1" stopColor="#5b0d0d" />
         </linearGradient>
         <radialGradient id="pj-brillo">
-          <stop offset="0" stopColor="#67e8f9" />
+          <stop offset="0" stopColor="#a5f3fc" />
+          <stop offset="0.4" stopColor="#22d3ee" />
           <stop offset="1" stopColor="#0891b2" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id="pj-cristal" cx="0.35" cy="0.35">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="0.5" stopColor="#cbd5e1" />
+          <stop offset="1" stopColor="#64748b" />
         </radialGradient>
       </defs>
 
       <g className="agente-volador__cuerpo">
-        {/* Capa */}
-        <path className="pj-capa" d="M38 37 Q48 34 58 37 L67 80 Q57 75 48 81 Q39 75 29 80 Z" fill="#7f1d1d" stroke="#450a0a" strokeWidth="0.8" />
+        {/* Capa: cae de los hombros con pliegues */}
+        <g className="pj-capa">
+          <path d="M39.5 36.5 C34 47 30.2 62 27.6 81.5 C32.5 78.6 37 82.4 41.6 79.8 C46 83 50.6 79.6 55.2 81.8 C56.6 66 57.6 51 57 36.5 Z" fill="url(#pj-capa-g)" />
+          <path d="M37 46 C34.6 58 33.4 68 33 79" fill="none" stroke="#3f0707" strokeWidth="0.6" opacity="0.6" />
+          <path d="M46 42 C45 56 44.6 68 45 80.6" fill="none" stroke="#3f0707" strokeWidth="0.6" opacity="0.5" />
+        </g>
 
-        {/* Brazo de atrás (de carne, manga de camisa) */}
+        {/* Brazo de atrás: manga arremangada y mano */}
         <g className="pj-brazo">
-          <rect x="35" y="38" width="6.5" height="22" rx="3.2" fill="#6b727c" />
-          <circle cx="38.2" cy="61" r="3.2" fill="#d9a07a" />
+          <path d="M35.4 38.6 C34.2 45 34.4 51.6 35.6 57.6 L40 57.6 C41 51.6 41.4 45 40.9 38.6 C39 37.2 37.2 37.2 35.4 38.6 Z" fill="url(#pj-camisa)" />
+          <path d="M35.3 55.6 C37 56.6 39 56.6 40.3 55.6 L40.1 58.2 C38.6 59 37 59 35.6 58.2 Z" fill="#6b727c" />
+          <path d="M35.8 58.4 C35.2 61.2 36.4 63.4 38.2 63.4 C40 63.4 41 61.4 40.4 58.4 Z" fill="url(#pj-piel)" />
         </g>
 
-        {/* Piernas */}
+        {/* Pierna de atrás */}
         <g className="pj-pierna-a">
-          <rect x="41.5" y="62" width="7" height="24" rx="2.4" fill="#1e3a5f" />
-          <ellipse cx="45.5" cy="87.5" rx="5.2" ry="2.8" fill="#1c1917" />
+          <path d="M41.4 63 C40.8 70 41.4 77 42.4 84 L47.2 84 C48.2 77 49 70 48.8 63 Z" fill="url(#pj-jean)" />
+          <path d="M42.2 83.2 C41.8 86 41.6 88.4 42.4 89.6 L49.8 89.6 C50.6 88.2 49.4 86.6 47.6 85.8 L47.4 83.2 Z" fill="#1c1917" />
+          <path d="M42.3 85 L47.5 85" stroke="#c99a3b" strokeWidth="0.6" />
         </g>
+        {/* Pierna de adelante */}
         <g className="pj-pierna-b">
-          <rect x="48.5" y="62" width="7" height="24" rx="2.4" fill="#24476f" />
-          <ellipse cx="53" cy="87.5" rx="5.2" ry="2.8" fill="#292524" />
+          <path d="M48.4 63 C47.8 70 48.4 77 49.4 84 L54.2 84 C55.2 77 56 70 55.8 63 Z" fill="url(#pj-jean)" />
+          <path d="M49.2 83.2 C48.8 86 48.6 88.4 49.4 89.6 L56.8 89.6 C57.6 88.2 56.4 86.6 54.6 85.8 L54.4 83.2 Z" fill="#292524" />
+          <path d="M49.3 85 L54.5 85" stroke="#c99a3b" strokeWidth="0.6" />
         </g>
 
-        {/* Torso: camisa gris con botones y parche de latón en el hombro */}
-        <path d="M37 36 Q48 32.5 59 36 L61.5 64.5 Q48 67.5 34.5 64.5 Z" fill="url(#pj-camisa)" />
-        <path d="M44 36 L48 41 L52 36" fill="none" stroke="#4b5260" strokeWidth="1.2" />
-        <line x1="48" y1="41" x2="48" y2="64" stroke="#4b5260" strokeWidth="0.7" />
-        {[45, 51, 57].map((y) => <circle key={y} cx="48" cy={y} r="0.9" fill="#c99a3b" />)}
-        <rect x="51" y="45" width="6" height="5" rx="0.8" fill="none" stroke="#4b5260" strokeWidth="0.7" />
+        {/* Torso en V: hombros anchos, cintura angosta */}
+        <path d="M36.2 37.4 C37.2 34.6 42 33.2 48 33.2 C54 33.2 58.8 34.6 59.8 37.4 C61 44.4 59.2 52.4 56.6 60.4 L39.4 60.4 C36.8 52.4 35 44.4 36.2 37.4 Z" fill="url(#pj-camisa)" />
+        <path d="M54 35 C57.6 42 57.6 52 55.4 60.2" fill="none" stroke="#4b5260" strokeWidth="0.5" opacity="0.5" />
+        {/* Cuello de camisa */}
+        <path d="M43.6 34 L48 39.6 L46.2 34.4 Z M52.4 34 L48 39.6 L49.8 34.4 Z" fill="#6b727c" />
+        <path d="M48 39.6 L48 60" stroke="#565d68" strokeWidth="0.6" />
+        {[44, 49.5, 55].map((y) => <circle key={y} cx="48.9" cy={y} r="0.85" fill="#d4a446" />)}
+        {/* Emblema de engrane en el pecho */}
+        <g transform="translate(42.6 44.6)">
+          <circle r="2.6" fill="url(#pj-laton)" />
+          {[0, 45, 90, 135].map((a) => (
+            <rect key={a} x="-0.7" y="-3.4" width="1.4" height="6.8" rx="0.4" fill="url(#pj-laton)" transform={`rotate(${a})`} />
+          ))}
+          <circle r="1.1" fill="#3f2a0b" />
+        </g>
+        {/* Cinturón con hebilla */}
+        <path d="M39.2 60 L56.8 60 L56.6 63.4 L39.4 63.4 Z" fill="#292018" />
+        <rect x="45.6" y="59.6" width="4.8" height="4.2" rx="1" fill="url(#pj-laton)" stroke="#5c3d0f" strokeWidth="0.4" />
 
-        {/* Cuello mecánico */}
-        <rect x="45" y="29" width="6.5" height="7.5" rx="1.5" fill="url(#pj-metal)" />
-        <line x1="46" y1="31.5" x2="50.5" y2="31.5" stroke="#c99a3b" strokeWidth="0.7" />
-        <line x1="46" y1="34" x2="50.5" y2="34" stroke="#c99a3b" strokeWidth="0.7" />
+        {/* Cuello mecánico con cables */}
+        <path d="M45 29.4 C45 32 44.6 34 44.2 35.6 L51.8 35.6 C51.4 34 51 32 51 29.4 Z" fill="url(#pj-metal)" />
+        <path d="M46 31 C47.6 31.8 48.6 31.8 50 31 M45.6 33.2 C47.4 34 48.8 34 50.4 33.2" fill="none" stroke="#d4a446" strokeWidth="0.6" />
 
-        {/* Cabeza */}
-        <ellipse cx="49" cy="20" rx="9.2" ry="11.2" fill="#e2ad86" />
-        {/* Media cara metálica (lado de atrás) con remaches */}
-        <path d="M40.2 15 Q39 25 43.5 30.5 L47.5 30.5 L46.5 22 L47.5 15 Z" fill="url(#pj-acero)" stroke="#c99a3b" strokeWidth="0.5" />
-        <circle cx="42.4" cy="18" r="0.6" fill="#e9c46a" />
-        <circle cx="42" cy="25" r="0.6" fill="#e9c46a" />
-        <circle cx="45" cy="29" r="0.6" fill="#e9c46a" />
-        <circle className="pj-ojo-robot" cx="44.2" cy="21.2" r="2.6" fill="url(#pj-brillo)" />
-        <circle cx="44.2" cy="21.2" r="0.9" fill="#a5f3fc" />
-        {/* Ojo, ceja dura y arrugas */}
-        <ellipse cx="53.4" cy="20.6" rx="1.5" ry="1.3" fill="#f8fafc" />
-        <circle cx="53.9" cy="20.7" r="0.85" fill="#3f4d3a" />
-        <path d="M50.5 17.6 Q53.5 16.2 56.6 17.8" fill="none" stroke="#1c1917" strokeWidth="1.5" strokeLinecap="round" />
-        <path d="M51 23.3 Q53 24.2 55 23.4" fill="none" stroke="#b9805d" strokeWidth="0.5" />
-        {/* Nariz larga */}
-        <path d="M56.3 18.8 Q62.2 23.6 57 25.6 Q56.4 25.7 56 25.2" fill="#d79b74" stroke="#b9805d" strokeWidth="0.5" />
-        {/* Boca seria */}
-        <path d="M52.6 28.1 L56 27.9" stroke="#7c4a33" strokeWidth="0.9" strokeLinecap="round" />
-        {/* Pelo negro peinado hacia atrás */}
-        <path d="M39.4 18 Q37 6.5 49 5.4 Q60.5 5 59.4 13.8 Q55 9.6 47.8 11.3 Q42.6 12.8 41.5 19 Z" fill="#111827" />
-        <path d="M43 8.4 Q50 5.8 57 8.6" fill="none" stroke="#374151" strokeWidth="0.8" />
-        {/* Goggles de latón en la frente */}
-        <rect x="39.6" y="11.2" width="20.4" height="2.9" rx="1.2" fill="url(#pj-laton)" />
-        <circle cx="48.5" cy="11.6" r="3.4" fill="url(#pj-laton)" />
-        <circle cx="48.5" cy="11.6" r="2.2" fill="#e5e7eb" />
-        <circle cx="55.6" cy="11.6" r="3.4" fill="url(#pj-laton)" />
-        <circle cx="55.6" cy="11.6" r="2.2" fill="#e5e7eb" />
-        <circle cx="47.8" cy="10.9" r="0.7" fill="#fff" />
-        <circle cx="54.9" cy="10.9" r="0.7" fill="#fff" />
+        {/* Cabeza: mandíbula marcada, nariz larga */}
+        <path d="M41 16 C41 9.4 45.4 6.6 50 6.8 C55.4 7.1 58.6 10.8 58.7 15.6 C58.8 18.4 61.6 20.6 61.4 22.8 C61.2 24.6 59.2 24.8 58.8 26 C58.2 29.6 55.6 31.8 52 32 C47.6 32.2 43.6 30.2 42.1 26.6 C40.7 23.4 41 19.6 41 16 Z" fill="url(#pj-piel)" />
+        <path d="M57.8 27.2 C56.4 29.4 54.6 30.6 52.4 30.8" fill="none" stroke="#a8704d" strokeWidth="0.5" />
+        <path d="M54.6 23.4 C55.6 24.4 56.6 24.6 57.6 24.4" fill="none" stroke="#a8704d" strokeWidth="0.45" />
+        {/* Media cara de acero con remaches y ojo que brilla */}
+        <path d="M41.2 15.4 C40.6 20.4 40.9 25.6 43.1 28.8 C44.6 30.8 46.4 31.7 48 31.8 L47.4 24.4 C46.2 22.2 46.3 19 47.7 16.2 Z" fill="url(#pj-acero)" stroke="#d4a446" strokeWidth="0.5" />
+        <path d="M43 18 C42.6 22 42.8 25.6 44.4 28.2" fill="none" stroke="#71717a" strokeWidth="0.4" />
+        {[[42.6, 17.2], [42.2, 25.4], [45.6, 29.6]].map(([x, y]) => <circle key={`${x}${y}`} cx={x} cy={y} r="0.55" fill="#f3d27a" />)}
+        <circle className="pj-ojo-robot" cx="44.8" cy="21.4" r="3" fill="url(#pj-brillo)" />
+        <circle cx="44.8" cy="21.4" r="1" fill="#ecfeff" />
+        {/* Ojo, ceja dura */}
+        <path d="M51.6 20.8 C52.4 19.6 54.6 19.4 55.6 20.6 C54.6 21.8 52.6 21.9 51.6 20.8 Z" fill="#f8fafc" />
+        <circle cx="54" cy="20.7" r="0.95" fill="#3b5240" />
+        <circle cx="54.3" cy="20.4" r="0.3" fill="#fff" />
+        <path d="M50.6 18.2 C52.6 16.6 55.4 16.6 57.4 18.2" fill="none" stroke="#111827" strokeWidth="1.6" strokeLinecap="round" />
+        <path d="M54.6 28.6 C55.6 28.2 56.6 28.2 57.4 28.5" fill="none" stroke="#6b3a24" strokeWidth="0.9" strokeLinecap="round" />
+        {/* Pelo: copete peinado hacia atrás */}
+        <path d="M40.4 18 C38.2 10.6 41.2 4.2 48.6 3.4 C55.4 2.6 61 6.2 60.2 12 C58 9.4 54.6 8.6 50.8 9.4 C46.4 10.4 43.4 12.8 42.4 18.6 Z" fill="#111827" />
+        <path d="M43 9 C46 5.8 51.4 4.8 56.4 6.6" fill="none" stroke="#4b5563" strokeWidth="0.8" strokeLinecap="round" />
+        {/* Goggles de latón */}
+        <path d="M40.6 13.6 C46 11.4 53 11 59.6 12.6 L59.4 15.2 C53 13.8 46.2 14.2 40.9 16.4 Z" fill="url(#pj-laton)" />
+        <circle cx="48.6" cy="12.6" r="3.6" fill="url(#pj-laton)" />
+        <circle cx="48.6" cy="12.6" r="2.4" fill="url(#pj-cristal)" />
+        <circle cx="55.8" cy="12.4" r="3.6" fill="url(#pj-laton)" />
+        <circle cx="55.8" cy="12.4" r="2.4" fill="url(#pj-cristal)" />
 
-        {/* Brazo robótico (adelante): el del puño de superhéroe */}
+        {/* Brazo robótico: hombrera, segmentos redondeados, puño */}
         <g className="pj-brazo-robot">
-          <circle cx="58" cy="39" r="4.8" fill="url(#pj-laton)" />
-          <rect x="54.8" y="40.5" width="6.6" height="11" rx="1.6" fill="url(#pj-metal)" />
-          <rect x="54.8" y="44" width="6.6" height="1.6" fill="url(#pj-laton)" />
+          <path d="M53.4 37.6 C53.6 34 56.4 32.6 59 33 C62 33.4 63.6 36 63.2 39 C62.8 41.6 60.6 42.6 58 42.4 C55.6 42.2 53.4 40.6 53.4 37.6 Z" fill="url(#pj-laton)" stroke="#6b4a14" strokeWidth="0.4" />
+          <path d="M55.4 39.6 C58 38.4 60.6 39.2 61.4 41 L60.6 50.6 C59 51.4 57.2 51.4 55.6 50.6 Z" fill="url(#pj-metal)" />
+          <path d="M55.6 44.2 C57.6 44.8 59.4 44.8 61 44.2" fill="none" stroke="#d4a446" strokeWidth="0.9" />
           <g className="pj-antebrazo">
-          <circle cx="58.1" cy="51.6" r="2.3" fill="url(#pj-laton)" />
-          <rect x="55.2" y="52.4" width="5.8" height="9" rx="1.4" fill="url(#pj-metal)" />
-          <line x1="58.1" y1="53.6" x2="58.1" y2="60.4" stroke="#22d3ee" strokeWidth="0.9" strokeLinecap="round" />
-          {/* Puño */}
-          <rect x="54" y="60.6" width="8.2" height="7.2" rx="2" fill="url(#pj-laton)" stroke="#5c3d0f" strokeWidth="0.5" />
-          <line x1="56" y1="61.4" x2="56" y2="67" stroke="#5c3d0f" strokeWidth="0.45" />
-          <line x1="58.1" y1="61.4" x2="58.1" y2="67" stroke="#5c3d0f" strokeWidth="0.45" />
-          <line x1="60.2" y1="61.4" x2="60.2" y2="67" stroke="#5c3d0f" strokeWidth="0.45" />
+            <circle cx="58.1" cy="51.6" r="2.6" fill="url(#pj-laton)" stroke="#6b4a14" strokeWidth="0.4" />
+            <path d="M55.6 52.8 C57.2 52 59 52 60.6 52.8 L61.6 60.4 C59.4 61.4 56.8 61.4 54.6 60.4 Z" fill="url(#pj-metal)" />
+            <path d="M58.1 54 L58.1 59.6" stroke="#22d3ee" strokeWidth="1" strokeLinecap="round" />
+            <path d="M58.1 54 L58.1 59.6" stroke="#a5f3fc" strokeWidth="0.35" strokeLinecap="round" />
+            {/* Puño: nudillos y pulgar */}
+            <path d="M54.2 60.6 C54 63.6 54.4 66.4 56 67.6 C57.8 68.8 60.4 68.4 61.6 66.8 C62.6 65 62.4 62.4 62 60.6 Z" fill="url(#pj-laton)" stroke="#5c3d0f" strokeWidth="0.45" />
+            <path d="M55 63.4 C56.6 64 59.8 64 61.6 63.4 M55.4 65.8 C57 66.4 59.6 66.4 61.2 65.6" fill="none" stroke="#7a5418" strokeWidth="0.45" />
+            <path d="M54.4 61.6 C53 62.4 52.8 64.2 54 65" fill="none" stroke="#7a5418" strokeWidth="0.9" strokeLinecap="round" />
           </g>
         </g>
       </g>
