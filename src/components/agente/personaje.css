@@ -100,6 +100,15 @@
 [data-pose="girar"] .pj-brazo-robot { transform: rotate(-150deg); }
 @keyframes pj-giro { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
+/* ── Festejo: huracán girando, brazos arriba, capa a todo lo que da ────────── */
+.agente-volador__sprite[data-pose="festejo"] { animation: pj-huracan 360ms linear infinite; transform-origin: 50% 50%; }
+[data-pose="festejo"] .pj-brazo-robot { transform: rotate(-165deg) translateY(10px); }
+[data-pose="festejo"] .pj-brazo       { transform: rotate(160deg); }
+[data-pose="festejo"] .pj-pierna-a    { transform: rotate(16deg); }
+[data-pose="festejo"] .pj-pierna-b    { transform: rotate(-16deg); }
+[data-pose="festejo"] .pj-capa        { animation: pj-capa 160ms ease-in-out infinite alternate; }
+@keyframes pj-huracan { to { transform: rotate(360deg); } }
+
 /* Ojo robótico: late suave, siempre (es lo "vivo" incluso quieto). */
 .pj-ojo-robot { animation: pj-ojo 1.8s ease-in-out infinite alternate; }
 @keyframes pj-ojo { from { opacity: 0.55; } to { opacity: 1; } }

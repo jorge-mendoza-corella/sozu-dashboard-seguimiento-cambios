@@ -16,6 +16,7 @@ import { WorkflowBadge } from "./WorkflowBadge";
 import { DeployMetaTooltip } from "./DeployMetaTooltip";
 import { DocsStatusDot } from "./DocsStatusDot";
 import { AvisoDeploy } from "./AvisoDeploy";
+import { revisarDeployPrd } from "@/lib/festejoDeploy";
 import { DeployProgressBar, RelojDeploy } from "@/components/DeployProgressBar";
 import { DeployDevControl } from "@/components/DeployDevControl";
 import type { AvisosDelProyecto } from "@/hooks/useAvisos";
@@ -256,6 +257,11 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
     if ((state === "ok" && othersPRs) || devByOther) state = "pendingOthers";
   }
   const hasPRs = scopedPRs.length > 0;
+
+  // Deploy a PRD que acaba de terminar bien → el personaje del agente festeja.
+  useEffect(() => {
+    revisarDeployPrd(status.owner, status.repo, status.label, status.latestRuns);
+  }, [status.owner, status.repo, status.label, status.latestRuns]);
 
   const deployando = deployEnCurso(status.latestRuns);
   const isDeployingToMain = deployando === "prd";
