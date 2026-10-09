@@ -14,6 +14,7 @@ import { BranchRow } from "./BranchRow";
 import { PRList } from "./PRList";
 import { WorkflowBadge } from "./WorkflowBadge";
 import { DeployMetaTooltip } from "./DeployMetaTooltip";
+import { DocsStatusDot } from "./DocsStatusDot";
 import { AvisoDeploy } from "./AvisoDeploy";
 import { DeployProgressBar, RelojDeploy } from "@/components/DeployProgressBar";
 import { DeployDevControl } from "@/components/DeployDevControl";
@@ -932,6 +933,8 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
         <div>
           <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             <Zap className="h-3.5 w-3.5" /> Últimos deploys
+            {/* Solo en repos que generan documentación en sozu-docs. */}
+            {status.docs && <DocsStatusDot docs={status.docs} />}
           </h4>
           <div className="flex flex-wrap gap-1.5">
             {status.latestRuns.length === 0
