@@ -104,6 +104,105 @@
 .pj-ojo-robot { animation: pj-ojo 1.8s ease-in-out infinite alternate; }
 @keyframes pj-ojo { from { opacity: 0.55; } to { opacity: 1; } }
 
+/* ── Expresiones (data-animo): se muestra solo la cara que toca ────────────── */
+.pj-ceja, .pj-boca, .pj-ojo-cerrado, .pj-parpado { opacity: 0; transition: opacity 120ms var(--ease-out); }
+[data-animo="serio"] :is(.pj-ceja--seria, .pj-boca--seria),
+[data-animo="feliz"] :is(.pj-ceja--feliz, .pj-boca--feliz),
+[data-animo="grito"] :is(.pj-ceja--feliz, .pj-boca--grito),
+[data-animo="aburrido"] :is(.pj-ceja--aburrida, .pj-boca--aburrida, .pj-parpado),
+[data-animo="dormido"] :is(.pj-ceja--aburrida, .pj-boca--dormida, .pj-ojo-cerrado) { opacity: 1; }
+[data-animo="dormido"] .pj-ojo-abierto { opacity: 0; }
+/* Dormido: cabecea. */
+[data-animo="dormido"] .agente-volador__cuerpo { animation: pj-cabeceo 2.6s ease-in-out infinite alternate; }
+@keyframes pj-cabeceo { from { transform: translateY(0) rotate(0deg); } to { transform: translateY(0.8px) rotate(1.5deg); } }
+
+/* ── Globo de diálogo: no gira ni se voltea con el personaje ─────────────── */
+.agente-volador__dialogo {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  translate: -50% 0;
+  max-width: 200px;
+  width: max-content;
+  border-radius: 14px;
+  padding: 5px 10px;
+  font-size: 12px;
+  line-height: 1.25;
+  font-weight: 600;
+  text-align: center;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1.5px solid hsl(var(--foreground) / 0.85);
+  box-shadow: 0 6px 16px -8px rgb(0 0 0 / 0.35);
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  animation: pj-globo-entra 200ms var(--ease-out);
+}
+.agente-volador__dialogo::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 9px;
+  height: 9px;
+  translate: -50% -4px;
+  rotate: 45deg;
+  background: inherit;
+  border-right: inherit;
+  border-bottom: inherit;
+}
+@keyframes pj-globo-entra { from { opacity: 0; transform: translateY(4px) scale(0.94); } }
+/* Grito: letras grandes, borde dentado de cómic. */
+.agente-volador__dialogo[data-tipo="grito"] {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #7f1d1d;
+  background: #fef3c7;
+  border-color: #b45309;
+  animation: pj-globo-entra 160ms var(--ease-out), pj-grito 300ms ease-in-out 160ms 2 alternate;
+}
+@keyframes pj-grito { to { transform: rotate(-3deg) scale(1.04); } }
+/* Zzz: sin globo, letras que suben y se desvanecen. */
+.agente-volador__dialogo[data-tipo="zzz"] {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  font-size: 15px;
+  font-weight: 800;
+  color: hsl(var(--primary));
+  left: 70%;
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+}
+.agente-volador__dialogo[data-tipo="zzz"]::after { display: none; }
+.agente-volador__dialogo[data-tipo="zzz"] i {
+  font-style: normal;
+  animation: pj-zzz 1.6s ease-out infinite;
+  opacity: 0;
+}
+.agente-volador__dialogo[data-tipo="zzz"] i:nth-child(2) { animation-delay: 0.35s; font-size: 0.85em; }
+.agente-volador__dialogo[data-tipo="zzz"] i:nth-child(3) { animation-delay: 0.7s; font-size: 1.15em; }
+@keyframes pj-zzz {
+  0%   { opacity: 0; transform: translate(0, 4px); }
+  30%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(6px, -14px); }
+}
+/* Orillas: el globo se alinea hacia adentro (y la colita lo sigue). */
+.agente-volador[data-borde="izq"] .agente-volador__dialogo { left: 4px; translate: 0 0; }
+.agente-volador[data-borde="izq"] .agente-volador__dialogo::after { left: 32px; }
+.agente-volador[data-borde="der"] .agente-volador__dialogo { left: auto; right: 4px; translate: 0 0; }
+.agente-volador[data-borde="der"] .agente-volador__dialogo::after { left: auto; right: 28px; translate: 0 -4px; }
+/* Pegado al techo: el globo sale abajo, con la colita arriba. */
+.agente-volador[data-arriba="1"] .agente-volador__dialogo { bottom: auto; top: calc(100% + 6px); transform-origin: 50% 0; }
+.agente-volador[data-arriba="1"] .agente-volador__dialogo::after { top: auto; bottom: 100%; translate: -50% 4px; rotate: 225deg; }
+.agente-volador[data-arriba="1"][data-borde="der"] .agente-volador__dialogo::after { translate: 0 4px; }
+.agente-volador[data-arriba="1"][data-borde="izq"] .agente-volador__dialogo::after { translate: 0 4px; }
+
+/* Si hay diálogo, no se encima la etiqueta del nombre. */
+.agente-volador__dialogo + .agente-volador__globo { display: none; }
+
 /* Globo con el nombre al pasar el mouse o enfocarlo. */
 .agente-volador__globo {
   position: absolute;
@@ -136,4 +235,7 @@
   .agente-volador__sprite *,
   .agente-volador__orientacion { animation: none !important; transition: none !important; }
   .pj-ojo-robot { animation: pj-ojo 1.8s ease-in-out infinite alternate !important; }
+  .pj-ceja, .pj-boca, .pj-ojo-cerrado, .pj-parpado { transition: opacity 120ms ease !important; }
+  .agente-volador__dialogo { animation: none !important; }
+  .agente-volador__dialogo[data-tipo="zzz"] i { animation: none !important; opacity: 1; }
 }

@@ -22,6 +22,26 @@ import { useEffect, useRef, useState } from "react";
 import "./personaje.css";
 
 type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar";
+export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido";
+type Dialogo = { id: number; texto: string; tipo: "grito" | "habla" | "zzz" };
+
+/** Lo que dice según lo que hace. Las groserías son de oficina, leves. */
+const FRASES = {
+  volar: ["¡Wiiiii!", "¡Yujuuu!", "¡Ahí voy!", "¡Al infinito… y a prod!", "¡Más rápido que un hotfix!", "¡Arribaaa!", "¡Esto sí es deploy continuo!"],
+  techo: ["¡Uff!", "¡Ay, mi cabeza!", "¡Rebote!"],
+  aterrizar: ["Aterrizaje perfecto.", "Pies en la tierra.", "¡Tierra firme!"],
+  caminar: [
+    "¿Alguien revisó ese PR?",
+    "Hmm… ¿y si refactorizo?",
+    "Los docs no se escriben solos.",
+    "Ese bug lo vi venir.",
+    "Todo verde en CI… por ahora.",
+    "Paso a pasito, commit a commit.",
+  ],
+  aburrido: ["Qué hueva…", "¡Chin! Nadie me pregunta nada.", "Me lleva… qué aburrido.", "¿Y si mejor me echo un deploy?", "¡Ah, caray! Ni un bug.", "Pinche silencio."],
+  hover: ["¿En qué te ayudo?", "¿Le pregunto al código?", "¡Pregúntame!"],
+} as const;
+const una = (l: readonly string[]) => l[Math.floor(Math.random() * l.length)];
 
 interface Props {
   /** El chat está abierto: el personaje se queda quieto donde está. */
@@ -47,6 +67,8 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "quieto" : "volar",
   );
   const [pausaLocal, setPausaLocal] = useState(false);
+  const [animo, setAnimo] = useState<Animo>("feliz");
+  const [dialogo, setDialogo] = useState<Dialogo | null>(null);
   const pausaRef = useRef(false);
   useEffect(() => {
     pausaRef.current = pausado || pausaLocal;
@@ -83,6 +105,22 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       tiempoBob: 0,
     };
 
+    let animoActual: Animo = "feliz";
+    const ponerAnimo = (a: Animo) => {
+      if (a !== animoActual) {
+        animoActual = a;
+        setAnimo(a);
+      }
+    };
+    let idDialogo = 0;
+    let finDialogo = 0;
+    let proximaFrase = performance.now() + azar(1500, 4000);
+    const decir = (texto: string, tipo: Dialogo["tipo"] = "habla", ms = 2400) => {
+      idDialogo += 1;
+      finDialogo = performance.now() + ms;
+      setDialogo({ id: idDialogo, texto, tipo });
+    };
+
     let poseActual: Pose = "volar";
     const cambiarPose = (p: Pose, durMs = 0) => {
       s.pose = p;
@@ -90,6 +128,10 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       if (p !== poseActual) {
         poseActual = p;
         setPose(p);
+        if (p === "volar" || p === "despegar") ponerAnimo("feliz");
+        else if (p === "caminar") ponerAnimo("serio");
+        else if (p === "quieto") ponerAnimo("aburrido");
+        if (p === "quieto") proximaFrase = performance.now() + azar(1200, 2500);
       }
     };
 
@@ -147,6 +189,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           if (s.y <= TECHO && s.pose === "volar") {
             s.y = TECHO;
             cambiarPose("girar", 520);
+            if (Math.random() < 0.5) decir(una(FRASES.techo), "grito", 1200);
             s.angulo = 0.2;
             s.vel = 60;
           }
@@ -168,7 +211,8 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         case "agachar": {
           if (fin) {
             if (s.siguiente === "caminar") {
-              cambiarPose("caminar", azar(3500, 7500));
+              cambiarPose("caminar", azar(4500, 9000));
+              if (Math.random() < 0.5) decir(una(FRASES.aterrizar), "habla", 1800);
               if (Math.random() < 0.5) s.dir = (s.dir * -1) as 1 | -1;
             } else despegar();
           }
@@ -181,7 +225,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
             s.dir = (s.dir * -1) as 1 | -1;
           }
           if (fin) {
-            if (Math.random() < 0.35) cambiarPose("quieto", azar(4000, 9000));
+            if (Math.random() < 0.4) cambiarPose("quieto", azar(7000, 13000));
             else {
               cambiarPose("agachar", 180);
               s.siguiente = "despegar";
@@ -198,6 +242,34 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         }
       }
 
+      // Globos: uno a la vez, cada pocos segundos según lo que esté haciendo.
+      if (finDialogo && ahora >= finDialogo) {
+        finDialogo = 0;
+        setDialogo(null);
+        if (animoActual === "grito") ponerAnimo("feliz");
+      }
+      if (!finDialogo && ahora >= proximaFrase) {
+        if (s.pose === "volar") {
+          if (Math.random() < 0.6) {
+            ponerAnimo("grito");
+            decir(una(FRASES.volar), "grito", 1800);
+          }
+          proximaFrase = ahora + azar(4000, 9000);
+        } else if (s.pose === "caminar") {
+          if (Math.random() < 0.7) decir(una(FRASES.caminar));
+          proximaFrase = ahora + azar(3500, 7000);
+        } else if (s.pose === "quieto") {
+          // Primero se aburre (y lo dice); después le da sueño.
+          if (animoActual === "aburrido" && Math.random() < 0.55) {
+            decir(una(FRASES.aburrido), "habla", 2600);
+          } else {
+            ponerAnimo("dormido");
+            decir("Z z z", "zzz", 3200);
+          }
+          proximaFrase = ahora + azar(2800, 4500);
+        } else proximaFrase = ahora + 1500;
+      }
+
       // Inclinación: en vuelo el cuerpo se acuesta en la dirección del avance
       // (cabeza al frente); en el piso, de pie. Suavizado para que no tiemble.
       const objetivo =
@@ -207,6 +279,12 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       s.inclinado += (objetivo - s.inclinado) * Math.min(1, dt * 7);
 
       el.style.transform = `translate3d(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px, 0)`;
+      // El globo se acomoda para no salirse: hacia adentro en las orillas y
+      // debajo del personaje cuando va pegado al techo.
+      const borde = s.x < 110 ? "izq" : s.x > window.innerWidth - TAM - 110 ? "der" : "";
+      const arriba = s.y < TECHO + 70 ? "1" : "";
+      if (el.dataset.borde !== borde) el.dataset.borde = borde;
+      if (el.dataset.arriba !== arriba) el.dataset.arriba = arriba;
       if (inclinacion.current) inclinacion.current.style.transform = `rotate(${s.inclinado.toFixed(1)}deg)`;
       if (orientacion.current) orientacion.current.style.transform = `scaleX(${s.dir})`;
     };
@@ -223,7 +301,13 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     };
   }, []);
 
-  const congelar = (v: boolean) => () => setPausaLocal(v);
+  const congelar = (v: boolean) => () => {
+    setPausaLocal(v);
+    if (v) {
+      setAnimo("feliz");
+      setDialogo({ id: -Date.now(), texto: `${una(FRASES.hover)} · Alt+K`, tipo: "habla" });
+    } else setDialogo(null);
+  };
 
   return (
     <button
@@ -239,10 +323,21 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       onFocus={congelar(true)}
       onBlur={congelar(false)}
     >
+      {dialogo && !pausado && (
+        <span key={dialogo.id} className="agente-volador__dialogo" data-tipo={dialogo.tipo} aria-hidden>
+          {dialogo.tipo === "zzz" ? (
+            <>
+              <i>z</i><i>z</i><i>Z</i>
+            </>
+          ) : (
+            dialogo.texto
+          )}
+        </span>
+      )}
       <span className="agente-volador__globo">Agente de repos · Alt+K</span>
       <div ref={orientacion} className="agente-volador__orientacion">
         <div ref={inclinacion} className="agente-volador__inclinacion">
-          <Personaje pose={pose} />
+          <Personaje pose={pose} animo={animo} />
         </div>
       </div>
     </button>
@@ -255,9 +350,9 @@ export function AgenteVolador({ pausado, onClick }: Props) {
  * curvas. Las articulaciones (hombros 38/58,39 · codo 58.1,51.6 · caderas
  * 45/52,63 · capa 48,37) están fijas: personaje.css gira sobre ellas.
  */
-export function Personaje({ pose }: { pose: Pose }) {
+export function Personaje({ pose, animo = "serio" }: { pose: Pose; animo?: Animo }) {
   return (
-    <svg viewBox="0 0 96 96" className="agente-volador__sprite" data-pose={pose} aria-hidden>
+    <svg viewBox="0 0 96 96" className="agente-volador__sprite" data-pose={pose} data-animo={animo} aria-hidden>
       <defs>
         <linearGradient id="pj-laton" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#fbe3a0" />
@@ -365,12 +460,28 @@ export function Personaje({ pose }: { pose: Pose }) {
         {[[42.6, 17.2], [42.2, 25.4], [45.6, 29.6]].map(([x, y]) => <circle key={`${x}${y}`} cx={x} cy={y} r="0.55" fill="#f3d27a" />)}
         <circle className="pj-ojo-robot" cx="44.8" cy="21.4" r="3" fill="url(#pj-brillo)" />
         <circle cx="44.8" cy="21.4" r="1" fill="#ecfeff" />
-        {/* Ojo, ceja dura */}
-        <path d="M51.6 20.8 C52.4 19.6 54.6 19.4 55.6 20.6 C54.6 21.8 52.6 21.9 51.6 20.8 Z" fill="#f8fafc" />
-        <circle cx="54" cy="20.7" r="0.95" fill="#3b5240" />
-        <circle cx="54.3" cy="20.4" r="0.3" fill="#fff" />
-        <path d="M50.6 18.2 C52.6 16.6 55.4 16.6 57.4 18.2" fill="none" stroke="#111827" strokeWidth="1.6" strokeLinecap="round" />
-        <path d="M54.6 28.6 C55.6 28.2 56.6 28.2 57.4 28.5" fill="none" stroke="#6b3a24" strokeWidth="0.9" strokeLinecap="round" />
+        {/* Ojo: abierto (con párpado caído si está aburrido) o cerrado (dormido) */}
+        <g className="pj-ojo-abierto">
+          <path d="M51.6 20.8 C52.4 19.6 54.6 19.4 55.6 20.6 C54.6 21.8 52.6 21.9 51.6 20.8 Z" fill="#f8fafc" />
+          <circle className="pj-pupila" cx="54" cy="20.7" r="0.95" fill="#3b5240" />
+          <circle cx="54.3" cy="20.4" r="0.3" fill="#fff" />
+          <path className="pj-parpado" d="M51.3 20.9 C52.2 19 54.8 18.8 55.9 20.6 Z" fill="#d9a07a" />
+        </g>
+        <path className="pj-ojo-cerrado" d="M51.6 20.9 C52.8 21.9 54.6 21.9 55.7 20.8" fill="none" stroke="#3f2a1d" strokeWidth="0.8" strokeLinecap="round" />
+        {/* Cejas */}
+        <path className="pj-ceja pj-ceja--seria" d="M50.6 18.2 C52.6 16.6 55.4 16.6 57.4 18.2" fill="none" stroke="#111827" strokeWidth="1.6" strokeLinecap="round" />
+        <path className="pj-ceja pj-ceja--feliz" d="M50.6 17.4 C52.6 14.8 55.6 14.8 57.4 16.8" fill="none" stroke="#111827" strokeWidth="1.6" strokeLinecap="round" />
+        <path className="pj-ceja pj-ceja--aburrida" d="M50.6 18.6 C52.8 18.2 55.4 18.4 57.4 19.2" fill="none" stroke="#111827" strokeWidth="1.6" strokeLinecap="round" />
+        {/* Bocas */}
+        <path className="pj-boca pj-boca--seria" d="M54.6 28.6 C55.6 28.2 56.6 28.2 57.4 28.5" fill="none" stroke="#6b3a24" strokeWidth="0.9" strokeLinecap="round" />
+        <path className="pj-boca pj-boca--feliz" d="M53.8 27.6 C55 29.6 57 29.6 58 27.8" fill="none" stroke="#6b3a24" strokeWidth="1" strokeLinecap="round" />
+        <g className="pj-boca pj-boca--grito">
+          <path d="M53.8 27 C54.2 31 57.6 31.2 58.2 27.2 C56.8 26.4 55.2 26.4 53.8 27 Z" fill="#3b0f0a" />
+          <path d="M54.6 29.6 C55.6 30.4 56.8 30.4 57.6 29.6 C56.8 29 55.4 29 54.6 29.6 Z" fill="#e05a5a" />
+          <path d="M54.2 27.1 C55.4 26.7 56.8 26.7 57.9 27.2" fill="none" stroke="#fff" strokeWidth="0.55" />
+        </g>
+        <path className="pj-boca pj-boca--aburrida" d="M54.4 28.9 C55.4 28.3 56.6 28.4 57.6 29" fill="none" stroke="#6b3a24" strokeWidth="0.9" strokeLinecap="round" />
+        <ellipse className="pj-boca pj-boca--dormida" cx="56" cy="28.6" rx="0.9" ry="0.7" fill="#3b0f0a" />
         {/* Pelo: copete peinado hacia atrás */}
         <path d="M40.4 18 C38.2 10.6 41.2 4.2 48.6 3.4 C55.4 2.6 61 6.2 60.2 12 C58 9.4 54.6 8.6 50.8 9.4 C46.4 10.4 43.4 12.8 42.4 18.6 Z" fill="#111827" />
         <path d="M43 9 C46 5.8 51.4 4.8 56.4 6.6" fill="none" stroke="#4b5563" strokeWidth="0.8" strokeLinecap="round" />
