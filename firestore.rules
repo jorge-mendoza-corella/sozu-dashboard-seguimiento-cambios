@@ -468,14 +468,15 @@ service cloud.firestore {
     }
 
     // ── Agente de repos (Cloud Function `agenteRepos`) ──────────────────────
-    // Quién lo usa: `agente_config/acceso.emails`. Solo el root lo escribe; cada
-    // persona de la lista puede leer el doc para saber que tiene acceso (el
-    // botón del agente se pinta con eso). La función revalida en el servidor.
+    // Quién lo usa: `agente_config/acceso.emails`; quién además abre los docs
+    // citados: `acceso.docs`. Solo el root lo escribe; cada persona de alguna
+    // de las listas puede leer el doc para saber qué tiene (el botón y los
+    // enlaces se pintan con eso). Las funciones revalidan en el servidor.
     match /agente_config/{docId} {
       allow get: if esRootVerificado()
         || (docId == 'acceso' && request.auth != null
-            && resource.data.emails is list
-            && request.auth.token.email in resource.data.emails);
+            && ((resource.data.emails is list && request.auth.token.email in resource.data.emails)
+                || (resource.data.docs is list && request.auth.token.email in resource.data.docs)));
       allow write: if esRootVerificado();
     }
 

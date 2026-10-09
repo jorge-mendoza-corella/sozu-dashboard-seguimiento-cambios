@@ -188,8 +188,14 @@ export function buscarEnDocs(
 /** Tope de caracteres por lectura: lo demás se pide con `desde_linea`. */
 export const MAX_LECTURA = 40_000;
 
+export const limpiarRuta = (ruta: string) => ruta.trim().replace(/^\/+/, "").replace(/^docs\//, "");
+
+export function docPorRuta(c: Corpus, ruta: string): DocArchivo | null {
+  return c.archivos.get(limpiarRuta(ruta)) ?? null;
+}
+
 export function leerDoc(c: Corpus, ruta: string, desdeLinea = 1): string {
-  const limpia = ruta.replace(/^\/+/, "").replace(/^docs\//, "");
+  const limpia = limpiarRuta(ruta);
   const doc = c.archivos.get(limpia);
   if (!doc) {
     const parecidos = [...c.archivos.keys()]

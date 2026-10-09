@@ -17,7 +17,7 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { consumirCupo, reposPermitidos, verificarAcceso } from "./agente/acceso.js";
-import { indiceDocs, obtenerCorpus } from "./agente/docs.js";
+import { docPorRuta, indiceDocs, limpiarRuta, obtenerCorpus } from "./agente/docs.js";
 import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.js";
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
 
@@ -129,6 +129,9 @@ export const agenteRepos = onCall<Entrada, Promise<unknown>, ChunkAgente>(
     const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
     const ctx = { ghDocs, ghCodigo, repos };
     const herramientasUsadas: { nombre: string; etiqueta: string }[] = [];
+    // Documentos que el agente abrió con leer_doc: se guardan con la respuesta
+    // para que el panel los ofrezca como enlaces (si la persona tiene permiso).
+    const docsLeidos = new Set<string>();
     const textos: string[] = [];
     const uso = { input: 0, output: 0, cacheLectura: 0, cacheEscritura: 0 };
     let modeloFinal = MODELO;
@@ -192,6 +195,10 @@ export const agenteRepos = onCall<Entrada, Promise<unknown>, ChunkAgente>(
 
         messages.push({ role: "assistant", content: respuesta.content });
         for (const u of usos) {
+          const ruta = (u.input as { ruta?: unknown })?.ruta;
+          if (u.name === "leer_doc" && typeof ruta === "string" && docPorRuta(corpus, ruta)) {
+            docsLeidos.add(limpiarRuta(ruta));
+          }
           const etiqueta = describirLlamada(u.name, u.input);
           herramientasUsadas.push({ nombre: u.name, etiqueta });
           void res?.sendChunk({ tipo: "herramienta", nombre: u.name, etiqueta });
@@ -219,12 +226,47 @@ export const agenteRepos = onCall<Entrada, Promise<unknown>, ChunkAgente>(
       rol: "asistente",
       texto,
       herramientas: herramientasUsadas,
+      docs: [...docsLeidos],
       modelo: modeloFinal,
       uso,
       creado: FieldValue.serverTimestamp(),
     });
     await convRef.update({ actualizado: FieldValue.serverTimestamp() });
 
-    return { conversacionId: convRef.id, mensajeId: msgRef.id, texto, herramientas: herramientasUsadas, restantes };
+    return {
+      conversacionId: convRef.id,
+      mensajeId: msgRef.id,
+      texto,
+      herramientas: herramientasUsadas,
+      docs: [...docsLeidos],
+      restantes,
+    };
+  },
+);
+
+/**
+ * `agenteDoc`: entrega un documento de sozu-docs completo para el visor del
+ * panel. Pide el permiso "Ver documentación" (`agente_config/acceso.docs`);
+ * sin él, el panel muestra el nombre del documento pero no lo deja abrir, y
+ * esta función es la que lo hace valer (el repo de docs es privado).
+ */
+export const agenteDoc = onCall<{ ruta: string }>(
+  {
+    region: "us-central1",
+    secrets: [GITHUB_TOKEN, GITHUB_DOCS_TOKEN],
+    timeoutSeconds: 60,
+    memory: "512MiB",
+    maxInstances: 5,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  async (req) => {
+    await verificarAcceso(req, "docs");
+    const ruta = typeof req.data?.ruta === "string" ? req.data.ruta : "";
+    if (!ruta || ruta.length > 300) throw new HttpsError("invalid-argument", "Ruta inválida.");
+    const ghDocs = new Octokit({ auth: GITHUB_DOCS_TOKEN.value() || GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
+    const corpus = await obtenerCorpus(ghDocs);
+    const doc = docPorRuta(corpus, ruta);
+    if (!doc) throw new HttpsError("not-found", "Ese documento no existe en sozu-docs.");
+    return { ruta: doc.ruta, titulo: doc.titulo, texto: doc.texto, sha: corpus.sha.slice(0, 7) };
   },
 );

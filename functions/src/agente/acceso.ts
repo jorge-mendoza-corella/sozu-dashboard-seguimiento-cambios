@@ -6,9 +6,11 @@
  * habría podido prender el agente a sí mismo o a sus viewers. Vive en
  * `agente_config/acceso`, que solo escribe el root (ver firestore.rules).
  *
- *   agente_config/acceso = { emails: string[], limitePorHora?: number }
+ *   agente_config/acceso = { emails: string[], docs?: string[], limitePorHora?: number }
  *
- * El root (`SUPERUSER_EMAIL`) siempre entra, aunque el doc no exista.
+ * `emails` usa el agente; `docs` además puede abrir los documentos de sozu-docs
+ * que el agente cita (función `agenteDoc`). Son permisos independientes. El
+ * root (`SUPERUSER_EMAIL`) tiene los dos siempre, aunque el doc no exista.
  */
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
@@ -21,14 +23,18 @@ export interface Usuario {
   email: string;
   esRoot: boolean;
   limitePorHora: number;
+  /** Puede abrir los documentos citados (lista `docs`). */
+  verDocs: boolean;
 }
+
+export type Permiso = "agente" | "docs";
 
 /**
  * Mismo criterio que `esRootVerificado()` de las reglas: email verificado y
  * login de Google. Sin esto, si algún día se prende otro proveedor, alguien
  * podría registrarse con un email de la lista sin verificarlo.
  */
-export async function verificarAcceso(req: CallableRequest): Promise<Usuario> {
+export async function verificarAcceso(req: CallableRequest, permiso: Permiso = "agente"): Promise<Usuario> {
   const t = req.auth?.token;
   if (!t?.email) throw new HttpsError("unauthenticated", "Inicia sesión para usar el agente.");
   if (t.email_verified !== true || t.firebase?.sign_in_provider !== "google.com") {
@@ -37,13 +43,18 @@ export async function verificarAcceso(req: CallableRequest): Promise<Usuario> {
   const email = t.email.toLowerCase();
   const snap = await getFirestore().doc("agente_config/acceso").get();
   const cfg = snap.data() ?? {};
-  const lista: string[] = Array.isArray(cfg.emails) ? cfg.emails.map((e: unknown) => String(e).toLowerCase()) : [];
+  const lista = (v: unknown): string[] => (Array.isArray(v) ? v.map((e) => String(e).toLowerCase()) : []);
   const esRoot = email === SUPERUSER_EMAIL;
-  if (!esRoot && !lista.includes(email)) {
+  const usaAgente = esRoot || lista(cfg.emails).includes(email);
+  const verDocs = esRoot || lista(cfg.docs).includes(email);
+  if (permiso === "agente" && !usaAgente) {
     throw new HttpsError("permission-denied", "No tienes acceso al agente de repos.");
   }
+  if (permiso === "docs" && !verDocs) {
+    throw new HttpsError("permission-denied", "No tienes permiso para ver la documentación.");
+  }
   const limite = Number(cfg.limitePorHora);
-  return { email, esRoot, limitePorHora: Number.isFinite(limite) && limite > 0 ? limite : LIMITE_HORA_DEFAULT };
+  return { email, esRoot, verDocs, limitePorHora: Number.isFinite(limite) && limite > 0 ? limite : LIMITE_HORA_DEFAULT };
 }
 
 /**

@@ -6,7 +6,8 @@
  * guarda pregunta y respuesta. Desde aquí solo se leen las conversaciones
  * propias (las reglas no dejan ver otras), se renombran, fijan o borran.
  *
- * Acceso: `agente_config/acceso.emails` + el root. Ver functions/src/agente/acceso.ts.
+ * Acceso: `agente_config/acceso.emails` (usar el agente) y `.docs` (abrir los
+ * documentos que cita) + el root, que tiene los dos. Ver functions/src/agente/acceso.ts.
  */
 import { getFunctions, httpsCallable } from "firebase/functions";
 import {
@@ -45,6 +46,8 @@ export interface MensajeAgente {
   rol: "usuario" | "asistente";
   texto: string;
   herramientas: HerramientaUsada[];
+  /** Documentos de sozu-docs que el agente leyó para responder. */
+  docs: string[];
   error?: boolean;
 }
 
@@ -57,7 +60,15 @@ export interface RespuestaAgente {
   mensajeId: string;
   texto: string;
   herramientas: HerramientaUsada[];
+  docs: string[];
   restantes: number;
+}
+
+export interface DocumentoAgente {
+  ruta: string;
+  titulo: string;
+  texto: string;
+  sha: string;
 }
 
 const llamar = httpsCallable<{ conversacionId: string | null; mensaje: string }, RespuestaAgente, ChunkAgente>(
@@ -65,6 +76,16 @@ const llamar = httpsCallable<{ conversacionId: string | null; mensaje: string },
   "agenteRepos",
   { timeout: 540_000 },
 );
+
+const llamarDoc = httpsCallable<{ ruta: string }, DocumentoAgente>(functions, "agenteDoc");
+
+/** Documento completo de sozu-docs (requiere el permiso "Ver documentación"). */
+export async function leerDocumento(ruta: string): Promise<DocumentoAgente> {
+  return (await llamarDoc({ ruta })).data;
+}
+
+/** ¿Parece ruta de sozu-docs? (`user-manual/x.md`, `edge-functions/y.md`). */
+export const esRutaDoc = (t: string) => /^(docs\/)?[a-z0-9-]+\/[\w./-]+\.md$/i.test(t.trim());
 
 /** Manda la pregunta y va avisando con cada trozo; resuelve con la respuesta guardada. */
 export async function preguntar(
@@ -94,35 +115,49 @@ export function mensajeDeError(e: unknown): string {
 
 const ACCESO = () => doc(db, "agente_config", "acceso");
 
+export interface PermisosAgente {
+  /** Usa el agente (ve el botón). */
+  agente: boolean;
+  /** Abre los documentos que el agente cita. */
+  docs: boolean;
+}
+
+const listaDe = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((e): e is string => typeof e === "string") : [];
+
 /**
- * ¿Pinta el botón? El root siempre; el resto si está en la lista (las reglas
- * solo le dejan leer el doc en ese caso, así que un error = sin acceso).
+ * Permisos de quien está logueado. El root tiene los dos; el resto, lo que
+ * digan las listas (las reglas solo le dejan leer el doc si está en alguna,
+ * así que un error = sin nada).
  */
-export async function tieneAccesoAgente(email: string | null | undefined): Promise<boolean> {
-  if (!email) return false;
-  if (email === SUPERUSER_EMAIL) return true;
+export async function permisosAgente(email: string | null | undefined): Promise<PermisosAgente> {
+  if (!email) return { agente: false, docs: false };
+  if (email === SUPERUSER_EMAIL) return { agente: true, docs: true };
   try {
-    const snap = await getDoc(ACCESO());
-    const emails = snap.data()?.emails;
-    return Array.isArray(emails) && emails.includes(email);
+    const d = (await getDoc(ACCESO())).data();
+    return { agente: listaDe(d?.emails).includes(email), docs: listaDe(d?.docs).includes(email) };
   } catch {
-    return false;
+    return { agente: false, docs: false };
   }
 }
 
-/** Lista de correos con acceso (solo el root puede leerla completa). */
-export async function leerAccesoAgente(): Promise<string[]> {
-  const snap = await getDoc(ACCESO());
-  const emails = snap.data()?.emails;
-  return Array.isArray(emails) ? emails.filter((e): e is string => typeof e === "string").sort() : [];
+/** Listas completas (solo el root puede leerlas). */
+export async function leerAccesoAgente(): Promise<{ emails: string[]; docs: string[] }> {
+  const d = (await getDoc(ACCESO())).data();
+  return { emails: listaDe(d?.emails).sort(), docs: listaDe(d?.docs) };
 }
 
 export async function darAccesoAgente(email: string): Promise<void> {
   await setDoc(ACCESO(), { emails: arrayUnion(email.trim().toLowerCase()) }, { merge: true });
 }
 
+/** Quitar el agente quita también la documentación: sin agente no hay dónde verla. */
 export async function quitarAccesoAgente(email: string): Promise<void> {
-  await updateDoc(ACCESO(), { emails: arrayRemove(email) });
+  await updateDoc(ACCESO(), { emails: arrayRemove(email), docs: arrayRemove(email) });
+}
+
+export async function cambiarVerDocs(email: string, permitir: boolean): Promise<void> {
+  await setDoc(ACCESO(), { docs: permitir ? arrayUnion(email) : arrayRemove(email) }, { merge: true });
 }
 
 // ── Historial ──────────────────────────────────────────────────────────────
@@ -164,6 +199,7 @@ export async function leerMensajes(conversacionId: string): Promise<MensajeAgent
       rol: m.rol,
       texto: String(m.texto ?? ""),
       herramientas: Array.isArray(m.herramientas) ? m.herramientas : [],
+      docs: listaDe(m.docs),
     });
   }
   return out;
