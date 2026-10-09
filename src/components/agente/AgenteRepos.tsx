@@ -8,31 +8,42 @@
  * Solo se monta si el usuario REAL (no el impersonado) tiene acceso: la función
  * valida con el token de quien está logueado, así que "ver como" no cambia nada.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent,
+} from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Bot, Check, Copy, History, Loader2, MessageSquarePlus, Pencil, Pin, PinOff, Search, Send, Square, Trash2, Wrench, X,
+  ArrowLeft, Bot, Check, Copy, FileText, History, Loader2, Lock, MessageSquarePlus, Pencil, Pin, PinOff, Search, Send,
+  Square, Trash2, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  borrarConversacion, escucharConversaciones, fijarConversacion, leerMensajes, MAX_MENSAJE, MAX_TITULO, mensajeDeError,
-  preguntar, renombrarConversacion, SUGERENCIAS, tieneAccesoAgente,
-  type ConversacionAgente, type HerramientaUsada, type MensajeAgente,
+  borrarConversacion, escucharConversaciones, esRutaDoc, fijarConversacion, leerDocumento, leerMensajes, MAX_MENSAJE,
+  MAX_TITULO, mensajeDeError, permisosAgente, preguntar, renombrarConversacion, SUGERENCIAS,
+  type ConversacionAgente, type DocumentoAgente, type HerramientaUsada, type MensajeAgente, type PermisosAgente,
 } from "@/lib/agenteRepos";
+
+/**
+ * Documentos citados: con el permiso "Ver documentación" son enlaces que abren
+ * el visor; sin él se ven igual pero no se pueden abrir (y `agenteDoc` tampoco
+ * los entregaría).
+ */
+const DocsCtx = createContext<{ puede: boolean; abrir: (ruta: string) => void }>({ puede: false, abrir: () => {} });
 
 interface Props {
   email: string | null | undefined;
 }
 
 export function AgenteRepos({ email }: Props) {
-  const [acceso, setAcceso] = useState(false);
+  const [permisos, setPermisos] = useState<PermisosAgente>({ agente: false, docs: false });
   const [abierto, setAbierto] = useState(false);
+  const acceso = permisos.agente;
 
   useEffect(() => {
     let vivo = true;
-    tieneAccesoAgente(email).then((ok) => vivo && setAcceso(ok));
+    permisosAgente(email).then((p) => vivo && setPermisos(p));
     return () => { vivo = false; };
   }, [email]);
 
@@ -78,7 +89,7 @@ export function AgenteRepos({ email }: Props) {
           )}
           aria-describedby={undefined}
         >
-          <PanelAgente email={email} />
+          <PanelAgente email={email} verDocs={permisos.docs} />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
@@ -93,7 +104,9 @@ interface EnCurso {
   herramientas: HerramientaUsada[];
 }
 
-function PanelAgente({ email }: { email: string }) {
+function PanelAgente({ email, verDocs }: { email: string; verDocs: boolean }) {
+  const [docAbierto, setDocAbierto] = useState<string | null>(null);
+  const docsCtx = useMemo(() => ({ puede: verDocs, abrir: setDocAbierto }), [verDocs]);
   const [conversaciones, setConversaciones] = useState<ConversacionAgente[]>([]);
   const [activa, setActiva] = useState<string | null>(null);
   const [mensajes, setMensajes] = useState<MensajeAgente[]>([]);
@@ -145,8 +158,8 @@ function PanelAgente({ email }: { email: string }) {
       }, ctrl.signal);
       setMensajes((m) => [
         ...m,
-        { id: `u-${r.mensajeId}`, rol: "usuario", texto: pregunta, herramientas: [] },
-        { id: r.mensajeId, rol: "asistente", texto: r.texto, herramientas: r.herramientas },
+        { id: `u-${r.mensajeId}`, rol: "usuario", texto: pregunta, herramientas: [], docs: [] },
+        { id: r.mensajeId, rol: "asistente", texto: r.texto, herramientas: r.herramientas, docs: r.docs ?? [] },
       ]);
       setActiva(r.conversacionId);
       setRestantes(r.restantes);
@@ -154,7 +167,7 @@ function PanelAgente({ email }: { email: string }) {
       if (ctrl.signal.aborted) return;
       setError(mensajeDeError(e));
       // La pregunta queda en el hilo, como la guarda la función.
-      setMensajes((m) => [...m, { id: `u-${Date.now()}`, rol: "usuario", texto: pregunta, herramientas: [] }]);
+      setMensajes((m) => [...m, { id: `u-${Date.now()}`, rol: "usuario", texto: pregunta, herramientas: [], docs: [] }]);
     } finally {
       if (abortRef.current === ctrl) abortRef.current = null;
       setEnCurso(null);
@@ -170,7 +183,9 @@ function PanelAgente({ email }: { email: string }) {
   const vacio = !activa && mensajes.length === 0 && !enCurso;
 
   return (
-    <div className="flex min-h-0 flex-1">
+    <DocsCtx.Provider value={docsCtx}>
+    <div className="relative flex min-h-0 flex-1">
+      {docAbierto && <VisorDoc key={docAbierto} ruta={docAbierto} onCerrar={() => setDocAbierto(null)} />}
       <aside
         className={cn(
           "w-72 shrink-0 flex-col border-r bg-muted/30",
@@ -220,7 +235,7 @@ function PanelAgente({ email }: { email: string }) {
               {mensajes.map((m) => <Burbuja key={m.id} mensaje={m} />)}
               {enCurso && (
                 <>
-                  <Burbuja mensaje={{ id: "p", rol: "usuario", texto: enCurso.pregunta, herramientas: [] }} />
+                  <Burbuja mensaje={{ id: "p", rol: "usuario", texto: enCurso.pregunta, herramientas: [], docs: [] }} />
                   <RespuestaEnCurso enCurso={enCurso} />
                 </>
               )}
@@ -235,6 +250,7 @@ function PanelAgente({ email }: { email: string }) {
         <Composer enviando={!!enCurso} onEnviar={enviar} onDetener={detener} restantes={restantes} />
       </section>
     </div>
+    </DocsCtx.Provider>
   );
 }
 
@@ -422,7 +438,15 @@ function Markdown({ texto }: { texto: string }) {
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a> }}
+        components={{
+          a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a>,
+          // Una ruta de sozu-docs en `código` (p. ej. en "Fuentes:") se vuelve enlace al visor.
+          code: ({ className, children }) => {
+            const t = String(children ?? "");
+            if (!className && esRutaDoc(t.replace(/^doc:\s*/, ""))) return <RefDoc ruta={t.replace(/^doc:\s*/, "")} enLinea />;
+            return <code className={className}>{children}</code>;
+          },
+        }}
       >
         {texto}
       </ReactMarkdown>
@@ -469,6 +493,7 @@ function Burbuja({ mensaje }: { mensaje: MensajeAgente }) {
     <div className="group">
       <Pasos herramientas={mensaje.herramientas} />
       <Markdown texto={mensaje.texto} />
+      {mensaje.docs.length > 0 && <DocsConsultados docs={mensaje.docs} />}
       <button
         type="button"
         onClick={() => { void navigator.clipboard.writeText(mensaje.texto); setCopiado(true); setTimeout(() => setCopiado(false), 1500); }}
@@ -572,3 +597,93 @@ function Composer({
     </div>
   );
 }
+
+// ── Documentación ───────────────────────────────────────────────────────────
+
+const nombreDoc = (ruta: string) => ruta.replace(/^docs\//, "");
+
+function RefDoc({ ruta, enLinea }: { ruta: string; enLinea?: boolean }) {
+  const { puede, abrir } = useContext(DocsCtx);
+  const r = nombreDoc(ruta.trim());
+  const base = enLinea
+    ? "inline-flex items-center gap-1 rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]"
+    : "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]";
+  if (!puede) {
+    return (
+      <span className={cn(base, "cursor-default text-muted-foreground")} title="No tienes el permiso «Ver documentación»">
+        {!enLinea && <Lock className="h-3 w-3" />}
+        {r}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => abrir(r)}
+      className={cn(base, "text-primary transition-colors hover:bg-primary/10", !enLinea && "hover:border-primary/40")}
+      title="Abrir documento"
+    >
+      {!enLinea && <FileText className="h-3 w-3" />}
+      {r}
+    </button>
+  );
+}
+
+function DocsConsultados({ docs }: { docs: string[] }) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] text-muted-foreground">Documentación consultada:</span>
+      {docs.map((d) => <RefDoc key={d} ruta={d} />)}
+    </div>
+  );
+}
+
+function VisorDoc({ ruta, onCerrar }: { ruta: string; onCerrar: () => void }) {
+  const [doc, setDoc] = useState<DocumentoAgente | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Se monta con `key={ruta}`: cada documento arranca con estado limpio.
+    let vivo = true;
+    leerDocumento(ruta)
+      .then((d) => vivo && setDoc(d))
+      .catch((e) => vivo && setError(mensajeDeError(e)));
+    return () => { vivo = false; };
+  }, [ruta]);
+
+  // Esc cierra el visor sin cerrar el panel entero.
+  useEffect(() => {
+    const alTeclear = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") { e.stopPropagation(); onCerrar(); }
+    };
+    window.addEventListener("keydown", alTeclear, true);
+    return () => window.removeEventListener("keydown", alTeclear, true);
+  }, [onCerrar]);
+
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col bg-background" role="region" aria-label={`Documento ${ruta}`}>
+      <header className="flex h-14 items-center gap-2 border-b px-4">
+        <button type="button" onClick={onCerrar} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Volver al chat">
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <FileText className="h-4 w-4 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold">{doc?.titulo ?? ruta}</p>
+          <p className="truncate font-mono text-[10px] text-muted-foreground">
+            sozu-docs/docs/{ruta}{doc ? ` · ${doc.sha}` : ""}
+          </p>
+        </div>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8">
+        {error ? (
+          <p className="mx-auto max-w-3xl rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
+        ) : !doc ? (
+          <div className="flex justify-center py-10 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
+        ) : (
+          <div className="mx-auto max-w-3xl"><Markdown texto={doc.texto} /></div>
+        )}
+      </div>
+    </div>
+  );
+}
+
