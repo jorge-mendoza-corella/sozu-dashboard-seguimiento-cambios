@@ -42,7 +42,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # 22, no 20: firebase-admin 14 y @google-cloud/firestore piden
+          # Node >= 22. Con 20, npm se salta Firestore (es dependencia opcional
+          # de firebase-admin) y el build de functions/ truena sin sus tipos.
+          node-version: "22"
           cache: "npm"
 
       - name: Authenticate to Google Cloud
