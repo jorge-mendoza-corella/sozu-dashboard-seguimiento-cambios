@@ -150,6 +150,17 @@
   to   { transform: translateY(26px); opacity: 0; }
 }
 
+/* ── Brinco (deploy a dev): saltitos con los brazos arriba ───────────────── */
+.agente-volador__sprite[data-pose="brinco"] { animation: pj-brinco 520ms cubic-bezier(0.23, 1, 0.32, 1) infinite alternate; }
+[data-pose="brinco"] .pj-brazo-robot { transform: rotate(-165deg); }
+[data-pose="brinco"] .pj-brazo       { transform: rotate(150deg); }
+[data-pose="brinco"] .pj-pierna-a    { transform: rotate(12deg); }
+[data-pose="brinco"] .pj-pierna-b    { transform: rotate(-12deg); }
+@keyframes pj-brinco {
+  from { transform: translateY(0) scale(1.06, 0.92); }
+  to   { transform: translateY(-22%) scale(0.96, 1.05); }
+}
+
 /* ── Alerta: parado, agitando el brazo robótico arriba ────────────────────── */
 [data-pose="alerta"] .pj-brazo-robot { animation: pj-agita 380ms ease-in-out infinite alternate; }
 [data-pose="alerta"] .pj-brazo       { transform: rotate(28deg); }

@@ -30,6 +30,8 @@ import {
   gritosDeCierre, gritosDeTickets, INTERVALO_TICKETS_MS, misTickets, nombreDeEmail, type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
 import { EVENTO_TICKETS_LISTOS } from "@/lib/festejoDeploy";
+import { useVigiaDeploys } from "@/hooks/useVigiaDeploys";
+import { useAuth } from "@/hooks/useAuth";
 
 /**
  * Documentos citados: con el permiso "Ver documentación" son enlaces que abren
@@ -60,6 +62,9 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
   const [abierto, setAbierto] = useState(false);
   const [pestana, setPestana] = useState<"chat" | "tickets">("chat");
   const acceso = permisos.agente;
+  // Vigía global: reacciona a los deploys de todos los repos, estén o no en pantalla.
+  const { realUser } = useAuth();
+  useVigiaDeploys(acceso ? realUser : null, permisos.tickets);
 
   // ── Tickets: revisión cada 15 min mientras el dashboard está abierto ──────
   const [tickets, setTickets] = useState<TicketAgente[] | null>(null);
