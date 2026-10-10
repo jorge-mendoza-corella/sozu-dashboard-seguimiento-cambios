@@ -18,7 +18,8 @@ import { PALETA, type Skin } from "./skinsDatos";
 /** Antojos en la mano del frente (personaje.css muestra el que toca y lo lleva a la boca). */
 export function Antojos() {
   return (
-    <g transform="translate(20 4)">
+    // ×1.9 sobre la mano (58,64): a tamaño real no se distinguían.
+    <g transform="translate(58 64) scale(1.9) translate(-58 -64) translate(20 4)">
       <g className="pj-snack pj-snack--pizza">
         <path d="M33.6 60.6 L43 60.6 L38.6 70.6 Z" fill="#fcd34d" stroke="#d97706" strokeWidth="0.5" />
         <path d="M33.2 59.6 L43.4 59.6 L43 61.4 L33.6 61.4 Z" fill="#b45309" />
