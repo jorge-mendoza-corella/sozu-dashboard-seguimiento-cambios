@@ -1629,18 +1629,24 @@ export async function repoDespliegaDev(owner: string, repo: string): Promise<boo
       (w) => /deploy/i.test(w.name ?? "") || /deploy/i.test(w.path ?? ""),
     );
 
+    let algunoFallo = false;
     const textos = await Promise.all(
       candidatos.map(async (w) => {
         try {
           const { data: archivo } = await octokit.repos.getContent({ owner, repo, path: w.path });
           return "content" in archivo && archivo.content ? atob(archivo.content.replace(/\n/g, "")) : "";
         } catch {
+          algunoFallo = true;
           return "";
         }
       }),
     );
 
     const sirve = textos.some((t) => ramasQueDisparan(t).includes("dev"));
+    // Si algún archivo no se pudo leer (rate limit, red) no se concluye "no
+    // despliega dev": antes se guardaba ese `false` toda la sesión y el control
+    // desaparecía sin explicación para quien sí tiene permiso.
+    if (!sirve && algunoFallo) return true;
     despliegaDevCache.set(clave, sirve);
     return sirve;
   } catch {

@@ -35,16 +35,19 @@ export interface CicdPermissions {
   mergeDev: boolean; // hacer merge de PRs hacia dev
   mergeMain: boolean; // hacer merge de PRs hacia main (PRD)
   buildApp: boolean; // disparar/cancelar builds de apps en Codemagic
-  // El SWITCH del deploy a dev: encenderlo, apagarlo y lanzarlo a mano. Es un
-  // permiso aparte de `mergeDev` porque son decisiones distintas: una es "este
-  // cambio entra", la otra es "el entorno de dev se publica ahora". Quien
-  // mergea a diario no tiene por qué decidir cuándo se publica para todos.
+  // Lanzar el deploy de dev a mano (botón «Desplegar dev»). Aparte de
+  // `mergeDev` porque son decisiones distintas: una es "este cambio entra", la
+  // otra es "el entorno de dev se publica ahora".
   deployDev: boolean;
+  // Encender/apagar el deploy AUTOMÁTICO a dev (variable AUTO_DEPLOY_DEV del
+  // repo). Cambia cómo trabaja todo el equipo, por eso va aparte de poder
+  // lanzar un deploy: quien despliega no tiene por qué decidir la regla.
+  switchDeployDev: boolean;
   viewOthers: boolean; // ver ramas y PRs de otros (apagado = solo lo suyo; main/dev siempre visibles)
 }
 
-export const NO_PERMISSIONS: CicdPermissions = { createPR: false, approve: false, mergeDev: false, mergeMain: false, buildApp: false, deployDev: false, viewOthers: false };
-export const ALL_PERMISSIONS: CicdPermissions = { createPR: true, approve: true, mergeDev: true, mergeMain: true, buildApp: true, deployDev: true, viewOthers: true };
+export const NO_PERMISSIONS: CicdPermissions = { createPR: false, approve: false, mergeDev: false, mergeMain: false, buildApp: false, deployDev: false, switchDeployDev: false, viewOthers: false };
+export const ALL_PERMISSIONS: CicdPermissions = { createPR: true, approve: true, mergeDev: true, mergeMain: true, buildApp: true, deployDev: true, switchDeployDev: true, viewOthers: true };
 
 export interface AppUser {
   email: string;

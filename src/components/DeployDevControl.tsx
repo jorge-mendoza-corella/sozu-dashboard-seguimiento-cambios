@@ -26,19 +26,21 @@ import {
 export function DeployDevControl({
   owner,
   repo,
-  puedeTocar,
+  puedeDesplegar,
+  puedeCambiarAutomatico,
   shaDev,
   shaPublicado,
   desplegando = false,
 }: {
   owner: string;
   repo: string;
+  /** Permiso «Desplegar dev»: el botón para lanzar el deploy a mano. */
+  puedeDesplegar: boolean;
   /**
-   * Permiso "Switch deploy a dev". Va aparte de `mergeDev` porque son
-   * decisiones distintas: una es "este cambio entra", la otra es "el entorno
-   * que usa todo el mundo se publica ahora".
+   * Permiso «Switch deploy a dev»: encender/apagar el deploy automático. Sin
+   * él, el estado se enseña pero no se puede cambiar.
    */
-  puedeTocar: boolean;
+  puedeCambiarAutomatico: boolean;
   /** Punta de la rama dev. */
   shaDev?: string;
   /** Lo último que se publicó en dev, si se publicó bien. */
@@ -75,7 +77,7 @@ export function DeployDevControl({
     staleTime: 5 * 60_000,
   });
 
-  if (!puedeTocar || !tieneDeployDev || automatico === undefined) return null;
+  if ((!puedeDesplegar && !puedeCambiarAutomatico) || !tieneDeployDev || automatico === undefined) return null;
 
   // Sin los dos commits no se puede afirmar nada, y ante la duda es mejor
   // dejar el botón: lanzar de más molesta menos que no poder lanzar.
@@ -118,10 +120,16 @@ export function DeployDevControl({
       <button
         type="button"
         onClick={cambiar}
-        disabled={guardando}
-        className="flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-60"
+        // Sin el permiso del switch se ve el estado, pero no se cambia.
+        disabled={guardando || !puedeCambiarAutomatico}
+        className={cn(
+          "flex items-center gap-1.5 text-muted-foreground transition-colors",
+          puedeCambiarAutomatico ? "hover:text-foreground disabled:opacity-60" : "cursor-default",
+        )}
         title={
-          automatico
+          !puedeCambiarAutomatico
+            ? "Solo quien tiene el permiso «Switch deploy a dev» puede cambiarlo."
+            : automatico
             ? "Cada merge a dev despliega. Apágalo para mergear varios PRs sin esperar un deploy por cada uno."
             : "Los merges a dev no despliegan. Usa «Desplegar dev» cuando quieras publicar lo acumulado."
         }
@@ -146,7 +154,7 @@ export function DeployDevControl({
 
       {/* El botón solo cuando hace falta: con el automático encendido, pulsarlo
           sería repetir lo que ya va a pasar solo. */}
-      {!automatico &&
+      {!automatico && puedeDesplegar &&
         // Y solo si hay algo que publicar. Con dev ya desplegado —mismo commit
         // arriba que abajo— el botón invitaba a lanzar un deploy que reconstruye
         // y vuelve a subir exactamente lo mismo: minutos gastados para dejar el
