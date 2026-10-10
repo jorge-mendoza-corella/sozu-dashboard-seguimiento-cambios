@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
+import { GeorgIAPensando } from "./GeorgIAPensando";
 import {
   analizarTicket, cerrarTicketPortal, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
   type AnalisisTicket, type TicketAgente, type TicketEnviado,
@@ -152,6 +153,7 @@ export function TicketsAgente({ email, tickets, cargando, error, revisado, onRef
             );
           })}
         </div>
+        <GeorgIAPensando pendientes={tickets?.length ?? 0} />
       </aside>
       <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
         {actual ? (

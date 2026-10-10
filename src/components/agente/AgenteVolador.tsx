@@ -71,7 +71,29 @@ function lanzarConfeti() {
 }
 
 type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta" | "llorar" | "brinco";
-export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando";
+export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando" | "relajado";
+/** Cómo vuela: puño al frente, nadando de crol, o boca arriba con las manos en la nuca. */
+export type EstiloVuelo = "superman" | "nado" | "relax";
+/** Viñeta de manga: zoom a su cara con líneas de acción y un texto exagerado. */
+type Manga = { id: number; animo: Animo; texto: string; x: number; y: number };
+const MANGA_MS = 2600;
+const VIÑETAS: { animo: Animo; texto: string }[] = [
+  { animo: "grito", texto: "¡¿QUÉ?!" },
+  { animo: "aburrido", texto: "…¿neta?" },
+  { animo: "grito", texto: "¡¿OTRO BUG?!" },
+  { animo: "aburrido", texto: "…" },
+  { animo: "feliz", texto: "✨ Perfecto ✨" },
+  { animo: "llorando", texto: "¿Y mi deploy…?" },
+  { animo: "grito", texto: "¡¡NANI?!" },
+  { animo: "relajado", texto: "Fuuu… paz" },
+];
+const VIÑETAS_GOLPE: { animo: Animo; texto: string }[] = [
+  { animo: "grito", texto: "¡¡AUCH!!" },
+  { animo: "llorando", texto: "Mi copete…" },
+  { animo: "grito", texto: "¡¡PUTAZO!!" },
+];
+/** Antojo en la mano de atrás: pizza o refresco cuando descansa, helado cuando vuela. */
+export type Snack = "pizza" | "refresco" | "helado";
 /** Letrero fijo arriba al centro durante el festejo o el llanto. */
 type Letrero = { tipo: "exito" | "fallo" | "dev" | "dev-fallo"; titulo: string; linea: string; id: number };
 /** Cuánto dura el llanto por un deploy fallido. */
@@ -124,6 +146,11 @@ const FRASES = {
     "¿Qué pedo, ya nadie programa?", "Uta, ni un PR en horas.", "Chale, puro scroll y nada de preguntas.",
     "Ya ni el CI me pela.", "Me vale madre, me voy a dormir.",
   ],
+  pizza: ["Ñam… una pizzita no se le niega a nadie", "Pepperoni: el mejor lenguaje de programación", "¿Gustas? …no, ya me la acabé", "Pizza fría: desayuno de campeones", "Mmm, con piña no, eh"],
+  refresco: ["Glu glu… refresquito", "Ahh, cafeína para el próximo deploy", "Un refresco y a debuggear", "¡Burp! Perdón, perdón", "Bien helado, como debe ser"],
+  helado: ["¡Helado a 200 km/h!", "Se me congela el cerebro… ¡pero vale!", "Mmm, de chocolate con menta", "¡No me lo tiren! Es el último", "Volar y helado: combo perfecto"],
+  relax: ["Modo crucero activado 😎", "Ahh, aquí relajadito", "Que trabajen los demás", "Despiértenme si truena prod", "Vacaciones a 100 metros de altura"],
+  nado: ["¡Estilo libre!", "Crol aéreo, medalla de oro", "Glu glu… ah no, es aire", "¡Michael Phelps quién!", "Brazada, brazada, respiro…"],
   hover: ["¿En qué te ayudo?", "¿Le pregunto al código?", "¡Pregúntame!", "¿Qué pedo, qué necesitas?", "A ver, suéltalo.", "¿Otro bug, cabrón?"],
 } as const;
 
@@ -199,6 +226,9 @@ export function AgenteVolador({ pausado, onClick }: Props) {
   const [animo, setAnimo] = useState<Animo>("feliz");
   const [dialogo, setDialogo] = useState<Dialogo | null>(null);
   const [letrero, setLetrero] = useState<Letrero | null>(null);
+  const [snack, setSnack] = useState<Snack | null>(null);
+  const [vuelo, setVuelo] = useState<EstiloVuelo>("superman");
+  const [manga, setManga] = useState<Manga | null>(null);
   const pausaRef = useRef(false);
   /** Hay alerta de tickets activa (el clic abre la pestaña de tickets y la apaga). */
   const alertaRef = useRef<{ apagar: () => void } | null>(null);
@@ -299,6 +329,32 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       setDialogo({ id: idDialogo, texto, tipo });
     };
 
+    let snackActual: Snack | null = null;
+    const ponerSnack = (x: Snack | null) => {
+      if (x !== snackActual) {
+        snackActual = x;
+        setSnack(x);
+      }
+    };
+    let proximoHelado = performance.now() + azar(15_000, 30_000);
+    let estiloActual: EstiloVuelo = "superman";
+    let proximoEstilo = performance.now() + azar(8000, 14_000);
+    const ponerEstilo = (e: EstiloVuelo) => {
+      if (e !== estiloActual) {
+        estiloActual = e;
+        setVuelo(e);
+      }
+    };
+    const crucero = () => (estiloActual === "relax" ? 110 : estiloActual === "nado" ? 140 : 190);
+    let idManga = 0;
+    let finManga = 0;
+    const lanzarManga = (v: { animo: Animo; texto: string }) => {
+      idManga += 1;
+      finManga = performance.now() + MANGA_MS;
+      setManga({ id: idManga, animo: v.animo, texto: v.texto, x: s.x, y: s.y });
+    };
+    let heladoHasta = 0;
+
     let poseActual: Pose = "volar";
     const cambiarPose = (p: Pose, durMs = 0) => {
       s.pose = p;
@@ -306,10 +362,18 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       if (p !== poseActual) {
         poseActual = p;
         setPose(p);
+        if (p !== "volar") ponerEstilo("superman");
         if (p === "volar" || p === "despegar") ponerAnimo("feliz");
         else if (p === "caminar") ponerAnimo("serio");
         else if (p === "quieto") ponerAnimo("aburrido");
         if (p === "quieto") proximaFrase = performance.now() + azar(1200, 2500);
+        // Descansando, a veces en vez de aburrirse saca la pizza o el refresco.
+        if (p === "quieto" && Math.random() < 0.45) {
+          ponerSnack(Math.random() < 0.55 ? "pizza" : "refresco");
+          ponerAnimo("feliz");
+        } else if (p !== "volar" || snackActual !== "helado") {
+          if (snackActual !== null && !(p === "despegar" && snackActual === "helado")) ponerSnack(null);
+        }
       }
     };
 
@@ -379,6 +443,18 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         proximaFrase = ahora;
       }
 
+      // Helado en pleno vuelo, de vez en cuando (y se lo termina en unos segundos).
+      if (s.pose === "volar") {
+        if (!snackActual && ahora >= proximoHelado) {
+          proximoHelado = ahora + azar(25_000, 45_000);
+          if (Math.random() < 0.5) {
+            ponerSnack("helado");
+            heladoHasta = ahora + azar(7000, 10_000);
+            if (!finDialogo) decir(una(FRASES.helado), "habla", 2600);
+          }
+        } else if (snackActual === "helado" && ahora >= heladoHasta) ponerSnack(null);
+      } else if (snackActual === "helado") ponerSnack(null);
+
       const fin = s.hasta && ahora >= s.hasta;
 
       switch (s.pose) {
@@ -400,7 +476,18 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           if (ahora >= s.ganasDeAterrizar) s.giro = 0.9; // pica hacia el piso
           s.angulo = Math.max(-1.3, Math.min(1.3, s.angulo + s.giro * dt));
           // La velocidad vuelve sola a su crucero después de un impulso.
-          s.vel += (190 - s.vel) * Math.min(1, dt * 0.6);
+          s.vel += (crucero() - s.vel) * Math.min(1, dt * 0.6);
+          // Cambia de estilo cada tanto: puño al frente, nadando o boca arriba.
+          if (s.pose === "volar" && ahora >= proximoEstilo) {
+            proximoEstilo = ahora + azar(9000, 16_000);
+            const r = Math.random();
+            const nuevo: EstiloVuelo = snackActual === "helado" ? "superman" : r < 0.5 ? "superman" : r < 0.75 ? "nado" : "relax";
+            if (nuevo !== estiloActual) {
+              ponerEstilo(nuevo);
+              ponerAnimo(nuevo === "relax" ? "relajado" : "feliz");
+              if (nuevo !== "superman" && !finDialogo) decir(una(FRASES[nuevo]), "habla", 2600);
+            }
+          }
 
           s.tiempoBob += dt;
           s.x += Math.cos(s.angulo) * s.vel * dt * s.dir;
@@ -419,6 +506,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
               if (golpe) {
                 ponerAnimo("grito");
                 proximaFrase = ahora + 3500;
+                if (!finManga && Math.random() < 0.3) lanzarManga(una(VIÑETAS_GOLPE));
               }
             }
           }
@@ -549,6 +637,11 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         }
       }
 
+      if (finManga && ahora >= finManga) {
+        finManga = 0;
+        setManga(null);
+      }
+
       // Globos: uno a la vez, cada pocos segundos según lo que esté haciendo.
       if (finDialogo && ahora >= finDialogo) {
         finDialogo = 0;
@@ -556,7 +649,15 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         if (animoActual === "grito" && s.pose !== "alerta") ponerAnimo("feliz");
       }
       if (!finDialogo && ahora >= proximaFrase && !["festejo", "alerta", "llorar", "brinco"].includes(s.pose)) {
-        if (s.pose === "volar") {
+        if (s.pose === "volar" && snackActual === "helado") {
+          // Con helado no grita: lo disfruta.
+          if (Math.random() < 0.5) decir(una(FRASES.helado), "habla", 2400);
+          proximaFrase = ahora + azar(4000, 7000);
+        } else if (s.pose === "volar" && estiloActual !== "superman") {
+          // Nadando o boca arriba no grita: comenta tranquilo.
+          if (Math.random() < 0.55) decir(una(FRASES[estiloActual]), "habla", 2600);
+          proximaFrase = ahora + azar(5000, 9000);
+        } else if (s.pose === "volar") {
           if (Math.random() < 0.6) {
             ponerAnimo("grito");
             decir(una(FRASES.volar), "grito", 1800);
@@ -565,6 +666,14 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         } else if (s.pose === "caminar") {
           if (Math.random() < 0.7) decir(una(FRASES.caminar));
           proximaFrase = ahora + azar(3500, 7000);
+        } else if (s.pose === "quieto" && (snackActual === "pizza" || snackActual === "refresco")) {
+          // Con antojo no se duerme: come y lo comenta.
+          if (Math.random() < 0.7) decir(una(FRASES[snackActual]), "habla", 2600);
+          proximaFrase = ahora + azar(3500, 6000);
+        } else if (s.pose === "quieto" && !finManga && Math.random() < 0.28) {
+          // Cuadro de manga: zoom a su cara con una expresión exagerada.
+          lanzarManga(una(VIÑETAS));
+          proximaFrase = ahora + MANGA_MS + 1500;
         } else if (s.pose === "quieto") {
           // Primero se aburre (y lo dice); después le da sueño.
           if (animoActual === "aburrido" && Math.random() < 0.55) {
@@ -676,6 +785,25 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           </div>,
           document.body,
         )}
+      {manga && !pausado &&
+        createPortal(
+          <div
+            key={manga.id}
+            className="agente-manga"
+            aria-hidden
+            style={{
+              left: Math.min(Math.max(8, manga.x - 70), window.innerWidth - 228),
+              top: manga.y > 230 ? manga.y - 200 : manga.y + 96,
+            }}
+          >
+            <div className="agente-manga__lineas" />
+            <div className="agente-manga__cara">
+              <Personaje pose="quieto" animo={manga.animo} />
+            </div>
+            <span className="agente-manga__texto">{manga.texto}</span>
+          </div>,
+          document.body,
+        )}
       {pose === "llorar" && (
         <span className="agente-volador__nube" aria-hidden>
           <i /><i /><i />
@@ -695,7 +823,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       <span className="agente-volador__globo">GeorgIA · Alt+K</span>
       <div ref={orientacion} className="agente-volador__orientacion">
         <div ref={inclinacion} className="agente-volador__inclinacion">
-          <Personaje pose={pose} animo={animo} />
+          <Personaje pose={pose} animo={animo} snack={snack} vuelo={vuelo} />
         </div>
       </div>
     </button>
@@ -708,9 +836,22 @@ export function AgenteVolador({ pausado, onClick }: Props) {
  * curvas. Las articulaciones (hombros 38/58,39 · codo 58.1,51.6 · caderas
  * 45/52,63 · capa 48,37) están fijas: personaje.css gira sobre ellas.
  */
-export function Personaje({ pose, animo = "serio" }: { pose: Pose; animo?: Animo }) {
+export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superman" }: {
+  pose: Pose;
+  animo?: Animo;
+  snack?: Snack | null;
+  vuelo?: EstiloVuelo;
+}) {
   return (
-    <svg viewBox="0 0 96 96" className="agente-volador__sprite" data-pose={pose} data-animo={animo} aria-hidden>
+    <svg
+      viewBox="0 0 96 96"
+      className="agente-volador__sprite"
+      data-pose={pose}
+      data-animo={animo}
+      data-snack={snack ?? undefined}
+      data-vuelo={vuelo}
+      aria-hidden
+    >
       <defs>
         <linearGradient id="pj-laton" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#fbe3a0" />
@@ -767,22 +908,38 @@ export function Personaje({ pose, animo = "serio" }: { pose: Pose; animo?: Animo
 
         {/* Brazo de atrás: manga arremangada y mano */}
         <g className="pj-brazo">
-          <path d="M35.4 38.6 C34.2 45 34.4 51.6 35.6 57.6 L40 57.6 C41 51.6 41.4 45 40.9 38.6 C39 37.2 37.2 37.2 35.4 38.6 Z" fill="url(#pj-camisa)" />
+          {/* Brazo (hombro → codo) */}
+          <path d="M35.4 38.6 C34.6 42.6 34.8 46.6 35.3 50.4 L40.5 50.4 C41 46.6 41.4 42.6 40.9 38.6 C39 37.2 37.2 37.2 35.4 38.6 Z" fill="url(#pj-camisa)" />
+          <g className="pj-antebrazo-b">
+          <circle cx="37.9" cy="49.8" r="2.6" fill="url(#pj-camisa)" />
+          <path d="M35.4 49.6 C35.2 52.6 35.3 55 35.6 57.6 L40 57.6 C40.3 55 40.4 52.6 40.4 49.6 Z" fill="url(#pj-camisa)" />
           <path d="M35.3 55.6 C37 56.6 39 56.6 40.3 55.6 L40.1 58.2 C38.6 59 37 59 35.6 58.2 Z" fill="#6b727c" />
           <path d="M35.8 58.4 C35.2 61.2 36.4 63.4 38.2 63.4 C40 63.4 41 61.4 40.4 58.4 Z" fill="url(#pj-piel)" />
+          </g>
+          </g>
         </g>
 
         {/* Pierna de atrás */}
         <g className="pj-pierna-a">
-          <path d="M41.4 63 C40.8 70 41.4 77 42.4 84 L47.2 84 C48.2 77 49 70 48.8 63 Z" fill="url(#pj-jean)" />
-          <path d="M42.2 83.2 C41.8 86 41.6 88.4 42.4 89.6 L49.8 89.6 C50.6 88.2 49.4 86.6 47.6 85.8 L47.4 83.2 Z" fill="#1c1917" />
-          <path d="M42.3 85 L47.5 85" stroke="#c99a3b" strokeWidth="0.6" />
+          {/* Muslo */}
+          <path d="M41.4 63 C40.9 67 41.1 71 41.7 74.8 L47.7 74.8 C48.4 71 48.9 67 48.8 63 Z" fill="url(#pj-jean)" />
+          <g className="pj-rodilla-a">
+            {/* Espinilla + bota (gira sobre la rodilla) */}
+            <ellipse cx="44.7" cy="74.4" rx="3.1" ry="1.9" fill="url(#pj-jean)" />
+            <path d="M41.9 74.2 C41.8 78 42 81 42.4 84 L47.2 84 C47.6 81 47.8 78 47.6 74.2 Z" fill="url(#pj-jean)" />
+            <path d="M42.2 83.2 C41.8 86 41.6 88.4 42.4 89.6 L49.8 89.6 C50.6 88.2 49.4 86.6 47.6 85.8 L47.4 83.2 Z" fill="#1c1917" />
+            <path d="M42.3 85 L47.5 85" stroke="#c99a3b" strokeWidth="0.6" />
+          </g>
         </g>
         {/* Pierna de adelante */}
         <g className="pj-pierna-b">
-          <path d="M48.4 63 C47.8 70 48.4 77 49.4 84 L54.2 84 C55.2 77 56 70 55.8 63 Z" fill="url(#pj-jean)" />
-          <path d="M49.2 83.2 C48.8 86 48.6 88.4 49.4 89.6 L56.8 89.6 C57.6 88.2 56.4 86.6 54.6 85.8 L54.4 83.2 Z" fill="#292524" />
-          <path d="M49.3 85 L54.5 85" stroke="#c99a3b" strokeWidth="0.6" />
+          <path d="M48.4 63 C47.9 67 48.1 71 48.7 74.8 L54.7 74.8 C55.4 71 55.9 67 55.8 63 Z" fill="url(#pj-jean)" />
+          <g className="pj-rodilla-b">
+            <ellipse cx="51.7" cy="74.4" rx="3.1" ry="1.9" fill="url(#pj-jean)" />
+            <path d="M48.9 74.2 C48.8 78 49 81 49.4 84 L54.2 84 C54.6 81 54.8 78 54.6 74.2 Z" fill="url(#pj-jean)" />
+            <path d="M49.2 83.2 C48.8 86 48.6 88.4 49.4 89.6 L56.8 89.6 C57.6 88.2 56.4 86.6 54.6 85.8 L54.4 83.2 Z" fill="#292524" />
+            <path d="M49.3 85 L54.5 85" stroke="#c99a3b" strokeWidth="0.6" />
+          </g>
         </g>
 
         {/* Torso en V: hombros anchos, cintura angosta */}
@@ -808,6 +965,7 @@ export function Personaje({ pose, animo = "serio" }: { pose: Pose; animo?: Animo
         <path d="M45 29.4 C45 32 44.6 34 44.2 35.6 L51.8 35.6 C51.4 34 51 32 51 29.4 Z" fill="url(#pj-metal)" />
         <path d="M46 31 C47.6 31.8 48.6 31.8 50 31 M45.6 33.2 C47.4 34 48.8 34 50.4 33.2" fill="none" stroke="#d4a446" strokeWidth="0.6" />
 
+        <g className="pj-cabeza">
         {/* Cabeza: mandíbula marcada, nariz larga */}
         <path d="M41 16 C41 9.4 45.4 6.6 50 6.8 C55.4 7.1 58.6 10.8 58.7 15.6 C58.8 18.4 61.6 20.6 61.4 22.8 C61.2 24.6 59.2 24.8 58.8 26 C58.2 29.6 55.6 31.8 52 32 C47.6 32.2 43.6 30.2 42.1 26.6 C40.7 23.4 41 19.6 41 16 Z" fill="url(#pj-piel)" />
         <path d="M57.8 27.2 C56.4 29.4 54.6 30.6 52.4 30.8" fill="none" stroke="#a8704d" strokeWidth="0.5" />
@@ -857,6 +1015,8 @@ export function Personaje({ pose, animo = "serio" }: { pose: Pose; animo?: Animo
         <circle cx="55.8" cy="12.4" r="3.6" fill="url(#pj-laton)" />
         <circle cx="55.8" cy="12.4" r="2.4" fill="url(#pj-cristal)" />
 
+        </g>
+
         {/* Brazo robótico: hombrera, segmentos redondeados, puño */}
         <g className="pj-brazo-robot">
           <path d="M53.4 37.6 C53.6 34 56.4 32.6 59 33 C62 33.4 63.6 36 63.2 39 C62.8 41.6 60.6 42.6 58 42.4 C55.6 42.2 53.4 40.6 53.4 37.6 Z" fill="url(#pj-laton)" stroke="#6b4a14" strokeWidth="0.4" />
@@ -871,6 +1031,28 @@ export function Personaje({ pose, animo = "serio" }: { pose: Pose; animo?: Animo
             <path d="M54.2 60.6 C54 63.6 54.4 66.4 56 67.6 C57.8 68.8 60.4 68.4 61.6 66.8 C62.6 65 62.4 62.4 62 60.6 Z" fill="url(#pj-laton)" stroke="#5c3d0f" strokeWidth="0.45" />
             <path d="M55 63.4 C56.6 64 59.8 64 61.6 63.4 M55.4 65.8 C57 66.4 59.6 66.4 61.2 65.6" fill="none" stroke="#7a5418" strokeWidth="0.45" />
             <path d="M54.4 61.6 C53 62.4 52.8 64.2 54 65" fill="none" stroke="#7a5418" strokeWidth="0.9" strokeLinecap="round" />
+            {/* Antojos en el puño robótico (va al frente y se ve); personaje.css lo lleva a la boca */}
+            <g transform="translate(20 4)">
+          <g className="pj-snack pj-snack--pizza">
+            <path d="M33.6 60.6 L43 60.6 L38.6 70.6 Z" fill="#fcd34d" stroke="#d97706" strokeWidth="0.5" />
+            <path d="M33.2 59.6 L43.4 59.6 L43 61.4 L33.6 61.4 Z" fill="#b45309" />
+            <circle cx="37" cy="63.4" r="1.1" fill="#dc2626" />
+            <circle cx="39.8" cy="63" r="0.9" fill="#dc2626" />
+            <circle cx="38.6" cy="66.6" r="0.85" fill="#dc2626" />
+          </g>
+          <g className="pj-snack pj-snack--refresco">
+            <path d="M39.8 55.4 L41.4 50.6" stroke="#f8fafc" strokeWidth="0.9" strokeLinecap="round" />
+            <rect x="35.4" y="55.6" width="6" height="10" rx="1.3" fill="#dc2626" />
+            <rect x="35.4" y="58.6" width="6" height="2.4" fill="#f8fafc" />
+            <rect x="35.8" y="55.6" width="5.2" height="0.9" rx="0.4" fill="#cbd5e1" />
+          </g>
+          <g className="pj-snack pj-snack--helado">
+            <path d="M35.8 60.8 L41.2 60.8 L38.5 69.6 Z" fill="#d97706" />
+            <path d="M36.6 62.6 L40.4 62.6 M37.2 64.8 L39.8 64.8" stroke="#92400e" strokeWidth="0.4" />
+            <circle cx="38.5" cy="59.4" r="2.8" fill="#f9a8d4" />
+            <circle cx="38.5" cy="56.6" r="2.3" fill="#86efac" />
+            <circle cx="39.4" cy="55.6" r="0.6" fill="#fff" opacity="0.8" />
+            </g>
           </g>
         </g>
       </g>
