@@ -275,7 +275,7 @@ export function AppLayout({ children }: Props) {
       <BuildNotifier />
       {/* Agente de repos: con el usuario REAL, no el impersonado — la función
           valida el token de quien está logueado. */}
-      <AgenteRepos email={realUser?.email} />
+      <AgenteRepos email={realUser?.email} personajeVisible={realUser?.agenteVolador !== false} />
     </div>
   );
 }

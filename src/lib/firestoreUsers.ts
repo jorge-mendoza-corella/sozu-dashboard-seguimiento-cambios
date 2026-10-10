@@ -99,6 +99,8 @@ export interface AppUser {
    * suscrito sin pedirlo es una avalancha.
    */
   avisaDeTodosLosRepos?: boolean;
+  /** `false` = la persona escondió al personaje volador del agente (el chat sigue en Alt+K). */
+  agenteVolador?: boolean;
 }
 
 /**
@@ -313,6 +315,13 @@ export async function setUserAvisaDeTodos(email: string, valor: boolean) {
 }
 
 /** Actualiza los permisos CI/CD de un usuario. */
+/** Mostrar u ocultar el personaje del agente. Es preferencia de cada quien (las reglas se lo dejan a uno mismo). */
+export async function setUserAgenteVolador(email: string, visible: boolean) {
+  await setDoc(doc(db, "users", email), { agenteVolador: visible }, { merge: true });
+  // El perfil se lee una vez al entrar: se avisa para que el personaje aparezca o se vaya ya.
+  window.dispatchEvent(new CustomEvent("agente:visibilidad", { detail: { email, visible } }));
+}
+
 export async function setUserPermissions(email: string, permissions: CicdPermissions) {
   if (email === SUPERUSER_EMAIL) throw new Error("El superusuario raíz siempre tiene todos los permisos");
   await setDoc(doc(db, "users", email), { permissions }, { merge: true });
