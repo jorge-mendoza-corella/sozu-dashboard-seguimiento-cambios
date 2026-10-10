@@ -397,6 +397,8 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     const crucero = () => (estiloActual === "relax" ? 110 : estiloActual === "nado" ? 140 : 190);
     let idManga = 0;
     let finManga = 0;
+    // También en pleno vuelo, cada 15-30 s (antes solo descansando o tras un golpe).
+    let proximaMangaVuelo = performance.now() + azar(10_000, 20_000);
     const lanzarManga = (v: Viñeta) => {
       idManga += 1;
       finManga = performance.now() + MANGA_MS;
@@ -574,7 +576,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
               if (golpe) {
                 ponerAnimo("grito");
                 proximaFrase = ahora + 3500;
-                if (!finManga && Math.random() < 0.3) lanzarManga(una(VIÑETAS_GOLPE));
+                if (!finManga && Math.random() < 0.6) lanzarManga(una(VIÑETAS_GOLPE));
               }
             }
           }
@@ -709,6 +711,10 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         finManga = 0;
         setManga(null);
       }
+      if (s.pose === "volar" && !finManga && !finDialogo && ahora >= proximaMangaVuelo) {
+        proximaMangaVuelo = ahora + azar(15_000, 30_000);
+        lanzarManga(una(snackActual ? VIÑETAS_SNACK : VIÑETAS));
+      }
 
       // Globos: uno a la vez, cada pocos segundos según lo que esté haciendo.
       if (finDialogo && ahora >= finDialogo) {
@@ -736,10 +742,10 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           proximaFrase = ahora + azar(3500, 7000);
         } else if (s.pose === "quieto" && (snackActual === "pizza" || snackActual === "refresco")) {
           // Con antojo no se duerme: come y lo comenta (y a veces lo resalta en viñeta).
-          if (!finManga && Math.random() < 0.25) lanzarManga(una(VIÑETAS_SNACK));
+          if (!finManga && Math.random() < 0.5) lanzarManga(una(VIÑETAS_SNACK));
           else if (Math.random() < 0.7) decir(una(FRASES[snackActual]), "habla", 2600);
           proximaFrase = ahora + azar(3500, 6000);
-        } else if (s.pose === "quieto" && !finManga && Math.random() < 0.28) {
+        } else if (s.pose === "quieto" && !finManga && Math.random() < 0.55) {
           // Cuadro de manga: resalta su expresión con algo chusco.
           lanzarManga(una(snackActual ? VIÑETAS_SNACK : VIÑETAS));
           proximaFrase = ahora + MANGA_MS + 1500;
