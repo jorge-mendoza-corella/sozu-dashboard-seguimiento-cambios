@@ -976,7 +976,8 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           <DeployDevControl
             owner={status.owner}
             repo={status.repo}
-            puedeTocar={perms.deployDev}
+            puedeDesplegar={perms.deployDev}
+            puedeCambiarAutomatico={perms.switchDeployDev}
             shaDev={status.branches.find((b) => b.name === "dev")?.lastCommitSha}
             // El último deploy a dev que TERMINÓ BIEN. Si el último falló, el
             // botón tiene que seguir ahí: reintentar es justo para lo que sirve.
