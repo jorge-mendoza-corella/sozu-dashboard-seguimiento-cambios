@@ -142,18 +142,24 @@ export async function permisosAgente(email: string | null | undefined): Promise<
     return {
       agente,
       docs: esRoot || listaDe(d?.docs).includes(email),
-      tickets: agente && listaDe(d?.tickets).includes(email),
+      // El root lo tiene prendido salvo que lo haya apagado.
+      tickets: esRoot ? !listaDe(d?.ticketsApagados).includes(email) : agente && listaDe(d?.tickets).includes(email),
     };
   } catch {
-    // El root siempre puede leer; si falla, al menos el agente y los docs.
-    return esRoot ? { agente: true, docs: true, tickets: false } : nada;
+    // Sin doc (o sin poder leerlo) el root conserva todo por default.
+    return esRoot ? { agente: true, docs: true, tickets: true } : nada;
   }
 }
 
 /** Listas completas (solo el root puede leerlas). */
-export async function leerAccesoAgente(): Promise<{ emails: string[]; docs: string[]; tickets: string[] }> {
+export async function leerAccesoAgente(): Promise<{ emails: string[]; docs: string[]; tickets: string[]; ticketsApagados: string[] }> {
   const d = (await getDoc(ACCESO())).data();
-  return { emails: listaDe(d?.emails).sort(), docs: listaDe(d?.docs), tickets: listaDe(d?.tickets) };
+  return {
+    emails: listaDe(d?.emails).sort(),
+    docs: listaDe(d?.docs),
+    tickets: listaDe(d?.tickets),
+    ticketsApagados: listaDe(d?.ticketsApagados),
+  };
 }
 
 export async function darAccesoAgente(email: string): Promise<void> {
@@ -166,6 +172,11 @@ export async function quitarAccesoAgente(email: string): Promise<void> {
 }
 
 export async function cambiarTickets(email: string, activar: boolean): Promise<void> {
+  // El root va al revés: prendido por default, se guarda cuando lo APAGA.
+  if (email === SUPERUSER_EMAIL) {
+    await setDoc(ACCESO(), { ticketsApagados: activar ? arrayRemove(email) : arrayUnion(email) }, { merge: true });
+    return;
+  }
   await setDoc(ACCESO(), { tickets: activar ? arrayUnion(email) : arrayRemove(email) }, { merge: true });
 }
 
