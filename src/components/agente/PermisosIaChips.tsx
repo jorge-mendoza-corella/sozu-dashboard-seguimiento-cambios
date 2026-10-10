@@ -51,10 +51,10 @@ export function PermisosIaChips({ email, disabled }: { email: string; disabled?:
           disabled={disabled || busy !== null}
           className={claseChip(agente)}
           onClick={() => void run("agente", () => (agente ? quitarAccesoAgente(email) : darAccesoAgente(email)))}
-          title={agente ? "Quitar el agente (también quita ver documentación)" : "Dar acceso al agente de repos"}
+          title={agente ? "Quitar GeorgIA (también quita docs y tickets)" : "Dar acceso a GeorgIA, el agente de repos"}
         >
           {busy === "agente" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bot className="h-3 w-3" />}
-          Agente de repos
+          GeorgIA
         </button>
         <button
           type="button"
@@ -62,7 +62,7 @@ export function PermisosIaChips({ email, disabled }: { email: string; disabled?:
           disabled={disabled || busy !== null || !agente}
           className={claseChip(docs)}
           onClick={() => void run("docs", () => cambiarVerDocs(email, !docs))}
-          title={!agente ? "Primero dale acceso al agente" : docs ? "Quitar permiso para abrir documentación" : "Dejarle abrir la documentación que cita el agente"}
+          title={!agente ? "Primero dale acceso a GeorgIA" : docs ? "Quitar permiso para abrir documentación" : "Dejarle abrir la documentación que cita GeorgIA"}
         >
           {busy === "docs" ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
           Ver documentación
@@ -72,7 +72,7 @@ export function PermisosIaChips({ email, disabled }: { email: string; disabled?:
           disabled={disabled || busy !== null || !agente}
           className={claseChip(tickets)}
           onClick={() => void run("tickets", () => cambiarTickets(email, !tickets))}
-          title={!agente ? "Primero dale acceso al agente" : tickets ? "Dejar de revisar sus tickets" : "El agente revisa cada 15 min sus tickets del portal y le avisa"}
+          title={!agente ? "Primero dale acceso a GeorgIA" : tickets ? "Dejar de revisar sus tickets" : "GeorgIA revisa cada 15 min sus tickets del portal y le avisa"}
         >
           {busy === "tickets" ? <Loader2 className="h-3 w-3 animate-spin" /> : <BellRing className="h-3 w-3" />}
           Revisar tickets

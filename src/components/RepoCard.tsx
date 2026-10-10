@@ -16,7 +16,8 @@ import { WorkflowBadge } from "./WorkflowBadge";
 import { DeployMetaTooltip } from "./DeployMetaTooltip";
 import { DocsStatusDot } from "./DocsStatusDot";
 import { AvisoDeploy } from "./AvisoDeploy";
-import { revisarDeployPrd } from "@/lib/festejoDeploy";
+import { EVENTO_TICKETS_LISTOS, revisarDeployPrd } from "@/lib/festejoDeploy";
+import { ticketsResueltosEnDeploy } from "@/lib/agenteTickets";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjects } from "@/hooks/useProjectsRepos";
 import { useClients } from "@/hooks/useClients";
@@ -270,13 +271,22 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
   const empresaFestejo = empresasFestejo.find((c) => c.id === proyectoFestejo?.clientId);
   const nombreProyecto = proyectoFestejo?.name ?? null;
   const nombreEmpresa = empresaFestejo ? empresaFestejo.tradeName || empresaFestejo.legalName : null;
+  const emailFestejo = usuarioFestejo?.email ?? null;
   useEffect(() => {
-    revisarDeployPrd(status.owner, status.repo, status.latestRuns, {
+    const r = revisarDeployPrd(status.owner, status.repo, status.latestRuns, {
       repo: status.label,
       proyecto: nombreProyecto,
       empresa: nombreEmpresa,
     });
-  }, [status.owner, status.repo, status.label, status.latestRuns, nombreProyecto, nombreEmpresa]);
+    // Deploy bueno a PRD: ¿trajo commits de tickets que se pasaron a Claude desde aquí?
+    if (r?.tipo === "festejo" && r.sha && emailFestejo) {
+      ticketsResueltosEnDeploy(emailFestejo, status.owner, status.repo, status.label, r.sha)
+        .then((listos) => {
+          if (listos.length) window.dispatchEvent(new CustomEvent(EVENTO_TICKETS_LISTOS, { detail: { tickets: listos } }));
+        })
+        .catch((e) => console.warn("[GeorgIA] no se pudo ligar el deploy con sus tickets", e));
+    }
+  }, [status.owner, status.repo, status.label, status.latestRuns, nombreProyecto, nombreEmpresa, emailFestejo]);
 
   const deployando = deployEnCurso(status.latestRuns);
   const isDeployingToMain = deployando === "prd";

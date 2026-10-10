@@ -481,6 +481,25 @@ service cloud.firestore {
       allow write: if esRootVerificado();
     }
 
+    // Investigación previa de cada ticket (repos/rutas/pasos): la escribe la función
+    // `agenteAnalizarTicket`; la leen los usuarios del dashboard.
+    match /agente_tickets/{ticketId} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
+      allow write: if false;
+    }
+
+    // Tickets que cada quien pasó a Claude (copiar el .md) y los PRs a main que los
+    // resolvieron. Id = "<email>__<ticketId>": cada quien solo ve y toca los suyos.
+    // `cerrado` lo pone la función al cerrar en el portal.
+    match /agente_tickets_enviados/{docId} {
+      allow read: if request.auth != null && resource.data.owner == request.auth.token.email;
+      allow create, update: if request.auth != null
+        && request.resource.data.owner == request.auth.token.email
+        && request.resource.data.ticketId is string
+        && docId == request.auth.token.email + '__' + request.resource.data.ticketId;
+    }
+
     // Cupo por hora: solo lo toca la función (admin SDK).
     match /agente_uso/{email} {
       allow read, write: if false;

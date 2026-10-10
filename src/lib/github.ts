@@ -1619,3 +1619,20 @@ export async function dispararDeployDev(owner: string, repo: string): Promise<st
   await octokit.actions.createWorkflowDispatch({ owner, repo, workflow_id: wf.id, ref: "dev" });
   return wf.name ?? "deploy";
 }
+
+/**
+ * PR hacia main que trajo un commit (el `headSha` de un deploy a PRD) y los
+ * mensajes de sus commits. Para ligar un deploy con los tickets que resolvió
+ * (trailer `Ticket-SOZU: #<folio>` en los commits). `null` si no hay PR (push directo).
+ */
+export async function prDeMergeConCommits(
+  owner: string,
+  repo: string,
+  sha: string,
+): Promise<{ numero: number; titulo: string; url: string; commits: string[] } | null> {
+  const { data: prs } = await octokit.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: sha });
+  const pr = prs.find((p) => p.base.ref === "main" && p.merged_at) ?? null;
+  if (!pr) return null;
+  const { data: commits } = await octokit.pulls.listCommits({ owner, repo, pull_number: pr.number, per_page: 100 });
+  return { numero: pr.number, titulo: pr.title, url: pr.html_url, commits: commits.map((c) => c.commit.message) };
+}
