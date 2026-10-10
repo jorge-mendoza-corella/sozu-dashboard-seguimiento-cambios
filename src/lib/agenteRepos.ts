@@ -16,6 +16,7 @@ import {
 } from "firebase/firestore";
 import { app, db } from "./firebase";
 import { SUPERUSER_EMAIL } from "./firestoreUsers";
+import { esSkin, setSkinGeorgIA, SKIN_DEFAULT, type Skin } from "@/components/agente/skinsDatos";
 
 const functions = getFunctions(app, "us-central1");
 
@@ -138,6 +139,8 @@ export async function permisosAgente(email: string | null | undefined): Promise<
   const esRoot = email === SUPERUSER_EMAIL;
   try {
     const d = (await getDoc(ACCESO())).data();
+    // Apariencia elegida en Configuración → GeorgIA (la ven todos igual).
+    setSkinGeorgIA(esSkin(d?.skin) ? d.skin : SKIN_DEFAULT);
     const agente = esRoot || listaDe(d?.emails).includes(email);
     return {
       agente,
@@ -169,6 +172,12 @@ export async function darAccesoAgente(email: string): Promise<void> {
 /** Quitar el agente quita también docs y tickets: sin agente no hay dónde verlos. */
 export async function quitarAccesoAgente(email: string): Promise<void> {
   await updateDoc(ACCESO(), { emails: arrayRemove(email), docs: arrayRemove(email), tickets: arrayRemove(email) });
+}
+
+/** Cambia la apariencia de GeorgIA para todos (solo el root puede escribir el doc). */
+export async function cambiarSkin(skin: Skin): Promise<void> {
+  await setDoc(ACCESO(), { skin }, { merge: true });
+  setSkinGeorgIA(skin);
 }
 
 export async function cambiarTickets(email: string, activar: boolean): Promise<void> {

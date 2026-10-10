@@ -47,21 +47,34 @@
   transition: transform 160ms var(--ease-out);
 }
 
-/* Articulaciones */
-.pj-brazo-robot { transform-box: view-box; transform-origin: 58px 39px; transition: transform 240ms var(--ease-out); }
-.pj-antebrazo   { transform-box: view-box; transform-origin: 58.1px 51.6px; transition: transform 240ms var(--ease-out); }
-.pj-brazo       { transform-box: view-box; transform-origin: 38px 39px; transition: transform 240ms var(--ease-out); }
-.pj-pierna-a    { transform-box: view-box; transform-origin: 45px 63px; transition: transform 200ms var(--ease-out); }
-.pj-pierna-b    { transform-box: view-box; transform-origin: 52px 63px; transition: transform 200ms var(--ease-out); }
+/* Articulaciones. Entre poses se mueven con ease-in-out y algo de tiempo
+   (antes 200-240 ms ease-out: los cambios se veían a saltos, cuadrados). */
+.pj-brazo-robot, .pj-antebrazo, .pj-brazo, .pj-antebrazo-b, .pj-pierna-a, .pj-pierna-b,
+.pj-rodilla-a, .pj-rodilla-b, .pj-cabeza {
+  transform-box: view-box;
+  transition: transform 420ms cubic-bezier(0.77, 0, 0.175, 1);
+}
+.pj-brazo-robot { transform-origin: 58px 39px; }
+.pj-antebrazo   { transform-origin: 58.1px 51.6px; }
+.pj-brazo       { transform-origin: 38px 39px; }
+.pj-antebrazo-b { transform-origin: 37.9px 49.8px; }
+.pj-pierna-a    { transform-origin: 45px 63px; }
+.pj-pierna-b    { transform-origin: 52px 63px; }
+.pj-rodilla-a   { transform-origin: 44.7px 74.4px; }
+.pj-rodilla-b   { transform-origin: 51.7px 74.4px; }
+.pj-cabeza      { transform-origin: 48px 31px; }
 .pj-capa        { transform-box: view-box; transform-origin: 48px 37px; }
 
 /* ── Volar: puño robótico al frente, piernas atrás, capa ondeando ─────────── */
 /* Ligeramente por delante de la cara (hacia el pecho): puño estirado, no tapándola. */
 [data-pose="volar"] .pj-brazo-robot { transform: rotate(-163deg) translateY(17px); }
-[data-pose="volar"] .pj-antebrazo   { transform-box: view-box; transform-origin: 58.1px 51.6px; transition: transform 240ms var(--ease-out); }
-.pj-brazo       { transform: rotate(14deg); }
+[data-pose="volar"] .pj-brazo       { transform: rotate(14deg); }
 [data-pose="volar"] .pj-pierna-a    { transform: rotate(10deg); }
 [data-pose="volar"] .pj-pierna-b    { transform: rotate(-4deg); }
+[data-pose="volar"] .pj-rodilla-a   { transform: rotate(14deg); }
+[data-pose="volar"] .pj-rodilla-b   { transform: rotate(6deg); }
+[data-pose="volar"] .pj-antebrazo-b { transform: rotate(18deg); }
+[data-pose="volar"] .pj-cabeza      { transform: rotate(-10deg); }
 [data-pose="volar"] .pj-capa        { animation: pj-capa 420ms ease-in-out infinite alternate; }
 @keyframes pj-capa {
   from { transform: skewX(-10deg) scaleY(1.04); }
@@ -71,10 +84,15 @@
 /* ── Caminar: piernas y brazos alternados ─────────────────────────────────── */
 [data-pose="caminar"] .pj-pierna-a    { animation: pj-paso 520ms ease-in-out infinite alternate; }
 [data-pose="caminar"] .pj-pierna-b    { animation: pj-paso 520ms ease-in-out infinite alternate-reverse; }
-[data-pose="caminar"] .pj-antebrazo   { transform-box: view-box; transform-origin: 58.1px 51.6px; transition: transform 240ms var(--ease-out); }
-.pj-brazo       { animation: pj-paso 520ms ease-in-out infinite alternate-reverse; }
+[data-pose="caminar"] .pj-brazo       { animation: pj-paso 520ms ease-in-out infinite alternate-reverse; }
 [data-pose="caminar"] .pj-brazo-robot { animation: pj-braceo 520ms ease-in-out infinite alternate; }
 [data-pose="caminar"] .agente-volador__cuerpo { animation: pj-rebote 260ms ease-in-out infinite alternate; }
+[data-pose="caminar"] .pj-rodilla-a   { animation: pj-rodilla 520ms ease-in-out infinite alternate; }
+[data-pose="caminar"] .pj-rodilla-b   { animation: pj-rodilla 520ms ease-in-out infinite alternate-reverse; }
+[data-pose="caminar"] .pj-antebrazo-b { transform: rotate(-24deg); }
+[data-pose="caminar"] .pj-cabeza      { animation: pj-cabeceo-paso 520ms ease-in-out infinite alternate; }
+@keyframes pj-rodilla { from { transform: rotate(0deg); } to { transform: rotate(30deg); } }
+@keyframes pj-cabeceo-paso { from { transform: rotate(-2deg); } to { transform: rotate(2deg); } }
 @keyframes pj-paso   { from { transform: rotate(-22deg); } to { transform: rotate(22deg); } }
 @keyframes pj-braceo { from { transform: rotate(-16deg); } to { transform: rotate(16deg); } }
 @keyframes pj-rebote { from { transform: translateY(0); } to { transform: translateY(-1.5px); } }
@@ -83,13 +101,24 @@
 [data-pose="quieto"] .pj-brazo-robot { transform: rotate(-12deg); }
 [data-pose="quieto"] .pj-antebrazo   { transform: rotate(-150deg); }
 [data-pose="quieto"] .agente-volador__cuerpo { animation: pj-respira 2.4s ease-in-out infinite alternate; }
+[data-pose="quieto"] .pj-cabeza { animation: pj-mira 6s ease-in-out infinite; }
+[data-pose="quieto"] .pj-rodilla-b { transform: rotate(8deg); }
+@keyframes pj-mira {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-6deg); }
+  55% { transform: rotate(5deg); }
+  75% { transform: rotate(1deg); }
+}
 @keyframes pj-respira { from { transform: translateY(0); } to { transform: translateY(-1px); } }
 
 /* ── Agacharse antes de brincar / al aterrizar ───────────────────────────── */
 .agente-volador__sprite[data-pose="agachar"] { transform: scale(1.1, 0.84); }
 [data-pose="agachar"] .pj-brazo-robot { transform: rotate(-30deg); }
-[data-pose="agachar"] .pj-antebrazo   { transform-box: view-box; transform-origin: 58.1px 51.6px; transition: transform 240ms var(--ease-out); }
-.pj-brazo       { transform: rotate(30deg); }
+[data-pose="agachar"] .pj-brazo       { transform: rotate(30deg); }
+[data-pose="agachar"] .pj-pierna-a    { transform: rotate(-24deg); }
+[data-pose="agachar"] .pj-pierna-b    { transform: rotate(-30deg); }
+[data-pose="agachar"] .pj-rodilla-a   { transform: rotate(44deg); }
+[data-pose="agachar"] .pj-rodilla-b   { transform: rotate(52deg); }
 
 /* ── Despegar: estirado, puño arriba ─────────────────────────────────────── */
 .agente-volador__sprite[data-pose="despegar"] { transform: scale(0.92, 1.1); }
@@ -114,8 +143,12 @@
 [data-pose="llorar"] .pj-brazo-robot { transform: rotate(-22deg); }
 [data-pose="llorar"] .pj-antebrazo   { transform: rotate(-152deg); }
 [data-pose="llorar"] .pj-brazo       { transform: rotate(-150deg); }
-[data-pose="llorar"] .pj-pierna-a    { transform: rotate(38deg); }
-[data-pose="llorar"] .pj-pierna-b    { transform: rotate(-30deg); }
+[data-pose="llorar"] .pj-pierna-a    { transform: rotate(-38deg); }
+[data-pose="llorar"] .pj-pierna-b    { transform: rotate(-46deg); }
+[data-pose="llorar"] .pj-rodilla-a   { transform: rotate(96deg); }
+[data-pose="llorar"] .pj-rodilla-b   { transform: rotate(104deg); }
+[data-pose="llorar"] .pj-antebrazo-b { transform: rotate(-120deg); }
+[data-pose="llorar"] .pj-cabeza      { transform: rotate(12deg); }
 [data-pose="llorar"] .agente-volador__cuerpo { animation: pj-sollozo 340ms ease-in-out infinite alternate; }
 @keyframes pj-sollozo { from { transform: translateY(0) rotate(-1deg); } to { transform: translateY(1.2px) rotate(1deg); } }
 
@@ -156,6 +189,9 @@
 [data-pose="brinco"] .pj-brazo       { transform: rotate(150deg); }
 [data-pose="brinco"] .pj-pierna-a    { transform: rotate(12deg); }
 [data-pose="brinco"] .pj-pierna-b    { transform: rotate(-12deg); }
+[data-pose="brinco"] .pj-rodilla-a   { transform: rotate(30deg); }
+[data-pose="brinco"] .pj-rodilla-b   { transform: rotate(22deg); }
+[data-pose="brinco"] .pj-antebrazo-b { transform: rotate(-20deg); }
 @keyframes pj-brinco {
   from { transform: translateY(0) scale(1.06, 0.92); }
   to   { transform: translateY(-22%) scale(0.96, 1.05); }
@@ -166,6 +202,63 @@
 [data-pose="alerta"] .pj-brazo       { transform: rotate(28deg); }
 [data-pose="alerta"] .agente-volador__cuerpo { animation: pj-rebote 190ms ease-in-out infinite alternate; }
 @keyframes pj-agita { from { transform: rotate(-150deg); } to { transform: rotate(-185deg); } }
+
+/* ── Estilos de vuelo (data-vuelo, solo en volar) ─────────────────────────── */
+/* Nado: crol en el aire — brazos en molino alternados y patada. */
+[data-pose="volar"][data-vuelo="nado"] .pj-brazo-robot { animation: pj-crol 1.5s linear infinite; }
+[data-pose="volar"][data-vuelo="nado"] .pj-brazo       { animation: pj-crol 1.5s linear -0.75s infinite; }
+[data-pose="volar"][data-vuelo="nado"] .pj-antebrazo,
+[data-pose="volar"][data-vuelo="nado"] .pj-antebrazo-b { transform: rotate(-12deg); }
+[data-pose="volar"][data-vuelo="nado"] .pj-pierna-a    { animation: pj-patada 340ms ease-in-out infinite alternate; }
+[data-pose="volar"][data-vuelo="nado"] .pj-pierna-b    { animation: pj-patada 340ms ease-in-out infinite alternate-reverse; }
+[data-pose="volar"][data-vuelo="nado"] .pj-rodilla-a   { animation: pj-rodilla-nado 340ms ease-in-out infinite alternate; }
+[data-pose="volar"][data-vuelo="nado"] .pj-rodilla-b   { animation: pj-rodilla-nado 340ms ease-in-out infinite alternate-reverse; }
+[data-pose="volar"][data-vuelo="nado"] .pj-cabeza      { animation: pj-respira-nado 750ms ease-in-out infinite alternate; }
+@keyframes pj-crol { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+@keyframes pj-patada { from { transform: rotate(-10deg); } to { transform: rotate(16deg); } }
+@keyframes pj-rodilla-nado { from { transform: rotate(0deg); } to { transform: rotate(26deg); } }
+@keyframes pj-respira-nado { from { transform: rotate(-14deg); } to { transform: rotate(4deg); } }
+
+/* Relax: boca arriba (se voltea con un giro de barril), manos en la nuca, pierna cruzada. */
+.agente-volador__sprite[data-pose="volar"][data-vuelo="relax"] { transform: scaleX(-1); transition: transform 600ms cubic-bezier(0.77, 0, 0.175, 1); }
+[data-pose="volar"][data-vuelo="relax"] .pj-brazo-robot { transform: rotate(-178deg); }
+[data-pose="volar"][data-vuelo="relax"] .pj-antebrazo   { transform: rotate(-158deg); }
+[data-pose="volar"][data-vuelo="relax"] .pj-brazo       { transform: rotate(-176deg); }
+[data-pose="volar"][data-vuelo="relax"] .pj-antebrazo-b { transform: rotate(150deg); }
+[data-pose="volar"][data-vuelo="relax"] .pj-pierna-a    { transform: rotate(6deg); }
+[data-pose="volar"][data-vuelo="relax"] .pj-pierna-b    { transform: rotate(-34deg); }
+[data-pose="volar"][data-vuelo="relax"] .pj-rodilla-b   { transform: rotate(62deg); }
+[data-pose="volar"][data-vuelo="relax"] .pj-cabeza      { transform: rotate(-6deg); }
+[data-pose="volar"][data-vuelo="relax"] .pj-capa        { animation: pj-capa 900ms ease-in-out infinite alternate; }
+[data-pose="volar"][data-vuelo="relax"] .agente-volador__cuerpo { animation: pj-respira 2.4s ease-in-out infinite alternate; }
+
+/* Parpadeo cada pocos segundos (cualquier ánimo con ojo abierto). */
+.pj-ojo-abierto { transform-box: view-box; transform-origin: 53.6px 20.7px; animation: pj-parpadeo 4.6s infinite; }
+@keyframes pj-parpadeo { 0%, 94%, 100% { transform: scaleY(1); } 96.5% { transform: scaleY(0.08); } }
+/* Relajado: ojo cerrado y sonrisa (vuelo boca arriba). */
+[data-animo="relajado"] :is(.pj-ceja--feliz, .pj-boca--feliz, .pj-ojo-cerrado) { opacity: 1; }
+[data-animo="relajado"] .pj-ojo-abierto { opacity: 0; }
+
+/* ── Antojos: pizza / refresco descansando, helado volando ───────────────── */
+.pj-snack { opacity: 0; transition: opacity 160ms var(--ease-out); }
+[data-snack="pizza"] .pj-snack--pizza,
+[data-snack="refresco"] .pj-snack--refresco,
+[data-snack="helado"] .pj-snack--helado { opacity: 1; }
+/* Se lo lleva a la boca con la mano robótica (va al frente) y lo baja, sin prisa. */
+.agente-volador__sprite[data-snack] .pj-brazo-robot { animation: pj-comer 2.6s ease-in-out infinite; }
+.agente-volador__sprite[data-snack] .pj-antebrazo   { animation: pj-comer-codo 2.6s ease-in-out infinite; }
+@keyframes pj-comer {
+  0%, 100% { transform: rotate(-4deg); }
+  35%, 60% { transform: rotate(-14deg); }
+}
+@keyframes pj-comer-codo {
+  0%, 100% { transform: rotate(-70deg); }
+  35%, 60% { transform: rotate(-150deg); }
+}
+/* Helado volando: la mano cerca de la cara, lamiendo (va y viene poquito). */
+.agente-volador__sprite[data-snack="helado"] .pj-brazo-robot { animation: none; transform: rotate(-14deg); }
+.agente-volador__sprite[data-snack="helado"] .pj-antebrazo   { animation: pj-lamer 900ms ease-in-out infinite alternate; }
+@keyframes pj-lamer { from { transform: rotate(-138deg); } to { transform: rotate(-152deg); } }
 
 /* Ojo robótico: late suave, siempre (es lo "vivo" incluso quieto). */
 .pj-ojo-robot { animation: pj-ojo 1.8s ease-in-out infinite alternate; }
@@ -305,6 +398,22 @@
 }
 .agente-volador__letrero-titulo { font-size: 15px; font-weight: 800; }
 .agente-volador__letrero-linea { font-size: 13px; font-weight: 600; opacity: 0.85; animation: pj-globo-entra 200ms var(--ease-out); }
+.agente-volador__letrero[data-tipo="store"] {
+  color: #14532d;
+  background: #dcfce7;
+  border-color: #16a34a;
+}
+.agente-volador__letrero[data-tipo="dev"] {
+  color: #1e3a8a;
+  background: #dbeafe;
+  border-color: #2563eb;
+}
+.agente-volador__letrero[data-tipo="dev-fallo"] {
+  color: #7c2d12;
+  background: #ffedd5;
+  border-color: #ea580c;
+  animation: pj-letrero-entra 220ms var(--ease-out);
+}
 .agente-volador__letrero[data-tipo="fallo"] {
   color: #7f1d1d;
   background: #fee2e2;
@@ -349,8 +458,97 @@
   .agente-volador__sprite *,
   .agente-volador__orientacion { animation: none !important; transition: none !important; }
   .pj-ojo-robot { animation: pj-ojo 1.8s ease-in-out infinite alternate !important; }
-  .pj-ceja, .pj-boca, .pj-ojo-cerrado, .pj-parpado, .pj-lagrimas { transition: opacity 120ms ease !important; }
+  .pj-ceja, .pj-boca, .pj-ojo-cerrado, .pj-parpado, .pj-lagrimas, .pj-snack { transition: opacity 120ms ease !important; }
   .agente-volador__dialogo { animation: none !important; }
   .agente-volador__dialogo[data-tipo="zzz"] i { animation: none !important; opacity: 1; }
   .agente-volador__nube, .agente-volador__nube i, .agente-volador__letrero-linea { animation: none !important; }
 }
+
+/* ── Viñeta de manga: zoom a la cara con líneas de acción ────────────────── */
+.agente-manga {
+  position: fixed;
+  z-index: 45;
+  width: 220px;
+  height: 180px;
+  border: 3px solid #0f172a;
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 6px 6px 0 #0f172a;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  animation: manga-entra 260ms cubic-bezier(0.23, 1, 0.32, 1), manga-temblor 180ms ease-in-out 260ms 2;
+}
+.agente-manga__lineas {
+  position: absolute;
+  inset: -40%;
+  background: repeating-conic-gradient(from 0deg, #0f172a 0deg 2deg, transparent 2deg 9deg);
+  opacity: 0.85;
+  -webkit-mask: radial-gradient(circle, transparent 28%, #000 62%);
+  mask: radial-gradient(circle, transparent 28%, #000 62%);
+}
+/* Recorte a la cabeza del personaje (viewBox 96: la cara vive ~x40-61, y4-32). */
+.agente-manga__cara {
+  position: absolute;
+  width: 560px;
+  height: 560px;
+  left: -196px;
+  top: -34px;
+}
+.agente-manga__cara .agente-volador__sprite { filter: none; }
+.agente-manga__texto {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border: 2px solid #0f172a;
+  background: #fef08a;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: #0f172a;
+  transform: rotate(-4deg);
+}
+@keyframes manga-entra { from { opacity: 0; transform: scale(0.6) rotate(-6deg); } }
+@keyframes manga-temblor { 50% { transform: translateX(3px) rotate(1deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .agente-manga, .agente-manga * { animation: none !important; }
+}
+
+/* ── GeorgIA pensativa al pie de la lista de tickets ─────────────────────── */
+.georgia-pensando .agente-volador__sprite { filter: drop-shadow(0 3px 4px rgb(0 0 0 / 0.2)); }
+.georgia-pensando__nube { position: relative; animation: pj-globo-entra 260ms cubic-bezier(0.23, 1, 0.32, 1); }
+/* Burbujitas de pensamiento hacia la cabeza. */
+.georgia-pensando__nube::before,
+.georgia-pensando__nube::after {
+  content: "";
+  position: absolute;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background));
+  border-radius: 9999px;
+}
+.georgia-pensando__nube::before { width: 9px; height: 9px; left: -7px; bottom: -6px; }
+.georgia-pensando__nube::after  { width: 5px; height: 5px; left: -13px; bottom: -12px; }
+
+/* Estilos de viñeta */
+.agente-manga { width: 240px; }
+.agente-manga[data-estilo="ojos"] { height: 92px; background: #0f172a; }
+.agente-manga[data-estilo="ojos"] .agente-manga__cara { width: 1000px; height: 1000px; left: -416px; top: -150px; }
+.agente-manga[data-estilo="ojos"] .agente-manga__texto { background: transparent; color: #fff; border: 0; transform: none; font-size: 13px; left: auto; right: 8px; bottom: 4px; }
+.agente-manga[data-estilo="gota"] { background: #e0f2fe; }
+.agente-manga__gota { position: absolute; right: 34px; top: 14px; font-size: 34px; animation: manga-gota 1.4s ease-in 1; }
+@keyframes manga-gota { from { transform: translateY(-6px); } to { transform: translateY(8px); } }
+.agente-manga[data-estilo="gota"] .agente-manga__texto { background: #fff; }
+.agente-manga[data-estilo="shoujo"] { background: radial-gradient(circle at 60% 40%, #fff 0%, #fbcfe8 55%, #f9a8d4 100%); }
+.agente-manga__brillos span { position: absolute; font-size: 18px; animation: manga-brillo 1.2s ease-in-out infinite alternate; }
+.agente-manga__brillos span:nth-child(1) { left: 8%; top: 12%; }
+.agente-manga__brillos span:nth-child(2) { left: 78%; top: 10%; animation-delay: .3s; }
+.agente-manga__brillos span:nth-child(3) { left: 86%; top: 56%; animation-delay: .6s; }
+.agente-manga__brillos span:nth-child(4) { left: 10%; top: 62%; animation-delay: .9s; }
+.agente-manga__brillos span:nth-child(5) { left: 48%; top: 4%; animation-delay: .45s; }
+@keyframes manga-brillo { from { transform: scale(0.8) rotate(-10deg); opacity: .6; } to { transform: scale(1.15) rotate(10deg); opacity: 1; } }
+.agente-manga[data-estilo="shoujo"] .agente-manga__texto { background: #fff; color: #be185d; }
+.agente-manga[data-estilo="shock"] { background: #0f172a; }
+.agente-manga[data-estilo="shock"] .agente-manga__cara { filter: grayscale(1) contrast(3) invert(1); }
+.agente-manga__rayo { position: absolute; inset: 0; background: conic-gradient(from 200deg at 70% 0%, transparent 0 20deg, #fff 20deg 24deg, transparent 24deg); }
+.agente-manga[data-estilo="shock"] .agente-manga__texto { background: #ef4444; color: #fff; }

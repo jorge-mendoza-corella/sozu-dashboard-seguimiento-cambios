@@ -21,8 +21,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./personaje.css";
+import { Antojos, Bata, BrazoHumano, CabezaCartoon } from "./skins";
+import { PALETA, useSkinGeorgIA, type Skin } from "./skinsDatos";
 import {
-  dondeFue, EVENTO_DEV_FALLO, EVENTO_DEV_OK, EVENTO_FALLO, EVENTO_FESTEJO, type DetalleFestejo,
+  dondeFue, EVENTO_DEV_FALLO, EVENTO_DEV_OK, EVENTO_FALLO, EVENTO_FESTEJO, EVENTO_STORE, type DetalleFestejo, type DetalleStore,
 } from "@/lib/festejoDeploy";
 
 /** Alerta de tickets pendientes: el personaje aterriza, se para y grita. */
@@ -36,8 +38,12 @@ const ALERTA_MS = 90_000;
 
 const COLORES_CONFETI = ["#f59e0b", "#ef4444", "#22d3ee", "#a855f7", "#22c55e", "#facc15", "#3b82f6", "#ec4899"];
 
+/** Logos para el confeti de las tiendas (siluetas simples, como data URL). */
+const LOGO_ANDROID = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#3DDC84" d="M6 10.5h12v7.2a1.3 1.3 0 0 1-1.3 1.3H15v2.6a1.2 1.2 0 0 1-2.4 0V19h-1.2v2.6a1.2 1.2 0 0 1-2.4 0V19H7.3A1.3 1.3 0 0 1 6 17.7zM4.2 10.5a1.2 1.2 0 0 1 1.2 1.2v4.8a1.2 1.2 0 0 1-2.4 0v-4.8a1.2 1.2 0 0 1 1.2-1.2zm15.6 0a1.2 1.2 0 0 1 1.2 1.2v4.8a1.2 1.2 0 0 1-2.4 0v-4.8a1.2 1.2 0 0 1 1.2-1.2zM6 9.6a6 6 0 0 1 3.1-4.9L8 3a.3.3 0 0 1 .5-.3l1.2 1.7a6.4 6.4 0 0 1 4.6 0l1.2-1.7a.3.3 0 0 1 .5.3l-1.1 1.7A6 6 0 0 1 18 9.6zm3.4-2.4a.7.7 0 1 0 0 1.4.7.7 0 0 0 0-1.4zm5.2 0a.7.7 0 1 0 0 1.4.7.7 0 0 0 0-1.4z"/></svg>')}`;
+const LOGO_APPLE = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#111827" d="M16.4 12.6c0-2.5 2-3.7 2.1-3.8-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9s-2-.9-3.3-.8C6 7 4.5 8 3.6 9.5c-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6s1.8-.8 3.3-.8 2 .8 3.3.8 2.2-1.3 3-2.5c1-1.4 1.4-2.8 1.4-2.9 0 0-2.7-1-2.7-4.3zM14 5.1c.7-.8 1.2-2 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4z"/></svg>')}`;
+
 /** Lluvia de confeti a pantalla completa (WAAPI: transform/opacity, se limpia solo). */
-function lanzarConfeti() {
+function lanzarConfeti(tipo: "colores" | "android" | "ios" = "colores") {
   const capa = document.createElement("div");
   capa.setAttribute("aria-hidden", "true");
   capa.style.cssText = "position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:60";
@@ -48,8 +54,12 @@ function lanzarConfeti() {
   for (let i = 0; i < 160; i++) {
     const p = document.createElement("i");
     const w = 6 + Math.random() * 6;
-    p.style.cssText = `position:absolute;left:0;top:0;width:${w}px;height:${w * (Math.random() < 0.5 ? 1.6 : 0.6)}px;` +
-      `background:${COLORES_CONFETI[i % COLORES_CONFETI.length]};border-radius:${Math.random() < 0.3 ? "50%" : "1px"}`;
+    // Tiendas: 2 de cada 3 piezas son el logo de la plataforma; el resto, confeti normal.
+    const logo = tipo !== "colores" && i % 3 !== 2 ? (tipo === "android" ? LOGO_ANDROID : LOGO_APPLE) : null;
+    p.style.cssText = logo
+      ? `position:absolute;left:0;top:0;width:${18 + Math.random() * 14}px;aspect-ratio:1;background:url("${logo}") center/contain no-repeat`
+      : `position:absolute;left:0;top:0;width:${w}px;height:${w * (Math.random() < 0.5 ? 1.6 : 0.6)}px;` +
+        `background:${COLORES_CONFETI[i % COLORES_CONFETI.length]};border-radius:${Math.random() < 0.3 ? "50%" : "1px"}`;
     capa.appendChild(p);
     const x0 = Math.random() * W;
     const deriva = (Math.random() - 0.5) * 260;
@@ -71,11 +81,59 @@ function lanzarConfeti() {
 }
 
 type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta" | "llorar" | "brinco";
-export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando";
+export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando" | "relajado";
+/** Cómo vuela: puño al frente, nadando de crol, o boca arriba con las manos en la nuca. */
+export type EstiloVuelo = "superman" | "nado" | "relax";
+/**
+ * Viñeta de manga: plano que resalta una expresión con un texto chusco. Cinco
+ * estilos (los elegidos): zoom con líneas de acción, franja de ojos dramáticos,
+ * gota de sudor chibi, shoujo con brillos y shock en negativo.
+ */
+type EstiloManga = "zoom" | "ojos" | "gota" | "shoujo" | "shock";
+type Viñeta = { estilo: EstiloManga; animo: Animo; texto: string };
+type Manga = Viñeta & { id: number; x: number; y: number };
+const MANGA_MS = 2800;
+const VIÑETAS: Viñeta[] = [
+  { estilo: "zoom", animo: "grito", texto: "¡¿OTRO BUG?!" },
+  { estilo: "zoom", animo: "grito", texto: "¡¿QUIÉN HIZO MERGE A MAIN?!" },
+  { estilo: "zoom", animo: "grito", texto: "¡¡NANI?!" },
+  { estilo: "ojos", animo: "aburrido", texto: "…¿neta, cabrón?" },
+  { estilo: "ojos", animo: "aburrido", texto: "…te estoy viendo, viernes" },
+  { estilo: "ojos", animo: "serio", texto: "…sé lo que hiciste en dev" },
+  { estilo: "gota", animo: "serio", texto: "!? ¿Y ese console.log?" },
+  { estilo: "gota", animo: "aburrido", texto: "Funciona en mi máquina… 💧" },
+  { estilo: "gota", animo: "serio", texto: "¿Quién borró la tabla? 😅" },
+  { estilo: "shoujo", animo: "feliz", texto: "✨ Código limpio ✨" },
+  { estilo: "shoujo", animo: "relajado", texto: "✨ Cero bugs (mentira) ✨" },
+  { estilo: "shock", animo: "grito", texto: "¡¡SE CAYÓ PROD!! …ah no" },
+  { estilo: "shock", animo: "grito", texto: "¡¡ME OLVIDÉ DEL HOTFIX!!" },
+];
+const VIÑETAS_GOLPE: Viñeta[] = [
+  { estilo: "zoom", animo: "grito", texto: "¡¡AUCH, QUÉ PUTAZO!!" },
+  { estilo: "gota", animo: "llorando", texto: "Mi copete… 💧" },
+  { estilo: "shock", animo: "grito", texto: "¡¡VI A DIOS!!" },
+  { estilo: "ojos", animo: "aburrido", texto: "…pinche pared" },
+];
+const VIÑETAS_SNACK: Viñeta[] = [
+  { estilo: "shoujo", animo: "feliz", texto: "✨ Ñam ñam ✨" },
+  { estilo: "shoujo", animo: "relajado", texto: "✨ Esto es amor ✨" },
+  { estilo: "gota", animo: "serio", texto: "¿Alguien vio mi otra rebanada? 💧" },
+];
+const VIÑETAS_STORE: Viñeta[] = [
+  { estilo: "shoujo", animo: "feliz", texto: "✨ ¡YA ESTÁ EN LA STORE! ✨" },
+  { estilo: "zoom", animo: "grito", texto: "¡¡A HUEVO, RELEASE!!" },
+  { estilo: "shock", animo: "grito", texto: "¡¡QUE NO LA RECHACEN!!" },
+];
+/** Antojo en la mano de atrás: pizza o refresco cuando descansa, helado cuando vuela. */
+export type Snack = "pizza" | "refresco" | "helado";
 /** Letrero fijo arriba al centro durante el festejo o el llanto. */
-type Letrero = { tipo: "exito" | "fallo"; titulo: string; linea: string; id: number };
+type Letrero = { tipo: "exito" | "fallo" | "dev" | "dev-fallo" | "store"; titulo: string; linea: string; id: number };
 /** Cuánto dura el llanto por un deploy fallido. */
-const LLANTO_MS = 8500;
+const LLANTO_MS = 9000;
+/** Lo que el letrero se queda en pantalla después de que termina la escena. */
+const LETRERO_EXTRA_MS = 4500;
+/** Duración del huracán de un deploy a PRD exitoso. */
+const FESTEJO_MS = 8000;
 type Dialogo = { id: number; texto: string; tipo: "grito" | "habla" | "zzz" };
 
 /** Lo que dice según lo que hace. Groserías de oficina mexicana: leves, nada de insultos. */
@@ -88,6 +146,24 @@ const FRASES = {
   ],
   techo: ["¡Uff!", "¡Ay, mi cabeza!", "¡Rebote!", "¡Uta madre, el techo!", "¡Chale, otra vez el techo!", "¡Auch, cabrón!"],
   pared: ["¡Vuelta en U!", "¡Pared a la vista!", "¡Ups, por acá no!", "¡Ni madres, me regreso!"],
+  // Cuando se da contra el techo o una pared: chuscas, para que no siempre diga lo mismo.
+  golpe: [
+    "¡Ay, qué putazo me di!",
+    "¡Uta, ese sí dolió!",
+    "¡Mi copete! ¡Me despeiné!",
+    "¿Quién puso esa pared ahí?",
+    "¡Me lleva! Ya vi estrellitas…",
+    "¡Auch! Eso no estaba en el diseño",
+    "¡Ni el CI me pega tan duro!",
+    "¡Chin! Se me abolló el brazo",
+    "¡Pinche pared, otra vez tú!",
+    "Estoy bien… estoy bien… ¿dónde estoy?",
+    "¡Madres! Necesito un casco",
+    "¡Ay, mi chip! Creo que perdí memoria RAM",
+    "¡Zas! Bug de colisión confirmado",
+    "Eso fue un 500 en mi cabeza",
+    "¡No mames, qué madrazo!",
+  ],
   aterrizar: ["Aterrizaje perfecto.", "Pies en la tierra.", "¡Tierra firme!", "¡Clavado, a huevo!", "10 de 10 el aterrizaje.", "¡Ni se despeinó el copete!"],
   caminar: [
     "¿Alguien revisó ese PR?", "Hmm… ¿y si refactorizo?", "Los docs no se escriben solos.", "Ese bug lo vi venir.",
@@ -102,23 +178,44 @@ const FRASES = {
     "¿Qué pedo, ya nadie programa?", "Uta, ni un PR en horas.", "Chale, puro scroll y nada de preguntas.",
     "Ya ni el CI me pela.", "Me vale madre, me voy a dormir.",
   ],
+  pizza: ["Ñam… una pizzita no se le niega a nadie", "Pepperoni: el mejor lenguaje de programación", "¿Gustas? …no, ya me la acabé", "Pizza fría: desayuno de campeones", "Mmm, con piña no, eh"],
+  refresco: ["Glu glu… refresquito", "Ahh, cafeína para el próximo deploy", "Un refresco y a debuggear", "¡Burp! Perdón, perdón", "Bien helado, como debe ser"],
+  helado: ["¡Helado a 200 km/h!", "Se me congela el cerebro… ¡pero vale!", "Mmm, de chocolate con menta", "¡No me lo tiren! Es el último", "Volar y helado: combo perfecto"],
+  relax: ["Modo crucero activado 😎", "Ahh, aquí relajadito", "Que trabajen los demás", "Despiértenme si truena prod", "Vacaciones a 100 metros de altura"],
+  nado: ["¡Estilo libre!", "Crol aéreo, medalla de oro", "Glu glu… ah no, es aire", "¡Michael Phelps quién!", "Brazada, brazada, respiro…"],
   hover: ["¿En qué te ayudo?", "¿Le pregunto al código?", "¡Pregúntame!", "¿Qué pedo, qué necesitas?", "A ver, suéltalo.", "¿Otro bug, cabrón?"],
 } as const;
 
 /** Deploy a dev: brinco de gusto (o queja corta si falló). Más modesto que PRD. */
 const FRASES_DEV_OK = [
-  (d: string) => `¡Deploy a dev listo! ${d}`,
-  (d: string) => `¡Ya está en dev! ${d}`,
-  (d: string) => `¡A huevo, dev arriba! ${d}`,
-  (d: string) => `¡Dev al día, a probar! ${d}`,
+  (r: string) => `¡Ya está en dev ${r}, a probar!`,
+  () => "¡A huevo, dev arriba!",
+  (r: string) => `¡${r} al día en dev!`,
+  () => "¡Wiii, otro deploy a dev!",
 ];
 const FRASES_DEV_FALLO = [
-  (d: string) => `¡Chale, falló dev! ${d}`,
-  (d: string) => `Uta, dev en rojo… ${d}`,
-  (d: string) => `¡No mames, se cayó dev! ${d}`,
+  () => "¡Chale, falló dev!",
+  (r: string) => `Uta, ${r} en rojo en dev…`,
+  () => "¡No mames, se cayó dev!",
 ];
 /** Cuánto dura el brinco por un deploy a dev. */
-const BRINCO_MS = 2600;
+const BRINCO_MS = 7000;
+
+/** Envío a tienda: festejo con logos (o llanto si falló). */
+const FRASES_STORE_OK = [
+  (d: string) => `¡Ya se mandó a ${d}, cabrón!`,
+  () => "¡A huevo, release enviado!",
+  (d: string) => d.includes("App Store") ? "¡Apple, apruébala o te demando!" : d.includes("TestFlight") ? "¡A probarla, testers!" : "¡Google, ahí te va otra!",
+  () => "¡Que la descarguen, que la descarguen!",
+  () => "¡Cinco estrellas o me enojo!",
+  () => "¡Una app más al mundo, no mames!",
+];
+const FRASES_STORE_FALLO = [
+  (d: string) => `¡No mames, falló el envío a ${d}!`,
+  () => "Snif… la tienda me rechazó",
+  () => "¡Chale! Revisen los certificados…",
+  () => "Pinche firma de la app, otra vez",
+];
 
 /** Lamentos cuando un deploy a PRD falla. */
 const FRASES_FALLO = [
@@ -177,6 +274,9 @@ export function AgenteVolador({ pausado, onClick }: Props) {
   const [animo, setAnimo] = useState<Animo>("feliz");
   const [dialogo, setDialogo] = useState<Dialogo | null>(null);
   const [letrero, setLetrero] = useState<Letrero | null>(null);
+  const [snack, setSnack] = useState<Snack | null>(null);
+  const [vuelo, setVuelo] = useState<EstiloVuelo>("superman");
+  const [manga, setManga] = useState<Manga | null>(null);
   const pausaRef = useRef(false);
   /** Hay alerta de tickets activa (el clic abre la pestaña de tickets y la apaga). */
   const alertaRef = useRef<{ apagar: () => void } | null>(null);
@@ -202,7 +302,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           titulo: `${tipo === "exito" ? "✅ Deploy exitoso a PRD" : "❌ Falló el deploy a PRD"} · ${dondeFue(d)}`,
           linea: una(tipo === "exito" ? FRASES_DEPLOY : FRASES_FALLO)(d.repo),
         });
-        setTimeout(() => setLetrero(null), 6000);
+        setTimeout(() => setLetrero(null), 9000);
       };
       const alFestejo = reaccion("exito");
       const alFallo = reaccion("fallo");
@@ -239,7 +339,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       hasta: 0, // fin de la pose temporal (ms)
       siguiente: "despegar" as Pose, // qué sigue después de agacharse
       // Deploys por reaccionar (llegan por evento): festejo o llanto, en fila.
-      festejos: [] as (DetalleFestejo & { tipo: Letrero["tipo"] | "dev-ok" | "dev-fallo" })[],
+      festejos: [] as (DetalleFestejo & { tipo: Letrero["tipo"] | "dev-ok" | "dev-fallo" | "store-ok" | "store-fallo"; store?: DetalleStore })[],
       festejoRepo: "",
       festejoInicio: 0,
       festejoTheta: 0,
@@ -259,8 +359,17 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         setAnimo(a);
       }
     };
+    let escenaStore: DetalleStore | null = null;
     let idDialogo = 0;
     let idLetrero = 0;
+    // Al terminar la escena el letrero se queda unos segundos más, quieto, para
+    // que se alcance a leer la última frase (antes se iba junto con la escena).
+    let quitarLetrero: ReturnType<typeof setTimeout> | undefined;
+    const soltarLetrero = () => {
+      const id = idLetrero;
+      clearTimeout(quitarLetrero);
+      quitarLetrero = setTimeout(() => setLetrero((l) => (l && l.id === id ? null : l)), LETRERO_EXTRA_MS);
+    };
     let finDialogo = 0;
     let proximaFrase = performance.now() + azar(1500, 4000);
     const decir = (texto: string, tipo: Dialogo["tipo"] = "habla", ms = 2400) => {
@@ -269,6 +378,32 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       setDialogo({ id: idDialogo, texto, tipo });
     };
 
+    let snackActual: Snack | null = null;
+    const ponerSnack = (x: Snack | null) => {
+      if (x !== snackActual) {
+        snackActual = x;
+        setSnack(x);
+      }
+    };
+    let proximoHelado = performance.now() + azar(15_000, 30_000);
+    let estiloActual: EstiloVuelo = "superman";
+    let proximoEstilo = performance.now() + azar(8000, 14_000);
+    const ponerEstilo = (e: EstiloVuelo) => {
+      if (e !== estiloActual) {
+        estiloActual = e;
+        setVuelo(e);
+      }
+    };
+    const crucero = () => (estiloActual === "relax" ? 110 : estiloActual === "nado" ? 140 : 190);
+    let idManga = 0;
+    let finManga = 0;
+    const lanzarManga = (v: Viñeta) => {
+      idManga += 1;
+      finManga = performance.now() + MANGA_MS;
+      setManga({ ...v, id: idManga, x: s.x, y: s.y });
+    };
+    let heladoHasta = 0;
+
     let poseActual: Pose = "volar";
     const cambiarPose = (p: Pose, durMs = 0) => {
       s.pose = p;
@@ -276,10 +411,18 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       if (p !== poseActual) {
         poseActual = p;
         setPose(p);
+        if (p !== "volar") ponerEstilo("superman");
         if (p === "volar" || p === "despegar") ponerAnimo("feliz");
         else if (p === "caminar") ponerAnimo("serio");
         else if (p === "quieto") ponerAnimo("aburrido");
         if (p === "quieto") proximaFrase = performance.now() + azar(1200, 2500);
+        // Descansando, a veces en vez de aburrirse saca la pizza o el refresco.
+        if (p === "quieto" && Math.random() < 0.45) {
+          ponerSnack(Math.random() < 0.55 ? "pizza" : "refresco");
+          ponerAnimo("feliz");
+        } else if (p !== "volar" || snackActual !== "helado") {
+          if (snackActual !== null && !(p === "despegar" && snackActual === "helado")) ponerSnack(null);
+        }
       }
     };
 
@@ -302,14 +445,42 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       // Festejo pendiente: interrumpe lo que esté haciendo.
       if (s.festejos.length && s.pose !== "festejo" && s.pose !== "llorar" && s.pose !== "brinco") {
         const d = s.festejos.shift()!;
-        if (d.tipo === "dev-ok" || d.tipo === "dev-fallo") {
+        escenaStore = d.store ?? null;
+        if ((d.tipo === "store-ok" || d.tipo === "store-fallo") && d.store) {
+          // Tienda: huracán con logos de Android/Apple, viñeta y letrero; o llanto si falló.
+          const st = d.store;
+          const icono = st.plataforma === "ios" ? "" : "🤖";
+          s.festejoRepo = st.destino;
+          if (st.ok) {
+            s.festejoTheta = Math.atan2(s.y - window.innerHeight / 2, s.x - window.innerWidth / 2);
+            cambiarPose("festejo", FESTEJO_MS);
+            ponerAnimo("grito");
+            lanzarConfeti(st.plataforma);
+            setLetrero({ tipo: "store", id: idLetrero, titulo: `${icono} Ya se mandó a ${st.destino} · ${st.app}`, linea: una(FRASES_STORE_OK)(st.destino) });
+            if (!finManga) lanzarManga(una(VIÑETAS_STORE));
+          } else {
+            cambiarPose("llorar", LLANTO_MS);
+            ponerAnimo("llorando");
+            setLetrero({ tipo: "fallo", id: idLetrero, titulo: `❌ Falló el envío a ${st.destino} · ${st.app}`, linea: una(FRASES_STORE_FALLO)(st.destino) });
+          }
+          proximaFrase = ahora + 2200;
+        } else if (d.tipo === "dev-ok" || d.tipo === "dev-fallo") {
           // Dev: brinco en el lugar (o puchero), con su globo; sin letrero ni confeti.
+          // Letrero fijo (como PRD, pero azul y más corto): el globo se movía con él y no se leía.
           s.festejoRepo = d.repo;
+          idLetrero += 1;
+          finDialogo = 0;
+          setDialogo(null);
+          const ok = d.tipo === "dev-ok";
           cambiarPose("brinco", BRINCO_MS);
-          ponerAnimo(d.tipo === "dev-ok" ? "feliz" : "llorando");
-          decir(una(d.tipo === "dev-ok" ? FRASES_DEV_OK : FRASES_DEV_FALLO)(dondeFue(d)), d.tipo === "dev-ok" ? "grito" : "habla", BRINCO_MS);
+          ponerAnimo(ok ? "feliz" : "llorando");
+          setLetrero({
+            tipo: ok ? "dev" : "dev-fallo",
+            id: idLetrero,
+            titulo: `${ok ? "🚀 Deploy exitoso a dev" : "⚠️ Falló el deploy a dev"} · ${dondeFue(d)}`,
+            linea: una(ok ? FRASES_DEV_OK : FRASES_DEV_FALLO)(d.repo),
+          });
           proximaFrase = ahora + BRINCO_MS + 1500;
-          s.siguiente = d.tipo === "dev-ok" ? "despegar" : "despegar";
         } else {
         s.festejoRepo = d.repo;
         s.festejoInicio = ahora;
@@ -318,7 +489,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         setDialogo(null);
         if (d.tipo === "exito") {
           s.festejoTheta = Math.atan2(s.y - window.innerHeight / 2, s.x - window.innerWidth / 2);
-          cambiarPose("festejo", 6500);
+          cambiarPose("festejo", FESTEJO_MS);
           ponerAnimo("grito");
           lanzarConfeti();
           setLetrero({ tipo: "exito", id: idLetrero, titulo: `✅ Deploy exitoso a PRD · ${dondeFue(d)}`, linea: una(FRASES_DEPLOY)(d.repo) });
@@ -339,6 +510,18 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         s.alertaIdx = 0;
         proximaFrase = ahora;
       }
+
+      // Helado en pleno vuelo, de vez en cuando (y se lo termina en unos segundos).
+      if (s.pose === "volar") {
+        if (!snackActual && ahora >= proximoHelado) {
+          proximoHelado = ahora + azar(25_000, 45_000);
+          if (Math.random() < 0.5) {
+            ponerSnack("helado");
+            heladoHasta = ahora + azar(7000, 10_000);
+            if (!finDialogo) decir(una(FRASES.helado), "habla", 2600);
+          }
+        } else if (snackActual === "helado" && ahora >= heladoHasta) ponerSnack(null);
+      } else if (snackActual === "helado") ponerSnack(null);
 
       const fin = s.hasta && ahora >= s.hasta;
 
@@ -361,7 +544,18 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           if (ahora >= s.ganasDeAterrizar) s.giro = 0.9; // pica hacia el piso
           s.angulo = Math.max(-1.3, Math.min(1.3, s.angulo + s.giro * dt));
           // La velocidad vuelve sola a su crucero después de un impulso.
-          s.vel += (190 - s.vel) * Math.min(1, dt * 0.6);
+          s.vel += (crucero() - s.vel) * Math.min(1, dt * 0.6);
+          // Cambia de estilo cada tanto: puño al frente, nadando o boca arriba.
+          if (s.pose === "volar" && ahora >= proximoEstilo) {
+            proximoEstilo = ahora + azar(9000, 16_000);
+            const r = Math.random();
+            const nuevo: EstiloVuelo = snackActual === "helado" ? "superman" : r < 0.5 ? "superman" : r < 0.75 ? "nado" : "relax";
+            if (nuevo !== estiloActual) {
+              ponerEstilo(nuevo);
+              ponerAnimo(nuevo === "relax" ? "relajado" : "feliz");
+              if (nuevo !== "superman" && !finDialogo) decir(una(FRASES[nuevo]), "habla", 2600);
+            }
+          }
 
           s.tiempoBob += dt;
           s.x += Math.cos(s.angulo) * s.vel * dt * s.dir;
@@ -373,13 +567,22 @@ export function AgenteVolador({ pausado, onClick }: Props) {
             s.dir = (s.x <= MARGEN ? 1 : -1) as 1 | -1;
             s.angulo = Math.max(-1, Math.min(1, -s.angulo * 0.5 + azar(-0.45, 0.45)));
             s.vel = azar(...VEL_VUELO);
-            if (!finDialogo && Math.random() < 0.25) decir(una(FRASES.pared), "habla", 1400);
+            // A veces se queja del golpe (y ese globo dura lo suficiente para leerse).
+            if (!finDialogo && Math.random() < 0.45) {
+              const golpe = Math.random() < 0.65;
+              decir(una(golpe ? FRASES.golpe : FRASES.pared), golpe ? "grito" : "habla", golpe ? 2400 : 1600);
+              if (golpe) {
+                ponerAnimo("grito");
+                proximaFrase = ahora + 3500;
+                if (!finManga && Math.random() < 0.3) lanzarManga(una(VIÑETAS_GOLPE));
+              }
+            }
           }
           // Techo: voltereta.
           if (s.y <= TECHO && s.pose === "volar") {
             s.y = TECHO;
             cambiarPose("girar", 520);
-            if (Math.random() < 0.5) decir(una(FRASES.techo), "grito", 1200);
+            if (Math.random() < 0.65) decir(una(Math.random() < 0.6 ? FRASES.golpe : FRASES.techo), "grito", 2400);
             s.angulo = 0.2;
             s.vel = 60;
           }
@@ -400,7 +603,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         }
         case "festejo": {
           // Huracán: espiral alrededor del centro, el radio crece y se cierra.
-          const t = Math.min(1, (ahora - s.festejoInicio) / 6500);
+          const t = Math.min(1, (ahora - s.festejoInicio) / FESTEJO_MS);
           const cx = window.innerWidth / 2 - TAM / 2;
           const cy = Math.max(TECHO + 120, window.innerHeight / 2 - TAM / 2);
           const radio = 40 + Math.sin(t * Math.PI) * Math.min(260, window.innerWidth / 4);
@@ -411,12 +614,12 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           s.y += (ty - s.y) * Math.min(1, dt * 6);
           s.dir = (Math.sin(s.festejoTheta) > 0 ? -1 : 1) as 1 | -1;
           if (ahora >= proximaFrase) {
-            const linea = una(FRASES_DEPLOY)(s.festejoRepo);
+            const linea = escenaStore ? una(FRASES_STORE_OK)(escenaStore.destino) : una(FRASES_DEPLOY)(s.festejoRepo);
             setLetrero((l) => (l ? { ...l, linea } : l));
-            proximaFrase = ahora + 2000;
+            proximaFrase = ahora + 3200;
           }
           if (fin) {
-            setLetrero(null);
+            soltarLetrero();
             cambiarPose("volar");
             s.angulo = azar(-0.9, 0.3);
             s.vel = 260;
@@ -428,12 +631,12 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           // Cae al piso donde esté, se arrodilla y llora.
           if (s.y < piso()) s.y = Math.min(piso(), s.y + 480 * dt);
           if (ahora >= proximaFrase) {
-            const linea = una(FRASES_FALLO)(s.festejoRepo);
+            const linea = escenaStore ? una(FRASES_STORE_FALLO)(escenaStore.destino) : una(FRASES_FALLO)(s.festejoRepo);
             setLetrero((l) => (l ? { ...l, linea } : l));
-            proximaFrase = ahora + 2600;
+            proximaFrase = ahora + 3200;
           }
           if (fin) {
-            setLetrero(null);
+            soltarLetrero();
             ponerAnimo("serio");
             cambiarPose("agachar", 260);
             s.siguiente = "despegar";
@@ -443,6 +646,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         case "brinco": {
           // Se queda donde está (en el aire o en el piso) brincando; al terminar sigue su vuelo.
           if (fin) {
+            soltarLetrero();
             ponerAnimo("feliz");
             if (s.y >= piso() - 1) {
               cambiarPose("agachar", 160);
@@ -501,6 +705,11 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         }
       }
 
+      if (finManga && ahora >= finManga) {
+        finManga = 0;
+        setManga(null);
+      }
+
       // Globos: uno a la vez, cada pocos segundos según lo que esté haciendo.
       if (finDialogo && ahora >= finDialogo) {
         finDialogo = 0;
@@ -508,7 +717,15 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         if (animoActual === "grito" && s.pose !== "alerta") ponerAnimo("feliz");
       }
       if (!finDialogo && ahora >= proximaFrase && !["festejo", "alerta", "llorar", "brinco"].includes(s.pose)) {
-        if (s.pose === "volar") {
+        if (s.pose === "volar" && snackActual === "helado") {
+          // Con helado no grita: lo disfruta.
+          if (Math.random() < 0.5) decir(una(FRASES.helado), "habla", 2400);
+          proximaFrase = ahora + azar(4000, 7000);
+        } else if (s.pose === "volar" && estiloActual !== "superman") {
+          // Nadando o boca arriba no grita: comenta tranquilo.
+          if (Math.random() < 0.55) decir(una(FRASES[estiloActual]), "habla", 2600);
+          proximaFrase = ahora + azar(5000, 9000);
+        } else if (s.pose === "volar") {
           if (Math.random() < 0.6) {
             ponerAnimo("grito");
             decir(una(FRASES.volar), "grito", 1800);
@@ -517,6 +734,15 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         } else if (s.pose === "caminar") {
           if (Math.random() < 0.7) decir(una(FRASES.caminar));
           proximaFrase = ahora + azar(3500, 7000);
+        } else if (s.pose === "quieto" && (snackActual === "pizza" || snackActual === "refresco")) {
+          // Con antojo no se duerme: come y lo comenta (y a veces lo resalta en viñeta).
+          if (!finManga && Math.random() < 0.25) lanzarManga(una(VIÑETAS_SNACK));
+          else if (Math.random() < 0.7) decir(una(FRASES[snackActual]), "habla", 2600);
+          proximaFrase = ahora + azar(3500, 6000);
+        } else if (s.pose === "quieto" && !finManga && Math.random() < 0.28) {
+          // Cuadro de manga: resalta su expresión con algo chusco.
+          lanzarManga(una(snackActual ? VIÑETAS_SNACK : VIÑETAS));
+          proximaFrase = ahora + MANGA_MS + 1500;
         } else if (s.pose === "quieto") {
           // Primero se aburre (y lo dice); después le da sueño.
           if (animoActual === "aburrido" && Math.random() < 0.55) {
@@ -564,6 +790,13 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     window.addEventListener(EVENTO_FALLO, alFallo);
     window.addEventListener(EVENTO_DEV_OK, alDevOk);
     window.addEventListener(EVENTO_DEV_FALLO, alDevFallo);
+    const alStore = (e: Event) => {
+      const st = (e as CustomEvent<DetalleStore>).detail;
+      if (!st) return;
+      if (st.ok && pausaRef.current) lanzarConfeti(st.plataforma);
+      s.festejos.push({ repo: st.app, tipo: st.ok ? "store-ok" : "store-fallo", store: st });
+    };
+    window.addEventListener(EVENTO_STORE, alStore);
     const alAlerta = (e: Event) => {
       const gritos = (e as CustomEvent<DetalleAlerta>).detail?.gritos ?? [];
       if (!gritos.length) return;
@@ -579,12 +812,14 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     };
     window.addEventListener("resize", alRedimensionar);
     return () => {
+      clearTimeout(quitarLetrero);
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", alRedimensionar);
       window.removeEventListener(EVENTO_FESTEJO, alFestejo);
       window.removeEventListener(EVENTO_FALLO, alFallo);
       window.removeEventListener(EVENTO_DEV_OK, alDevOk);
       window.removeEventListener(EVENTO_DEV_FALLO, alDevFallo);
+      window.removeEventListener(EVENTO_STORE, alStore);
       window.removeEventListener(EVENTO_ALERTA_TICKETS, alAlerta);
     };
   }, []);
@@ -627,6 +862,33 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           </div>,
           document.body,
         )}
+      {manga && !pausado &&
+        createPortal(
+          <div
+            key={manga.id}
+            className="agente-manga"
+            data-estilo={manga.estilo}
+            aria-hidden
+            style={{
+              left: Math.min(Math.max(8, manga.x - 70), window.innerWidth - 248),
+              top: manga.y > 230 ? manga.y - 200 : manga.y + 96,
+            }}
+          >
+            {manga.estilo === "zoom" && <div className="agente-manga__lineas" />}
+            {manga.estilo === "shock" && <div className="agente-manga__rayo" />}
+            {manga.estilo === "shoujo" && (
+              <div className="agente-manga__brillos">
+                {["✨", "🌸", "✨", "🌸", "✨"].map((b, i) => <span key={i}>{b}</span>)}
+              </div>
+            )}
+            <div className="agente-manga__cara">
+              <Personaje pose="quieto" animo={manga.animo} />
+            </div>
+            {manga.estilo === "gota" && <span className="agente-manga__gota">💧</span>}
+            <span className="agente-manga__texto">{manga.texto}</span>
+          </div>,
+          document.body,
+        )}
       {pose === "llorar" && (
         <span className="agente-volador__nube" aria-hidden>
           <i /><i /><i />
@@ -646,7 +908,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       <span className="agente-volador__globo">GeorgIA · Alt+K</span>
       <div ref={orientacion} className="agente-volador__orientacion">
         <div ref={inclinacion} className="agente-volador__inclinacion">
-          <Personaje pose={pose} animo={animo} />
+          <Personaje pose={pose} animo={animo} snack={snack} vuelo={vuelo} />
         </div>
       </div>
     </button>
@@ -659,9 +921,28 @@ export function AgenteVolador({ pausado, onClick }: Props) {
  * curvas. Las articulaciones (hombros 38/58,39 · codo 58.1,51.6 · caderas
  * 45/52,63 · capa 48,37) están fijas: personaje.css gira sobre ellas.
  */
-export function Personaje({ pose, animo = "serio" }: { pose: Pose; animo?: Animo }) {
+export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superman", skin }: {
+  pose: Pose;
+  animo?: Animo;
+  snack?: Snack | null;
+  vuelo?: EstiloVuelo;
+  /** Por omisión, la elegida en Configuración → GeorgIA. */
+  skin?: Skin;
+}) {
+  const skinElegida = useSkinGeorgIA();
+  const sk = skin ?? skinElegida;
+  const pal = PALETA[sk];
   return (
-    <svg viewBox="0 0 96 96" className="agente-volador__sprite" data-pose={pose} data-animo={animo} aria-hidden>
+    <svg
+      viewBox="0 0 96 96"
+      className="agente-volador__sprite"
+      data-pose={pose}
+      data-animo={animo}
+      data-snack={snack ?? undefined}
+      data-vuelo={vuelo}
+      data-skin={sk}
+      aria-hidden
+    >
       <defs>
         <linearGradient id="pj-laton" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#fbe3a0" />
@@ -678,14 +959,19 @@ export function Personaje({ pose, animo = "serio" }: { pose: Pose; animo?: Animo
           <stop offset="0.6" stopColor="#a1a1aa" />
           <stop offset="1" stopColor="#52525b" />
         </linearGradient>
-        <linearGradient id="pj-piel" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#f0c4a0" />
-          <stop offset="1" stopColor="#c98c65" />
+        <linearGradient id={`pj-piel-${sk}`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor={pal.piel[0]} />
+          <stop offset="1" stopColor={pal.piel[1]} />
         </linearGradient>
-        <linearGradient id="pj-camisa" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#7d8591" />
-          <stop offset="0.55" stopColor="#9aa1ab" />
-          <stop offset="1" stopColor="#5c636e" />
+        <linearGradient id="pj-bata" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#e2e8f0" />
+          <stop offset="0.5" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#cbd5e1" />
+        </linearGradient>
+        <linearGradient id={`pj-camisa-${sk}`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor={pal.camisa[0]} />
+          <stop offset="0.55" stopColor={pal.camisa[1]} />
+          <stop offset="1" stopColor={pal.camisa[2]} />
         </linearGradient>
         <linearGradient id="pj-jean" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0" stopColor="#1b3352" />
@@ -718,26 +1004,41 @@ export function Personaje({ pose, animo = "serio" }: { pose: Pose; animo?: Animo
 
         {/* Brazo de atrás: manga arremangada y mano */}
         <g className="pj-brazo">
-          <path d="M35.4 38.6 C34.2 45 34.4 51.6 35.6 57.6 L40 57.6 C41 51.6 41.4 45 40.9 38.6 C39 37.2 37.2 37.2 35.4 38.6 Z" fill="url(#pj-camisa)" />
+          {/* Brazo (hombro → codo) */}
+          <path d="M35.4 38.6 C34.6 42.6 34.8 46.6 35.3 50.4 L40.5 50.4 C41 46.6 41.4 42.6 40.9 38.6 C39 37.2 37.2 37.2 35.4 38.6 Z" fill={`url(#pj-camisa-${sk})`} />
+          <g className="pj-antebrazo-b">
+          <circle cx="37.9" cy="49.8" r="2.6" fill={`url(#pj-camisa-${sk})`} />
+          <path d="M35.4 49.6 C35.2 52.6 35.3 55 35.6 57.6 L40 57.6 C40.3 55 40.4 52.6 40.4 49.6 Z" fill={`url(#pj-camisa-${sk})`} />
           <path d="M35.3 55.6 C37 56.6 39 56.6 40.3 55.6 L40.1 58.2 C38.6 59 37 59 35.6 58.2 Z" fill="#6b727c" />
-          <path d="M35.8 58.4 C35.2 61.2 36.4 63.4 38.2 63.4 C40 63.4 41 61.4 40.4 58.4 Z" fill="url(#pj-piel)" />
+          <path d="M35.8 58.4 C35.2 61.2 36.4 63.4 38.2 63.4 C40 63.4 41 61.4 40.4 58.4 Z" fill={`url(#pj-piel-${sk})`} />
+          </g>
         </g>
 
         {/* Pierna de atrás */}
         <g className="pj-pierna-a">
-          <path d="M41.4 63 C40.8 70 41.4 77 42.4 84 L47.2 84 C48.2 77 49 70 48.8 63 Z" fill="url(#pj-jean)" />
-          <path d="M42.2 83.2 C41.8 86 41.6 88.4 42.4 89.6 L49.8 89.6 C50.6 88.2 49.4 86.6 47.6 85.8 L47.4 83.2 Z" fill="#1c1917" />
-          <path d="M42.3 85 L47.5 85" stroke="#c99a3b" strokeWidth="0.6" />
+          {/* Muslo */}
+          <path d="M41.4 63 C40.9 67 41.1 71 41.7 74.8 L47.7 74.8 C48.4 71 48.9 67 48.8 63 Z" fill="url(#pj-jean)" />
+          <g className="pj-rodilla-a">
+            {/* Espinilla + bota (gira sobre la rodilla) */}
+            <ellipse cx="44.7" cy="74.4" rx="3.1" ry="1.9" fill="url(#pj-jean)" />
+            <path d="M41.9 74.2 C41.8 78 42 81 42.4 84 L47.2 84 C47.6 81 47.8 78 47.6 74.2 Z" fill="url(#pj-jean)" />
+            <path d="M42.2 83.2 C41.8 86 41.6 88.4 42.4 89.6 L49.8 89.6 C50.6 88.2 49.4 86.6 47.6 85.8 L47.4 83.2 Z" fill="#1c1917" />
+            <path d="M42.3 85 L47.5 85" stroke="#c99a3b" strokeWidth="0.6" />
+          </g>
         </g>
         {/* Pierna de adelante */}
         <g className="pj-pierna-b">
-          <path d="M48.4 63 C47.8 70 48.4 77 49.4 84 L54.2 84 C55.2 77 56 70 55.8 63 Z" fill="url(#pj-jean)" />
-          <path d="M49.2 83.2 C48.8 86 48.6 88.4 49.4 89.6 L56.8 89.6 C57.6 88.2 56.4 86.6 54.6 85.8 L54.4 83.2 Z" fill="#292524" />
-          <path d="M49.3 85 L54.5 85" stroke="#c99a3b" strokeWidth="0.6" />
+          <path d="M48.4 63 C47.9 67 48.1 71 48.7 74.8 L54.7 74.8 C55.4 71 55.9 67 55.8 63 Z" fill="url(#pj-jean)" />
+          <g className="pj-rodilla-b">
+            <ellipse cx="51.7" cy="74.4" rx="3.1" ry="1.9" fill="url(#pj-jean)" />
+            <path d="M48.9 74.2 C48.8 78 49 81 49.4 84 L54.2 84 C54.6 81 54.8 78 54.6 74.2 Z" fill="url(#pj-jean)" />
+            <path d="M49.2 83.2 C48.8 86 48.6 88.4 49.4 89.6 L56.8 89.6 C57.6 88.2 56.4 86.6 54.6 85.8 L54.4 83.2 Z" fill="#292524" />
+            <path d="M49.3 85 L54.5 85" stroke="#c99a3b" strokeWidth="0.6" />
+          </g>
         </g>
 
         {/* Torso en V: hombros anchos, cintura angosta */}
-        <path d="M36.2 37.4 C37.2 34.6 42 33.2 48 33.2 C54 33.2 58.8 34.6 59.8 37.4 C61 44.4 59.2 52.4 56.6 60.4 L39.4 60.4 C36.8 52.4 35 44.4 36.2 37.4 Z" fill="url(#pj-camisa)" />
+        <path d="M36.2 37.4 C37.2 34.6 42 33.2 48 33.2 C54 33.2 58.8 34.6 59.8 37.4 C61 44.4 59.2 52.4 56.6 60.4 L39.4 60.4 C36.8 52.4 35 44.4 36.2 37.4 Z" fill={`url(#pj-camisa-${sk})`} />
         <path d="M54 35 C57.6 42 57.6 52 55.4 60.2" fill="none" stroke="#4b5260" strokeWidth="0.5" opacity="0.5" />
         {/* Cuello de camisa */}
         <path d="M43.6 34 L48 39.6 L46.2 34.4 Z M52.4 34 L48 39.6 L49.8 34.4 Z" fill="#6b727c" />
@@ -755,12 +1056,16 @@ export function Personaje({ pose, animo = "serio" }: { pose: Pose; animo?: Animo
         <path d="M39.2 60 L56.8 60 L56.6 63.4 L39.4 63.4 Z" fill="#292018" />
         <rect x="45.6" y="59.6" width="4.8" height="4.2" rx="1" fill="url(#pj-laton)" stroke="#5c3d0f" strokeWidth="0.4" />
 
+        {sk === "cientifico" && <Bata />}
+        {sk === "cyborg" ? (
+          <>
         {/* Cuello mecánico con cables */}
         <path d="M45 29.4 C45 32 44.6 34 44.2 35.6 L51.8 35.6 C51.4 34 51 32 51 29.4 Z" fill="url(#pj-metal)" />
         <path d="M46 31 C47.6 31.8 48.6 31.8 50 31 M45.6 33.2 C47.4 34 48.8 34 50.4 33.2" fill="none" stroke="#d4a446" strokeWidth="0.6" />
 
+        <g className="pj-cabeza">
         {/* Cabeza: mandíbula marcada, nariz larga */}
-        <path d="M41 16 C41 9.4 45.4 6.6 50 6.8 C55.4 7.1 58.6 10.8 58.7 15.6 C58.8 18.4 61.6 20.6 61.4 22.8 C61.2 24.6 59.2 24.8 58.8 26 C58.2 29.6 55.6 31.8 52 32 C47.6 32.2 43.6 30.2 42.1 26.6 C40.7 23.4 41 19.6 41 16 Z" fill="url(#pj-piel)" />
+        <path d="M41 16 C41 9.4 45.4 6.6 50 6.8 C55.4 7.1 58.6 10.8 58.7 15.6 C58.8 18.4 61.6 20.6 61.4 22.8 C61.2 24.6 59.2 24.8 58.8 26 C58.2 29.6 55.6 31.8 52 32 C47.6 32.2 43.6 30.2 42.1 26.6 C40.7 23.4 41 19.6 41 16 Z" fill={`url(#pj-piel-${sk})`} />
         <path d="M57.8 27.2 C56.4 29.4 54.6 30.6 52.4 30.8" fill="none" stroke="#a8704d" strokeWidth="0.5" />
         <path d="M54.6 23.4 C55.6 24.4 56.6 24.6 57.6 24.4" fill="none" stroke="#a8704d" strokeWidth="0.45" />
         {/* Media cara de acero con remaches y ojo que brilla */}
@@ -808,6 +1113,14 @@ export function Personaje({ pose, animo = "serio" }: { pose: Pose; animo?: Animo
         <circle cx="55.8" cy="12.4" r="3.6" fill="url(#pj-laton)" />
         <circle cx="55.8" cy="12.4" r="2.4" fill="url(#pj-cristal)" />
 
+        </g>
+          </>
+        ) : (
+          <CabezaCartoon skin={sk} />
+        )}
+
+        {sk === "cyborg" ? (
+          <>
         {/* Brazo robótico: hombrera, segmentos redondeados, puño */}
         <g className="pj-brazo-robot">
           <path d="M53.4 37.6 C53.6 34 56.4 32.6 59 33 C62 33.4 63.6 36 63.2 39 C62.8 41.6 60.6 42.6 58 42.4 C55.6 42.2 53.4 40.6 53.4 37.6 Z" fill="url(#pj-laton)" stroke="#6b4a14" strokeWidth="0.4" />
@@ -822,8 +1135,13 @@ export function Personaje({ pose, animo = "serio" }: { pose: Pose; animo?: Animo
             <path d="M54.2 60.6 C54 63.6 54.4 66.4 56 67.6 C57.8 68.8 60.4 68.4 61.6 66.8 C62.6 65 62.4 62.4 62 60.6 Z" fill="url(#pj-laton)" stroke="#5c3d0f" strokeWidth="0.45" />
             <path d="M55 63.4 C56.6 64 59.8 64 61.6 63.4 M55.4 65.8 C57 66.4 59.6 66.4 61.2 65.6" fill="none" stroke="#7a5418" strokeWidth="0.45" />
             <path d="M54.4 61.6 C53 62.4 52.8 64.2 54 65" fill="none" stroke="#7a5418" strokeWidth="0.9" strokeLinecap="round" />
+            <Antojos />
           </g>
         </g>
+          </>
+        ) : (
+          <BrazoHumano skin={sk} />
+        )}
       </g>
     </svg>
   );

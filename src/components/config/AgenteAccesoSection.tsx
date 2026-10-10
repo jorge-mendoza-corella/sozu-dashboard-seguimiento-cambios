@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { setUserAgenteVolador, SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { ConfirmarApagarAgentito } from "@/components/agente/ConfirmarApagarAgentito";
+import { SelectorSkin } from "./SelectorSkin";
 import { cambiarTickets, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, quitarAccesoAgente } from "@/lib/agenteRepos";
 
 // ---------------------------------------------------------------------------
@@ -103,6 +104,8 @@ export function AgenteAccesoSection() {
             </p>
           </div>
         </div>
+
+        <SelectorSkin />
 
         <div className="overflow-hidden rounded-md border text-sm">
           <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">

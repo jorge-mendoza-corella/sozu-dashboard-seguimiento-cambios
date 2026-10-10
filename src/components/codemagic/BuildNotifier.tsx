@@ -8,6 +8,18 @@ import {
 } from "@/lib/codemagic";
 import { useProjects } from "@/hooks/useProjectsRepos";
 import { cn } from "@/lib/utils";
+import { EVENTO_STORE, type DetalleStore } from "@/lib/festejoDeploy";
+
+/** Plataforma y tienda de un workflow de publicación (para que GeorgIA lo festeje). */
+function destinoDe(workflowId: string): { plataforma: "android" | "ios"; destino: string } | null {
+  for (const p of PLATFORMS) {
+    const plataforma = p.key === "ios" ? "ios" : "android";
+    if (workflowId === p.publishWorkflowId) return { plataforma, destino: p.storeLabel };
+    if (workflowId === p.promoteWorkflowId) return { plataforma, destino: p.promoteLabel };
+    if (workflowId === p.storeDirectWorkflowId) return { plataforma, destino: p.promoteLabel };
+  }
+  return null;
+}
 
 // Builds ya avisados: sobrevive a recargas para no repetir el aviso de algo
 // que terminó hace rato. Se limita para que no crezca sin fin.
@@ -54,6 +66,9 @@ export function BuildNotifier() {
   const appIds = projects.map((p) => p.codemagicAppId).filter((id): id is string => !!id);
 
   const [avisos, setAvisos] = useState<Aviso[]>([]);
+  // Para nombrar la app en el festejo de GeorgIA sin re-disparar el efecto de avisos.
+  const proyectosRef = useRef(projects);
+  useEffect(() => { proyectosRef.current = projects; }, [projects]);
   const vistos = useRef<Set<string> | null>(null);
   const primeraCarga = useRef(true);
 
@@ -126,6 +141,17 @@ export function BuildNotifier() {
     });
 
     setAvisos((prev) => [...generados, ...prev].slice(0, 4));
+
+    // GeorgIA festeja (o llora) cada envío a tienda que acaba de terminar.
+    for (const b of nuevos) {
+      const d = destinoDe(b.workflowId ?? "");
+      const info = buildStatusInfo(b.status);
+      if (!d || (info.tone !== "success" && info.tone !== "failed")) continue;
+      const app = proyectosRef.current.find((p) => p.codemagicAppId === b.appId)?.name ?? "la app";
+      window.dispatchEvent(new CustomEvent<DetalleStore>(EVENTO_STORE, {
+        detail: { ok: info.tone === "success", plataforma: d.plataforma, destino: d.destino, app },
+      }));
+    }
 
     if ("Notification" in window && Notification.permission === "granted") {
       generados.forEach((a) => {

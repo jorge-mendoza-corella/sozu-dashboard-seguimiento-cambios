@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { AvancesDraftBadge } from "@/components/AvancesDraftBadge";
 import { ActionsUsoBadge } from "@/components/ActionsUsoBadge";
 import { WhatsappStatusBadge } from "@/components/WhatsappStatusBadge";
+import { RelojHeader } from "@/components/RelojHeader";
 import { useNuevaVersion } from "@/hooks/useNuevaVersion";
 import { BuildNotifier } from "@/components/codemagic/BuildNotifier";
 import { AgenteRepos } from "@/components/agente/AgenteRepos";
@@ -164,6 +165,8 @@ export function AppLayout({ children }: Props) {
             {/* Conexión de WhatsApp (Evolution API): fuera del <nav> para que
                 también se vea en móvil, donde el rojo importa igual. */}
             <WhatsappStatusBadge appUser={appUser} />
+            {/* Fecha y hora; al pasar el mouse, reloj de manecillas estilo macOS. */}
+            <RelojHeader />
             {hayVersionNueva ? (
               <button
                 type="button"
