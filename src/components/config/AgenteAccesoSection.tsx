@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { BellRing, Bot, FileText, Loader2, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { BellRing, Bot, FileText, Plane, Loader2, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { setUserAgenteVolador, SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { useAuth } from "@/hooks/useAuth";
+import { ConfirmarApagarAgentito } from "@/components/agente/ConfirmarApagarAgentito";
 import { cambiarTickets, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, quitarAccesoAgente } from "@/lib/agenteRepos";
 
 // ---------------------------------------------------------------------------
@@ -54,6 +56,16 @@ export function AgenteAccesoSection() {
   const [nuevo, setNuevo] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
+  // El personaje es preferencia propia: se guarda en el perfil de quien lo cambia.
+  const { realUser } = useAuth();
+  const [agentitoVisible, setAgentitoVisible] = useState<boolean | null>(null);
+  const agentito = agentitoVisible ?? realUser?.agenteVolador !== false;
+  const [confirmando, setConfirmando] = useState(false);
+  const cambiarAgentito = (visible: boolean) =>
+    void run("agentito", async () => {
+      await setUserAgenteVolador(SUPERUSER_EMAIL, visible);
+      setAgentitoVisible(visible);
+    });
 
   const recargar = () => leerAccesoAgente().then(setAcceso).catch(() => setAcceso({ emails: [], docs: [], tickets: [], ticketsApagados: [] }));
   useEffect(() => { void recargar(); }, []);
@@ -97,6 +109,7 @@ export function AgenteAccesoSection() {
             <span className="flex-1">Persona</span>
             <span className="flex w-28 items-center justify-center gap-1"><FileText className="h-3 w-3" /> Ver docs</span>
             <span className="flex w-28 items-center justify-center gap-1"><BellRing className="h-3 w-3" /> Tickets</span>
+            <span className="flex w-28 items-center justify-center gap-1"><Plane className="h-3 w-3" /> Agentito</span>
             <span className="w-9" />
           </div>
           <div className="flex items-center gap-2 border-b px-3 py-2">
@@ -115,6 +128,19 @@ export function AgenteAccesoSection() {
                     void run(`tickets:${SUPERUSER_EMAIL}`, () => cambiarTickets(SUPERUSER_EMAIL, !prendido));
                   }}
                   etiqueta="Revisar mis tickets cada 15 min"
+                />
+              )}
+            </span>
+            <span className="flex w-28 justify-center">
+              {busy === "agentito" ? (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              ) : (
+                <Interruptor
+                  activo={agentito}
+                  deshabilitado={busy !== null}
+                  // Apagarlo pide confirmación (y él ruega); prenderlo es directo.
+                  onCambiar={() => (agentito ? setConfirmando(true) : cambiarAgentito(true))}
+                  etiqueta={agentito ? "Esconder al agentito volador" : "Volver a mostrar al agentito"}
                 />
               )}
             </span>
@@ -153,6 +179,7 @@ export function AgenteAccesoSection() {
                       />
                     )}
                   </span>
+                  <span className="w-28" aria-hidden />
                   <Button
                     variant="ghost"
                     size="sm"
@@ -187,6 +214,11 @@ export function AgenteAccesoSection() {
           hasta que prendas el interruptor.
         </p>
         {error && <p className="text-sm text-destructive">{error}</p>}
+        {confirmando && <ConfirmarApagarAgentito
+          abierto={confirmando}
+          onCancelar={() => setConfirmando(false)}
+          onConfirmar={() => { setConfirmando(false); cambiarAgentito(false); }}
+        />}
       </CardContent>
     </Card>
   );

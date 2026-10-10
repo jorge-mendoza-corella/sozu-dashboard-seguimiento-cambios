@@ -147,7 +147,7 @@ service cloud.firestore {
         && request.auth.token.email == email
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['githubToken', 'githubLogin', 'githubTokenUpdatedAt',
-                       'avisaDeTodosLosRepos']);
+                       'avisaDeTodosLosRepos', 'agenteVolador']);
 
       // Bootstrap: jorge.mendoza@sozu.com puede crear su propio documento si no existe
       allow create: if request.auth != null
