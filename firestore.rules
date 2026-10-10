@@ -476,7 +476,8 @@ service cloud.firestore {
       allow get: if esRootVerificado()
         || (docId == 'acceso' && request.auth != null
             && ((resource.data.emails is list && request.auth.token.email in resource.data.emails)
-                || (resource.data.docs is list && request.auth.token.email in resource.data.docs)));
+                || (resource.data.docs is list && request.auth.token.email in resource.data.docs)
+                || (resource.data.tickets is list && request.auth.token.email in resource.data.tickets)));
       allow write: if esRootVerificado();
     }
 

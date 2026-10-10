@@ -19,8 +19,18 @@
  * Con `prefers-reduced-motion` no vuela: se queda parado abajo a la izquierda.
  */
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import "./personaje.css";
 import { EVENTO_FESTEJO, type DetalleFestejo } from "@/lib/festejoDeploy";
+
+/** Alerta de tickets pendientes: el personaje aterriza, se para y grita. */
+export const EVENTO_ALERTA_TICKETS = "agente:alerta-tickets";
+export interface DetalleAlerta {
+  /** Frases a gritar, en rotación (p. ej. "¡Jorge! Tienes 3 tickets por checar"). */
+  gritos: string[];
+}
+/** Cuánto grita antes de rendirse y volver a volar (la próxima revisión insiste). */
+const ALERTA_MS = 90_000;
 
 const COLORES_CONFETI = ["#f59e0b", "#ef4444", "#22d3ee", "#a855f7", "#22c55e", "#facc15", "#3b82f6", "#ec4899"];
 
@@ -58,7 +68,7 @@ function lanzarConfeti() {
   setTimeout(() => capa.remove(), ultimo + 200);
 }
 
-type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo";
+type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta";
 export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido";
 type Dialogo = { id: number; texto: string; tipo: "grito" | "habla" | "zzz" };
 
@@ -108,7 +118,8 @@ const una = <T,>(l: readonly T[]): T => l[Math.floor(Math.random() * l.length)];
 interface Props {
   /** El chat está abierto: el personaje se queda quieto donde está. */
   pausado: boolean;
-  onClick: () => void;
+  /** `motivo` = "tickets" si se le dio clic mientras gritaba la alerta. */
+  onClick: (motivo: "chat" | "tickets") => void;
 }
 
 const TAM = 80;
@@ -132,6 +143,8 @@ export function AgenteVolador({ pausado, onClick }: Props) {
   const [animo, setAnimo] = useState<Animo>("feliz");
   const [dialogo, setDialogo] = useState<Dialogo | null>(null);
   const pausaRef = useRef(false);
+  /** Hay alerta de tickets activa (el clic abre la pestaña de tickets y la apaga). */
+  const alertaRef = useRef<{ apagar: () => void } | null>(null);
   useEffect(() => {
     pausaRef.current = pausado || pausaLocal;
   }, [pausado, pausaLocal]);
@@ -152,12 +165,21 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         setTimeout(() => setDialogo(null), 4000);
       };
       window.addEventListener(EVENTO_FESTEJO, alFestejo);
+      const alAlertaQuieto = (e: Event) => {
+        const gritos = (e as CustomEvent<DetalleAlerta>).detail?.gritos ?? [];
+        if (!gritos.length) return;
+        alertaRef.current = { apagar: () => setDialogo(null) };
+        setAnimo("grito");
+        setDialogo({ id: Date.now(), texto: gritos[0], tipo: "grito" });
+      };
+      window.addEventListener(EVENTO_ALERTA_TICKETS, alAlertaQuieto);
       const colocar = () => { el.style.transform = `translate3d(${MARGEN + 8}px, ${piso()}px, 0)`; };
       colocar();
       window.addEventListener("resize", colocar);
       return () => {
         window.removeEventListener("resize", colocar);
         window.removeEventListener(EVENTO_FESTEJO, alFestejo);
+        window.removeEventListener(EVENTO_ALERTA_TICKETS, alAlertaQuieto);
       };
     }
 
@@ -176,6 +198,9 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       festejoRepo: "",
       festejoInicio: 0,
       festejoTheta: 0,
+      alertaGritos: [] as string[],
+      alertaHasta: 0,
+      alertaIdx: 0,
       proximaCurva: 0,
       ganasDeAterrizar: performance.now() + azar(14_000, 26_000),
       inclinado: 0, // grados, suavizado
@@ -238,6 +263,15 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         lanzarConfeti();
         decir(una(FRASES_DEPLOY)(s.festejoRepo), "grito", 2000);
         proximaFrase = ahora + 2100;
+      }
+
+      // Alerta de tickets: baja al piso y se queda gritando (el festejo manda más).
+      if (s.alertaGritos.length && s.pose !== "alerta" && s.pose !== "festejo") {
+        cambiarPose("alerta");
+        ponerAnimo("grito");
+        s.alertaHasta = ahora + ALERTA_MS;
+        s.alertaIdx = 0;
+        proximaFrase = ahora;
       }
 
       const fin = s.hasta && ahora >= s.hasta;
@@ -322,6 +356,22 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           }
           break;
         }
+        case "alerta": {
+          // Cae rápido al piso donde esté y ahí se para a gritar.
+          if (s.y < piso()) s.y = Math.min(piso(), s.y + 520 * dt);
+          if (!finDialogo && ahora >= proximaFrase) {
+            decir(s.alertaGritos[s.alertaIdx % s.alertaGritos.length], "grito", 2600);
+            s.alertaIdx += 1;
+            proximaFrase = ahora + 3000;
+          }
+          if (ahora >= s.alertaHasta || !s.alertaGritos.length) {
+            s.alertaGritos = [];
+            alertaRef.current = null;
+            cambiarPose("agachar", 180);
+            s.siguiente = "despegar";
+          }
+          break;
+        }
         case "agachar": {
           if (fin) {
             if (s.siguiente === "caminar") {
@@ -360,9 +410,9 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       if (finDialogo && ahora >= finDialogo) {
         finDialogo = 0;
         setDialogo(null);
-        if (animoActual === "grito") ponerAnimo("feliz");
+        if (animoActual === "grito" && s.pose !== "alerta") ponerAnimo("feliz");
       }
-      if (!finDialogo && ahora >= proximaFrase && s.pose !== "festejo") {
+      if (!finDialogo && ahora >= proximaFrase && s.pose !== "festejo" && s.pose !== "alerta") {
         if (s.pose === "volar") {
           if (Math.random() < 0.6) {
             ponerAnimo("grito");
@@ -412,6 +462,13 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       s.festejos.push(repo);
     };
     window.addEventListener(EVENTO_FESTEJO, alFestejo);
+    const alAlerta = (e: Event) => {
+      const gritos = (e as CustomEvent<DetalleAlerta>).detail?.gritos ?? [];
+      if (!gritos.length) return;
+      s.alertaGritos = gritos;
+      alertaRef.current = { apagar: () => { s.alertaGritos = []; } };
+    };
+    window.addEventListener(EVENTO_ALERTA_TICKETS, alAlerta);
 
     frame = requestAnimationFrame(paso);
     const alRedimensionar = () => {
@@ -423,6 +480,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", alRedimensionar);
       window.removeEventListener(EVENTO_FESTEJO, alFestejo);
+      window.removeEventListener(EVENTO_ALERTA_TICKETS, alAlerta);
     };
   }, []);
 
@@ -442,13 +500,28 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       aria-label="Abrir el agente de repos (Alt+K)"
       aria-keyshortcuts="Alt+K"
       data-pausa={pausaLocal || undefined}
-      onClick={onClick}
+      onClick={() => {
+        const habiaAlerta = !!alertaRef.current;
+        alertaRef.current?.apagar();
+        alertaRef.current = null;
+        onClick(habiaAlerta ? "tickets" : "chat");
+      }}
       onPointerEnter={congelar(true)}
       onPointerLeave={congelar(false)}
       onFocus={congelar(true)}
       onBlur={congelar(false)}
     >
-      {dialogo && !pausado && (
+      {/* En el festejo el personaje gira en huracán: el grito va en un letrero
+          fijo arriba al centro (portal a body, porque dentro del botón —que
+          se mueve con transform— un `fixed` viajaría con él y no se leería). */}
+      {dialogo && !pausado && pose === "festejo" && dialogo.tipo === "grito" &&
+        createPortal(
+          <div key={dialogo.id} className="agente-volador__letrero" aria-live="polite">
+            {dialogo.texto}
+          </div>,
+          document.body,
+        )}
+      {dialogo && !pausado && !(pose === "festejo" && dialogo.tipo === "grito") && (
         <span key={dialogo.id} className="agente-volador__dialogo" data-tipo={dialogo.tipo} aria-hidden>
           {dialogo.tipo === "zzz" ? (
             <>

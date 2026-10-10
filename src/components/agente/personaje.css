@@ -109,6 +109,12 @@
 [data-pose="festejo"] .pj-capa        { animation: pj-capa 160ms ease-in-out infinite alternate; }
 @keyframes pj-huracan { to { transform: rotate(360deg); } }
 
+/* ── Alerta: parado, agitando el brazo robótico arriba ────────────────────── */
+[data-pose="alerta"] .pj-brazo-robot { animation: pj-agita 380ms ease-in-out infinite alternate; }
+[data-pose="alerta"] .pj-brazo       { transform: rotate(28deg); }
+[data-pose="alerta"] .agente-volador__cuerpo { animation: pj-rebote 190ms ease-in-out infinite alternate; }
+@keyframes pj-agita { from { transform: rotate(-150deg); } to { transform: rotate(-185deg); } }
+
 /* Ojo robótico: late suave, siempre (es lo "vivo" incluso quieto). */
 .pj-ojo-robot { animation: pj-ojo 1.8s ease-in-out infinite alternate; }
 @keyframes pj-ojo { from { opacity: 0.55; } to { opacity: 1; } }
@@ -208,6 +214,31 @@
 .agente-volador[data-arriba="1"] .agente-volador__dialogo::after { top: auto; bottom: 100%; translate: -50% 4px; rotate: 225deg; }
 .agente-volador[data-arriba="1"][data-borde="der"] .agente-volador__dialogo::after { translate: 0 4px; }
 .agente-volador[data-arriba="1"][data-borde="izq"] .agente-volador__dialogo::after { translate: 0 4px; }
+
+/* Letrero del festejo: fijo, grande, arriba al centro; entra y late. */
+.agente-volador__letrero {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 61;
+  max-width: min(560px, calc(100vw - 32px));
+  width: max-content;
+  padding: 10px 20px;
+  border-radius: 9999px;
+  font-size: 18px;
+  font-weight: 800;
+  text-align: center;
+  color: #7f1d1d;
+  background: #fef3c7;
+  border: 2px solid #b45309;
+  box-shadow: 0 12px 30px -12px rgb(0 0 0 / 0.45);
+  pointer-events: none;
+  animation: pj-letrero-entra 220ms var(--ease-out), pj-grito 320ms ease-in-out 220ms 2 alternate;
+}
+@keyframes pj-letrero-entra { from { opacity: 0; transform: translateY(-8px) scale(0.95); } }
+@media (prefers-reduced-motion: reduce) { .agente-volador__letrero { animation: none; } }
 
 /* Si hay diálogo, no se encima la etiqueta del nombre. */
 .agente-volador__dialogo + .agente-volador__globo { display: none; }
