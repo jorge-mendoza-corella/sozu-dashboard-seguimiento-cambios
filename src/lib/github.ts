@@ -1,6 +1,53 @@
 import { Octokit } from "@octokit/rest";
 
-const octokit = new Octokit({ auth: import.meta.env.VITE_GITHUB_TOKEN });
+const octokit = new Octokit({
+  auth: import.meta.env.VITE_GITHUB_TOKEN,
+  // El 304 de una lectura condicional (ver abajo) llega como error al logger
+  // de Octokit: no es error, es "sin cambios". Se calla solo ese.
+  log: {
+    debug: () => {},
+    info: () => {},
+    warn: console.warn.bind(console),
+    error: (msg: string, ...rest: unknown[]) => {
+      if (/ - 304 with id /.test(String(msg))) return;
+      console.error(msg, ...rest);
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Lecturas condicionales (ETag). El límite de GitHub es de 5,000 peticiones por
+// hora POR USUARIO —se reparte entre todas las pestañas del dashboard, GeorgIA
+// y lo que use esa cuenta— y el tablero pregunta lo mismo cada pocos minutos.
+// Mandando el ETag de la última respuesta, GitHub contesta 304 cuando nada
+// cambió, y un 304 NO cuenta contra el límite. Se devuelve la respuesta que ya
+// se tenía, así que para quien llama es transparente.
+// ---------------------------------------------------------------------------
+type RespuestaGitHub = Awaited<ReturnType<typeof octokit.request>>;
+const porEtag = new Map<string, { etag: string; respuesta: RespuestaGitHub }>();
+const MAX_ETAGS = 800;
+
+octokit.hook.wrap("request", async (request, options) => {
+  if ((options.method ?? "GET").toUpperCase() !== "GET") return request(options);
+  const { url } = octokit.request.endpoint.parse(options as Parameters<typeof octokit.request.endpoint.parse>[0]);
+  const previo = porEtag.get(url);
+  try {
+    // Se escribe en el mismo objeto: si se arma uno nuevo, el hook de auth de
+    // Octokit lo vuelve a combinar desde el original y el encabezado se pierde.
+    if (previo) options.headers["if-none-match"] = previo.etag;
+    const r = await request(options);
+    const etag = r.headers.etag;
+    if (etag) {
+      porEtag.delete(url); // reinsertar: el Map queda en orden de uso y se tira lo más viejo
+      porEtag.set(url, { etag, respuesta: r });
+      if (porEtag.size > MAX_ETAGS) porEtag.delete(porEtag.keys().next().value as string);
+    }
+    return r;
+  } catch (err) {
+    if (previo && (err as { status?: number }).status === 304) return previo.respuesta;
+    throw err;
+  }
+});
 
 const reviewerOctokit = import.meta.env.VITE_GITHUB_REVIEWER_TOKEN
   ? new Octokit({ auth: import.meta.env.VITE_GITHUB_REVIEWER_TOKEN })

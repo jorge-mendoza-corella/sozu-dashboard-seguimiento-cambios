@@ -52,15 +52,15 @@ export function useVigiaDeploys(usuario: AppUser | null, revisarTickets: boolean
       }
     };
     // Lo que ya está en caché sirve de punto de partida (revisarDeploys no festeja la primera vista).
+    // Una consulta por repo (useGitHubStatus): el dato es un solo RepoStatus.
+    const comoLista = (d: unknown): RepoStatus[] => (d ? (Array.isArray(d) ? d : [d as RepoStatus]) : []);
     for (const q of qc.getQueryCache().findAll({ queryKey: ["github-status"] })) {
-      const d = q.state.data as RepoStatus[] | undefined;
-      if (d) revisar(d);
+      revisar(comoLista(q.state.data));
     }
     return qc.getQueryCache().subscribe((ev) => {
       if (ev.type !== "updated" || ev.action.type !== "success") return;
       if (ev.query.queryKey[0] !== "github-status") return;
-      const d = ev.query.state.data as RepoStatus[] | undefined;
-      if (d) revisar(d);
+      revisar(comoLista(ev.query.state.data));
     });
   }, [qc]);
 }
