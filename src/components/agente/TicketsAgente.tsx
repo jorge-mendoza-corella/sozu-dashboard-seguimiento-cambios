@@ -160,8 +160,7 @@ export function TicketsAgente({ email, tickets, cargando, error, revisado, onRef
             );
           })}
         </div>
-        {/* En el celular no cabe: ahí manda la lista. */}
-        <div className="hidden md:block"><GeorgIAPensando pendientes={tickets?.length ?? 0} /></div>
+        <GeorgIAPensando pendientes={tickets?.length ?? 0} />
       </aside>
       <section
         className={cn(
