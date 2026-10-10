@@ -29,7 +29,7 @@ export function SelectorSkin() {
       <p className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         <Palette className="h-3.5 w-3.5" /> Apariencia
       </p>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
         {SKINS.map((s) => {
           const sel = s.id === actual;
           return (

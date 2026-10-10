@@ -8,6 +8,8 @@
  *   heroe       superhéroe clásico, más joven
  *   chibi       cabezota y ojos enormes
  *   cientifico  greña blanca, goggles puestos y bata
+ *   raton       ratón clásico de caricatura: orejotas, guantes y short rojo
+ *   travieso    niño de pelo en picos y piel amarilla
  *
  * La elegida vive en `agente_config/acceso.skin` (la cambia el root en
  * Configuración → GeorgIA) y se comparte por un store chico para que todo
@@ -58,8 +60,8 @@ export function BrazoHumano({ skin }: { skin: Skin }) {
         <path d="M55.4 51.2 C55.1 54.4 55.2 57.6 55.6 60.6 L60.6 60.6 C61 57.6 61.1 54.4 60.8 51.2 Z" fill={manga} />
         <path d="M55.4 58.6 C57.2 59.6 59.2 59.6 60.8 58.6 L60.6 61.2 C59 62 57.2 62 55.6 61.2 Z" fill="#6b727c" />
         {/* Mano */}
-        <path d="M55.2 61.2 C54.6 64.4 55.6 67.4 58.2 67.6 C60.8 67.8 61.8 65 61.2 61.2 Z" fill={`url(#pj-piel-${skin})`} />
-        <path d="M55.4 62.4 C54.2 63 54 64.6 55 65.4" fill="none" stroke={PALETA[skin].pielSolida} strokeWidth="1.3" strokeLinecap="round" />
+        <path d="M55.2 61.2 C54.6 64.4 55.6 67.4 58.2 67.6 C60.8 67.8 61.8 65 61.2 61.2 Z" fill={PALETA[skin].mano ?? `url(#pj-piel-${skin})`} />
+        <path d="M55.4 62.4 C54.2 63 54 64.6 55 65.4" fill="none" stroke={PALETA[skin].mano ? "#cbd5e1" : PALETA[skin].pielSolida} strokeWidth="1.3" strokeLinecap="round" />
         <Antojos />
       </g>
     </g>
@@ -78,25 +80,53 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
   // Chibi: la cabeza crece sobre el cuello.
   const escala = skin === "chibi" ? "translate(49 31) scale(1.42) translate(-49 -31)" : undefined;
   const gogglesEnOjos = skin === "cientifico";
+  // El ratón y el travieso no llevan goggles: se reconocen por la silueta.
+  const sinGoggles = skin === "raton" || skin === "travieso";
+  const ojo =
+    skin === "chibi" ? { rx: 7.4, ry: 8.6, iris: 5, pupila: 2.4, brillo: 1.7 }
+    : skin === "raton" ? { rx: 5, ry: 9, iris: 3.4, pupila: 2.6, brillo: 1 }
+    : skin === "travieso" ? { rx: 8.4, ry: 8.4, iris: 2.2, pupila: 2.2, brillo: 0.8 }
+    : { rx: 6, ry: 7, iris: 3.7, pupila: 1.8, brillo: 1.1 };
   return (
     <g className="pj-cabeza">
       {/* Cuello */}
-      <path d="M45.6 28.6 C45.6 31.6 45.2 33.8 44.8 35.8 L51.4 35.8 C51 33.8 50.6 31.6 50.6 28.6 Z" fill={piel} />
+      <path d="M45.6 28.6 C45.6 31.6 45.2 33.8 44.8 35.8 L51.4 35.8 C51 33.8 50.6 31.6 50.6 28.6 Z" fill={p.cuello ?? piel} />
       <g transform={escala}>
         <g transform="translate(49 17.5) scale(0.345) translate(-60 -52)">
           {/* Pelo de atrás / forma de cabeza */}
           {skin === "cientifico" && (
             <path d="M28 46 L16 30 L31 33 L26 14 L41 25 L45 6 L56 21 L64 4 L70 21 L83 8 L83 25 L98 18 L91 34 L104 36 L90 45 Q80 30 60 30 Q40 30 30 48Z" fill="#f1f5f9" stroke="#94a3b8" strokeWidth="1.2" />
           )}
-          {skin === "heroe" ? (
+          {skin === "raton" ? (
+            <>
+              {/* Orejotas redondas, cabeza negra y antifaz de piel */}
+              <circle cx="27" cy="20" r="17" fill="#111827" />
+              <circle cx="93" cy="20" r="17" fill="#111827" />
+              <circle cx="22" cy="15" r="4" fill="#374151" opacity="0.6" />
+              <ellipse cx="60" cy="54" rx="31" ry="32" fill="#111827" />
+              <ellipse cx="52" cy="50" rx="10" ry="15" fill={piel} />
+              <ellipse cx="72" cy="50" rx="10" ry="15" fill={piel} />
+              <ellipse cx="62" cy="70" rx="25" ry="17" fill={piel} />
+            </>
+          ) : skin === "travieso" ? (
+            <>
+              {/* Cabeza alta con la corona de picos y el hocico de barba */}
+              <path d="M34 88 L34 28 L36 12 L43 22 L48 6 L55 20 L61 4 L67 20 L74 6 L79 22 L86 12 L87 30 L87 72 Q87 92 62 92 Q38 92 34 88 Z" fill={piel} />
+              <path d="M44 72 Q44 92 64 92 Q84 92 84 74 Q78 68 64 68 Q50 68 44 72 Z" fill={piel} stroke="#a16207" strokeWidth="1" />
+            </>
+          ) : skin === "heroe" ? (
             <path d="M31 46 Q31 18 60 18 Q89 18 89 46 Q89 70 75 80 Q60 87 45 80 Q31 70 31 46Z" fill={piel} />
           ) : skin === "chibi" ? (
             <ellipse cx="60" cy="54" rx="32" ry="31" fill={piel} />
           ) : (
             <ellipse cx="60" cy="52" rx="31" ry="34" fill={piel} />
           )}
-          <ellipse cx="29.5" cy="57" rx="5" ry="7" fill={piel} />
-          <path d="M27 56 Q29 53 31 57" fill="none" stroke={p.pielSolida} strokeWidth="1.2" />
+          {skin !== "raton" && (
+            <>
+              <ellipse cx="29.5" cy="57" rx="5" ry="7" fill={piel} />
+              <path d="M27 56 Q29 53 31 57" fill="none" stroke={p.pielSolida} strokeWidth="1.2" />
+            </>
+          )}
 
           {/* Pelo */}
           {skin === "abuelo" && (
@@ -117,7 +147,7 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
           )}
 
           {/* Goggles en la frente (en el científico van sobre los ojos, más abajo) */}
-          {!gogglesEnOjos && (
+          {!gogglesEnOjos && !sinGoggles && (
             <>
               <rect x="30" y="30" width="60" height="7" rx="3.5" fill="url(#pj-laton)" transform="rotate(-5 60 33)" />
               <circle cx="52" cy="32.6" r="8.2" fill="url(#pj-laton)" />
@@ -131,11 +161,11 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
           <g className="pj-ojo-abierto pj-ojo-cartoon">
             {[52, 72].map((x) => (
               <g key={x}>
-                <ellipse cx={x} cy="55" rx={skin === "chibi" ? 7.4 : 6} ry={skin === "chibi" ? 8.6 : 7} fill="#fff" />
-                <circle className="pj-pupila" cx={x + 1.8} cy="56" r={skin === "chibi" ? 5 : 3.7} fill={p.iris} />
-                <circle cx={x + 2.3} cy="56.4" r={skin === "chibi" ? 2.4 : 1.8} fill="#0f172a" />
-                <circle cx={x + 3.4} cy="53.6" r={skin === "chibi" ? 1.7 : 1.1} fill="#fff" />
-                <path className="pj-parpado" d={`M${x - 6.4} 55.4 A6.4 7.4 0 0 1 ${x + 6.4} 55.4 Z`} fill={p.pielSolida} />
+                <ellipse cx={x} cy="55" rx={ojo.rx} ry={ojo.ry} fill="#fff" stroke={skin === "travieso" ? "#1f2937" : undefined} strokeWidth="0.8" />
+                <circle className="pj-pupila" cx={x + 1.8} cy="56" r={ojo.iris} fill={p.iris} />
+                <circle cx={x + 2.3} cy="56.4" r={ojo.pupila} fill="#0f172a" />
+                <circle cx={x + 3.4} cy="53.6" r={ojo.brillo} fill="#fff" />
+                <path className="pj-parpado" d={`M${x - ojo.rx - 0.4} 55.4 A${ojo.rx + 0.4} ${ojo.ry + 0.4} 0 0 1 ${x + ojo.rx + 0.4} 55.4 Z`} fill={p.pielSolida} />
               </g>
             ))}
           </g>
@@ -161,6 +191,13 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
           {/* Nariz */}
           {skin === "abuelo" || skin === "cientifico" ? (
             <path d="M62 57 Q66 68 72 70 Q68 74 61 72 Q58 70 60 66Z" fill={p.pielSolida} />
+          ) : skin === "raton" ? (
+            <>
+              <ellipse cx="66" cy="66" rx="7" ry="5" fill="#111827" />
+              <ellipse cx="64" cy="64.2" rx="2.2" ry="1.3" fill="#fff" opacity="0.7" />
+            </>
+          ) : skin === "travieso" ? (
+            <path d="M63 60 Q78 57 79 64 Q78 70 63 68" fill={piel} stroke="#a16207" strokeWidth="1" />
           ) : skin === "heroe" ? (
             <path d="M61 57 Q64 65 62 67" stroke={p.pielSolida} strokeWidth="2" fill="none" strokeLinecap="round" />
           ) : (
