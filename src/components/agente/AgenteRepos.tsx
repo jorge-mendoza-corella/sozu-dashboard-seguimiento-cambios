@@ -27,8 +27,9 @@ import {
 import { AgenteVolador, EVENTO_ALERTA_TICKETS, type DetalleAlerta } from "./AgenteVolador";
 import { TicketsAgente } from "./TicketsAgente";
 import {
-  gritosDeTickets, INTERVALO_TICKETS_MS, misTickets, nombreDeEmail, type TicketAgente,
+  gritosDeCierre, gritosDeTickets, INTERVALO_TICKETS_MS, misTickets, nombreDeEmail, type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
+import { EVENTO_TICKETS_LISTOS } from "@/lib/festejoDeploy";
 
 /**
  * Documentos citados: con el permiso "Ver documentación" son enlaces que abren
@@ -96,6 +97,25 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
     return () => { clearTimeout(primera); clearInterval(cada); };
   }, [permisos.tickets, revisarTickets]);
 
+  // Un deploy a PRD trajo commits de tickets pasados a Claude: GeorgIA se detiene y
+  // grita que ya se pueden cerrar; su clic abre el cierre del primero.
+  const [porCerrar, setPorCerrar] = useState<TicketEnviado[]>([]);
+  const [cerrarAhora, setCerrarAhora] = useState<string | null>(null);
+  useEffect(() => {
+    if (!permisos.tickets) return;
+    const alListos = (e: Event) => {
+      const listos = (e as CustomEvent<{ tickets: TicketEnviado[] }>).detail?.tickets ?? [];
+      if (!listos.length) return;
+      setPorCerrar(listos);
+      window.dispatchEvent(new CustomEvent<DetalleAlerta>(EVENTO_ALERTA_TICKETS, {
+        detail: { gritos: gritosDeCierre(listos.map((t) => t.folio), nombreDeEmail(email)) },
+      }));
+    };
+    window.addEventListener(EVENTO_TICKETS_LISTOS, alListos);
+    return () => window.removeEventListener(EVENTO_TICKETS_LISTOS, alListos);
+  }, [permisos.tickets, email]);
+  const atenderCierre = useCallback(() => setCerrarAhora(null), []);
+
   // Ir a Tickets antes de la primera revisión: se revisa en ese momento.
   const irATickets = () => {
     setPestana("tickets");
@@ -103,7 +123,14 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
   };
 
   const abrir = (motivo: "chat" | "tickets") => {
-    if (motivo === "tickets" && permisos.tickets) irATickets();
+    if (motivo === "tickets" && permisos.tickets) {
+      irATickets();
+      // Si el grito era de "ya se puede cerrar", se abre directo el cierre.
+      if (porCerrar.length) {
+        setCerrarAhora(porCerrar[0].ticketId);
+        setPorCerrar((p) => p.slice(1));
+      }
+    }
     else setPestana("chat");
     setAbierto(true);
   };
@@ -178,6 +205,9 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
             <>
               <Dialog.Title className="sr-only">Tickets asignados</Dialog.Title>
               <TicketsAgente
+                email={email}
+                cerrarAhora={cerrarAhora}
+                onCerrarAtendido={atenderCierre}
                 tickets={tickets}
                 cargando={cargandoTickets}
                 error={errorTickets}
@@ -500,7 +530,7 @@ function Bienvenida({ onElegir }: { onElegir: (t: string) => void }) {
     <div className="mx-auto flex max-w-xl flex-col items-center gap-4 py-10 text-center">
       <div className="rounded-full bg-primary/10 p-3"><Bot className="h-7 w-7 text-primary" /></div>
       <div>
-        <h2 className="text-lg font-semibold">Agente de repos</h2>
+        <h2 className="text-lg font-semibold">GeorgIA</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Pregunta cómo funciona cualquier parte del ecosistema SOZU: el código, la base de datos, las edge
           functions o cómo se usa cada pantalla. Responde con la documentación de sozu-docs y el código de los repos.

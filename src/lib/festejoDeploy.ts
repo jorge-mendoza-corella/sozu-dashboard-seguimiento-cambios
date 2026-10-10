@@ -11,6 +11,8 @@ import type { WorkflowRun } from "./github";
 
 export const EVENTO_FESTEJO = "agente:festejo-deploy";
 export const EVENTO_FALLO = "agente:fallo-deploy";
+/** Un deploy a PRD trajo commits de tickets pasados a Claude: ya se pueden cerrar. */
+export const EVENTO_TICKETS_LISTOS = "agente:tickets-listos";
 
 export interface DetalleFestejo {
   repo: string;
@@ -39,7 +41,7 @@ export function revisarDeployPrd(
   repo: string,
   runs: WorkflowRun[],
   detalle: DetalleFestejo,
-): "festejo" | "fallo" | null {
+): { tipo: "festejo" | "fallo"; sha: string | null } | null {
   const clave = `${owner}/${repo}`;
   const ultimo = runs.find((r) => r.headBranch === "main" && r.status === "completed");
   if (!ultimo?.runId) return null;
@@ -52,5 +54,5 @@ export function revisarDeployPrd(
     ultimo.conclusion === "success" ? "festejo" : ultimo.conclusion === "failure" || ultimo.conclusion === "timed_out" ? "fallo" : null;
   if (!tipo) return null;
   window.dispatchEvent(new CustomEvent<DetalleFestejo>(tipo === "festejo" ? EVENTO_FESTEJO : EVENTO_FALLO, { detail: detalle }));
-  return tipo;
+  return { tipo, sha: ultimo.headSha ?? null };
 }

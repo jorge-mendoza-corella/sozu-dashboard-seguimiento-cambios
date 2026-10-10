@@ -18,14 +18,21 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export const SUPABASE_URL = "https://tzmhgfjmddkfyffkkmto.supabase.co";
-/** Lo más cercano a un enlace directo: el portal no abre un ticket por URL. */
-const URL_PORTAL = "https://admin.sozu.com/admin/portal-tickets/todos?tab=mios";
-const PENDIENTES = ["abierta", "en_proceso"];
-const MAX_TICKETS = 50;
+/** Enlace directo (sozu-admin abre Mis tickets → pipeline → folio → detalle con ?ticket=). */
+const urlTicket = (numero: number) => `https://admin.sozu.com/admin/portal-tickets/todos?ticket=${numero}`;
+/** Solo los pipelines de Sistemas ("SOZU - Sistemas Soporte técnico", "… Nuevos Features", …). */
+const PIPELINE_SISTEMAS = /sozu\s*-?\s*sistemas/i;
+/** Etapas que le tocan a quien atiende; las demás (en atención, detenido…) no se muestran. */
+const ETAPAS_VISIBLES = ["nuevo", "en revision", "en lista de espera"];
+const ORDEN_PRIORIDAD: Record<string, number> = { alta: 0, media: 1, baja: 2 };
+const MAX_TICKETS = 80;
 
 export interface TicketSalida {
   id: string;
+  numero: number;
   folio: string;
+  pipelineId: string;
+  etapaId: string;
   titulo: string;
   descripcion: string;
   etapa: string | null;
@@ -46,7 +53,7 @@ type Fila = any;
 const tipoEvidencia = (t: string | null): TicketSalida["evidencias"][number]["tipo"] =>
   t === "foto" ? "imagen" : t === "audio" ? "audio" : t === "documento" ? "documento" : "otro";
 
-const sinAcentos = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+export const sinAcentos = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
 const uno = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? v[0] ?? null : v ?? null);
 
@@ -80,6 +87,7 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
     .select(
       `id, numero, nombre, descripcion, fecha_creacion, prioridad, solicitante, id_usuario_creador,
        id_usuario_propietario, id_entidad_relacionada,
+       id_pipeline, id_etapa,
        tickets_etapas(nombre, tipo_semantico), tickets_pipelines(nombre), tickets_categorias(nombre),
        proyectos(nombre), tickets_propietarios(id_usuario),
        tickets_adjuntos(nombre, tipo, url, activo), tickets_solicitantes(id_entidad_relacionada)`,
@@ -89,8 +97,14 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
     .order("fecha_creacion", { ascending: false });
   if (e4) throw e4;
 
+  // Pipelines de Sistemas y etapas Nuevo / En revisión / En lista de espera. Orden: prioridad
+  // (alta → media → baja → sin) y, dentro de cada una, el más antiguo primero.
   const pendientes = (filas ?? [])
-    .filter((t: Fila) => PENDIENTES.includes(uno<Fila>(t.tickets_etapas)?.tipo_semantico))
+    .filter((t: Fila) => PIPELINE_SISTEMAS.test(uno<Fila>(t.tickets_pipelines)?.nombre ?? ""))
+    .filter((t: Fila) => ETAPAS_VISIBLES.includes(sinAcentos(uno<Fila>(t.tickets_etapas)?.nombre ?? "")))
+    .sort((a: Fila, b: Fila) =>
+      (ORDEN_PRIORIDAD[a.prioridad] ?? 3) - (ORDEN_PRIORIDAD[b.prioridad] ?? 3) ||
+      Date.parse(a.fecha_creacion) - Date.parse(b.fecha_creacion))
     .slice(0, MAX_TICKETS);
   if (pendientes.length === 0) return [];
 
@@ -150,7 +164,10 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
 
     return {
       id: String(t.id),
+      numero: t.numero,
       folio: `#${t.numero}`,
+      pipelineId: String(t.id_pipeline),
+      etapaId: String(t.id_etapa),
       titulo: t.nombre ?? "(sin asunto)",
       descripcion: t.descripcion ?? "",
       etapa: uno<Fila>(t.tickets_etapas)?.nombre ?? null,
@@ -164,7 +181,68 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
       evidencias: (t.tickets_adjuntos ?? [])
         .filter((a: Fila) => a.activo !== false)
         .map((a: Fila) => ({ nombre: a.nombre ?? "archivo", tipo: tipoEvidencia(a.tipo), url: a.url ?? null })),
-      url: URL_PORTAL,
+      url: urlTicket(t.numero),
     };
   });
+}
+
+/**
+ * Cierra un ticket como lo haría el portal (tickets-store.tsx → moverEtapa):
+ * nota de seguimiento, etapa "resuelta" del mismo pipeline con fecha_cierre, y
+ * el registro `cambio_estado` con origen/destino. Solo si el ticket está asignado
+ * a quien cierra y es de un pipeline de Sistemas. Autor = el usuario del portal
+ * con ese email (queda a su nombre, no a nombre de un robot).
+ */
+export async function cerrarTicket(sb: SupabaseClient, email: string, idTicket: number, nota: string): Promise<{ etapa: string }> {
+  const { data: yo, error: e1 } = await sb.from("usuarios").select("auth_user_id").ilike("email", email).limit(1).maybeSingle();
+  if (e1) throw e1;
+  if (!yo?.auth_user_id) throw new Error("sin_usuario_portal");
+  const uid: string = yo.auth_user_id;
+
+  const { data: t, error: e2 } = await sb
+    .from("tickets")
+    .select("id, id_pipeline, id_etapa, id_usuario_propietario, activo, tickets_pipelines(nombre), tickets_propietarios(id_usuario)")
+    .eq("id", idTicket)
+    .maybeSingle();
+  if (e2) throw e2;
+  if (!t || !t.activo) throw new Error("no_existe");
+  const propietarios = ((t.tickets_propietarios ?? []) as Fila[]).map((p) => p.id_usuario);
+  if (!propietarios.includes(uid) && t.id_usuario_propietario !== uid) throw new Error("no_es_tuyo");
+  if (!PIPELINE_SISTEMAS.test(uno<Fila>(t.tickets_pipelines)?.nombre ?? "")) throw new Error("pipeline_no_permitido");
+
+  const { data: destino, error: e3 } = await sb
+    .from("tickets_etapas")
+    .select("id, nombre, cerrada")
+    .eq("id_pipeline", t.id_pipeline)
+    .eq("tipo_semantico", "resuelta")
+    .eq("activo", true)
+    .order("orden")
+    .limit(1)
+    .maybeSingle();
+  if (e3) throw e3;
+  if (!destino) throw new Error("sin_etapa_resuelta");
+
+  const texto = nota.trim().slice(0, 6000);
+  if (texto) {
+    const { error } = await sb.from("tickets_actividad").insert({
+      id_ticket: idTicket, texto, tipo: "nota", id_usuario_autor: uid, visible_cliente: false,
+    });
+    if (error) throw error;
+  }
+  const { error: e4 } = await sb
+    .from("tickets")
+    .update({ id_etapa: destino.id, fecha_cierre: destino.cerrada ? new Date().toISOString() : null })
+    .eq("id", idTicket);
+  if (e4) throw e4;
+  const { error: e5 } = await sb.from("tickets_actividad").insert({
+    id_ticket: idTicket,
+    texto: `Etapa actualizada a "${destino.nombre}".`,
+    tipo: "cambio_estado",
+    id_usuario_autor: uid,
+    visible_cliente: false,
+    id_etapa_origen: t.id_etapa,
+    id_etapa_destino: destino.id,
+  });
+  if (e5) throw e5;
+  return { etapa: destino.nombre };
 }

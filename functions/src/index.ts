@@ -20,7 +20,8 @@ import { consumirCupo, reposPermitidos, verificarAcceso } from "./agente/acceso.
 import { docPorRuta, indiceDocs, limpiarRuta, obtenerCorpus } from "./agente/docs.js";
 import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.js";
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
-import { clienteSupabase, ticketsAsignados } from "./agente/tickets.js";
+import { cerrarTicket, clienteSupabase, ticketsAsignados } from "./agente/tickets.js";
+import { analizarTicket } from "./agente/analisis.js";
 
 initializeApp();
 
@@ -297,6 +298,95 @@ export const agenteTickets = onCall(
     } catch (e) {
       console.error("[agenteTickets]", e);
       throw new HttpsError("unavailable", "No se pudieron leer los tickets del portal.");
+    }
+  },
+);
+
+/**
+ * `agenteAnalizarTicket`: GeorgIA investiga en docs y código en qué repos hay que
+ * trabajar un ticket (va en el .md para Claude Code). Se guarda en
+ * `agente_tickets/{id}` y se reusa salvo `forzar`. Solo tickets asignados a quien pide.
+ */
+export const agenteAnalizarTicket = onCall<{ ticketId: string; forzar?: boolean }>(
+  {
+    region: "us-central1",
+    secrets: [ANTHROPIC_API_KEY, GITHUB_TOKEN, GITHUB_DOCS_TOKEN, SUPABASE_SERVICE_KEY],
+    timeoutSeconds: 300,
+    memory: "1GiB",
+    maxInstances: 5,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  async (req) => {
+    const usuario = await verificarAcceso(req, "tickets");
+    const ticketId = String(req.data?.ticketId ?? "");
+    if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
+    const ref = getFirestore().doc(`agente_tickets/${ticketId}`);
+    if (!req.data?.forzar) {
+      const previo = (await ref.get()).data();
+      if (previo?.analisis) return { analisis: previo.analisis, analizadoEn: previo.analizadoEn, desdeCache: true };
+    }
+    const tickets = await ticketsAsignados(clienteSupabase(SUPABASE_SERVICE_KEY.value()), usuario.email);
+    const t = tickets.find((x) => x.id === ticketId);
+    if (!t) throw new HttpsError("not-found", "Ese ticket no está entre tus pendientes.");
+    await consumirCupo(usuario);
+
+    const ghCodigo = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
+    const ghDocs = GITHUB_DOCS_TOKEN.value() ? new Octokit({ auth: GITHUB_DOCS_TOKEN.value(), userAgent: "sozu-dashboard-agente" }) : ghCodigo;
+    const [corpus, repos] = await Promise.all([obtenerCorpus(ghDocs), reposPermitidos(usuario)]);
+    const system: Anthropic.Beta.BetaTextBlockParam[] = [
+      { type: "text", text: INSTRUCCIONES },
+      { type: "text", text: bloqueDocs(indiceDocs(corpus), corpus.sha) },
+      { type: "text", text: bloqueRepos(repos), cache_control: { type: "ephemeral" } },
+    ];
+    try {
+      const analisis = await analizarTicket(ANTHROPIC_API_KEY.value(), { ghDocs, ghCodigo, repos }, system, t);
+      const analizadoEn = new Date().toISOString();
+      await ref.set({ numero: t.numero, titulo: t.titulo, analisis, analizadoEn, por: usuario.email }, { merge: true });
+      return { analisis, analizadoEn, desdeCache: false };
+    } catch (e) {
+      console.error("[agenteAnalizarTicket]", e);
+      throw new HttpsError("unavailable", "GeorgIA no pudo terminar la investigación. Intenta de nuevo.");
+    }
+  },
+);
+
+/**
+ * `agenteCerrarTicket`: pasa el ticket a la etapa resuelta de su pipeline y deja la
+ * nota de seguimiento (lo que se actualizó, por repo y PR). Solo tickets de Sistemas
+ * asignados a quien cierra; la nota queda a su nombre en el portal.
+ */
+export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string }>(
+  {
+    region: "us-central1",
+    secrets: [SUPABASE_SERVICE_KEY],
+    timeoutSeconds: 60,
+    memory: "512MiB",
+    maxInstances: 5,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  async (req) => {
+    const usuario = await verificarAcceso(req, "tickets");
+    const ticketId = String(req.data?.ticketId ?? "");
+    const nota = typeof req.data?.nota === "string" ? req.data.nota : "";
+    if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
+    if (!nota.trim()) throw new HttpsError("invalid-argument", "La nota de seguimiento no puede ir vacía.");
+    try {
+      const r = await cerrarTicket(clienteSupabase(SUPABASE_SERVICE_KEY.value()), usuario.email, Number(ticketId), nota);
+      await getFirestore().doc(`agente_tickets_enviados/${usuario.email}__${ticketId}`)
+        .set({ cerrado: true, cerradoEn: FieldValue.serverTimestamp() }, { merge: true });
+      return { ok: true, etapa: r.etapa };
+    } catch (e) {
+      const m = (e as Error).message;
+      const conocidos: Record<string, string> = {
+        no_es_tuyo: "Ese ticket no está asignado a ti.",
+        no_existe: "Ese ticket ya no existe.",
+        pipeline_no_permitido: "Solo se cierran tickets de los pipelines de Sistemas.",
+        sin_etapa_resuelta: "El pipeline de ese ticket no tiene etapa de resuelto.",
+        sin_usuario_portal: "Tu correo no tiene usuario en el portal de tickets.",
+      };
+      if (conocidos[m]) throw new HttpsError("failed-precondition", conocidos[m]);
+      console.error("[agenteCerrarTicket]", e);
+      throw new HttpsError("unavailable", "No se pudo cerrar el ticket en el portal.");
     }
   },
 );

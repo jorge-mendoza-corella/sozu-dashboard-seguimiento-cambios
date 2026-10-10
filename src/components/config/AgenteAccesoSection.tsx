@@ -95,9 +95,9 @@ export function AgenteAccesoSection() {
         <div className="flex items-start gap-3">
           <Bot className="mt-0.5 h-5 w-5 text-primary" />
           <div>
-            <h2 className="font-semibold">Agente de repos</h2>
+            <h2 className="font-semibold">GeorgIA</h2>
             <p className="text-sm text-muted-foreground">
-              Quién puede usar el agente (botón flotante, Alt+K) y quién puede además abrir la documentación que cita.
+              Quién puede usar a GeorgIA, el agente de repos (personaje volador, Alt+K), y quién puede además abrir la documentación que cita.
               Responde con sozu-docs y el código de los repos que cada persona ya tiene asignados. Tope: 40 preguntas por
               hora por persona.
             </p>
@@ -109,7 +109,7 @@ export function AgenteAccesoSection() {
             <span className="flex-1">Persona</span>
             <span className="flex w-28 items-center justify-center gap-1"><FileText className="h-3 w-3" /> Ver docs</span>
             <span className="flex w-28 items-center justify-center gap-1"><BellRing className="h-3 w-3" /> Tickets</span>
-            <span className="flex w-28 items-center justify-center gap-1"><Plane className="h-3 w-3" /> Agentito</span>
+            <span className="flex w-28 items-center justify-center gap-1"><Plane className="h-3 w-3" /> GeorgIA</span>
             <span className="w-9" />
           </div>
           <div className="flex items-center gap-2 border-b px-3 py-2">
@@ -140,7 +140,7 @@ export function AgenteAccesoSection() {
                   deshabilitado={busy !== null}
                   // Apagarlo pide confirmación (y él ruega); prenderlo es directo.
                   onCambiar={() => (agentito ? setConfirmando(true) : cambiarAgentito(true))}
-                  etiqueta={agentito ? "Esconder al agentito volador" : "Volver a mostrar al agentito"}
+                  etiqueta={agentito ? "Esconder a GeorgIA" : "Volver a mostrar a GeorgIA"}
                 />
               )}
             </span>
@@ -186,7 +186,7 @@ export function AgenteAccesoSection() {
                     className="w-9 px-0"
                     disabled={busy !== null}
                     onClick={() => void run(e, () => quitarAccesoAgente(e))}
-                    title="Quitar acceso al agente"
+                    title="Quitar acceso a GeorgIA"
                   >
                     {busy === e ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                   </Button>
@@ -210,7 +210,7 @@ export function AgenteAccesoSection() {
           </Button>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Al dar acceso, la persona entra sin «Ver docs»: verá qué documentos consultó el agente, pero no podrá abrirlos
+          Al dar acceso, la persona entra sin «Ver docs»: verá qué documentos consultó GeorgIA, pero no podrá abrirlos
           hasta que prendas el interruptor.
         </p>
         {error && <p className="text-sm text-destructive">{error}</p>}

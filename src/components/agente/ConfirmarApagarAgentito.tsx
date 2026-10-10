@@ -38,7 +38,7 @@ export function ConfirmarApagarAgentito({ abierto, onCancelar, onConfirmar }: {
               {ruego}
             </p>
           </div>
-          <Dialog.Title className="mt-3 text-base font-semibold">¿Esconder al agentito?</Dialog.Title>
+          <Dialog.Title className="mt-3 text-base font-semibold">¿Esconder a GeorgIA?</Dialog.Title>
           <p className="mt-1 text-sm text-muted-foreground">
             Deja de volar por la pantalla y no te grita por los tickets ni festeja deploys. El chat sigue en
             <kbd className="mx-1 rounded border px-1 text-[11px]">Alt</kbd>+<kbd className="mx-1 rounded border px-1 text-[11px]">K</kbd>

@@ -27,7 +27,7 @@ const TABS = [
   { value: "marca", label: "Marca", icon: Palette, soloGlobal: false },
   { value: "notificaciones", label: "Notificaciones", icon: MessageSquare, soloGlobal: false },
   { value: "facturacion", label: "Facturación", icon: Receipt, soloGlobal: true },
-  { value: "agente", label: "Agente IA", icon: Bot, soloGlobal: true },
+  { value: "agente", label: "GeorgIA", icon: Bot, soloGlobal: true },
 ] as const;
 
 /**

@@ -103,7 +103,7 @@ export async function preguntar(
 export function mensajeDeError(e: unknown): string {
   const code = (e as { code?: string }).code ?? "";
   const msg = (e as { message?: string }).message ?? "";
-  if (code.endsWith("permission-denied")) return msg || "No tienes acceso al agente.";
+  if (code.endsWith("permission-denied")) return msg || "No tienes acceso a GeorgIA.";
   if (code.endsWith("resource-exhausted")) return msg || "Llegaste al límite de preguntas por hora.";
   if (code.endsWith("invalid-argument")) return msg;
   if (code.endsWith("unauthenticated")) return "Tu sesión expiró. Vuelve a iniciar sesión.";

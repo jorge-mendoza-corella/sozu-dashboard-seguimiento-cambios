@@ -558,7 +558,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       ref={raiz}
       type="button"
       className="agente-volador z-30"
-      aria-label="Abrir el agente de repos (Alt+K)"
+      aria-label="Abrir a GeorgIA (Alt+K)"
       aria-keyshortcuts="Alt+K"
       data-pausa={pausaLocal || undefined}
       onClick={() => {
@@ -599,7 +599,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           )}
         </span>
       )}
-      <span className="agente-volador__globo">Agente de repos · Alt+K</span>
+      <span className="agente-volador__globo">GeorgIA · Alt+K</span>
       <div ref={orientacion} className="agente-volador__orientacion">
         <div ref={inclinacion} className="agente-volador__inclinacion">
           <Personaje pose={pose} animo={animo} />
