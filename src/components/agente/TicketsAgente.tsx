@@ -160,8 +160,7 @@ export function TicketsAgente({ email, tickets, cargando, error, revisado, onRef
             );
           })}
         </div>
-        {/* En el celular no cabe: ahí manda la lista. */}
-        <div className="hidden md:block"><GeorgIAPensando pendientes={tickets?.length ?? 0} /></div>
+        <GeorgIAPensando pendientes={tickets?.length ?? 0} />
       </aside>
       <section
         className={cn(
@@ -284,11 +283,17 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
           </p>
           <h2 className="mt-1 text-lg font-semibold leading-snug">{t.titulo}</h2>
         </div>
+        {/* Solo se cierra desde aquí si ya hay un PR hacia main con este ticket en PRD. */}
         <button
           type="button"
           onClick={onCerrar}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-emerald-500/50 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300"
-          title="Pasar el ticket a Resuelto en el portal, con nota de seguimiento"
+          disabled={!enviado?.prs.length}
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-emerald-500/50 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-border disabled:bg-muted disabled:text-muted-foreground dark:bg-emerald-950/30 dark:text-emerald-300"
+          title={
+            enviado?.prs.length
+              ? "Pasar el ticket a Resuelto en el portal, con nota de seguimiento"
+              : "Se habilita cuando un PR hacia main con este ticket (trailer Ticket-SOZU) llegue a PRD"
+          }
         >
           <CheckCircle2 className="h-4 w-4" /> Cerrar ticket
         </button>
@@ -524,11 +529,6 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
                 rows={10}
                 className="mt-2 w-full resize-y rounded-lg border bg-muted/30 p-3 font-mono text-[12px] leading-relaxed outline-none focus:ring-2 focus:ring-ring"
               />
-              {!enviado?.prs.length && (
-                <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
-                  No hay PRs a main ligados a este ticket todavía; escribe tú lo que se actualizó.
-                </p>
-              )}
               {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
               <div className="mt-4 flex justify-end gap-2">
                 <button type="button" onClick={onCancelar} disabled={enviando} className="h-9 rounded-md px-3 text-sm font-medium hover:bg-muted">No, todavía no</button>

@@ -370,6 +370,11 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string }>(
     const nota = typeof req.data?.nota === "string" ? req.data.nota : "";
     if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
     if (!nota.trim()) throw new HttpsError("invalid-argument", "La nota de seguimiento no puede ir vacía.");
+    // Solo se cierra desde aquí lo que ya llegó a PRD por un PR hacia main ligado al ticket.
+    const enviado = (await getFirestore().doc(`agente_tickets_enviados/${usuario.email}__${ticketId}`).get()).data();
+    if (!Array.isArray(enviado?.prs) || enviado.prs.length === 0) {
+      throw new HttpsError("failed-precondition", "Este ticket no tiene un PR hacia main en PRD ligado; ciérralo cuando llegue.");
+    }
     try {
       const r = await cerrarTicket(clienteSupabase(SUPABASE_SERVICE_KEY.value()), usuario.email, Number(ticketId), nota);
       await getFirestore().doc(`agente_tickets_enviados/${usuario.email}__${ticketId}`)

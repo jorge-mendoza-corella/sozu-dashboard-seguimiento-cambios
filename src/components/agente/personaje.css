@@ -566,3 +566,10 @@
 .agente-manga--estatica[data-estilo="ojos"] { height: 120px; }
 .agente-manga--estatica[data-estilo="ojos"] .agente-manga__cara { width: 1100px; height: 1100px; left: calc(50% - 561px); top: -178px; }
 .agente-manga--estatica .agente-manga__texto { max-width: calc(100% - 22px); font-size: 14px; line-height: 1.2; }
+
+/* Celular: la viñeta del pie de la lista un poco más baja. */
+@media (max-width: 767px) {
+  .agente-manga.agente-manga--estatica { height: 170px; }
+  .agente-manga--estatica .agente-manga__cara { width: 540px; height: 540px; left: calc(50% - 276px); top: -40px; }
+  .agente-manga--estatica[data-estilo="ojos"] { height: 100px; }
+}
