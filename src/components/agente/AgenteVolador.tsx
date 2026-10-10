@@ -92,6 +92,24 @@ const FRASES = {
   ],
   techo: ["¡Uff!", "¡Ay, mi cabeza!", "¡Rebote!", "¡Uta madre, el techo!", "¡Chale, otra vez el techo!", "¡Auch, cabrón!"],
   pared: ["¡Vuelta en U!", "¡Pared a la vista!", "¡Ups, por acá no!", "¡Ni madres, me regreso!"],
+  // Cuando se da contra el techo o una pared: chuscas, para que no siempre diga lo mismo.
+  golpe: [
+    "¡Ay, qué putazo me di!",
+    "¡Uta, ese sí dolió!",
+    "¡Mi copete! ¡Me despeiné!",
+    "¿Quién puso esa pared ahí?",
+    "¡Me lleva! Ya vi estrellitas…",
+    "¡Auch! Eso no estaba en el diseño",
+    "¡Ni el CI me pega tan duro!",
+    "¡Chin! Se me abolló el brazo",
+    "¡Pinche pared, otra vez tú!",
+    "Estoy bien… estoy bien… ¿dónde estoy?",
+    "¡Madres! Necesito un casco",
+    "¡Ay, mi chip! Creo que perdí memoria RAM",
+    "¡Zas! Bug de colisión confirmado",
+    "Eso fue un 500 en mi cabeza",
+    "¡No mames, qué madrazo!",
+  ],
   aterrizar: ["Aterrizaje perfecto.", "Pies en la tierra.", "¡Tierra firme!", "¡Clavado, a huevo!", "10 de 10 el aterrizaje.", "¡Ni se despeinó el copete!"],
   caminar: [
     "¿Alguien revisó ese PR?", "Hmm… ¿y si refactorizo?", "Los docs no se escriben solos.", "Ese bug lo vi venir.",
@@ -394,13 +412,21 @@ export function AgenteVolador({ pausado, onClick }: Props) {
             s.dir = (s.x <= MARGEN ? 1 : -1) as 1 | -1;
             s.angulo = Math.max(-1, Math.min(1, -s.angulo * 0.5 + azar(-0.45, 0.45)));
             s.vel = azar(...VEL_VUELO);
-            if (!finDialogo && Math.random() < 0.25) decir(una(FRASES.pared), "habla", 1400);
+            // A veces se queja del golpe (y ese globo dura lo suficiente para leerse).
+            if (!finDialogo && Math.random() < 0.45) {
+              const golpe = Math.random() < 0.65;
+              decir(una(golpe ? FRASES.golpe : FRASES.pared), golpe ? "grito" : "habla", golpe ? 2400 : 1600);
+              if (golpe) {
+                ponerAnimo("grito");
+                proximaFrase = ahora + 3500;
+              }
+            }
           }
           // Techo: voltereta.
           if (s.y <= TECHO && s.pose === "volar") {
             s.y = TECHO;
             cambiarPose("girar", 520);
-            if (Math.random() < 0.5) decir(una(FRASES.techo), "grito", 1200);
+            if (Math.random() < 0.65) decir(una(Math.random() < 0.6 ? FRASES.golpe : FRASES.techo), "grito", 2400);
             s.angulo = 0.2;
             s.vel = 60;
           }
