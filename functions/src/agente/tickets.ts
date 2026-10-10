@@ -46,6 +46,8 @@ type Fila = any;
 const tipoEvidencia = (t: string | null): TicketSalida["evidencias"][number]["tipo"] =>
   t === "foto" ? "imagen" : t === "audio" ? "audio" : t === "documento" ? "documento" : "otro";
 
+const sinAcentos = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
 const uno = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? v[0] ?? null : v ?? null);
 
 export function clienteSupabase(serviceKey: string): SupabaseClient {
@@ -141,8 +143,10 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
       .filter(Boolean);
     const solicitante =
       solicitantes.join(", ") || nombrePorEntidad.get(t.id_entidad_relacionada) || t.solicitante || null;
+    // "Ramon" y "Ramón" son la misma persona: se compara sin acentos ni mayúsculas.
+    const mismo = (a: string, b: string) => sinAcentos(a) === sinAcentos(b);
     const abiertoPor =
-      creador && solicitante && creador !== solicitante ? `${creador} (solicitante: ${solicitante})` : creador ?? solicitante;
+      creador && solicitante && !mismo(creador, solicitante) ? `${creador} (solicitante: ${solicitante})` : creador ?? solicitante;
 
     return {
       id: String(t.id),

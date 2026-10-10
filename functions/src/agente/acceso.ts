@@ -12,8 +12,8 @@
  * que el agente cita (función `agenteDoc`). Son permisos independientes. El
  * root (`SUPERUSER_EMAIL`) tiene los dos siempre, aunque el doc no exista.
  * `tickets` revisa cada 15 min los tickets del portal de sozu-admin asignados a
- * la persona (función `agenteTickets`); para el root también se prende y
- * apaga aquí (no es automático: es una alerta, y puede no quererla).
+ * la persona (función `agenteTickets`). El root lo tiene prendido por default,
+ * como todo lo demás; si lo apaga, queda en `ticketsApagados`.
  */
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
@@ -52,7 +52,9 @@ export async function verificarAcceso(req: CallableRequest, permiso: Permiso = "
   const esRoot = email === SUPERUSER_EMAIL;
   const usaAgente = esRoot || lista(cfg.emails).includes(email);
   const verDocs = esRoot || lista(cfg.docs).includes(email);
-  const verTickets = usaAgente && lista(cfg.tickets).includes(email);
+  const verTickets = esRoot
+    ? !lista(cfg.ticketsApagados).includes(email)
+    : usaAgente && lista(cfg.tickets).includes(email);
   if (permiso === "agente" && !usaAgente) {
     throw new HttpsError("permission-denied", "No tienes acceso al agente de repos.");
   }

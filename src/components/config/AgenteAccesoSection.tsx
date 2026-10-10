@@ -50,12 +50,12 @@ function Interruptor({ activo, deshabilitado, onCambiar, etiqueta }: {
 }
 
 export function AgenteAccesoSection() {
-  const [acceso, setAcceso] = useState<{ emails: string[]; docs: string[]; tickets: string[] } | null>(null);
+  const [acceso, setAcceso] = useState<{ emails: string[]; docs: string[]; tickets: string[]; ticketsApagados: string[] } | null>(null);
   const [nuevo, setNuevo] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const recargar = () => leerAccesoAgente().then(setAcceso).catch(() => setAcceso({ emails: [], docs: [], tickets: [] }));
+  const recargar = () => leerAccesoAgente().then(setAcceso).catch(() => setAcceso({ emails: [], docs: [], tickets: [], ticketsApagados: [] }));
   useEffect(() => { void recargar(); }, []);
 
   const run = async (key: string, fn: () => Promise<void>) => {
@@ -108,9 +108,12 @@ export function AgenteAccesoSection() {
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               ) : (
                 <Interruptor
-                  activo={!!acceso?.tickets.includes(SUPERUSER_EMAIL)}
+                  activo={!acceso?.ticketsApagados.includes(SUPERUSER_EMAIL)}
                   deshabilitado={busy !== null || acceso === null}
-                  onCambiar={() => void run(`tickets:${SUPERUSER_EMAIL}`, () => cambiarTickets(SUPERUSER_EMAIL, !acceso?.tickets.includes(SUPERUSER_EMAIL)))}
+                  onCambiar={() => {
+                    const prendido = !acceso?.ticketsApagados.includes(SUPERUSER_EMAIL);
+                    void run(`tickets:${SUPERUSER_EMAIL}`, () => cambiarTickets(SUPERUSER_EMAIL, !prendido));
+                  }}
                   etiqueta="Revisar mis tickets cada 15 min"
                 />
               )}
