@@ -305,6 +305,17 @@
 }
 .agente-volador__letrero-titulo { font-size: 15px; font-weight: 800; }
 .agente-volador__letrero-linea { font-size: 13px; font-weight: 600; opacity: 0.85; animation: pj-globo-entra 200ms var(--ease-out); }
+.agente-volador__letrero[data-tipo="dev"] {
+  color: #1e3a8a;
+  background: #dbeafe;
+  border-color: #2563eb;
+}
+.agente-volador__letrero[data-tipo="dev-fallo"] {
+  color: #7c2d12;
+  background: #ffedd5;
+  border-color: #ea580c;
+  animation: pj-letrero-entra 220ms var(--ease-out);
+}
 .agente-volador__letrero[data-tipo="fallo"] {
   color: #7f1d1d;
   background: #fee2e2;

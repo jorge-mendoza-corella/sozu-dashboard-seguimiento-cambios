@@ -73,7 +73,7 @@ function lanzarConfeti() {
 type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta" | "llorar" | "brinco";
 export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando";
 /** Letrero fijo arriba al centro durante el festejo o el llanto. */
-type Letrero = { tipo: "exito" | "fallo"; titulo: string; linea: string; id: number };
+type Letrero = { tipo: "exito" | "fallo" | "dev" | "dev-fallo"; titulo: string; linea: string; id: number };
 /** Cuánto dura el llanto por un deploy fallido. */
 const LLANTO_MS = 8500;
 type Dialogo = { id: number; texto: string; tipo: "grito" | "habla" | "zzz" };
@@ -107,18 +107,18 @@ const FRASES = {
 
 /** Deploy a dev: brinco de gusto (o queja corta si falló). Más modesto que PRD. */
 const FRASES_DEV_OK = [
-  (d: string) => `¡Deploy a dev listo! ${d}`,
-  (d: string) => `¡Ya está en dev! ${d}`,
-  (d: string) => `¡A huevo, dev arriba! ${d}`,
-  (d: string) => `¡Dev al día, a probar! ${d}`,
+  (r: string) => `¡Ya está en dev ${r}, a probar!`,
+  () => "¡A huevo, dev arriba!",
+  (r: string) => `¡${r} al día en dev!`,
+  () => "¡Wiii, otro deploy a dev!",
 ];
 const FRASES_DEV_FALLO = [
-  (d: string) => `¡Chale, falló dev! ${d}`,
-  (d: string) => `Uta, dev en rojo… ${d}`,
-  (d: string) => `¡No mames, se cayó dev! ${d}`,
+  () => "¡Chale, falló dev!",
+  (r: string) => `Uta, ${r} en rojo en dev…`,
+  () => "¡No mames, se cayó dev!",
 ];
 /** Cuánto dura el brinco por un deploy a dev. */
-const BRINCO_MS = 2600;
+const BRINCO_MS = 7000;
 
 /** Lamentos cuando un deploy a PRD falla. */
 const FRASES_FALLO = [
@@ -304,12 +304,21 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         const d = s.festejos.shift()!;
         if (d.tipo === "dev-ok" || d.tipo === "dev-fallo") {
           // Dev: brinco en el lugar (o puchero), con su globo; sin letrero ni confeti.
+          // Letrero fijo (como PRD, pero azul y más corto): el globo se movía con él y no se leía.
           s.festejoRepo = d.repo;
+          idLetrero += 1;
+          finDialogo = 0;
+          setDialogo(null);
+          const ok = d.tipo === "dev-ok";
           cambiarPose("brinco", BRINCO_MS);
-          ponerAnimo(d.tipo === "dev-ok" ? "feliz" : "llorando");
-          decir(una(d.tipo === "dev-ok" ? FRASES_DEV_OK : FRASES_DEV_FALLO)(dondeFue(d)), d.tipo === "dev-ok" ? "grito" : "habla", BRINCO_MS);
+          ponerAnimo(ok ? "feliz" : "llorando");
+          setLetrero({
+            tipo: ok ? "dev" : "dev-fallo",
+            id: idLetrero,
+            titulo: `${ok ? "🚀 Deploy exitoso a dev" : "⚠️ Falló el deploy a dev"} · ${dondeFue(d)}`,
+            linea: una(ok ? FRASES_DEV_OK : FRASES_DEV_FALLO)(d.repo),
+          });
           proximaFrase = ahora + BRINCO_MS + 1500;
-          s.siguiente = d.tipo === "dev-ok" ? "despegar" : "despegar";
         } else {
         s.festejoRepo = d.repo;
         s.festejoInicio = ahora;
@@ -443,6 +452,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         case "brinco": {
           // Se queda donde está (en el aire o en el piso) brincando; al terminar sigue su vuelo.
           if (fin) {
+            setLetrero(null);
             ponerAnimo("feliz");
             if (s.y >= piso() - 1) {
               cambiarPose("agachar", 160);

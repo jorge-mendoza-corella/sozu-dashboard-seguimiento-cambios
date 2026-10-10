@@ -20,6 +20,7 @@ import { AvisosBanner } from "@/components/AvisosBanner";
 import { empresasDeProyectos } from "@/lib/empresas";
 import { useAuth } from "@/hooks/useAuth";
 import { hasFailingDeploy, deployEnCurso, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
+import { EVENTO_BRILLO, type DetalleBrillo } from "@/lib/festejoDeploy";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
 import { getFrontVersions, type FrontVersion } from "@/lib/frontVersions";
 import { DeployAppTabButton } from "@/components/codemagic/DeployAppTabButton";
@@ -280,6 +281,24 @@ export function DashboardPage() {
     }
     return m;
   }, [repos]);
+
+  // GeorgIA reaccionó a un deploy: la pestaña del proyecto del repo brilla unos
+  // segundos (la tarjeta solo se ve si su proyecto está abierto).
+  const [brilloProyecto, setBrilloProyecto] = useState<Map<string, "exito" | "fallo">>(new Map());
+  const reposRef = useRef(repos);
+  useEffect(() => { reposRef.current = repos; }, [repos]);
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const alBrillo = (e: Event) => {
+      const d = (e as CustomEvent<DetalleBrillo>).detail;
+      const pid = reposRef.current.find((r) => r.owner === d?.owner && r.repo === d?.repo)?.projectId;
+      if (!pid) return;
+      setBrilloProyecto((m) => new Map(m).set(pid, d.tipo));
+      timers.push(setTimeout(() => setBrilloProyecto((m) => { const n = new Map(m); n.delete(pid); return n; }), 9000));
+    };
+    window.addEventListener(EVENTO_BRILLO, alBrillo);
+    return () => { timers.forEach(clearTimeout); window.removeEventListener(EVENTO_BRILLO, alBrillo); };
+  }, []);
 
   const statusByKey = useMemo(() => {
     const m = new Map<string, RepoStatus>();
@@ -544,6 +563,7 @@ export function DashboardPage() {
                             // si no es la pestana abierta.
                             activeProject !== p.id && deployPorProyecto.get(p.id) === "prd" && "tab-run-prd",
                             activeProject !== p.id && deployPorProyecto.get(p.id) === "dev" && "tab-run-dev",
+                            brilloProyecto.get(p.id) && `tab-brillo tab-brillo-${brilloProyecto.get(p.id)}`,
                           )}
                         >
                           <span className="relative z-10 flex items-center gap-1.5">

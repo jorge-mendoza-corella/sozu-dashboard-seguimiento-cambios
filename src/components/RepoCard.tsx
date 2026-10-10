@@ -268,7 +268,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
       if (d?.owner !== status.owner || d.repo !== status.repo) return;
       setBrillo(d.tipo);
       clearTimeout(t);
-      t = setTimeout(() => setBrillo(null), 6000);
+      t = setTimeout(() => setBrillo(null), 9000);
     };
     window.addEventListener(EVENTO_BRILLO, alBrillo);
     return () => { clearTimeout(t); window.removeEventListener(EVENTO_BRILLO, alBrillo); };
