@@ -20,6 +20,8 @@ export function Antojos() {
   return (
     // ×1.9 sobre la mano (58,64): a tamaño real no se distinguían.
     <g transform="translate(58 64) scale(1.9) translate(-58 -64) translate(20 4)">
+      {/* Contrarrotación (personaje.css): que el antojo quede derecho aunque el brazo gire. */}
+      <g className="pj-antojos">
       <g className="pj-snack pj-snack--pizza">
         <path d="M33.6 60.6 L43 60.6 L38.6 70.6 Z" fill="#fcd34d" stroke="#d97706" strokeWidth="0.5" />
         <path d="M33.2 59.6 L43.4 59.6 L43 61.4 L33.6 61.4 Z" fill="#b45309" />
@@ -39,6 +41,7 @@ export function Antojos() {
         <circle cx="38.5" cy="59.4" r="2.8" fill="#f9a8d4" />
         <circle cx="38.5" cy="56.6" r="2.3" fill="#86efac" />
         <circle cx="39.4" cy="55.6" r="0.6" fill="#fff" opacity="0.8" />
+      </g>
       </g>
     </g>
   );
@@ -181,6 +184,13 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
           <path className="pj-boca pj-boca--aburrida" d="M55 80.5 Q58.5 77.5 62 80.5 Q65.5 83.5 69 79.5" fill="none" stroke="#7c3a1d" strokeWidth="2.2" strokeLinecap="round" />
           <ellipse className="pj-boca pj-boca--dormida" cx="62" cy="80" rx="2.6" ry="2.1" fill="#3b0f0a" />
           <path className="pj-boca pj-boca--llora" d="M54 82.5 Q58 76.5 62 80.5 Q66 76.5 70 82.5" fill="none" stroke="#7c3a1d" strokeWidth="2.2" strokeLinecap="round" />
+          {/* Antojos: masticando, sorbiendo el popote, lamiendo */}
+          <g className="pj-boca pj-boca--come"><ellipse className="pj-masca" cx="62" cy="80" rx="5.2" ry="3.4" fill="#3b0f0a" /></g>
+          <circle className="pj-boca pj-boca--sorbe" cx="64" cy="80" r="2.8" fill="#7f1d1d" stroke="#c2706b" strokeWidth="1.8" />
+          <g className="pj-boca pj-boca--lame">
+            <path d="M55 76 Q62 88 69 76 Q62 79 55 76 Z" fill="#3b0f0a" />
+            <path className="pj-lengua" d="M60 81 C60 89 68 90 69 82 Z" fill="#f472b6" />
+          </g>
 
           {/* Bigote del abuelo (encima de la boca) */}
           {skin === "abuelo" && (

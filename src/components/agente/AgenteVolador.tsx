@@ -81,7 +81,7 @@ function lanzarConfeti(tipo: "colores" | "android" | "ios" = "colores") {
 }
 
 type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta" | "llorar" | "brinco";
-export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando" | "relajado";
+export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando" | "relajado" | "comiendo" | "sorbiendo" | "lamiendo";
 /** Cómo vuela: puño al frente, nadando de crol, o boca arriba con las manos en la nuca. */
 export type EstiloVuelo = "superman" | "nado" | "relax";
 /**
@@ -90,7 +90,7 @@ export type EstiloVuelo = "superman" | "nado" | "relax";
  * gota de sudor chibi, shoujo con brillos y shock en negativo.
  */
 type EstiloManga = "zoom" | "ojos" | "gota" | "shoujo" | "shock";
-type Viñeta = { estilo: EstiloManga; animo: Animo; texto: string };
+type Viñeta = { estilo: EstiloManga; animo: Animo; texto: string; snack?: Snack };
 type Manga = Viñeta & { id: number; x: number; y: number };
 const MANGA_MS = 2800;
 const VIÑETAS: Viñeta[] = [
@@ -114,11 +114,25 @@ const VIÑETAS_GOLPE: Viñeta[] = [
   { estilo: "shock", animo: "grito", texto: "¡¡VI A DIOS!!" },
   { estilo: "ojos", animo: "aburrido", texto: "…pinche pared" },
 ];
-const VIÑETAS_SNACK: Viñeta[] = [
-  { estilo: "shoujo", animo: "feliz", texto: "✨ Ñam ñam ✨" },
-  { estilo: "shoujo", animo: "relajado", texto: "✨ Esto es amor ✨" },
-  { estilo: "gota", animo: "serio", texto: "¿Alguien vio mi otra rebanada? 💧" },
-];
+/** Al empezar un antojo: zoom a la cara con el antojo en la boca. */
+const VIÑETAS_SNACK: Record<Snack, Viñeta[]> = {
+  pizza: [
+    { estilo: "shoujo", animo: "comiendo", snack: "pizza", texto: "✨ Ñam ñam ñam ✨" },
+    { estilo: "zoom", animo: "comiendo", snack: "pizza", texto: "¡¡PEPPERONI, CABRÓN!!" },
+    { estilo: "gota", animo: "comiendo", snack: "pizza", texto: "Nadie vio nada… 💧" },
+  ],
+  refresco: [
+    { estilo: "shoujo", animo: "sorbiendo", snack: "refresco", texto: "✨ Sluuurp ✨" },
+    { estilo: "zoom", animo: "sorbiendo", snack: "refresco", texto: "¡¡CAFEÍNA PARA PROD!!" },
+    { estilo: "ojos", animo: "sorbiendo", snack: "refresco", texto: "…sluuurp…" },
+  ],
+  helado: [
+    { estilo: "shoujo", animo: "lamiendo", snack: "helado", texto: "✨ Se me congela el cerebro ✨" },
+    { estilo: "zoom", animo: "lamiendo", snack: "helado", texto: "¡¡HELADO A 200 KM/H!!" },
+    { estilo: "gota", animo: "lamiendo", snack: "helado", texto: "Se derrite… se derrite… 💧" },
+  ],
+};
+const ANIMO_SNACK: Record<Snack, Animo> = { pizza: "comiendo", refresco: "sorbiendo", helado: "lamiendo" };
 const VIÑETAS_STORE: Viñeta[] = [
   { estilo: "shoujo", animo: "feliz", texto: "✨ ¡YA ESTÁ EN LA STORE! ✨" },
   { estilo: "zoom", animo: "grito", texto: "¡¡A HUEVO, RELEASE!!" },
@@ -379,6 +393,8 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     };
 
     let snackActual: Snack | null = null;
+    // La viñeta del antojo se lanza en el siguiente frame (lanzarManga se define después).
+    let lanzarMangaPendiente: Snack | null = null;
     const ponerSnack = (x: Snack | null) => {
       if (x !== snackActual) {
         snackActual = x;
@@ -420,8 +436,10 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         if (p === "quieto") proximaFrase = performance.now() + azar(1200, 2500);
         // Descansando, a veces en vez de aburrirse saca la pizza o el refresco.
         if (p === "quieto" && Math.random() < 0.45) {
-          ponerSnack(Math.random() < 0.55 ? "pizza" : "refresco");
-          ponerAnimo("feliz");
+          const x: Snack = Math.random() < 0.55 ? "pizza" : "refresco";
+          ponerSnack(x);
+          ponerAnimo(ANIMO_SNACK[x]);
+          lanzarMangaPendiente = x;
         } else if (p !== "volar" || snackActual !== "helado") {
           if (snackActual !== null && !(p === "despegar" && snackActual === "helado")) ponerSnack(null);
         }
@@ -519,10 +537,15 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           proximoHelado = ahora + azar(25_000, 45_000);
           if (Math.random() < 0.5) {
             ponerSnack("helado");
+            ponerAnimo("lamiendo");
             heladoHasta = ahora + azar(7000, 10_000);
-            if (!finDialogo) decir(una(FRASES.helado), "habla", 2600);
+            if (!finManga) lanzarManga(una(VIÑETAS_SNACK.helado));
+            else if (!finDialogo) decir(una(FRASES.helado), "habla", 2600);
           }
-        } else if (snackActual === "helado" && ahora >= heladoHasta) ponerSnack(null);
+        } else if (snackActual === "helado" && ahora >= heladoHasta) {
+          ponerSnack(null);
+          ponerAnimo("feliz");
+        }
       } else if (snackActual === "helado") ponerSnack(null);
 
       const fin = s.hasta && ahora >= s.hasta;
@@ -711,9 +734,15 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         finManga = 0;
         setManga(null);
       }
+      if (lanzarMangaPendiente) {
+        const x = lanzarMangaPendiente;
+        lanzarMangaPendiente = null;
+        lanzarManga(una(VIÑETAS_SNACK[x]));
+        proximaFrase = ahora + MANGA_MS + 1200;
+      }
       if (s.pose === "volar" && !finManga && !finDialogo && ahora >= proximaMangaVuelo) {
         proximaMangaVuelo = ahora + azar(15_000, 30_000);
-        lanzarManga(una(snackActual ? VIÑETAS_SNACK : VIÑETAS));
+        lanzarManga(una(snackActual ? VIÑETAS_SNACK[snackActual] : VIÑETAS));
       }
 
       // Globos: uno a la vez, cada pocos segundos según lo que esté haciendo.
@@ -742,12 +771,12 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           proximaFrase = ahora + azar(3500, 7000);
         } else if (s.pose === "quieto" && (snackActual === "pizza" || snackActual === "refresco")) {
           // Con antojo no se duerme: come y lo comenta (y a veces lo resalta en viñeta).
-          if (!finManga && Math.random() < 0.5) lanzarManga(una(VIÑETAS_SNACK));
+          if (!finManga && Math.random() < 0.5) lanzarManga(una(VIÑETAS_SNACK[snackActual]));
           else if (Math.random() < 0.7) decir(una(FRASES[snackActual]), "habla", 2600);
           proximaFrase = ahora + azar(3500, 6000);
         } else if (s.pose === "quieto" && !finManga && Math.random() < 0.55) {
           // Cuadro de manga: resalta su expresión con algo chusco.
-          lanzarManga(una(snackActual ? VIÑETAS_SNACK : VIÑETAS));
+          lanzarManga(una(snackActual ? VIÑETAS_SNACK[snackActual] : VIÑETAS));
           proximaFrase = ahora + MANGA_MS + 1500;
         } else if (s.pose === "quieto") {
           // Primero se aburre (y lo dice); después le da sueño.
@@ -878,6 +907,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
             key={manga.id}
             className="agente-manga"
             data-estilo={manga.estilo}
+            data-snack={manga.snack ?? undefined}
             aria-hidden
             style={{
               left: Math.min(Math.max(8, manga.x - 70), window.innerWidth - 248),
@@ -892,7 +922,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
               </div>
             )}
             <div className="agente-manga__cara">
-              <Personaje pose="quieto" animo={manga.animo} />
+              <Personaje pose="quieto" animo={manga.animo} snack={manga.snack ?? null} />
             </div>
             {manga.estilo === "gota" && <span className="agente-manga__gota">💧</span>}
             <span className="agente-manga__texto">{manga.texto}</span>
@@ -1106,6 +1136,13 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         </g>
         <path className="pj-boca pj-boca--aburrida" d="M54.4 28.9 C55.4 28.3 56.6 28.4 57.6 29" fill="none" stroke="#6b3a24" strokeWidth="0.9" strokeLinecap="round" />
         <ellipse className="pj-boca pj-boca--dormida" cx="56" cy="28.6" rx="0.9" ry="0.7" fill="#3b0f0a" />
+        {/* Antojos: masticando, sorbiendo el popote, lamiendo */}
+        <g className="pj-boca pj-boca--come"><ellipse className="pj-masca" cx="56" cy="28.4" rx="1.7" ry="1.1" fill="#3b0f0a" /></g>
+        <circle className="pj-boca pj-boca--sorbe" cx="56.6" cy="28.3" r="0.95" fill="#7f1d1d" stroke="#c2706b" strokeWidth="0.6" />
+        <g className="pj-boca pj-boca--lame">
+          <ellipse cx="56" cy="28.2" rx="1.6" ry="1" fill="#3b0f0a" />
+          <path className="pj-lengua" d="M55.6 28.6 C56.2 31 58.2 31 58.4 29 Z" fill="#f472b6" />
+        </g>
         {/* Llanto: ceja triste, boca quebrada y lágrimas que caen */}
         <path className="pj-ceja pj-ceja--triste" d="M50.8 17 C52.6 17.2 55 18.2 57.2 19.4" fill="none" stroke="#111827" strokeWidth="1.6" strokeLinecap="round" />
         <path className="pj-boca pj-boca--llora" d="M53.6 29.4 C54.4 27.8 55.4 28.6 56 27.9 C56.6 28.6 57.4 27.8 58.2 29.4" fill="none" stroke="#6b3a24" strokeWidth="1" strokeLinecap="round" />
