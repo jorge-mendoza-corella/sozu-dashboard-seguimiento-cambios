@@ -6,11 +6,14 @@
  * habría podido prender el agente a sí mismo o a sus viewers. Vive en
  * `agente_config/acceso`, que solo escribe el root (ver firestore.rules).
  *
- *   agente_config/acceso = { emails: string[], docs?: string[], limitePorHora?: number }
+ *   agente_config/acceso = { emails: string[], docs?: string[], tickets?: string[], limitePorHora?: number }
  *
  * `emails` usa el agente; `docs` además puede abrir los documentos de sozu-docs
  * que el agente cita (función `agenteDoc`). Son permisos independientes. El
  * root (`SUPERUSER_EMAIL`) tiene los dos siempre, aunque el doc no exista.
+ * `tickets` revisa cada 15 min los tickets del portal de sozu-admin asignados a
+ * la persona (función `agenteTickets`); para el root también se prende y
+ * apaga aquí (no es automático: es una alerta, y puede no quererla).
  */
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
@@ -25,9 +28,11 @@ export interface Usuario {
   limitePorHora: number;
   /** Puede abrir los documentos citados (lista `docs`). */
   verDocs: boolean;
+  /** Revisa sus tickets del portal (lista `tickets`, requiere agente). */
+  verTickets: boolean;
 }
 
-export type Permiso = "agente" | "docs";
+export type Permiso = "agente" | "docs" | "tickets";
 
 /**
  * Mismo criterio que `esRootVerificado()` de las reglas: email verificado y
@@ -47,14 +52,18 @@ export async function verificarAcceso(req: CallableRequest, permiso: Permiso = "
   const esRoot = email === SUPERUSER_EMAIL;
   const usaAgente = esRoot || lista(cfg.emails).includes(email);
   const verDocs = esRoot || lista(cfg.docs).includes(email);
+  const verTickets = usaAgente && lista(cfg.tickets).includes(email);
   if (permiso === "agente" && !usaAgente) {
     throw new HttpsError("permission-denied", "No tienes acceso al agente de repos.");
   }
   if (permiso === "docs" && !verDocs) {
     throw new HttpsError("permission-denied", "No tienes permiso para ver la documentación.");
   }
+  if (permiso === "tickets" && !verTickets) {
+    throw new HttpsError("permission-denied", "No tienes activada la revisión de tickets.");
+  }
   const limite = Number(cfg.limitePorHora);
-  return { email, esRoot, verDocs, limitePorHora: Number.isFinite(limite) && limite > 0 ? limite : LIMITE_HORA_DEFAULT };
+  return { email, esRoot, verDocs, verTickets, limitePorHora: Number.isFinite(limite) && limite > 0 ? limite : LIMITE_HORA_DEFAULT };
 }
 
 /**

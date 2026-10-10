@@ -15,7 +15,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  ArrowLeft, Bot, Check, Copy, FileText, History, Loader2, Lock, MessageSquarePlus, Pencil, Pin, PinOff, Search, Send,
+  ArrowLeft, BellRing, Bot, Check, MessageSquare, Copy, FileText, History, Loader2, Lock, MessageSquarePlus, Pencil, Pin, PinOff, Search, Send,
   Square, Trash2, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,7 +24,11 @@ import {
   MAX_TITULO, mensajeDeError, permisosAgente, preguntar, renombrarConversacion, SUGERENCIAS,
   type ConversacionAgente, type DocumentoAgente, type HerramientaUsada, type MensajeAgente, type PermisosAgente,
 } from "@/lib/agenteRepos";
-import { AgenteVolador } from "./AgenteVolador";
+import { AgenteVolador, EVENTO_ALERTA_TICKETS, type DetalleAlerta } from "./AgenteVolador";
+import { TicketsAgente } from "./TicketsAgente";
+import {
+  gritosDeTickets, INTERVALO_TICKETS_MS, misTickets, nombreDeEmail, type TicketAgente,
+} from "@/lib/agenteTickets";
 
 /**
  * Documentos citados: con el permiso "Ver documentación" son enlaces que abren
@@ -38,9 +42,58 @@ interface Props {
 }
 
 export function AgenteRepos({ email }: Props) {
-  const [permisos, setPermisos] = useState<PermisosAgente>({ agente: false, docs: false });
+  const [permisos, setPermisos] = useState<PermisosAgente>({ agente: false, docs: false, tickets: false });
   const [abierto, setAbierto] = useState(false);
+  const [pestana, setPestana] = useState<"chat" | "tickets">("chat");
   const acceso = permisos.agente;
+
+  // ── Tickets: revisión cada 15 min mientras el dashboard está abierto ──────
+  const [tickets, setTickets] = useState<TicketAgente[] | null>(null);
+  const [revisado, setRevisado] = useState<string | null>(null);
+  const [cargandoTickets, setCargandoTickets] = useState(false);
+  const [errorTickets, setErrorTickets] = useState<string | null>(null);
+  const abiertoRef = useRef(abierto);
+  useEffect(() => { abiertoRef.current = abierto; }, [abierto]);
+
+  const revisarTickets = useCallback(async (alertar: boolean) => {
+    setCargandoTickets(true);
+    try {
+      const r = await misTickets();
+      setTickets(r.tickets);
+      setRevisado(r.revisado);
+      setErrorTickets(null);
+      // Con pendientes, el personaje aterriza y grita (si el panel no está abierto).
+      if (alertar && r.tickets.length > 0 && !abiertoRef.current) {
+        window.dispatchEvent(new CustomEvent<DetalleAlerta>(EVENTO_ALERTA_TICKETS, {
+          detail: { gritos: gritosDeTickets(r.tickets.length, nombreDeEmail(email)) },
+        }));
+      }
+    } catch (e) {
+      setErrorTickets(mensajeDeError(e));
+    } finally {
+      setCargandoTickets(false);
+    }
+  }, [email]);
+
+  useEffect(() => {
+    if (!permisos.tickets) return;
+    // La primera revisión espera unos segundos: que el dashboard cargue antes del grito.
+    const primera = setTimeout(() => void revisarTickets(true), 8_000);
+    const cada = setInterval(() => void revisarTickets(true), INTERVALO_TICKETS_MS);
+    return () => { clearTimeout(primera); clearInterval(cada); };
+  }, [permisos.tickets, revisarTickets]);
+
+  // Ir a Tickets antes de la primera revisión: se revisa en ese momento.
+  const irATickets = () => {
+    setPestana("tickets");
+    if (tickets === null && !cargandoTickets) void revisarTickets(false);
+  };
+
+  const abrir = (motivo: "chat" | "tickets") => {
+    if (motivo === "tickets" && permisos.tickets) irATickets();
+    else setPestana("chat");
+    setAbierto(true);
+  };
 
   useEffect(() => {
     let vivo = true;
@@ -54,6 +107,8 @@ export function AgenteRepos({ email }: Props) {
     const alTeclear = (e: globalThis.KeyboardEvent) => {
       if (e.altKey && (e.key === "k" || e.key === "K" || e.code === "KeyK")) {
         e.preventDefault();
+        // Alt+K siempre abre directo en el chat.
+        setPestana("chat");
         setAbierto((v) => !v);
       }
     };
@@ -67,7 +122,7 @@ export function AgenteRepos({ email }: Props) {
     <Dialog.Root open={abierto} onOpenChange={setAbierto}>
       {/* El personaje vuela por la pantalla; clic abre el chat. Va en z-30,
           debajo de los botones flotantes del dashboard (Actualizar, z-40). */}
-      <AgenteVolador pausado={abierto} onClick={() => setAbierto(true)} />
+      <AgenteVolador pausado={abierto} onClick={abrir} />
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         <Dialog.Content
@@ -77,7 +132,46 @@ export function AgenteRepos({ email }: Props) {
           )}
           aria-describedby={undefined}
         >
-          <PanelAgente email={email} verDocs={permisos.docs} />
+          {permisos.tickets && (
+            <div className="flex h-10 shrink-0 items-center gap-1 border-b bg-muted/30 px-3" role="tablist">
+              {([
+                ["chat", "Chat", MessageSquare],
+                ["tickets", `Tickets${tickets ? ` (${tickets.length})` : ""}`, BellRing],
+              ] as const).map(([v, etiqueta, Icono]) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="tab"
+                  aria-selected={pestana === v}
+                  onClick={() => (v === "tickets" ? irATickets() : setPestana("chat"))}
+                  className={cn(
+                    "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors",
+                    pestana === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                    v === "tickets" && !!tickets?.length && pestana !== v && "text-amber-700 dark:text-amber-300",
+                  )}
+                >
+                  <Icono className="h-3.5 w-3.5" />
+                  {etiqueta}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* El chat se queda montado al cambiar de pestaña: no pierde el hilo. */}
+          <div className={cn("flex min-h-0 flex-1 flex-col", pestana !== "chat" && "hidden")}>
+            <PanelAgente email={email} verDocs={permisos.docs} />
+          </div>
+          {pestana === "tickets" && permisos.tickets && (
+            <>
+              <Dialog.Title className="sr-only">Tickets asignados</Dialog.Title>
+              <TicketsAgente
+                tickets={tickets}
+                cargando={cargandoTickets}
+                error={errorTickets}
+                revisado={revisado}
+                onRefrescar={() => void revisarTickets(false)}
+              />
+            </>
+          )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

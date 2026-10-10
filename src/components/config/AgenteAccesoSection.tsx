@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { Bot, FileText, Loader2, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { BellRing, Bot, FileText, Loader2, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
-import { cambiarVerDocs, darAccesoAgente, leerAccesoAgente, quitarAccesoAgente } from "@/lib/agenteRepos";
+import { cambiarTickets, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, quitarAccesoAgente } from "@/lib/agenteRepos";
 
 // ---------------------------------------------------------------------------
 // Acceso al agente de repos. Cada pregunta consume la API de Anthropic y el
@@ -50,12 +50,12 @@ function Interruptor({ activo, deshabilitado, onCambiar, etiqueta }: {
 }
 
 export function AgenteAccesoSection() {
-  const [acceso, setAcceso] = useState<{ emails: string[]; docs: string[] } | null>(null);
+  const [acceso, setAcceso] = useState<{ emails: string[]; docs: string[]; tickets: string[] } | null>(null);
   const [nuevo, setNuevo] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const recargar = () => leerAccesoAgente().then(setAcceso).catch(() => setAcceso({ emails: [], docs: [] }));
+  const recargar = () => leerAccesoAgente().then(setAcceso).catch(() => setAcceso({ emails: [], docs: [], tickets: [] }));
   useEffect(() => { void recargar(); }, []);
 
   const run = async (key: string, fn: () => Promise<void>) => {
@@ -96,12 +96,25 @@ export function AgenteAccesoSection() {
           <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             <span className="flex-1">Persona</span>
             <span className="flex w-28 items-center justify-center gap-1"><FileText className="h-3 w-3" /> Ver docs</span>
+            <span className="flex w-28 items-center justify-center gap-1"><BellRing className="h-3 w-3" /> Tickets</span>
             <span className="w-9" />
           </div>
           <div className="flex items-center gap-2 border-b px-3 py-2">
             <ShieldCheck className="h-4 w-4 text-primary" />
             <span className="flex-1">{SUPERUSER_EMAIL}</span>
             <span className="flex w-28 justify-center"><Interruptor activo deshabilitado etiqueta="Root: siempre ve la documentación" /></span>
+            <span className="flex w-28 justify-center">
+              {busy === `tickets:${SUPERUSER_EMAIL}` ? (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              ) : (
+                <Interruptor
+                  activo={!!acceso?.tickets.includes(SUPERUSER_EMAIL)}
+                  deshabilitado={busy !== null || acceso === null}
+                  onCambiar={() => void run(`tickets:${SUPERUSER_EMAIL}`, () => cambiarTickets(SUPERUSER_EMAIL, !acceso?.tickets.includes(SUPERUSER_EMAIL)))}
+                  etiqueta="Revisar mis tickets cada 15 min"
+                />
+              )}
+            </span>
             <Badge variant="secondary" className="w-9 justify-center px-0">Root</Badge>
           </div>
           {acceso === null ? (
@@ -109,6 +122,7 @@ export function AgenteAccesoSection() {
           ) : (
             acceso.emails.filter((e) => e !== SUPERUSER_EMAIL).map((e) => {
               const verDocs = acceso.docs.includes(e);
+              const revisaTickets = acceso.tickets.includes(e);
               return (
                 <div key={e} className="flex items-center gap-2 border-b px-3 py-2 last:border-b-0">
                   <span className="flex-1 truncate">{e}</span>
@@ -121,6 +135,18 @@ export function AgenteAccesoSection() {
                         deshabilitado={busy !== null}
                         onCambiar={() => void run(`docs:${e}`, () => cambiarVerDocs(e, !verDocs))}
                         etiqueta={verDocs ? "Quitar permiso para ver documentación" : "Dar permiso para ver documentación"}
+                      />
+                    )}
+                  </span>
+                  <span className="flex w-28 justify-center">
+                    {busy === `tickets:${e}` ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : (
+                      <Interruptor
+                        activo={revisaTickets}
+                        deshabilitado={busy !== null}
+                        onCambiar={() => void run(`tickets:${e}`, () => cambiarTickets(e, !revisaTickets))}
+                        etiqueta={revisaTickets ? "Dejar de revisar sus tickets" : "Revisar sus tickets cada 15 min"}
                       />
                     )}
                   </span>

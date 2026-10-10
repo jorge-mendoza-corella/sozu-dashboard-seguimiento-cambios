@@ -120,6 +120,8 @@ export interface PermisosAgente {
   agente: boolean;
   /** Abre los documentos que el agente cita. */
   docs: boolean;
+  /** Revisa sus tickets del portal cada 15 min (requiere agente). */
+  tickets: boolean;
 }
 
 const listaDe = (v: unknown): string[] =>
@@ -131,29 +133,40 @@ const listaDe = (v: unknown): string[] =>
  * así que un error = sin nada).
  */
 export async function permisosAgente(email: string | null | undefined): Promise<PermisosAgente> {
-  if (!email) return { agente: false, docs: false };
-  if (email === SUPERUSER_EMAIL) return { agente: true, docs: true };
+  const nada = { agente: false, docs: false, tickets: false };
+  if (!email) return nada;
+  const esRoot = email === SUPERUSER_EMAIL;
   try {
     const d = (await getDoc(ACCESO())).data();
-    return { agente: listaDe(d?.emails).includes(email), docs: listaDe(d?.docs).includes(email) };
+    const agente = esRoot || listaDe(d?.emails).includes(email);
+    return {
+      agente,
+      docs: esRoot || listaDe(d?.docs).includes(email),
+      tickets: agente && listaDe(d?.tickets).includes(email),
+    };
   } catch {
-    return { agente: false, docs: false };
+    // El root siempre puede leer; si falla, al menos el agente y los docs.
+    return esRoot ? { agente: true, docs: true, tickets: false } : nada;
   }
 }
 
 /** Listas completas (solo el root puede leerlas). */
-export async function leerAccesoAgente(): Promise<{ emails: string[]; docs: string[] }> {
+export async function leerAccesoAgente(): Promise<{ emails: string[]; docs: string[]; tickets: string[] }> {
   const d = (await getDoc(ACCESO())).data();
-  return { emails: listaDe(d?.emails).sort(), docs: listaDe(d?.docs) };
+  return { emails: listaDe(d?.emails).sort(), docs: listaDe(d?.docs), tickets: listaDe(d?.tickets) };
 }
 
 export async function darAccesoAgente(email: string): Promise<void> {
   await setDoc(ACCESO(), { emails: arrayUnion(email.trim().toLowerCase()) }, { merge: true });
 }
 
-/** Quitar el agente quita también la documentación: sin agente no hay dónde verla. */
+/** Quitar el agente quita también docs y tickets: sin agente no hay dónde verlos. */
 export async function quitarAccesoAgente(email: string): Promise<void> {
-  await updateDoc(ACCESO(), { emails: arrayRemove(email), docs: arrayRemove(email) });
+  await updateDoc(ACCESO(), { emails: arrayRemove(email), docs: arrayRemove(email), tickets: arrayRemove(email) });
+}
+
+export async function cambiarTickets(email: string, activar: boolean): Promise<void> {
+  await setDoc(ACCESO(), { tickets: activar ? arrayUnion(email) : arrayRemove(email) }, { merge: true });
 }
 
 export async function cambiarVerDocs(email: string, permitir: boolean): Promise<void> {

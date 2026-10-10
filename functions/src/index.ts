@@ -20,6 +20,7 @@ import { consumirCupo, reposPermitidos, verificarAcceso } from "./agente/acceso.
 import { docPorRuta, indiceDocs, limpiarRuta, obtenerCorpus } from "./agente/docs.js";
 import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.js";
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
+import { clienteSupabase, ticketsAsignados } from "./agente/tickets.js";
 
 initializeApp();
 
@@ -28,6 +29,9 @@ const ANTHROPIC_API_KEY = defineSecret("AGENTE_ANTHROPIC_API_KEY");
 // el principal lee los repos monitoreados; el de docs, sozu-docs.
 const GITHUB_TOKEN = defineSecret("DASHBOARD_GITHUB_TOKEN");
 const GITHUB_DOCS_TOKEN = defineSecret("DASHBOARD_GITHUB_DOCS_TOKEN");
+// Service role del Supabase de PRODUCCIÓN de sozu-admin: solo para leer los
+// tickets asignados a quien pregunta (ver agente/tickets.ts).
+const SUPABASE_SERVICE_KEY = defineSecret("AGENTE_SUPABASE_SERVICE_KEY");
 
 const MODELO = "claude-opus-5-5";
 const MAX_MENSAJE = 4_000;
@@ -268,5 +272,31 @@ export const agenteDoc = onCall<{ ruta: string }>(
     const doc = docPorRuta(corpus, ruta);
     if (!doc) throw new HttpsError("not-found", "Ese documento no existe en sozu-docs.");
     return { ruta: doc.ruta, titulo: doc.titulo, texto: doc.texto, sha: corpus.sha.slice(0, 7) };
+  },
+);
+
+/**
+ * `agenteTickets`: tickets pendientes del portal de sozu-admin asignados a
+ * quien está logueado. Requiere el permiso "Revisar tickets". El panel lo
+ * llama cada 15 min; si hay, el personaje grita.
+ */
+export const agenteTickets = onCall(
+  {
+    region: "us-central1",
+    secrets: [SUPABASE_SERVICE_KEY],
+    timeoutSeconds: 60,
+    memory: "512MiB",
+    maxInstances: 5,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  async (req) => {
+    const usuario = await verificarAcceso(req, "tickets");
+    try {
+      const tickets = await ticketsAsignados(clienteSupabase(SUPABASE_SERVICE_KEY.value()), usuario.email);
+      return { tickets, revisado: new Date().toISOString() };
+    } catch (e) {
+      console.error("[agenteTickets]", e);
+      throw new HttpsError("unavailable", "No se pudieron leer los tickets del portal.");
+    }
   },
 );
