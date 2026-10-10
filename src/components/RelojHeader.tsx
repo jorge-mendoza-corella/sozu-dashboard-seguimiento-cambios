@@ -33,40 +33,73 @@ function RelojAnalogico() {
   const aMin = (m + s / 60) * 6;
   const aSeg = s * 6;
   return (
-    <svg viewBox="0 0 100 100" className="h-32 w-32" aria-hidden>
+    <svg viewBox="0 0 200 200" className="h-44 w-44" aria-hidden>
       <defs>
-        <radialGradient id="reloj-cara" cx="0.5" cy="0.35" r="0.75">
+        <linearGradient id="reloj-bisel" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#ffffff" />
-          <stop offset="1" stopColor="#eef0f3" />
+          <stop offset="1" stopColor="#d6d8de" />
+        </linearGradient>
+        <radialGradient id="reloj-cara" cx="0.5" cy="0.4" r="0.7">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="0.85" stopColor="#f7f7f9" />
+          <stop offset="1" stopColor="#ececf0" />
         </radialGradient>
+        <filter id="reloj-sombra-manecilla" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="1.6" stdDeviation="1.4" floodColor="#000" floodOpacity="0.28" />
+        </filter>
       </defs>
-      <circle cx="50" cy="50" r="48" fill="#1f2937" />
-      <circle cx="50" cy="50" r="45.5" fill="url(#reloj-cara)" />
-      {Array.from({ length: 60 }, (_, i) => (
-        <line
-          key={i}
-          x1="50" y1={i % 5 === 0 ? 7.5 : 8.5} x2="50" y2={i % 5 === 0 ? 13 : 10.5}
-          stroke={i % 5 === 0 ? "#111827" : "#9ca3af"}
-          strokeWidth={i % 5 === 0 ? 1.6 : 0.6}
-          strokeLinecap="round"
-          transform={`rotate(${i * 6} 50 50)`}
-        />
-      ))}
+      {/* Bisel y carátula */}
+      <circle cx="100" cy="100" r="98" fill="url(#reloj-bisel)" />
+      <circle cx="100" cy="100" r="91" fill="url(#reloj-cara)" stroke="#c7c9cf" strokeWidth="0.6" />
+      {/* Marcas: minutos finas, horas más gruesas */}
+      {Array.from({ length: 60 }, (_, i) => {
+        const hora = i % 5 === 0;
+        return (
+          <line
+            key={i}
+            x1="100" y1={hora ? 14 : 15} x2="100" y2={hora ? 24 : 19.5}
+            stroke={hora ? "#1c1c1e" : "#a1a1aa"}
+            strokeWidth={hora ? 2.6 : 1}
+            strokeLinecap="round"
+            transform={`rotate(${i * 6} 100 100)`}
+          />
+        );
+      })}
+      {/* Números */}
       {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((n, i) => {
         const a = (i * 30 * Math.PI) / 180;
         return (
-          <text key={n} x={50 + Math.sin(a) * 31} y={50 - Math.cos(a) * 31 + 3.6} textAnchor="middle" fontSize="10" fontWeight="500" fill="#111827" fontFamily="-apple-system, system-ui, sans-serif">
+          <text
+            key={n}
+            x={100 + Math.sin(a) * 64}
+            y={100 - Math.cos(a) * 64 + 7.5}
+            textAnchor="middle"
+            fontSize="21"
+            fontWeight="500"
+            fill="#1c1c1e"
+            fontFamily="-apple-system, 'SF Pro Display', 'Helvetica Neue', system-ui, sans-serif"
+          >
             {n}
           </text>
         );
       })}
-      <line x1="50" y1="54" x2="50" y2="27" stroke="#111827" strokeWidth="3.4" strokeLinecap="round" transform={`rotate(${aHora} 50 50)`} />
-      <line x1="50" y1="55" x2="50" y2="15" stroke="#111827" strokeWidth="2.2" strokeLinecap="round" transform={`rotate(${aMin} 50 50)`} />
-      <g transform={`rotate(${aSeg} 50 50)`}>
-        <line x1="50" y1="59" x2="50" y2="11" stroke="#f97316" strokeWidth="0.9" strokeLinecap="round" />
-        <circle cx="50" cy="50" r="2" fill="#f97316" />
+      {/* Manecillas estilo macOS: tramo fino junto al centro y luego la hoja ancha */}
+      <g filter="url(#reloj-sombra-manecilla)">
+        <g transform={`rotate(${aHora} 100 100)`}>
+          <line x1="100" y1="100" x2="100" y2="88" stroke="#1c1c1e" strokeWidth="3.2" strokeLinecap="round" />
+          <line x1="100" y1="88" x2="100" y2="52" stroke="#1c1c1e" strokeWidth="7" strokeLinecap="round" />
+        </g>
+        <g transform={`rotate(${aMin} 100 100)`}>
+          <line x1="100" y1="100" x2="100" y2="88" stroke="#1c1c1e" strokeWidth="3.2" strokeLinecap="round" />
+          <line x1="100" y1="88" x2="100" y2="24" stroke="#1c1c1e" strokeWidth="7" strokeLinecap="round" />
+        </g>
+        <circle cx="100" cy="100" r="5.4" fill="#1c1c1e" />
+        <g transform={`rotate(${aSeg} 100 100)`}>
+          <line x1="100" y1="118" x2="100" y2="17" stroke="#ff9500" strokeWidth="1.8" strokeLinecap="round" />
+          <circle cx="100" cy="100" r="3.6" fill="#ff9500" />
+        </g>
+        <circle cx="100" cy="100" r="1.5" fill="#fff" />
       </g>
-      <circle cx="50" cy="50" r="0.9" fill="#fff" />
     </svg>
   );
 }
@@ -90,12 +123,12 @@ export function RelojHeader() {
         <Tooltip.Portal>
           <Tooltip.Content
             side="bottom"
-            sideOffset={8}
-            className="z-[70] flex flex-col items-center gap-2 rounded-2xl border bg-background/95 px-5 py-4 shadow-xl backdrop-blur data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95"
+            sideOffset={10}
+            // Sin caja: el reloj flota solo, con su sombra, y la fecha abajo.
+            className="reloj-flotante z-[70] flex flex-col items-center gap-2 data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95"
           >
             {abierto && <RelojAnalogico />}
             <FechaLarga />
-            <Tooltip.Arrow className="fill-background" />
           </Tooltip.Content>
         </Tooltip.Portal>
       </Tooltip.Root>
@@ -104,15 +137,13 @@ export function RelojHeader() {
 }
 
 function FechaLarga() {
-  const ahora = useAhora(1000);
+  const ahora = useAhora(60_000);
   const larga = new Intl.DateTimeFormat("es-MX", { timeZone: ZONA, dateStyle: "full" }).format(ahora);
   // Solo la primera letra en mayúscula ("Viernes, 9 de octubre de 2026").
   const fecha = larga.charAt(0).toUpperCase() + larga.slice(1);
-  const hora = new Intl.DateTimeFormat("es-MX", { timeZone: ZONA, hour: "numeric", minute: "2-digit", second: "2-digit" }).format(ahora);
   return (
-    <div className="text-center">
-      <p className="text-sm font-semibold">{fecha}</p>
-      <p className="text-xs tabular-nums text-muted-foreground">{hora} · hora de México</p>
-    </div>
+    <p className="rounded-full bg-background/90 px-3 py-1 text-xs font-semibold shadow-md ring-1 ring-black/5 backdrop-blur">
+      {fecha}
+    </p>
   );
 }
