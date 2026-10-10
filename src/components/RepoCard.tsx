@@ -16,11 +16,7 @@ import { WorkflowBadge } from "./WorkflowBadge";
 import { DeployMetaTooltip } from "./DeployMetaTooltip";
 import { DocsStatusDot } from "./DocsStatusDot";
 import { AvisoDeploy } from "./AvisoDeploy";
-import { EVENTO_TICKETS_LISTOS, revisarDeployPrd } from "@/lib/festejoDeploy";
-import { ticketsResueltosEnDeploy } from "@/lib/agenteTickets";
-import { useAuth } from "@/hooks/useAuth";
-import { useProjects } from "@/hooks/useProjectsRepos";
-import { useClients } from "@/hooks/useClients";
+import { EVENTO_BRILLO, type DetalleBrillo } from "@/lib/festejoDeploy";
 import { DeployProgressBar, RelojDeploy } from "@/components/DeployProgressBar";
 import { DeployDevControl } from "@/components/DeployDevControl";
 import type { AvisosDelProyecto } from "@/hooks/useAvisos";
@@ -262,31 +258,21 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
   }
   const hasPRs = scopedPRs.length > 0;
 
-  // Deploy a PRD que acaba de terminar → el personaje del agente festeja (o
-  // llora si falló) y dice de qué repo, proyecto y empresa fue.
-  const { appUser: usuarioFestejo } = useAuth();
-  const { data: proyectosFestejo = [] } = useProjects();
-  const { data: empresasFestejo = [] } = useClients(usuarioFestejo);
-  const proyectoFestejo = proyectosFestejo.find((p) => p.id === projectId);
-  const empresaFestejo = empresasFestejo.find((c) => c.id === proyectoFestejo?.clientId);
-  const nombreProyecto = proyectoFestejo?.name ?? null;
-  const nombreEmpresa = empresaFestejo ? empresaFestejo.tradeName || empresaFestejo.legalName : null;
-  const emailFestejo = usuarioFestejo?.email ?? null;
+  // Brillo unos segundos cuando GeorgIA reacciona a un deploy de este repo (el
+  // vigía de deploys lo detecta para todos los repos, aquí solo se pinta).
+  const [brillo, setBrillo] = useState<"exito" | "fallo" | null>(null);
   useEffect(() => {
-    const r = revisarDeployPrd(status.owner, status.repo, status.latestRuns, {
-      repo: status.label,
-      proyecto: nombreProyecto,
-      empresa: nombreEmpresa,
-    });
-    // Deploy bueno a PRD: ¿trajo commits de tickets que se pasaron a Claude desde aquí?
-    if (r?.tipo === "festejo" && r.sha && emailFestejo) {
-      ticketsResueltosEnDeploy(emailFestejo, status.owner, status.repo, status.label, r.sha)
-        .then((listos) => {
-          if (listos.length) window.dispatchEvent(new CustomEvent(EVENTO_TICKETS_LISTOS, { detail: { tickets: listos } }));
-        })
-        .catch((e) => console.warn("[GeorgIA] no se pudo ligar el deploy con sus tickets", e));
-    }
-  }, [status.owner, status.repo, status.label, status.latestRuns, nombreProyecto, nombreEmpresa, emailFestejo]);
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const alBrillo = (e: Event) => {
+      const d = (e as CustomEvent<DetalleBrillo>).detail;
+      if (d?.owner !== status.owner || d.repo !== status.repo) return;
+      setBrillo(d.tipo);
+      clearTimeout(t);
+      t = setTimeout(() => setBrillo(null), 6000);
+    };
+    window.addEventListener(EVENTO_BRILLO, alBrillo);
+    return () => { clearTimeout(t); window.removeEventListener(EVENTO_BRILLO, alBrillo); };
+  }, [status.owner, status.repo]);
 
   const deployando = deployEnCurso(status.latestRuns);
   const isDeployingToMain = deployando === "prd";
@@ -359,8 +345,9 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
 
   return (
     <Card
+      data-brillo={brillo ?? undefined}
       className={cn(
-        "flex flex-col h-full transition-all",
+        "repo-card-brillo flex flex-col h-full transition-all",
         isDeployingToMain && "ring-4 ring-emerald-500 ring-offset-2 shadow-xl shadow-emerald-500/25",
         isDeployingToDev && !isDeployingToMain && "ring-2 ring-blue-400 ring-offset-2",
         !isDeployingToMain && !isDeployingToDev && state === "devPending" && "ring-2 ring-blue-400 ring-offset-2",

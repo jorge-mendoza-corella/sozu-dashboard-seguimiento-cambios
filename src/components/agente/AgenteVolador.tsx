@@ -21,7 +21,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./personaje.css";
-import { dondeFue, EVENTO_FALLO, EVENTO_FESTEJO, type DetalleFestejo } from "@/lib/festejoDeploy";
+import {
+  dondeFue, EVENTO_DEV_FALLO, EVENTO_DEV_OK, EVENTO_FALLO, EVENTO_FESTEJO, type DetalleFestejo,
+} from "@/lib/festejoDeploy";
 
 /** Alerta de tickets pendientes: el personaje aterriza, se para y grita. */
 export const EVENTO_ALERTA_TICKETS = "agente:alerta-tickets";
@@ -68,7 +70,7 @@ function lanzarConfeti() {
   setTimeout(() => capa.remove(), ultimo + 200);
 }
 
-type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta" | "llorar";
+type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta" | "llorar" | "brinco";
 export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando";
 /** Letrero fijo arriba al centro durante el festejo o el llanto. */
 type Letrero = { tipo: "exito" | "fallo"; titulo: string; linea: string; id: number };
@@ -102,6 +104,21 @@ const FRASES = {
   ],
   hover: ["¿En qué te ayudo?", "¿Le pregunto al código?", "¡Pregúntame!", "¿Qué pedo, qué necesitas?", "A ver, suéltalo.", "¿Otro bug, cabrón?"],
 } as const;
+
+/** Deploy a dev: brinco de gusto (o queja corta si falló). Más modesto que PRD. */
+const FRASES_DEV_OK = [
+  (d: string) => `¡Deploy a dev listo! ${d}`,
+  (d: string) => `¡Ya está en dev! ${d}`,
+  (d: string) => `¡A huevo, dev arriba! ${d}`,
+  (d: string) => `¡Dev al día, a probar! ${d}`,
+];
+const FRASES_DEV_FALLO = [
+  (d: string) => `¡Chale, falló dev! ${d}`,
+  (d: string) => `Uta, dev en rojo… ${d}`,
+  (d: string) => `¡No mames, se cayó dev! ${d}`,
+];
+/** Cuánto dura el brinco por un deploy a dev. */
+const BRINCO_MS = 2600;
 
 /** Lamentos cuando un deploy a PRD falla. */
 const FRASES_FALLO = [
@@ -222,7 +239,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       hasta: 0, // fin de la pose temporal (ms)
       siguiente: "despegar" as Pose, // qué sigue después de agacharse
       // Deploys por reaccionar (llegan por evento): festejo o llanto, en fila.
-      festejos: [] as (DetalleFestejo & { tipo: Letrero["tipo"] })[],
+      festejos: [] as (DetalleFestejo & { tipo: Letrero["tipo"] | "dev-ok" | "dev-fallo" })[],
       festejoRepo: "",
       festejoInicio: 0,
       festejoTheta: 0,
@@ -283,8 +300,17 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       if (pausaRef.current) return;
 
       // Festejo pendiente: interrumpe lo que esté haciendo.
-      if (s.festejos.length && s.pose !== "festejo" && s.pose !== "llorar") {
+      if (s.festejos.length && s.pose !== "festejo" && s.pose !== "llorar" && s.pose !== "brinco") {
         const d = s.festejos.shift()!;
+        if (d.tipo === "dev-ok" || d.tipo === "dev-fallo") {
+          // Dev: brinco en el lugar (o puchero), con su globo; sin letrero ni confeti.
+          s.festejoRepo = d.repo;
+          cambiarPose("brinco", BRINCO_MS);
+          ponerAnimo(d.tipo === "dev-ok" ? "feliz" : "llorando");
+          decir(una(d.tipo === "dev-ok" ? FRASES_DEV_OK : FRASES_DEV_FALLO)(dondeFue(d)), d.tipo === "dev-ok" ? "grito" : "habla", BRINCO_MS);
+          proximaFrase = ahora + BRINCO_MS + 1500;
+          s.siguiente = d.tipo === "dev-ok" ? "despegar" : "despegar";
+        } else {
         s.festejoRepo = d.repo;
         s.festejoInicio = ahora;
         idLetrero += 1;
@@ -302,10 +328,11 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           setLetrero({ tipo: "fallo", id: idLetrero, titulo: `❌ Falló el deploy a PRD · ${dondeFue(d)}`, linea: una(FRASES_FALLO)(d.repo) });
         }
         proximaFrase = ahora + 2200;
+        }
       }
 
       // Alerta de tickets: baja al piso y se queda gritando (el festejo manda más).
-      if (s.alertaGritos.length && s.pose !== "alerta" && s.pose !== "festejo" && s.pose !== "llorar") {
+      if (s.alertaGritos.length && !["alerta", "festejo", "llorar", "brinco"].includes(s.pose)) {
         cambiarPose("alerta");
         ponerAnimo("grito");
         s.alertaHasta = ahora + ALERTA_MS;
@@ -413,6 +440,17 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           }
           break;
         }
+        case "brinco": {
+          // Se queda donde está (en el aire o en el piso) brincando; al terminar sigue su vuelo.
+          if (fin) {
+            ponerAnimo("feliz");
+            if (s.y >= piso() - 1) {
+              cambiarPose("agachar", 160);
+              s.siguiente = "despegar";
+            } else cambiarPose("volar");
+          }
+          break;
+        }
         case "alerta": {
           // Cae rápido al piso donde esté y ahí se para a gritar.
           if (s.y < piso()) s.y = Math.min(piso(), s.y + 520 * dt);
@@ -469,7 +507,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         setDialogo(null);
         if (animoActual === "grito" && s.pose !== "alerta") ponerAnimo("feliz");
       }
-      if (!finDialogo && ahora >= proximaFrase && s.pose !== "festejo" && s.pose !== "alerta" && s.pose !== "llorar") {
+      if (!finDialogo && ahora >= proximaFrase && !["festejo", "alerta", "llorar", "brinco"].includes(s.pose)) {
         if (s.pose === "volar") {
           if (Math.random() < 0.6) {
             ponerAnimo("grito");
@@ -512,7 +550,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       if (orientacion.current) orientacion.current.style.transform = `scaleX(${s.dir})`;
     };
 
-    const encolar = (tipo: Letrero["tipo"]) => (e: Event) => {
+    const encolar = (tipo: Letrero["tipo"] | "dev-ok" | "dev-fallo") => (e: Event) => {
       const d = (e as CustomEvent<DetalleFestejo>).detail ?? { repo: "el repo" };
       // Con el chat abierto (pausa) solo cae el confeti; la escena espera.
       if (tipo === "exito" && pausaRef.current) lanzarConfeti();
@@ -520,8 +558,12 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     };
     const alFestejo = encolar("exito");
     const alFallo = encolar("fallo");
+    const alDevOk = encolar("dev-ok");
+    const alDevFallo = encolar("dev-fallo");
     window.addEventListener(EVENTO_FESTEJO, alFestejo);
     window.addEventListener(EVENTO_FALLO, alFallo);
+    window.addEventListener(EVENTO_DEV_OK, alDevOk);
+    window.addEventListener(EVENTO_DEV_FALLO, alDevFallo);
     const alAlerta = (e: Event) => {
       const gritos = (e as CustomEvent<DetalleAlerta>).detail?.gritos ?? [];
       if (!gritos.length) return;
@@ -541,6 +583,8 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       window.removeEventListener("resize", alRedimensionar);
       window.removeEventListener(EVENTO_FESTEJO, alFestejo);
       window.removeEventListener(EVENTO_FALLO, alFallo);
+      window.removeEventListener(EVENTO_DEV_OK, alDevOk);
+      window.removeEventListener(EVENTO_DEV_FALLO, alDevFallo);
       window.removeEventListener(EVENTO_ALERTA_TICKETS, alAlerta);
     };
   }, []);

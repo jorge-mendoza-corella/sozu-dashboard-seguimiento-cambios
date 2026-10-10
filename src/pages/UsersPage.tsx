@@ -7,6 +7,7 @@ import {
   MessageCircle, Bot,
 } from "lucide-react";
 import { PermisosIaChips } from "@/components/agente/PermisosIaChips";
+import { MostrarGeorgIA } from "@/components/agente/MostrarGeorgIA";
 import { cn } from "@/lib/utils";
 import { validateGithubToken } from "@/lib/githubAuth";
 import { Button } from "@/components/ui/button";
@@ -1073,6 +1074,9 @@ export function UsersPage() {
                         </p>
                       </div>
                     )}
+
+                    {/* GeorgIA: preferencia propia (las reglas la dejan cambiar solo en tu documento). */}
+                    {isSelf && <MostrarGeorgIA />}
 
                     {!isRoot && (
                       <>

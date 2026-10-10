@@ -200,3 +200,27 @@
 @media (prefers-reduced-motion: reduce) {
   .tab-run-prd, .tab-run-dev { animation: none; }
 }
+
+/* ── Brillo de la tarjeta cuando GeorgIA reacciona a un deploy del repo ──────
+   Halo en un ::after (solo se anima su opacidad) que late tres veces y se va. */
+.repo-card-brillo { position: relative; }
+.repo-card-brillo::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: calc(var(--radius) + 4px);
+  pointer-events: none;
+  opacity: 0;
+}
+.repo-card-brillo[data-brillo="exito"]::after {
+  box-shadow: 0 0 0 3px rgb(16 185 129), 0 0 24px 8px rgb(52 211 153 / 0.85), 0 0 60px 18px rgb(110 231 183 / 0.55);
+  animation: repo-brillo 1.6s ease-in-out 3;
+}
+.repo-card-brillo[data-brillo="fallo"]::after {
+  box-shadow: 0 0 0 3px rgb(239 68 68), 0 0 24px 8px rgb(248 113 113 / 0.8), 0 0 60px 18px rgb(252 165 165 / 0.5);
+  animation: repo-brillo 1.6s ease-in-out 3;
+}
+@keyframes repo-brillo { 0%, 100% { opacity: 0; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .repo-card-brillo[data-brillo]::after { animation: none; opacity: 1; }
+}
