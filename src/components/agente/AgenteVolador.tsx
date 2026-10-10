@@ -197,8 +197,34 @@ const FRASES = {
   helado: ["¡Helado a 200 km/h!", "Se me congela el cerebro… ¡pero vale!", "Mmm, de chocolate con menta", "¡No me lo tiren! Es el último", "Volar y helado: combo perfecto"],
   relax: ["Modo crucero activado 😎", "Ahh, aquí relajadito", "Que trabajen los demás", "Despiértenme si truena prod", "Vacaciones a 100 metros de altura"],
   nado: ["¡Estilo libre!", "Crol aéreo, medalla de oro", "Glu glu… ah no, es aire", "¡Michael Phelps quién!", "Brazada, brazada, respiro…"],
-  hover: ["¿En qué te ayudo?", "¿Le pregunto al código?", "¡Pregúntame!", "¿Qué pedo, qué necesitas?", "A ver, suéltalo.", "¿Otro bug, cabrón?"],
+  hover: [
+    "¿En qué te ayudo?", "¿Le pregunto al código?", "¡Pregúntame!", "¿Qué pedo, qué necesitas?", "A ver, suéltalo.", "¿Otro bug, cabrón?",
+    "¡Me atrapaste! Dale clic y platicamos", "¡Ya me agarraste! Un clic y te ayudo", "¡Órale, ya casi! Pícale",
+  ],
+  // Lo invitan a darle clic: mucha gente no sabe que así se abre el chat.
+  atrapameVuelo: [
+    "¡No me atrapaaas!", "¡Órale, atrápame!", "¡A que no me das clic!", "¡Ni con el mouse me alcanzas!",
+    "¡Clic aquí… si puedes!", "¡Atrápame y te contesto lo que quieras!", "¡Uy, casi! ¡Otra vez!",
+    "¡Pícame, no muerdo!", "¡Dale clic, cabrón, no seas así!",
+  ],
+  atrapame: [
+    "Pícame y platicamos 😏", "¿Dudas del código? Dame clic", "Un clic y soy todo tuyo", "Ándale, dame clic, no seas tímido",
+    "¿Y si me atrapas? Sé un chingo de los repos", "Psst… si me das clic te ayudo", "Aquí ando, a un clic de distancia",
+  ],
 } as const;
+
+/** Ya le dieron clic alguna vez: deja de insistir tanto en que lo atrapen. */
+const CLAVE_ATRAPADO = "georgia:atrapado";
+let yaLoAtraparon = (() => {
+  try { return localStorage.getItem(CLAVE_ATRAPADO) === "1"; } catch { return false; }
+})();
+function marcarAtrapado() {
+  if (yaLoAtraparon) return;
+  yaLoAtraparon = true;
+  try { localStorage.setItem(CLAVE_ATRAPADO, "1"); } catch { /* sin storage: solo dura la sesión */ }
+}
+/** Qué tan seguido invita a darle clic (mucho al principio, poco después). */
+const ganasDeQueLoAtrapen = () => (yaLoAtraparon ? 0.12 : 0.45);
 
 /** Deploy a dev: brinco de gusto (o queja corta si falló). Más modesto que PRD. */
 const FRASES_DEV_OK = [
@@ -761,13 +787,17 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           if (Math.random() < 0.55) decir(una(FRASES[estiloActual]), "habla", 2600);
           proximaFrase = ahora + azar(5000, 9000);
         } else if (s.pose === "volar") {
-          if (Math.random() < 0.6) {
+          if (Math.random() < ganasDeQueLoAtrapen()) {
+            ponerAnimo("feliz");
+            decir(una(FRASES.atrapameVuelo), "grito", 2400);
+          } else if (Math.random() < 0.6) {
             ponerAnimo("grito");
             decir(una(FRASES.volar), "grito", 1800);
           }
           proximaFrase = ahora + azar(4000, 9000);
         } else if (s.pose === "caminar") {
-          if (Math.random() < 0.7) decir(una(FRASES.caminar));
+          if (Math.random() < ganasDeQueLoAtrapen()) decir(una(FRASES.atrapame), "habla", 2600);
+          else if (Math.random() < 0.7) decir(una(FRASES.caminar));
           proximaFrase = ahora + azar(3500, 7000);
         } else if (s.pose === "quieto" && (snackActual === "pizza" || snackActual === "refresco")) {
           // Con antojo no se duerme: come y lo comenta (y a veces lo resalta en viñeta).
@@ -780,7 +810,9 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           proximaFrase = ahora + MANGA_MS + 1500;
         } else if (s.pose === "quieto") {
           // Primero se aburre (y lo dice); después le da sueño.
-          if (animoActual === "aburrido" && Math.random() < 0.55) {
+          if (animoActual === "aburrido" && Math.random() < ganasDeQueLoAtrapen()) {
+            decir(una(FRASES.atrapame), "habla", 2600);
+          } else if (animoActual === "aburrido" && Math.random() < 0.55) {
             decir(una(FRASES.aburrido), "habla", 2600);
           } else {
             ponerAnimo("dormido");
@@ -883,6 +915,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         const habiaAlerta = !!alertaRef.current;
         alertaRef.current?.apagar();
         alertaRef.current = null;
+        marcarAtrapado();
         onClick(habiaAlerta ? "tickets" : "chat");
       }}
       onPointerEnter={congelar(true)}
