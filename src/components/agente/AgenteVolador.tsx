@@ -21,8 +21,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./personaje.css";
+import { Antojos, Bata, BrazoHumano, CabezaCartoon } from "./skins";
+import { PALETA, useSkinGeorgIA, type Skin } from "./skinsDatos";
 import {
-  dondeFue, EVENTO_DEV_FALLO, EVENTO_DEV_OK, EVENTO_FALLO, EVENTO_FESTEJO, type DetalleFestejo,
+  dondeFue, EVENTO_DEV_FALLO, EVENTO_DEV_OK, EVENTO_FALLO, EVENTO_FESTEJO, EVENTO_STORE, type DetalleFestejo, type DetalleStore,
 } from "@/lib/festejoDeploy";
 
 /** Alerta de tickets pendientes: el personaje aterriza, se para y grita. */
@@ -36,8 +38,12 @@ const ALERTA_MS = 90_000;
 
 const COLORES_CONFETI = ["#f59e0b", "#ef4444", "#22d3ee", "#a855f7", "#22c55e", "#facc15", "#3b82f6", "#ec4899"];
 
+/** Logos para el confeti de las tiendas (siluetas simples, como data URL). */
+const LOGO_ANDROID = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#3DDC84" d="M6 10.5h12v7.2a1.3 1.3 0 0 1-1.3 1.3H15v2.6a1.2 1.2 0 0 1-2.4 0V19h-1.2v2.6a1.2 1.2 0 0 1-2.4 0V19H7.3A1.3 1.3 0 0 1 6 17.7zM4.2 10.5a1.2 1.2 0 0 1 1.2 1.2v4.8a1.2 1.2 0 0 1-2.4 0v-4.8a1.2 1.2 0 0 1 1.2-1.2zm15.6 0a1.2 1.2 0 0 1 1.2 1.2v4.8a1.2 1.2 0 0 1-2.4 0v-4.8a1.2 1.2 0 0 1 1.2-1.2zM6 9.6a6 6 0 0 1 3.1-4.9L8 3a.3.3 0 0 1 .5-.3l1.2 1.7a6.4 6.4 0 0 1 4.6 0l1.2-1.7a.3.3 0 0 1 .5.3l-1.1 1.7A6 6 0 0 1 18 9.6zm3.4-2.4a.7.7 0 1 0 0 1.4.7.7 0 0 0 0-1.4zm5.2 0a.7.7 0 1 0 0 1.4.7.7 0 0 0 0-1.4z"/></svg>')}`;
+const LOGO_APPLE = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#111827" d="M16.4 12.6c0-2.5 2-3.7 2.1-3.8-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9s-2-.9-3.3-.8C6 7 4.5 8 3.6 9.5c-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6s1.8-.8 3.3-.8 2 .8 3.3.8 2.2-1.3 3-2.5c1-1.4 1.4-2.8 1.4-2.9 0 0-2.7-1-2.7-4.3zM14 5.1c.7-.8 1.2-2 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4z"/></svg>')}`;
+
 /** Lluvia de confeti a pantalla completa (WAAPI: transform/opacity, se limpia solo). */
-function lanzarConfeti() {
+function lanzarConfeti(tipo: "colores" | "android" | "ios" = "colores") {
   const capa = document.createElement("div");
   capa.setAttribute("aria-hidden", "true");
   capa.style.cssText = "position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:60";
@@ -48,8 +54,12 @@ function lanzarConfeti() {
   for (let i = 0; i < 160; i++) {
     const p = document.createElement("i");
     const w = 6 + Math.random() * 6;
-    p.style.cssText = `position:absolute;left:0;top:0;width:${w}px;height:${w * (Math.random() < 0.5 ? 1.6 : 0.6)}px;` +
-      `background:${COLORES_CONFETI[i % COLORES_CONFETI.length]};border-radius:${Math.random() < 0.3 ? "50%" : "1px"}`;
+    // Tiendas: 2 de cada 3 piezas son el logo de la plataforma; el resto, confeti normal.
+    const logo = tipo !== "colores" && i % 3 !== 2 ? (tipo === "android" ? LOGO_ANDROID : LOGO_APPLE) : null;
+    p.style.cssText = logo
+      ? `position:absolute;left:0;top:0;width:${18 + Math.random() * 14}px;aspect-ratio:1;background:url("${logo}") center/contain no-repeat`
+      : `position:absolute;left:0;top:0;width:${w}px;height:${w * (Math.random() < 0.5 ? 1.6 : 0.6)}px;` +
+        `background:${COLORES_CONFETI[i % COLORES_CONFETI.length]};border-radius:${Math.random() < 0.3 ? "50%" : "1px"}`;
     capa.appendChild(p);
     const x0 = Math.random() * W;
     const deriva = (Math.random() - 0.5) * 260;
@@ -74,28 +84,50 @@ type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | 
 export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando" | "relajado";
 /** Cómo vuela: puño al frente, nadando de crol, o boca arriba con las manos en la nuca. */
 export type EstiloVuelo = "superman" | "nado" | "relax";
-/** Viñeta de manga: zoom a su cara con líneas de acción y un texto exagerado. */
-type Manga = { id: number; animo: Animo; texto: string; x: number; y: number };
-const MANGA_MS = 2600;
-const VIÑETAS: { animo: Animo; texto: string }[] = [
-  { animo: "grito", texto: "¡¿QUÉ?!" },
-  { animo: "aburrido", texto: "…¿neta?" },
-  { animo: "grito", texto: "¡¿OTRO BUG?!" },
-  { animo: "aburrido", texto: "…" },
-  { animo: "feliz", texto: "✨ Perfecto ✨" },
-  { animo: "llorando", texto: "¿Y mi deploy…?" },
-  { animo: "grito", texto: "¡¡NANI?!" },
-  { animo: "relajado", texto: "Fuuu… paz" },
+/**
+ * Viñeta de manga: plano que resalta una expresión con un texto chusco. Cinco
+ * estilos (los elegidos): zoom con líneas de acción, franja de ojos dramáticos,
+ * gota de sudor chibi, shoujo con brillos y shock en negativo.
+ */
+type EstiloManga = "zoom" | "ojos" | "gota" | "shoujo" | "shock";
+type Viñeta = { estilo: EstiloManga; animo: Animo; texto: string };
+type Manga = Viñeta & { id: number; x: number; y: number };
+const MANGA_MS = 2800;
+const VIÑETAS: Viñeta[] = [
+  { estilo: "zoom", animo: "grito", texto: "¡¿OTRO BUG?!" },
+  { estilo: "zoom", animo: "grito", texto: "¡¿QUIÉN HIZO MERGE A MAIN?!" },
+  { estilo: "zoom", animo: "grito", texto: "¡¡NANI?!" },
+  { estilo: "ojos", animo: "aburrido", texto: "…¿neta, cabrón?" },
+  { estilo: "ojos", animo: "aburrido", texto: "…te estoy viendo, viernes" },
+  { estilo: "ojos", animo: "serio", texto: "…sé lo que hiciste en dev" },
+  { estilo: "gota", animo: "serio", texto: "!? ¿Y ese console.log?" },
+  { estilo: "gota", animo: "aburrido", texto: "Funciona en mi máquina… 💧" },
+  { estilo: "gota", animo: "serio", texto: "¿Quién borró la tabla? 😅" },
+  { estilo: "shoujo", animo: "feliz", texto: "✨ Código limpio ✨" },
+  { estilo: "shoujo", animo: "relajado", texto: "✨ Cero bugs (mentira) ✨" },
+  { estilo: "shock", animo: "grito", texto: "¡¡SE CAYÓ PROD!! …ah no" },
+  { estilo: "shock", animo: "grito", texto: "¡¡ME OLVIDÉ DEL HOTFIX!!" },
 ];
-const VIÑETAS_GOLPE: { animo: Animo; texto: string }[] = [
-  { animo: "grito", texto: "¡¡AUCH!!" },
-  { animo: "llorando", texto: "Mi copete…" },
-  { animo: "grito", texto: "¡¡PUTAZO!!" },
+const VIÑETAS_GOLPE: Viñeta[] = [
+  { estilo: "zoom", animo: "grito", texto: "¡¡AUCH, QUÉ PUTAZO!!" },
+  { estilo: "gota", animo: "llorando", texto: "Mi copete… 💧" },
+  { estilo: "shock", animo: "grito", texto: "¡¡VI A DIOS!!" },
+  { estilo: "ojos", animo: "aburrido", texto: "…pinche pared" },
+];
+const VIÑETAS_SNACK: Viñeta[] = [
+  { estilo: "shoujo", animo: "feliz", texto: "✨ Ñam ñam ✨" },
+  { estilo: "shoujo", animo: "relajado", texto: "✨ Esto es amor ✨" },
+  { estilo: "gota", animo: "serio", texto: "¿Alguien vio mi otra rebanada? 💧" },
+];
+const VIÑETAS_STORE: Viñeta[] = [
+  { estilo: "shoujo", animo: "feliz", texto: "✨ ¡YA ESTÁ EN LA STORE! ✨" },
+  { estilo: "zoom", animo: "grito", texto: "¡¡A HUEVO, RELEASE!!" },
+  { estilo: "shock", animo: "grito", texto: "¡¡QUE NO LA RECHACEN!!" },
 ];
 /** Antojo en la mano de atrás: pizza o refresco cuando descansa, helado cuando vuela. */
 export type Snack = "pizza" | "refresco" | "helado";
 /** Letrero fijo arriba al centro durante el festejo o el llanto. */
-type Letrero = { tipo: "exito" | "fallo" | "dev" | "dev-fallo"; titulo: string; linea: string; id: number };
+type Letrero = { tipo: "exito" | "fallo" | "dev" | "dev-fallo" | "store"; titulo: string; linea: string; id: number };
 /** Cuánto dura el llanto por un deploy fallido. */
 const LLANTO_MS = 9000;
 /** Lo que el letrero se queda en pantalla después de que termina la escena. */
@@ -168,6 +200,22 @@ const FRASES_DEV_FALLO = [
 ];
 /** Cuánto dura el brinco por un deploy a dev. */
 const BRINCO_MS = 7000;
+
+/** Envío a tienda: festejo con logos (o llanto si falló). */
+const FRASES_STORE_OK = [
+  (d: string) => `¡Ya se mandó a ${d}, cabrón!`,
+  () => "¡A huevo, release enviado!",
+  (d: string) => d.includes("App Store") ? "¡Apple, apruébala o te demando!" : d.includes("TestFlight") ? "¡A probarla, testers!" : "¡Google, ahí te va otra!",
+  () => "¡Que la descarguen, que la descarguen!",
+  () => "¡Cinco estrellas o me enojo!",
+  () => "¡Una app más al mundo, no mames!",
+];
+const FRASES_STORE_FALLO = [
+  (d: string) => `¡No mames, falló el envío a ${d}!`,
+  () => "Snif… la tienda me rechazó",
+  () => "¡Chale! Revisen los certificados…",
+  () => "Pinche firma de la app, otra vez",
+];
 
 /** Lamentos cuando un deploy a PRD falla. */
 const FRASES_FALLO = [
@@ -291,7 +339,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       hasta: 0, // fin de la pose temporal (ms)
       siguiente: "despegar" as Pose, // qué sigue después de agacharse
       // Deploys por reaccionar (llegan por evento): festejo o llanto, en fila.
-      festejos: [] as (DetalleFestejo & { tipo: Letrero["tipo"] | "dev-ok" | "dev-fallo" })[],
+      festejos: [] as (DetalleFestejo & { tipo: Letrero["tipo"] | "dev-ok" | "dev-fallo" | "store-ok" | "store-fallo"; store?: DetalleStore })[],
       festejoRepo: "",
       festejoInicio: 0,
       festejoTheta: 0,
@@ -311,6 +359,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         setAnimo(a);
       }
     };
+    let escenaStore: DetalleStore | null = null;
     let idDialogo = 0;
     let idLetrero = 0;
     // Al terminar la escena el letrero se queda unos segundos más, quieto, para
@@ -348,10 +397,10 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     const crucero = () => (estiloActual === "relax" ? 110 : estiloActual === "nado" ? 140 : 190);
     let idManga = 0;
     let finManga = 0;
-    const lanzarManga = (v: { animo: Animo; texto: string }) => {
+    const lanzarManga = (v: Viñeta) => {
       idManga += 1;
       finManga = performance.now() + MANGA_MS;
-      setManga({ id: idManga, animo: v.animo, texto: v.texto, x: s.x, y: s.y });
+      setManga({ ...v, id: idManga, x: s.x, y: s.y });
     };
     let heladoHasta = 0;
 
@@ -396,7 +445,26 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       // Festejo pendiente: interrumpe lo que esté haciendo.
       if (s.festejos.length && s.pose !== "festejo" && s.pose !== "llorar" && s.pose !== "brinco") {
         const d = s.festejos.shift()!;
-        if (d.tipo === "dev-ok" || d.tipo === "dev-fallo") {
+        escenaStore = d.store ?? null;
+        if ((d.tipo === "store-ok" || d.tipo === "store-fallo") && d.store) {
+          // Tienda: huracán con logos de Android/Apple, viñeta y letrero; o llanto si falló.
+          const st = d.store;
+          const icono = st.plataforma === "ios" ? "" : "🤖";
+          s.festejoRepo = st.destino;
+          if (st.ok) {
+            s.festejoTheta = Math.atan2(s.y - window.innerHeight / 2, s.x - window.innerWidth / 2);
+            cambiarPose("festejo", FESTEJO_MS);
+            ponerAnimo("grito");
+            lanzarConfeti(st.plataforma);
+            setLetrero({ tipo: "store", id: idLetrero, titulo: `${icono} Ya se mandó a ${st.destino} · ${st.app}`, linea: una(FRASES_STORE_OK)(st.destino) });
+            if (!finManga) lanzarManga(una(VIÑETAS_STORE));
+          } else {
+            cambiarPose("llorar", LLANTO_MS);
+            ponerAnimo("llorando");
+            setLetrero({ tipo: "fallo", id: idLetrero, titulo: `❌ Falló el envío a ${st.destino} · ${st.app}`, linea: una(FRASES_STORE_FALLO)(st.destino) });
+          }
+          proximaFrase = ahora + 2200;
+        } else if (d.tipo === "dev-ok" || d.tipo === "dev-fallo") {
           // Dev: brinco en el lugar (o puchero), con su globo; sin letrero ni confeti.
           // Letrero fijo (como PRD, pero azul y más corto): el globo se movía con él y no se leía.
           s.festejoRepo = d.repo;
@@ -546,7 +614,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           s.y += (ty - s.y) * Math.min(1, dt * 6);
           s.dir = (Math.sin(s.festejoTheta) > 0 ? -1 : 1) as 1 | -1;
           if (ahora >= proximaFrase) {
-            const linea = una(FRASES_DEPLOY)(s.festejoRepo);
+            const linea = escenaStore ? una(FRASES_STORE_OK)(escenaStore.destino) : una(FRASES_DEPLOY)(s.festejoRepo);
             setLetrero((l) => (l ? { ...l, linea } : l));
             proximaFrase = ahora + 3200;
           }
@@ -563,7 +631,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           // Cae al piso donde esté, se arrodilla y llora.
           if (s.y < piso()) s.y = Math.min(piso(), s.y + 480 * dt);
           if (ahora >= proximaFrase) {
-            const linea = una(FRASES_FALLO)(s.festejoRepo);
+            const linea = escenaStore ? una(FRASES_STORE_FALLO)(escenaStore.destino) : una(FRASES_FALLO)(s.festejoRepo);
             setLetrero((l) => (l ? { ...l, linea } : l));
             proximaFrase = ahora + 3200;
           }
@@ -667,12 +735,13 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           if (Math.random() < 0.7) decir(una(FRASES.caminar));
           proximaFrase = ahora + azar(3500, 7000);
         } else if (s.pose === "quieto" && (snackActual === "pizza" || snackActual === "refresco")) {
-          // Con antojo no se duerme: come y lo comenta.
-          if (Math.random() < 0.7) decir(una(FRASES[snackActual]), "habla", 2600);
+          // Con antojo no se duerme: come y lo comenta (y a veces lo resalta en viñeta).
+          if (!finManga && Math.random() < 0.25) lanzarManga(una(VIÑETAS_SNACK));
+          else if (Math.random() < 0.7) decir(una(FRASES[snackActual]), "habla", 2600);
           proximaFrase = ahora + azar(3500, 6000);
         } else if (s.pose === "quieto" && !finManga && Math.random() < 0.28) {
-          // Cuadro de manga: zoom a su cara con una expresión exagerada.
-          lanzarManga(una(VIÑETAS));
+          // Cuadro de manga: resalta su expresión con algo chusco.
+          lanzarManga(una(snackActual ? VIÑETAS_SNACK : VIÑETAS));
           proximaFrase = ahora + MANGA_MS + 1500;
         } else if (s.pose === "quieto") {
           // Primero se aburre (y lo dice); después le da sueño.
@@ -721,6 +790,13 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     window.addEventListener(EVENTO_FALLO, alFallo);
     window.addEventListener(EVENTO_DEV_OK, alDevOk);
     window.addEventListener(EVENTO_DEV_FALLO, alDevFallo);
+    const alStore = (e: Event) => {
+      const st = (e as CustomEvent<DetalleStore>).detail;
+      if (!st) return;
+      if (st.ok && pausaRef.current) lanzarConfeti(st.plataforma);
+      s.festejos.push({ repo: st.app, tipo: st.ok ? "store-ok" : "store-fallo", store: st });
+    };
+    window.addEventListener(EVENTO_STORE, alStore);
     const alAlerta = (e: Event) => {
       const gritos = (e as CustomEvent<DetalleAlerta>).detail?.gritos ?? [];
       if (!gritos.length) return;
@@ -743,6 +819,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       window.removeEventListener(EVENTO_FALLO, alFallo);
       window.removeEventListener(EVENTO_DEV_OK, alDevOk);
       window.removeEventListener(EVENTO_DEV_FALLO, alDevFallo);
+      window.removeEventListener(EVENTO_STORE, alStore);
       window.removeEventListener(EVENTO_ALERTA_TICKETS, alAlerta);
     };
   }, []);
@@ -790,16 +867,24 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           <div
             key={manga.id}
             className="agente-manga"
+            data-estilo={manga.estilo}
             aria-hidden
             style={{
-              left: Math.min(Math.max(8, manga.x - 70), window.innerWidth - 228),
+              left: Math.min(Math.max(8, manga.x - 70), window.innerWidth - 248),
               top: manga.y > 230 ? manga.y - 200 : manga.y + 96,
             }}
           >
-            <div className="agente-manga__lineas" />
+            {manga.estilo === "zoom" && <div className="agente-manga__lineas" />}
+            {manga.estilo === "shock" && <div className="agente-manga__rayo" />}
+            {manga.estilo === "shoujo" && (
+              <div className="agente-manga__brillos">
+                {["✨", "🌸", "✨", "🌸", "✨"].map((b, i) => <span key={i}>{b}</span>)}
+              </div>
+            )}
             <div className="agente-manga__cara">
               <Personaje pose="quieto" animo={manga.animo} />
             </div>
+            {manga.estilo === "gota" && <span className="agente-manga__gota">💧</span>}
             <span className="agente-manga__texto">{manga.texto}</span>
           </div>,
           document.body,
@@ -836,12 +921,17 @@ export function AgenteVolador({ pausado, onClick }: Props) {
  * curvas. Las articulaciones (hombros 38/58,39 · codo 58.1,51.6 · caderas
  * 45/52,63 · capa 48,37) están fijas: personaje.css gira sobre ellas.
  */
-export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superman" }: {
+export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superman", skin }: {
   pose: Pose;
   animo?: Animo;
   snack?: Snack | null;
   vuelo?: EstiloVuelo;
+  /** Por omisión, la elegida en Configuración → GeorgIA. */
+  skin?: Skin;
 }) {
+  const skinElegida = useSkinGeorgIA();
+  const sk = skin ?? skinElegida;
+  const pal = PALETA[sk];
   return (
     <svg
       viewBox="0 0 96 96"
@@ -850,6 +940,7 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
       data-animo={animo}
       data-snack={snack ?? undefined}
       data-vuelo={vuelo}
+      data-skin={sk}
       aria-hidden
     >
       <defs>
@@ -868,14 +959,19 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
           <stop offset="0.6" stopColor="#a1a1aa" />
           <stop offset="1" stopColor="#52525b" />
         </linearGradient>
-        <linearGradient id="pj-piel" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#f0c4a0" />
-          <stop offset="1" stopColor="#c98c65" />
+        <linearGradient id={`pj-piel-${sk}`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor={pal.piel[0]} />
+          <stop offset="1" stopColor={pal.piel[1]} />
         </linearGradient>
-        <linearGradient id="pj-camisa" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#7d8591" />
-          <stop offset="0.55" stopColor="#9aa1ab" />
-          <stop offset="1" stopColor="#5c636e" />
+        <linearGradient id="pj-bata" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#e2e8f0" />
+          <stop offset="0.5" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#cbd5e1" />
+        </linearGradient>
+        <linearGradient id={`pj-camisa-${sk}`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor={pal.camisa[0]} />
+          <stop offset="0.55" stopColor={pal.camisa[1]} />
+          <stop offset="1" stopColor={pal.camisa[2]} />
         </linearGradient>
         <linearGradient id="pj-jean" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0" stopColor="#1b3352" />
@@ -909,13 +1005,12 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         {/* Brazo de atrás: manga arremangada y mano */}
         <g className="pj-brazo">
           {/* Brazo (hombro → codo) */}
-          <path d="M35.4 38.6 C34.6 42.6 34.8 46.6 35.3 50.4 L40.5 50.4 C41 46.6 41.4 42.6 40.9 38.6 C39 37.2 37.2 37.2 35.4 38.6 Z" fill="url(#pj-camisa)" />
+          <path d="M35.4 38.6 C34.6 42.6 34.8 46.6 35.3 50.4 L40.5 50.4 C41 46.6 41.4 42.6 40.9 38.6 C39 37.2 37.2 37.2 35.4 38.6 Z" fill={`url(#pj-camisa-${sk})`} />
           <g className="pj-antebrazo-b">
-          <circle cx="37.9" cy="49.8" r="2.6" fill="url(#pj-camisa)" />
-          <path d="M35.4 49.6 C35.2 52.6 35.3 55 35.6 57.6 L40 57.6 C40.3 55 40.4 52.6 40.4 49.6 Z" fill="url(#pj-camisa)" />
+          <circle cx="37.9" cy="49.8" r="2.6" fill={`url(#pj-camisa-${sk})`} />
+          <path d="M35.4 49.6 C35.2 52.6 35.3 55 35.6 57.6 L40 57.6 C40.3 55 40.4 52.6 40.4 49.6 Z" fill={`url(#pj-camisa-${sk})`} />
           <path d="M35.3 55.6 C37 56.6 39 56.6 40.3 55.6 L40.1 58.2 C38.6 59 37 59 35.6 58.2 Z" fill="#6b727c" />
-          <path d="M35.8 58.4 C35.2 61.2 36.4 63.4 38.2 63.4 C40 63.4 41 61.4 40.4 58.4 Z" fill="url(#pj-piel)" />
-          </g>
+          <path d="M35.8 58.4 C35.2 61.2 36.4 63.4 38.2 63.4 C40 63.4 41 61.4 40.4 58.4 Z" fill={`url(#pj-piel-${sk})`} />
           </g>
         </g>
 
@@ -943,7 +1038,7 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         </g>
 
         {/* Torso en V: hombros anchos, cintura angosta */}
-        <path d="M36.2 37.4 C37.2 34.6 42 33.2 48 33.2 C54 33.2 58.8 34.6 59.8 37.4 C61 44.4 59.2 52.4 56.6 60.4 L39.4 60.4 C36.8 52.4 35 44.4 36.2 37.4 Z" fill="url(#pj-camisa)" />
+        <path d="M36.2 37.4 C37.2 34.6 42 33.2 48 33.2 C54 33.2 58.8 34.6 59.8 37.4 C61 44.4 59.2 52.4 56.6 60.4 L39.4 60.4 C36.8 52.4 35 44.4 36.2 37.4 Z" fill={`url(#pj-camisa-${sk})`} />
         <path d="M54 35 C57.6 42 57.6 52 55.4 60.2" fill="none" stroke="#4b5260" strokeWidth="0.5" opacity="0.5" />
         {/* Cuello de camisa */}
         <path d="M43.6 34 L48 39.6 L46.2 34.4 Z M52.4 34 L48 39.6 L49.8 34.4 Z" fill="#6b727c" />
@@ -961,13 +1056,16 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         <path d="M39.2 60 L56.8 60 L56.6 63.4 L39.4 63.4 Z" fill="#292018" />
         <rect x="45.6" y="59.6" width="4.8" height="4.2" rx="1" fill="url(#pj-laton)" stroke="#5c3d0f" strokeWidth="0.4" />
 
+        {sk === "cientifico" && <Bata />}
+        {sk === "cyborg" ? (
+          <>
         {/* Cuello mecánico con cables */}
         <path d="M45 29.4 C45 32 44.6 34 44.2 35.6 L51.8 35.6 C51.4 34 51 32 51 29.4 Z" fill="url(#pj-metal)" />
         <path d="M46 31 C47.6 31.8 48.6 31.8 50 31 M45.6 33.2 C47.4 34 48.8 34 50.4 33.2" fill="none" stroke="#d4a446" strokeWidth="0.6" />
 
         <g className="pj-cabeza">
         {/* Cabeza: mandíbula marcada, nariz larga */}
-        <path d="M41 16 C41 9.4 45.4 6.6 50 6.8 C55.4 7.1 58.6 10.8 58.7 15.6 C58.8 18.4 61.6 20.6 61.4 22.8 C61.2 24.6 59.2 24.8 58.8 26 C58.2 29.6 55.6 31.8 52 32 C47.6 32.2 43.6 30.2 42.1 26.6 C40.7 23.4 41 19.6 41 16 Z" fill="url(#pj-piel)" />
+        <path d="M41 16 C41 9.4 45.4 6.6 50 6.8 C55.4 7.1 58.6 10.8 58.7 15.6 C58.8 18.4 61.6 20.6 61.4 22.8 C61.2 24.6 59.2 24.8 58.8 26 C58.2 29.6 55.6 31.8 52 32 C47.6 32.2 43.6 30.2 42.1 26.6 C40.7 23.4 41 19.6 41 16 Z" fill={`url(#pj-piel-${sk})`} />
         <path d="M57.8 27.2 C56.4 29.4 54.6 30.6 52.4 30.8" fill="none" stroke="#a8704d" strokeWidth="0.5" />
         <path d="M54.6 23.4 C55.6 24.4 56.6 24.6 57.6 24.4" fill="none" stroke="#a8704d" strokeWidth="0.45" />
         {/* Media cara de acero con remaches y ojo que brilla */}
@@ -1016,7 +1114,13 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         <circle cx="55.8" cy="12.4" r="2.4" fill="url(#pj-cristal)" />
 
         </g>
+          </>
+        ) : (
+          <CabezaCartoon skin={sk} />
+        )}
 
+        {sk === "cyborg" ? (
+          <>
         {/* Brazo robótico: hombrera, segmentos redondeados, puño */}
         <g className="pj-brazo-robot">
           <path d="M53.4 37.6 C53.6 34 56.4 32.6 59 33 C62 33.4 63.6 36 63.2 39 C62.8 41.6 60.6 42.6 58 42.4 C55.6 42.2 53.4 40.6 53.4 37.6 Z" fill="url(#pj-laton)" stroke="#6b4a14" strokeWidth="0.4" />
@@ -1031,30 +1135,13 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
             <path d="M54.2 60.6 C54 63.6 54.4 66.4 56 67.6 C57.8 68.8 60.4 68.4 61.6 66.8 C62.6 65 62.4 62.4 62 60.6 Z" fill="url(#pj-laton)" stroke="#5c3d0f" strokeWidth="0.45" />
             <path d="M55 63.4 C56.6 64 59.8 64 61.6 63.4 M55.4 65.8 C57 66.4 59.6 66.4 61.2 65.6" fill="none" stroke="#7a5418" strokeWidth="0.45" />
             <path d="M54.4 61.6 C53 62.4 52.8 64.2 54 65" fill="none" stroke="#7a5418" strokeWidth="0.9" strokeLinecap="round" />
-            {/* Antojos en el puño robótico (va al frente y se ve); personaje.css lo lleva a la boca */}
-            <g transform="translate(20 4)">
-          <g className="pj-snack pj-snack--pizza">
-            <path d="M33.6 60.6 L43 60.6 L38.6 70.6 Z" fill="#fcd34d" stroke="#d97706" strokeWidth="0.5" />
-            <path d="M33.2 59.6 L43.4 59.6 L43 61.4 L33.6 61.4 Z" fill="#b45309" />
-            <circle cx="37" cy="63.4" r="1.1" fill="#dc2626" />
-            <circle cx="39.8" cy="63" r="0.9" fill="#dc2626" />
-            <circle cx="38.6" cy="66.6" r="0.85" fill="#dc2626" />
-          </g>
-          <g className="pj-snack pj-snack--refresco">
-            <path d="M39.8 55.4 L41.4 50.6" stroke="#f8fafc" strokeWidth="0.9" strokeLinecap="round" />
-            <rect x="35.4" y="55.6" width="6" height="10" rx="1.3" fill="#dc2626" />
-            <rect x="35.4" y="58.6" width="6" height="2.4" fill="#f8fafc" />
-            <rect x="35.8" y="55.6" width="5.2" height="0.9" rx="0.4" fill="#cbd5e1" />
-          </g>
-          <g className="pj-snack pj-snack--helado">
-            <path d="M35.8 60.8 L41.2 60.8 L38.5 69.6 Z" fill="#d97706" />
-            <path d="M36.6 62.6 L40.4 62.6 M37.2 64.8 L39.8 64.8" stroke="#92400e" strokeWidth="0.4" />
-            <circle cx="38.5" cy="59.4" r="2.8" fill="#f9a8d4" />
-            <circle cx="38.5" cy="56.6" r="2.3" fill="#86efac" />
-            <circle cx="39.4" cy="55.6" r="0.6" fill="#fff" opacity="0.8" />
-            </g>
+            <Antojos />
           </g>
         </g>
+          </>
+        ) : (
+          <BrazoHumano skin={sk} />
+        )}
       </g>
     </svg>
   );

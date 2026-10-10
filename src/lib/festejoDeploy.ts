@@ -22,6 +22,17 @@ export const EVENTO_DEV_OK = "agente:dev-ok";
 export const EVENTO_DEV_FALLO = "agente:dev-fallo";
 /** La tarjeta del repo brilla: `{ owner, repo, tipo: "exito" | "fallo" }`. */
 export const EVENTO_BRILLO = "agente:brillo-repo";
+/** Terminó un envío a tienda (Codemagic): festejo con logos o llanto. */
+export const EVENTO_STORE = "agente:store";
+export interface DetalleStore {
+  ok: boolean;
+  plataforma: "android" | "ios";
+  /** "Play interno", "Play Store", "TestFlight", "App Store". */
+  destino: string;
+  /** Proyecto (app) al que pertenece. */
+  app: string;
+}
+
 /** Un deploy a PRD trajo commits de tickets pasados a Claude: ya se pueden cerrar. */
 export const EVENTO_TICKETS_LISTOS = "agente:tickets-listos";
 

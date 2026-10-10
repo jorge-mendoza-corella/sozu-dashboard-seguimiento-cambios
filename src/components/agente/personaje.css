@@ -398,6 +398,11 @@
 }
 .agente-volador__letrero-titulo { font-size: 15px; font-weight: 800; }
 .agente-volador__letrero-linea { font-size: 13px; font-weight: 600; opacity: 0.85; animation: pj-globo-entra 200ms var(--ease-out); }
+.agente-volador__letrero[data-tipo="store"] {
+  color: #14532d;
+  background: #dcfce7;
+  border-color: #16a34a;
+}
 .agente-volador__letrero[data-tipo="dev"] {
   color: #1e3a8a;
   background: #dbeafe;
@@ -524,3 +529,26 @@
 }
 .georgia-pensando__nube::before { width: 9px; height: 9px; left: -7px; bottom: -6px; }
 .georgia-pensando__nube::after  { width: 5px; height: 5px; left: -13px; bottom: -12px; }
+
+/* Estilos de viñeta */
+.agente-manga { width: 240px; }
+.agente-manga[data-estilo="ojos"] { height: 92px; background: #0f172a; }
+.agente-manga[data-estilo="ojos"] .agente-manga__cara { width: 1000px; height: 1000px; left: -416px; top: -150px; }
+.agente-manga[data-estilo="ojos"] .agente-manga__texto { background: transparent; color: #fff; border: 0; transform: none; font-size: 13px; left: auto; right: 8px; bottom: 4px; }
+.agente-manga[data-estilo="gota"] { background: #e0f2fe; }
+.agente-manga__gota { position: absolute; right: 34px; top: 14px; font-size: 34px; animation: manga-gota 1.4s ease-in 1; }
+@keyframes manga-gota { from { transform: translateY(-6px); } to { transform: translateY(8px); } }
+.agente-manga[data-estilo="gota"] .agente-manga__texto { background: #fff; }
+.agente-manga[data-estilo="shoujo"] { background: radial-gradient(circle at 60% 40%, #fff 0%, #fbcfe8 55%, #f9a8d4 100%); }
+.agente-manga__brillos span { position: absolute; font-size: 18px; animation: manga-brillo 1.2s ease-in-out infinite alternate; }
+.agente-manga__brillos span:nth-child(1) { left: 8%; top: 12%; }
+.agente-manga__brillos span:nth-child(2) { left: 78%; top: 10%; animation-delay: .3s; }
+.agente-manga__brillos span:nth-child(3) { left: 86%; top: 56%; animation-delay: .6s; }
+.agente-manga__brillos span:nth-child(4) { left: 10%; top: 62%; animation-delay: .9s; }
+.agente-manga__brillos span:nth-child(5) { left: 48%; top: 4%; animation-delay: .45s; }
+@keyframes manga-brillo { from { transform: scale(0.8) rotate(-10deg); opacity: .6; } to { transform: scale(1.15) rotate(10deg); opacity: 1; } }
+.agente-manga[data-estilo="shoujo"] .agente-manga__texto { background: #fff; color: #be185d; }
+.agente-manga[data-estilo="shock"] { background: #0f172a; }
+.agente-manga[data-estilo="shock"] .agente-manga__cara { filter: grayscale(1) contrast(3) invert(1); }
+.agente-manga__rayo { position: absolute; inset: 0; background: conic-gradient(from 200deg at 70% 0%, transparent 0 20deg, #fff 20deg 24deg, transparent 24deg); }
+.agente-manga[data-estilo="shock"] .agente-manga__texto { background: #ef4444; color: #fff; }
