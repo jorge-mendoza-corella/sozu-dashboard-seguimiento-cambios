@@ -840,6 +840,10 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       aria-label="Abrir a GeorgIA (Alt+K)"
       aria-keyshortcuts="Alt+K"
       data-pausa={pausaLocal || undefined}
+      // Con el panel abierto se esconde (sigue montado: al cerrar reaparece donde iba).
+      data-oculto={pausado || undefined}
+      aria-hidden={pausado || undefined}
+      tabIndex={pausado ? -1 : undefined}
       onClick={() => {
         const habiaAlerta = !!alertaRef.current;
         alertaRef.current?.apagar();
