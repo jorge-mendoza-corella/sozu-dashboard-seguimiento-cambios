@@ -109,6 +109,47 @@
 [data-pose="festejo"] .pj-capa        { animation: pj-capa 160ms ease-in-out infinite alternate; }
 @keyframes pj-huracan { to { transform: rotate(360deg); } }
 
+/* ── Llorar: de rodillas, manos a la cara, sollozando ───────────────────── */
+.agente-volador__sprite[data-pose="llorar"] { transform: translateY(6%) scale(1.04, 0.9); }
+[data-pose="llorar"] .pj-brazo-robot { transform: rotate(-22deg); }
+[data-pose="llorar"] .pj-antebrazo   { transform: rotate(-152deg); }
+[data-pose="llorar"] .pj-brazo       { transform: rotate(-150deg); }
+[data-pose="llorar"] .pj-pierna-a    { transform: rotate(38deg); }
+[data-pose="llorar"] .pj-pierna-b    { transform: rotate(-30deg); }
+[data-pose="llorar"] .agente-volador__cuerpo { animation: pj-sollozo 340ms ease-in-out infinite alternate; }
+@keyframes pj-sollozo { from { transform: translateY(0) rotate(-1deg); } to { transform: translateY(1.2px) rotate(1deg); } }
+
+/* Nube de lluvia sobre la cabeza mientras llora. */
+.agente-volador__nube {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - 6px);
+  translate: -50% 0;
+  width: 46px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #94a3b8;
+  box-shadow: -12px 4px 0 -2px #94a3b8, 12px 4px 0 -3px #a3b1c4;
+  pointer-events: none;
+  animation: pj-globo-entra 240ms var(--ease-out);
+}
+.agente-volador__nube i {
+  position: absolute;
+  top: 16px;
+  width: 2px;
+  height: 7px;
+  border-radius: 2px;
+  background: #38bdf8;
+  animation: pj-lluvia 600ms linear infinite;
+}
+.agente-volador__nube i:nth-child(1) { left: 12px; }
+.agente-volador__nube i:nth-child(2) { left: 22px; animation-delay: 200ms; }
+.agente-volador__nube i:nth-child(3) { left: 32px; animation-delay: 400ms; }
+@keyframes pj-lluvia {
+  from { transform: translateY(0); opacity: 1; }
+  to   { transform: translateY(26px); opacity: 0; }
+}
+
 /* ── Alerta: parado, agitando el brazo robótico arriba ────────────────────── */
 [data-pose="alerta"] .pj-brazo-robot { animation: pj-agita 380ms ease-in-out infinite alternate; }
 [data-pose="alerta"] .pj-brazo       { transform: rotate(28deg); }
@@ -120,13 +161,23 @@
 @keyframes pj-ojo { from { opacity: 0.55; } to { opacity: 1; } }
 
 /* ── Expresiones (data-animo): se muestra solo la cara que toca ────────────── */
-.pj-ceja, .pj-boca, .pj-ojo-cerrado, .pj-parpado { opacity: 0; transition: opacity 120ms var(--ease-out); }
+.pj-ceja, .pj-boca, .pj-ojo-cerrado, .pj-parpado, .pj-lagrimas { opacity: 0; transition: opacity 120ms var(--ease-out); }
 [data-animo="serio"] :is(.pj-ceja--seria, .pj-boca--seria),
 [data-animo="feliz"] :is(.pj-ceja--feliz, .pj-boca--feliz),
 [data-animo="grito"] :is(.pj-ceja--feliz, .pj-boca--grito),
 [data-animo="aburrido"] :is(.pj-ceja--aburrida, .pj-boca--aburrida, .pj-parpado),
 [data-animo="dormido"] :is(.pj-ceja--aburrida, .pj-boca--dormida, .pj-ojo-cerrado) { opacity: 1; }
-[data-animo="dormido"] .pj-ojo-abierto { opacity: 0; }
+[data-animo="llorando"] :is(.pj-ceja--triste, .pj-boca--llora, .pj-ojo-cerrado, .pj-lagrimas) { opacity: 1; }
+[data-animo="dormido"] .pj-ojo-abierto,
+[data-animo="llorando"] .pj-ojo-abierto { opacity: 0; }
+/* Lágrimas: caen por la mejilla y vuelven a brotar. */
+[data-animo="llorando"] .pj-lagrima { animation: pj-lagrima 900ms ease-in infinite; }
+[data-animo="llorando"] .pj-lagrima--2 { animation-delay: 450ms; }
+@keyframes pj-lagrima {
+  0%   { transform: translateY(0); opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: translateY(9px); opacity: 0; }
+}
 /* Dormido: cabecea. */
 [data-animo="dormido"] .agente-volador__cuerpo { animation: pj-cabeceo 2.6s ease-in-out infinite alternate; }
 @keyframes pj-cabeceo { from { transform: translateY(0) rotate(0deg); } to { transform: translateY(0.8px) rotate(1.5deg); } }
@@ -236,6 +287,18 @@
   box-shadow: 0 12px 30px -12px rgb(0 0 0 / 0.45);
   pointer-events: none;
   animation: pj-letrero-entra 220ms var(--ease-out), pj-grito 320ms ease-in-out 220ms 2 alternate;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: 18px;
+}
+.agente-volador__letrero-titulo { font-size: 15px; font-weight: 800; }
+.agente-volador__letrero-linea { font-size: 13px; font-weight: 600; opacity: 0.85; animation: pj-globo-entra 200ms var(--ease-out); }
+.agente-volador__letrero[data-tipo="fallo"] {
+  color: #7f1d1d;
+  background: #fee2e2;
+  border-color: #dc2626;
+  animation: pj-letrero-entra 220ms var(--ease-out);
 }
 @keyframes pj-letrero-entra { from { opacity: 0; transform: translateY(-8px) scale(0.95); } }
 @media (prefers-reduced-motion: reduce) { .agente-volador__letrero { animation: none; } }
@@ -275,7 +338,8 @@
   .agente-volador__sprite *,
   .agente-volador__orientacion { animation: none !important; transition: none !important; }
   .pj-ojo-robot { animation: pj-ojo 1.8s ease-in-out infinite alternate !important; }
-  .pj-ceja, .pj-boca, .pj-ojo-cerrado, .pj-parpado { transition: opacity 120ms ease !important; }
+  .pj-ceja, .pj-boca, .pj-ojo-cerrado, .pj-parpado, .pj-lagrimas { transition: opacity 120ms ease !important; }
   .agente-volador__dialogo { animation: none !important; }
   .agente-volador__dialogo[data-tipo="zzz"] i { animation: none !important; opacity: 1; }
+  .agente-volador__nube, .agente-volador__nube i, .agente-volador__letrero-linea { animation: none !important; }
 }

@@ -21,7 +21,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./personaje.css";
-import { EVENTO_FESTEJO, type DetalleFestejo } from "@/lib/festejoDeploy";
+import { dondeFue, EVENTO_FALLO, EVENTO_FESTEJO, type DetalleFestejo } from "@/lib/festejoDeploy";
 
 /** Alerta de tickets pendientes: el personaje aterriza, se para y grita. */
 export const EVENTO_ALERTA_TICKETS = "agente:alerta-tickets";
@@ -68,8 +68,12 @@ function lanzarConfeti() {
   setTimeout(() => capa.remove(), ultimo + 200);
 }
 
-type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta";
-export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido";
+type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta" | "llorar";
+export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando";
+/** Letrero fijo arriba al centro durante el festejo o el llanto. */
+type Letrero = { tipo: "exito" | "fallo"; titulo: string; linea: string; id: number };
+/** Cuánto dura el llanto por un deploy fallido. */
+const LLANTO_MS = 8500;
 type Dialogo = { id: number; texto: string; tipo: "grito" | "habla" | "zzz" };
 
 /** Lo que dice según lo que hace. Groserías de oficina mexicana: leves, nada de insultos. */
@@ -98,6 +102,19 @@ const FRASES = {
   ],
   hover: ["¿En qué te ayudo?", "¿Le pregunto al código?", "¡Pregúntame!", "¿Qué pedo, qué necesitas?", "A ver, suéltalo.", "¿Otro bug, cabrón?"],
 } as const;
+
+/** Lamentos cuando un deploy a PRD falla. */
+const FRASES_FALLO = [
+  (r: string) => `¡Nooo, se cayó ${r}!`,
+  (r: string) => `¡No mames, falló el deploy de ${r}!`,
+  (r: string) => `Snif… ¿quién rompió ${r}?`,
+  () => "¡Chale! Rollback, rollback…",
+  () => "Pinche CI, me rompiste el corazón",
+  (r: string) => `Alguien revise los logs de ${r}, porfa… snif`,
+  () => "¡Uta madre! Y era viernes…",
+  (r: string) => `${r} en rojo… me lleva la…`,
+  () => "Buaaa… nadie corrió los tests",
+];
 
 /** Gritos de festejo cuando un repo llega a PRD. */
 const FRASES_DEPLOY = [
@@ -142,6 +159,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
   const [pausaLocal, setPausaLocal] = useState(false);
   const [animo, setAnimo] = useState<Animo>("feliz");
   const [dialogo, setDialogo] = useState<Dialogo | null>(null);
+  const [letrero, setLetrero] = useState<Letrero | null>(null);
   const pausaRef = useRef(false);
   /** Hay alerta de tickets activa (el clic abre la pestaña de tickets y la apaga). */
   const alertaRef = useRef<{ apagar: () => void } | null>(null);
@@ -158,13 +176,21 @@ export function AgenteVolador({ pausado, onClick }: Props) {
 
     if (reducido) {
       // Sin huracán ni confeti: solo el grito.
-      const alFestejo = (e: Event) => {
-        const repo = (e as CustomEvent<DetalleFestejo>).detail?.repo ?? "el repo";
-        setAnimo("feliz");
-        setDialogo({ id: Date.now(), texto: una(FRASES_DEPLOY)(repo), tipo: "grito" });
-        setTimeout(() => setDialogo(null), 4000);
+      const reaccion = (tipo: Letrero["tipo"]) => (e: Event) => {
+        const d = (e as CustomEvent<DetalleFestejo>).detail ?? { repo: "el repo" };
+        setAnimo(tipo === "exito" ? "feliz" : "llorando");
+        setLetrero({
+          tipo,
+          id: Date.now(),
+          titulo: `${tipo === "exito" ? "✅ Deploy exitoso a PRD" : "❌ Falló el deploy a PRD"} · ${dondeFue(d)}`,
+          linea: una(tipo === "exito" ? FRASES_DEPLOY : FRASES_FALLO)(d.repo),
+        });
+        setTimeout(() => setLetrero(null), 6000);
       };
+      const alFestejo = reaccion("exito");
+      const alFallo = reaccion("fallo");
       window.addEventListener(EVENTO_FESTEJO, alFestejo);
+      window.addEventListener(EVENTO_FALLO, alFallo);
       const alAlertaQuieto = (e: Event) => {
         const gritos = (e as CustomEvent<DetalleAlerta>).detail?.gritos ?? [];
         if (!gritos.length) return;
@@ -179,6 +205,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       return () => {
         window.removeEventListener("resize", colocar);
         window.removeEventListener(EVENTO_FESTEJO, alFestejo);
+        window.removeEventListener(EVENTO_FALLO, alFallo);
         window.removeEventListener(EVENTO_ALERTA_TICKETS, alAlertaQuieto);
       };
     }
@@ -194,7 +221,8 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       pose: "volar" as Pose,
       hasta: 0, // fin de la pose temporal (ms)
       siguiente: "despegar" as Pose, // qué sigue después de agacharse
-      festejos: [] as string[], // repos por festejar (llegan por evento)
+      // Deploys por reaccionar (llegan por evento): festejo o llanto, en fila.
+      festejos: [] as (DetalleFestejo & { tipo: Letrero["tipo"] })[],
       festejoRepo: "",
       festejoInicio: 0,
       festejoTheta: 0,
@@ -215,6 +243,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       }
     };
     let idDialogo = 0;
+    let idLetrero = 0;
     let finDialogo = 0;
     let proximaFrase = performance.now() + azar(1500, 4000);
     const decir = (texto: string, tipo: Dialogo["tipo"] = "habla", ms = 2400) => {
@@ -254,19 +283,29 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       if (pausaRef.current) return;
 
       // Festejo pendiente: interrumpe lo que esté haciendo.
-      if (s.festejos.length && s.pose !== "festejo") {
-        s.festejoRepo = s.festejos.shift()!;
+      if (s.festejos.length && s.pose !== "festejo" && s.pose !== "llorar") {
+        const d = s.festejos.shift()!;
+        s.festejoRepo = d.repo;
         s.festejoInicio = ahora;
-        s.festejoTheta = Math.atan2(s.y - window.innerHeight / 2, s.x - window.innerWidth / 2);
-        cambiarPose("festejo", 6500);
-        ponerAnimo("grito");
-        lanzarConfeti();
-        decir(una(FRASES_DEPLOY)(s.festejoRepo), "grito", 2000);
-        proximaFrase = ahora + 2100;
+        idLetrero += 1;
+        finDialogo = 0;
+        setDialogo(null);
+        if (d.tipo === "exito") {
+          s.festejoTheta = Math.atan2(s.y - window.innerHeight / 2, s.x - window.innerWidth / 2);
+          cambiarPose("festejo", 6500);
+          ponerAnimo("grito");
+          lanzarConfeti();
+          setLetrero({ tipo: "exito", id: idLetrero, titulo: `✅ Deploy exitoso a PRD · ${dondeFue(d)}`, linea: una(FRASES_DEPLOY)(d.repo) });
+        } else {
+          cambiarPose("llorar", LLANTO_MS);
+          ponerAnimo("llorando");
+          setLetrero({ tipo: "fallo", id: idLetrero, titulo: `❌ Falló el deploy a PRD · ${dondeFue(d)}`, linea: una(FRASES_FALLO)(d.repo) });
+        }
+        proximaFrase = ahora + 2200;
       }
 
       // Alerta de tickets: baja al piso y se queda gritando (el festejo manda más).
-      if (s.alertaGritos.length && s.pose !== "alerta" && s.pose !== "festejo") {
+      if (s.alertaGritos.length && s.pose !== "alerta" && s.pose !== "festejo" && s.pose !== "llorar") {
         cambiarPose("alerta");
         ponerAnimo("grito");
         s.alertaHasta = ahora + ALERTA_MS;
@@ -344,15 +383,33 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           s.x += (tx - s.x) * Math.min(1, dt * 6);
           s.y += (ty - s.y) * Math.min(1, dt * 6);
           s.dir = (Math.sin(s.festejoTheta) > 0 ? -1 : 1) as 1 | -1;
-          if (!finDialogo && ahora >= proximaFrase) {
-            decir(una(FRASES_DEPLOY)(s.festejoRepo), "grito", 1900);
+          if (ahora >= proximaFrase) {
+            const linea = una(FRASES_DEPLOY)(s.festejoRepo);
+            setLetrero((l) => (l ? { ...l, linea } : l));
             proximaFrase = ahora + 2000;
           }
           if (fin) {
+            setLetrero(null);
             cambiarPose("volar");
             s.angulo = azar(-0.9, 0.3);
             s.vel = 260;
             s.dir = signoAzar();
+          }
+          break;
+        }
+        case "llorar": {
+          // Cae al piso donde esté, se arrodilla y llora.
+          if (s.y < piso()) s.y = Math.min(piso(), s.y + 480 * dt);
+          if (ahora >= proximaFrase) {
+            const linea = una(FRASES_FALLO)(s.festejoRepo);
+            setLetrero((l) => (l ? { ...l, linea } : l));
+            proximaFrase = ahora + 2600;
+          }
+          if (fin) {
+            setLetrero(null);
+            ponerAnimo("serio");
+            cambiarPose("agachar", 260);
+            s.siguiente = "despegar";
           }
           break;
         }
@@ -412,7 +469,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         setDialogo(null);
         if (animoActual === "grito" && s.pose !== "alerta") ponerAnimo("feliz");
       }
-      if (!finDialogo && ahora >= proximaFrase && s.pose !== "festejo" && s.pose !== "alerta") {
+      if (!finDialogo && ahora >= proximaFrase && s.pose !== "festejo" && s.pose !== "alerta" && s.pose !== "llorar") {
         if (s.pose === "volar") {
           if (Math.random() < 0.6) {
             ponerAnimo("grito");
@@ -455,13 +512,16 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       if (orientacion.current) orientacion.current.style.transform = `scaleX(${s.dir})`;
     };
 
-    const alFestejo = (e: Event) => {
-      const repo = (e as CustomEvent<DetalleFestejo>).detail?.repo ?? "el repo";
-      // Con el chat abierto (pausa) solo cae el confeti; el huracán espera.
-      if (pausaRef.current) lanzarConfeti();
-      s.festejos.push(repo);
+    const encolar = (tipo: Letrero["tipo"]) => (e: Event) => {
+      const d = (e as CustomEvent<DetalleFestejo>).detail ?? { repo: "el repo" };
+      // Con el chat abierto (pausa) solo cae el confeti; la escena espera.
+      if (tipo === "exito" && pausaRef.current) lanzarConfeti();
+      s.festejos.push({ ...d, tipo });
     };
+    const alFestejo = encolar("exito");
+    const alFallo = encolar("fallo");
     window.addEventListener(EVENTO_FESTEJO, alFestejo);
+    window.addEventListener(EVENTO_FALLO, alFallo);
     const alAlerta = (e: Event) => {
       const gritos = (e as CustomEvent<DetalleAlerta>).detail?.gritos ?? [];
       if (!gritos.length) return;
@@ -480,6 +540,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", alRedimensionar);
       window.removeEventListener(EVENTO_FESTEJO, alFestejo);
+      window.removeEventListener(EVENTO_FALLO, alFallo);
       window.removeEventListener(EVENTO_ALERTA_TICKETS, alAlerta);
     };
   }, []);
@@ -514,14 +575,20 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       {/* En el festejo el personaje gira en huracán: el grito va en un letrero
           fijo arriba al centro (portal a body, porque dentro del botón —que
           se mueve con transform— un `fixed` viajaría con él y no se leería). */}
-      {dialogo && !pausado && pose === "festejo" && dialogo.tipo === "grito" &&
+      {letrero &&
         createPortal(
-          <div key={dialogo.id} className="agente-volador__letrero" aria-live="polite">
-            {dialogo.texto}
+          <div key={letrero.id} className="agente-volador__letrero" data-tipo={letrero.tipo} aria-live="polite">
+            <span className="agente-volador__letrero-titulo">{letrero.titulo}</span>
+            <span key={letrero.linea} className="agente-volador__letrero-linea">{letrero.linea}</span>
           </div>,
           document.body,
         )}
-      {dialogo && !pausado && !(pose === "festejo" && dialogo.tipo === "grito") && (
+      {pose === "llorar" && (
+        <span className="agente-volador__nube" aria-hidden>
+          <i /><i /><i />
+        </span>
+      )}
+      {dialogo && !pausado && !letrero && (
         <span key={dialogo.id} className="agente-volador__dialogo" data-tipo={dialogo.tipo} aria-hidden>
           {dialogo.tipo === "zzz" ? (
             <>
@@ -680,6 +747,13 @@ export function Personaje({ pose, animo = "serio" }: { pose: Pose; animo?: Animo
         </g>
         <path className="pj-boca pj-boca--aburrida" d="M54.4 28.9 C55.4 28.3 56.6 28.4 57.6 29" fill="none" stroke="#6b3a24" strokeWidth="0.9" strokeLinecap="round" />
         <ellipse className="pj-boca pj-boca--dormida" cx="56" cy="28.6" rx="0.9" ry="0.7" fill="#3b0f0a" />
+        {/* Llanto: ceja triste, boca quebrada y lágrimas que caen */}
+        <path className="pj-ceja pj-ceja--triste" d="M50.8 17 C52.6 17.2 55 18.2 57.2 19.4" fill="none" stroke="#111827" strokeWidth="1.6" strokeLinecap="round" />
+        <path className="pj-boca pj-boca--llora" d="M53.6 29.4 C54.4 27.8 55.4 28.6 56 27.9 C56.6 28.6 57.4 27.8 58.2 29.4" fill="none" stroke="#6b3a24" strokeWidth="1" strokeLinecap="round" />
+        <g className="pj-lagrimas">
+          <path className="pj-lagrima" d="M54.8 22.2 C54 23.6 54 24.6 54.8 24.8 C55.6 24.6 55.6 23.6 54.8 22.2 Z" fill="#7dd3fc" />
+          <path className="pj-lagrima pj-lagrima--2" d="M53.2 22.4 C52.4 23.8 52.4 24.8 53.2 25 C54 24.8 54 23.8 53.2 22.4 Z" fill="#bae6fd" />
+        </g>
         {/* Pelo: copete peinado hacia atrás */}
         <path d="M40.4 18 C38.2 10.6 41.2 4.2 48.6 3.4 C55.4 2.6 61 6.2 60.2 12 C58 9.4 54.6 8.6 50.8 9.4 C46.4 10.4 43.4 12.8 42.4 18.6 Z" fill="#111827" />
         <path d="M43 9 C46 5.8 51.4 4.8 56.4 6.6" fill="none" stroke="#4b5563" strokeWidth="0.8" strokeLinecap="round" />

@@ -17,6 +17,9 @@ import { DeployMetaTooltip } from "./DeployMetaTooltip";
 import { DocsStatusDot } from "./DocsStatusDot";
 import { AvisoDeploy } from "./AvisoDeploy";
 import { revisarDeployPrd } from "@/lib/festejoDeploy";
+import { useAuth } from "@/hooks/useAuth";
+import { useProjects } from "@/hooks/useProjectsRepos";
+import { useClients } from "@/hooks/useClients";
 import { DeployProgressBar, RelojDeploy } from "@/components/DeployProgressBar";
 import { DeployDevControl } from "@/components/DeployDevControl";
 import type { AvisosDelProyecto } from "@/hooks/useAvisos";
@@ -258,10 +261,22 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
   }
   const hasPRs = scopedPRs.length > 0;
 
-  // Deploy a PRD que acaba de terminar bien → el personaje del agente festeja.
+  // Deploy a PRD que acaba de terminar → el personaje del agente festeja (o
+  // llora si falló) y dice de qué repo, proyecto y empresa fue.
+  const { appUser: usuarioFestejo } = useAuth();
+  const { data: proyectosFestejo = [] } = useProjects();
+  const { data: empresasFestejo = [] } = useClients(usuarioFestejo);
+  const proyectoFestejo = proyectosFestejo.find((p) => p.id === projectId);
+  const empresaFestejo = empresasFestejo.find((c) => c.id === proyectoFestejo?.clientId);
+  const nombreProyecto = proyectoFestejo?.name ?? null;
+  const nombreEmpresa = empresaFestejo ? empresaFestejo.tradeName || empresaFestejo.legalName : null;
   useEffect(() => {
-    revisarDeployPrd(status.owner, status.repo, status.label, status.latestRuns);
-  }, [status.owner, status.repo, status.label, status.latestRuns]);
+    revisarDeployPrd(status.owner, status.repo, status.latestRuns, {
+      repo: status.label,
+      proyecto: nombreProyecto,
+      empresa: nombreEmpresa,
+    });
+  }, [status.owner, status.repo, status.label, status.latestRuns, nombreProyecto, nombreEmpresa]);
 
   const deployando = deployEnCurso(status.latestRuns);
   const isDeployingToMain = deployando === "prd";
