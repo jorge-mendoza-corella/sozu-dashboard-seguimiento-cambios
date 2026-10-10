@@ -200,6 +200,8 @@ export interface WorkflowRun {
   updatedAt?: string | null;
   /** Qué workflow es. Dos workflows distintos no tardan lo mismo. */
   workflowId?: number;
+  /** Qué lo disparó: `push` (merge), `workflow_dispatch` (a mano), etc. */
+  event?: string;
 }
 
 export interface RepoStatus {
@@ -404,6 +406,18 @@ export async function hasActiveDeployRun(owner: string, repo: string): Promise<b
  * Vive aquí y no en la card porque también lo pintan las pestañas de proyecto:
  * un deploy corriendo en una pestaña que no estás mirando era invisible.
  */
+/**
+ * Quita los runs a dev que el propio workflow va a saltar: con el deploy
+ * automático apagado (AUTO_DEPLOY_DEV=false), un push a dev dispara el workflow
+ * pero su job se salta en ~1 s. GitHub lo reporta "en curso" ese instante y la
+ * tarjeta pintaba la barra de progreso para nada. Los lanzados a mano
+ * (workflow_dispatch, el botón "Desplegar dev") sí cuentan.
+ */
+export function sinDeploysDevSaltados(runs: WorkflowRun[], autoDeployDev: boolean | undefined): WorkflowRun[] {
+  if (autoDeployDev !== false) return runs;
+  return runs.filter((r) => !(r.headBranch === "dev" && r.event === "push" && r.status !== "completed"));
+}
+
 export function deployEnCurso(latestRuns: WorkflowRun[]): "prd" | "dev" | null {
   const corriendo = (rama: string) =>
     latestRuns.some(
@@ -815,6 +829,7 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
       runStartedAt: r.run_started_at ?? null,
       updatedAt: r.updated_at ?? null,
       workflowId: r.workflow_id,
+      event: r.event,
     });
 
     const deploys = todosLosRuns
