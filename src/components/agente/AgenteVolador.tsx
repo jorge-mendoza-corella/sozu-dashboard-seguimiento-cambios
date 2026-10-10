@@ -75,7 +75,11 @@ export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llor
 /** Letrero fijo arriba al centro durante el festejo o el llanto. */
 type Letrero = { tipo: "exito" | "fallo" | "dev" | "dev-fallo"; titulo: string; linea: string; id: number };
 /** Cuánto dura el llanto por un deploy fallido. */
-const LLANTO_MS = 8500;
+const LLANTO_MS = 9000;
+/** Lo que el letrero se queda en pantalla después de que termina la escena. */
+const LETRERO_EXTRA_MS = 4500;
+/** Duración del huracán de un deploy a PRD exitoso. */
+const FESTEJO_MS = 8000;
 type Dialogo = { id: number; texto: string; tipo: "grito" | "habla" | "zzz" };
 
 /** Lo que dice según lo que hace. Groserías de oficina mexicana: leves, nada de insultos. */
@@ -202,7 +206,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           titulo: `${tipo === "exito" ? "✅ Deploy exitoso a PRD" : "❌ Falló el deploy a PRD"} · ${dondeFue(d)}`,
           linea: una(tipo === "exito" ? FRASES_DEPLOY : FRASES_FALLO)(d.repo),
         });
-        setTimeout(() => setLetrero(null), 6000);
+        setTimeout(() => setLetrero(null), 9000);
       };
       const alFestejo = reaccion("exito");
       const alFallo = reaccion("fallo");
@@ -261,6 +265,14 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     };
     let idDialogo = 0;
     let idLetrero = 0;
+    // Al terminar la escena el letrero se queda unos segundos más, quieto, para
+    // que se alcance a leer la última frase (antes se iba junto con la escena).
+    let quitarLetrero: ReturnType<typeof setTimeout> | undefined;
+    const soltarLetrero = () => {
+      const id = idLetrero;
+      clearTimeout(quitarLetrero);
+      quitarLetrero = setTimeout(() => setLetrero((l) => (l && l.id === id ? null : l)), LETRERO_EXTRA_MS);
+    };
     let finDialogo = 0;
     let proximaFrase = performance.now() + azar(1500, 4000);
     const decir = (texto: string, tipo: Dialogo["tipo"] = "habla", ms = 2400) => {
@@ -327,7 +339,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         setDialogo(null);
         if (d.tipo === "exito") {
           s.festejoTheta = Math.atan2(s.y - window.innerHeight / 2, s.x - window.innerWidth / 2);
-          cambiarPose("festejo", 6500);
+          cambiarPose("festejo", FESTEJO_MS);
           ponerAnimo("grito");
           lanzarConfeti();
           setLetrero({ tipo: "exito", id: idLetrero, titulo: `✅ Deploy exitoso a PRD · ${dondeFue(d)}`, linea: una(FRASES_DEPLOY)(d.repo) });
@@ -409,7 +421,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         }
         case "festejo": {
           // Huracán: espiral alrededor del centro, el radio crece y se cierra.
-          const t = Math.min(1, (ahora - s.festejoInicio) / 6500);
+          const t = Math.min(1, (ahora - s.festejoInicio) / FESTEJO_MS);
           const cx = window.innerWidth / 2 - TAM / 2;
           const cy = Math.max(TECHO + 120, window.innerHeight / 2 - TAM / 2);
           const radio = 40 + Math.sin(t * Math.PI) * Math.min(260, window.innerWidth / 4);
@@ -422,10 +434,10 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           if (ahora >= proximaFrase) {
             const linea = una(FRASES_DEPLOY)(s.festejoRepo);
             setLetrero((l) => (l ? { ...l, linea } : l));
-            proximaFrase = ahora + 2000;
+            proximaFrase = ahora + 3200;
           }
           if (fin) {
-            setLetrero(null);
+            soltarLetrero();
             cambiarPose("volar");
             s.angulo = azar(-0.9, 0.3);
             s.vel = 260;
@@ -439,10 +451,10 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           if (ahora >= proximaFrase) {
             const linea = una(FRASES_FALLO)(s.festejoRepo);
             setLetrero((l) => (l ? { ...l, linea } : l));
-            proximaFrase = ahora + 2600;
+            proximaFrase = ahora + 3200;
           }
           if (fin) {
-            setLetrero(null);
+            soltarLetrero();
             ponerAnimo("serio");
             cambiarPose("agachar", 260);
             s.siguiente = "despegar";
@@ -452,7 +464,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         case "brinco": {
           // Se queda donde está (en el aire o en el piso) brincando; al terminar sigue su vuelo.
           if (fin) {
-            setLetrero(null);
+            soltarLetrero();
             ponerAnimo("feliz");
             if (s.y >= piso() - 1) {
               cambiarPose("agachar", 160);
@@ -589,6 +601,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     };
     window.addEventListener("resize", alRedimensionar);
     return () => {
+      clearTimeout(quitarLetrero);
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", alRedimensionar);
       window.removeEventListener(EVENTO_FESTEJO, alFestejo);
