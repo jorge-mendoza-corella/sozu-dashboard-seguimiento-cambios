@@ -1013,10 +1013,10 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
           <stop offset="0.55" stopColor={pal.camisa[1]} />
           <stop offset="1" stopColor={pal.camisa[2]} />
         </linearGradient>
-        <linearGradient id="pj-jean" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#1b3352" />
-          <stop offset="0.5" stopColor="#2b4f7a" />
-          <stop offset="1" stopColor="#172b45" />
+        <linearGradient id={`pj-jean-${sk}`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor={pal.pantalon?.[0] ?? "#1b3352"} />
+          <stop offset="0.5" stopColor={pal.pantalon?.[1] ?? "#2b4f7a"} />
+          <stop offset="1" stopColor={pal.pantalon?.[2] ?? "#172b45"} />
         </linearGradient>
         <linearGradient id="pj-capa-g" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#b91c1c" />
@@ -1050,29 +1050,29 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
           <circle cx="37.9" cy="49.8" r="2.6" fill={`url(#pj-camisa-${sk})`} />
           <path d="M35.4 49.6 C35.2 52.6 35.3 55 35.6 57.6 L40 57.6 C40.3 55 40.4 52.6 40.4 49.6 Z" fill={`url(#pj-camisa-${sk})`} />
           <path d="M35.3 55.6 C37 56.6 39 56.6 40.3 55.6 L40.1 58.2 C38.6 59 37 59 35.6 58.2 Z" fill="#6b727c" />
-          <path d="M35.8 58.4 C35.2 61.2 36.4 63.4 38.2 63.4 C40 63.4 41 61.4 40.4 58.4 Z" fill={`url(#pj-piel-${sk})`} />
+          <path d="M35.8 58.4 C35.2 61.2 36.4 63.4 38.2 63.4 C40 63.4 41 61.4 40.4 58.4 Z" fill={pal.mano ?? `url(#pj-piel-${sk})`} />
           </g>
         </g>
 
         {/* Pierna de atrás */}
         <g className="pj-pierna-a">
           {/* Muslo */}
-          <path d="M41.4 63 C40.9 67 41.1 71 41.7 74.8 L47.7 74.8 C48.4 71 48.9 67 48.8 63 Z" fill="url(#pj-jean)" />
+          <path d="M41.4 63 C40.9 67 41.1 71 41.7 74.8 L47.7 74.8 C48.4 71 48.9 67 48.8 63 Z" fill={`url(#pj-jean-${sk})`} />
           <g className="pj-rodilla-a">
             {/* Espinilla + bota (gira sobre la rodilla) */}
-            <ellipse cx="44.7" cy="74.4" rx="3.1" ry="1.9" fill="url(#pj-jean)" />
-            <path d="M41.9 74.2 C41.8 78 42 81 42.4 84 L47.2 84 C47.6 81 47.8 78 47.6 74.2 Z" fill="url(#pj-jean)" />
-            <path d="M42.2 83.2 C41.8 86 41.6 88.4 42.4 89.6 L49.8 89.6 C50.6 88.2 49.4 86.6 47.6 85.8 L47.4 83.2 Z" fill="#1c1917" />
+            <ellipse cx="44.7" cy="74.4" rx="3.1" ry="1.9" fill={`url(#pj-jean-${sk})`} />
+            <path d="M41.9 74.2 C41.8 78 42 81 42.4 84 L47.2 84 C47.6 81 47.8 78 47.6 74.2 Z" fill={`url(#pj-jean-${sk})`} />
+            <path d="M42.2 83.2 C41.8 86 41.6 88.4 42.4 89.6 L49.8 89.6 C50.6 88.2 49.4 86.6 47.6 85.8 L47.4 83.2 Z" fill={pal.zapato ?? "#1c1917"} />
             <path d="M42.3 85 L47.5 85" stroke="#c99a3b" strokeWidth="0.6" />
           </g>
         </g>
         {/* Pierna de adelante */}
         <g className="pj-pierna-b">
-          <path d="M48.4 63 C47.9 67 48.1 71 48.7 74.8 L54.7 74.8 C55.4 71 55.9 67 55.8 63 Z" fill="url(#pj-jean)" />
+          <path d="M48.4 63 C47.9 67 48.1 71 48.7 74.8 L54.7 74.8 C55.4 71 55.9 67 55.8 63 Z" fill={`url(#pj-jean-${sk})`} />
           <g className="pj-rodilla-b">
-            <ellipse cx="51.7" cy="74.4" rx="3.1" ry="1.9" fill="url(#pj-jean)" />
-            <path d="M48.9 74.2 C48.8 78 49 81 49.4 84 L54.2 84 C54.6 81 54.8 78 54.6 74.2 Z" fill="url(#pj-jean)" />
-            <path d="M49.2 83.2 C48.8 86 48.6 88.4 49.4 89.6 L56.8 89.6 C57.6 88.2 56.4 86.6 54.6 85.8 L54.4 83.2 Z" fill="#292524" />
+            <ellipse cx="51.7" cy="74.4" rx="3.1" ry="1.9" fill={`url(#pj-jean-${sk})`} />
+            <path d="M48.9 74.2 C48.8 78 49 81 49.4 84 L54.2 84 C54.6 81 54.8 78 54.6 74.2 Z" fill={`url(#pj-jean-${sk})`} />
+            <path d="M49.2 83.2 C48.8 86 48.6 88.4 49.4 89.6 L56.8 89.6 C57.6 88.2 56.4 86.6 54.6 85.8 L54.4 83.2 Z" fill={pal.zapato ?? "#292524"} />
             <path d="M49.3 85 L54.5 85" stroke="#c99a3b" strokeWidth="0.6" />
           </g>
         </g>
