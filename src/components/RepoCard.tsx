@@ -23,7 +23,7 @@ import type { AvisosDelProyecto } from "@/hooks/useAvisos";
 import { FrontInfoBar } from "./FrontInfoBar";
 import type { FrontVersion } from "@/lib/frontVersions";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
-import { createPR, hasFailingDeploy, deployEnCurso, getBranchCommitAuthors, getPendingReleasePRs, repoDespliegaDev, mismoCommit, type ApproverAuth, type PRWithCommits } from "@/lib/github";
+import { createPR, getAutoDeployDev, sinDeploysDevSaltados, hasFailingDeploy, deployEnCurso, getBranchCommitAuthors, getPendingReleasePRs, repoDespliegaDev, mismoCommit, type ApproverAuth, type PRWithCommits } from "@/lib/github";
 import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
 
 // SIN LISTA POR DEFECTO. Cuando el proyecto no tiene `notifyAuthors`, aquí no se
@@ -274,16 +274,24 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
     return () => { clearTimeout(t); window.removeEventListener(EVENTO_BRILLO, alBrillo); };
   }, [status.owner, status.repo]);
 
-  const deployando = deployEnCurso(status.latestRuns);
+  // Con el deploy automático apagado, el push a dev dispara un run que se salta
+  // solo: no se cuenta como "en curso" (misma consulta que DeployDevControl).
+  const { data: autoDeployDev } = useQuery({
+    queryKey: ["auto-deploy-dev", status.owner, status.repo],
+    queryFn: () => getAutoDeployDev(status.owner, status.repo),
+    staleTime: 5 * 60_000,
+  });
+  const runsVisibles = sinDeploysDevSaltados(status.latestRuns, autoDeployDev);
+  const deployando = deployEnCurso(runsVisibles);
   const isDeployingToMain = deployando === "prd";
   const isDeployingToDev = deployando === "dev";
-  const isCIRunning = isDeployingToMain || isDeployingToDev || status.latestRuns.some(
+  const isCIRunning = isDeployingToMain || isDeployingToDev || runsVisibles.some(
     (r) => r.status === "in_progress" || r.status === "queued"
   );
   // El deploy que se está viendo ahora mismo, y el último que terminó: sobre
   // esos dos se dice a quién se le avisa y a quién se le avisó. Preguntarlo por
   // cada run de la lista llenaría la tarjeta de líneas repetidas.
-  const runEnCurso = status.latestRuns.find(
+  const runEnCurso = runsVisibles.find(
     (r) => r.status === "in_progress" || r.status === "queued",
   );
   // El último deploy que de verdad terminó. Los saltados —el automático a dev
@@ -493,7 +501,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
               </Badge>
             )}
             {isDeployingToDev && (() => {
-              const activeRun = status.latestRuns.find(
+              const activeRun = runsVisibles.find(
                 (r) => (r.status === "in_progress" || r.status === "queued") && r.headBranch === "dev",
               );
               const chip = (
@@ -955,9 +963,9 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
             {status.docs && <DocsStatusDot docs={status.docs} />}
           </h4>
           <div className="flex flex-wrap gap-1.5">
-            {status.latestRuns.length === 0
+            {runsVisibles.length === 0
               ? <p className="text-xs text-muted-foreground">Sin deploys recientes</p>
-              : status.latestRuns.map((r, i) => (
+              : runsVisibles.map((r, i) => (
                   <DeployMetaTooltip key={i} owner={status.owner} repo={status.repo} run={r} avisos={avisos}>
                     <WorkflowBadge run={r} owner={status.owner} repo={status.repo} terminados={status.runsTerminados} selfLogin={canViewOthers ? null : selfLogin} />
                   </DeployMetaTooltip>
@@ -977,7 +985,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
             }
             // Con uno en marcha, lanzar otro solo lo retrasa: el nuevo cancela
             // al que corre y se empieza de cero.
-            desplegando={status.latestRuns.some(
+            desplegando={runsVisibles.some(
               (r) => r.headBranch === "dev" && (r.status === "in_progress" || r.status === "queued"),
             )}
           />

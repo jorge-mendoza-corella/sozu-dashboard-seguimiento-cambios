@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import {
   RefreshCw, Clock, GitBranch, AlertCircle, GitPullRequest, ArrowUpCircle, Rocket, Plus, Settings, FolderGit2, Loader2, Smartphone,
   MessageCircle, MessageCircleOff,
@@ -19,7 +19,7 @@ import { useAvisosPorProyecto } from "@/hooks/useAvisos";
 import { AvisosBanner } from "@/components/AvisosBanner";
 import { empresasDeProyectos } from "@/lib/empresas";
 import { useAuth } from "@/hooks/useAuth";
-import { hasFailingDeploy, deployEnCurso, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
+import { hasFailingDeploy, deployEnCurso, getAutoDeployDev, sinDeploysDevSaltados, type RepoRef, type RepoStatus, type ApproverAuth } from "@/lib/github";
 import { EVENTO_BRILLO, type DetalleBrillo } from "@/lib/festejoDeploy";
 import { seedDefaultProject, setReposOrder, type MonitoredRepo } from "@/lib/firestoreProjects";
 import { getFrontVersions, type FrontVersion } from "@/lib/frontVersions";
@@ -328,17 +328,40 @@ export function DashboardPage() {
   // en un proyecto que no estás mirando, hasta ahora no había forma de saberlo
   // sin ir pestaña por pestaña. PRD y DEV se distinguen, que no es lo mismo
   // enterarse de una subida a producción que de una a desarrollo.
+  // Interruptor de deploy automático de cada repo (misma clave que la tarjeta y
+  // DeployDevControl): con él apagado, el run de un push a dev se salta solo y
+  // no debe hacer latir la pestaña.
+  const autoDeployQueries = useQueries({
+    queries: repos.map((r) => ({
+      queryKey: ["auto-deploy-dev", r.owner, r.repo],
+      queryFn: () => getAutoDeployDev(r.owner, r.repo),
+      staleTime: 5 * 60_000,
+    })),
+  });
+  // Clave estable (string) para memoizar: useQueries devuelve un arreglo nuevo en cada render.
+  const autoDeployClave = repos.map((r, i) => `${r.owner}/${r.repo}=${autoDeployQueries[i]?.data}`).join("|");
+  const autoDeployPorRepo = useMemo(
+    () =>
+      new Map(
+        autoDeployClave.split("|").filter(Boolean).map((x): [string, boolean | undefined] => {
+          const [k, v] = x.split("=");
+          return [k, v === "true" ? true : v === "false" ? false : undefined];
+        }),
+      ),
+    [autoDeployClave],
+  );
   const deployPorProyecto = useMemo(() => {
     const m = new Map<string, "prd" | "dev">();
     for (const [pid, list] of reposByProject) {
       for (const r of list) {
-        const enCurso = deployEnCurso(statusByKey.get(`${r.owner}/${r.repo}`)?.latestRuns ?? []);
+        const k = `${r.owner}/${r.repo}`;
+        const enCurso = deployEnCurso(sinDeploysDevSaltados(statusByKey.get(k)?.latestRuns ?? [], autoDeployPorRepo.get(k)));
         if (enCurso === "prd") { m.set(pid, "prd"); break; }
         if (enCurso === "dev") m.set(pid, "dev");
       }
     }
     return m;
-  }, [reposByProject, statusByKey]);
+  }, [reposByProject, statusByKey, autoDeployPorRepo]);
 
   // Lo mismo un nivel arriba: con varias empresas, la de al lado puede estar
   // desplegando y sus pestañas de proyecto ni están en pantalla.
