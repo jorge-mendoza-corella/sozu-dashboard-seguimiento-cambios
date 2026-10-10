@@ -10,11 +10,13 @@ import { useProjects } from "@/hooks/useProjectsRepos";
 import { cn } from "@/lib/utils";
 import { EVENTO_STORE, type DetalleStore } from "@/lib/festejoDeploy";
 
-/** Plataforma y tienda de un workflow de publicación (para que GeorgIA lo festeje). */
+/**
+ * Plataforma y tienda de un envío a PRODUCCIÓN (Play Store / App Store), para que
+ * GeorgIA lo festeje. Los envíos de prueba (TestFlight, Play interno) no cuentan.
+ */
 function destinoDe(workflowId: string): { plataforma: "android" | "ios"; destino: string } | null {
   for (const p of PLATFORMS) {
     const plataforma = p.key === "ios" ? "ios" : "android";
-    if (workflowId === p.publishWorkflowId) return { plataforma, destino: p.storeLabel };
     if (workflowId === p.promoteWorkflowId) return { plataforma, destino: p.promoteLabel };
     if (workflowId === p.storeDirectWorkflowId) return { plataforma, destino: p.promoteLabel };
   }

@@ -56,6 +56,8 @@ export function TicketsAgente({ email, tickets, cargando, error, revisado, onRef
   const [fTexto, setFTexto] = useState("");
   const [enviados, setEnviados] = useState<TicketEnviado[]>([]);
   const [cerrando, setCerrando] = useState<TicketAgente | null>(null);
+  // Celular: primero la lista sola; al tocar un ticket, su detalle a pantalla completa.
+  const [detalleMovil, setDetalleMovil] = useState(false);
 
   useEffect(() => {
     misEnviados(email).then(setEnviados).catch(() => setEnviados([]));
@@ -84,7 +86,12 @@ export function TicketsAgente({ email, tickets, cargando, error, revisado, onRef
 
   return (
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-      <aside className="flex max-h-72 shrink-0 flex-col border-b md:max-h-none md:w-80 md:border-b-0 md:border-r">
+      <aside
+        className={cn(
+          "min-h-0 flex-1 flex-col md:flex md:w-80 md:flex-none md:border-r",
+          detalleMovil || cerrarAhora ? "hidden" : "flex",
+        )}
+      >
         <div className="flex h-11 items-center gap-2 border-b px-3 text-xs text-muted-foreground">
           <span className="flex-1">
             {tickets ? `${filtrados.length} de ${tickets.length} pendiente${tickets.length === 1 ? "" : "s"}` : "Tickets"}
@@ -136,7 +143,7 @@ export function TicketsAgente({ email, tickets, cargando, error, revisado, onRef
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setElegido(t.id)}
+                onClick={() => { setElegido(t.id); setDetalleMovil(true); }}
                 className={cn("mb-1 w-full rounded-md px-2.5 py-2 text-left text-xs transition-colors", actual?.id === t.id ? "bg-primary/10" : "hover:bg-muted")}
               >
                 <span className="flex items-center gap-1.5">
@@ -153,9 +160,23 @@ export function TicketsAgente({ email, tickets, cargando, error, revisado, onRef
             );
           })}
         </div>
-        <GeorgIAPensando pendientes={tickets?.length ?? 0} />
+        {/* En el celular no cabe: ahí manda la lista. */}
+        <div className="hidden md:block"><GeorgIAPensando pendientes={tickets?.length ?? 0} /></div>
       </aside>
-      <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+      <section
+        className={cn(
+          "min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 md:block md:py-5",
+          detalleMovil || cerrarAhora ? "block" : "hidden",
+        )}
+      >
+        {/* Regresar a la lista (solo celular). */}
+        <button
+          type="button"
+          onClick={() => { setDetalleMovil(false); if (cerrarAhora) onCerrarAtendido(); }}
+          className="mb-3 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-sm font-medium text-primary hover:bg-primary/10 md:hidden"
+        >
+          ← Tickets
+        </button>
         {actual ? (
           <DetalleTicket
             key={actual.id}
