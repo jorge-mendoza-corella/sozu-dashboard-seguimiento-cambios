@@ -4,23 +4,24 @@
  * revisión, En lista de espera; por prioridad y antigüedad).
  *
  * A la izquierda la lista con filtros; a la derecha el detalle: datos, evidencias,
- * la investigación de GeorgIA (en qué repos y dónde trabajar), el .md para
- * Claude Code (editable, se copia con un botón y registra el ticket como enviado)
- * y el botón para cerrar el ticket en el portal.
+ * el .md para Claude Code (editable) con "Mandar a Claude" (abre un issue en el
+ * repo orquestador y Claude Code abre los PRs hacia dev) o copiarlo a mano, y el
+ * botón para cerrar el ticket en el portal. La investigación por API ya no corre;
+ * la que algún ticket ya tenga se muestra como solo lectura.
  */
 import { useEffect, useMemo, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  AlertCircle, Check, CheckCircle2, Copy, ExternalLink, FileAudio, FileText, FolderGit2, Image as ImageIcon, Inbox, Loader2,
-  Paperclip, RefreshCw, RotateCcw, Search, Sparkles, User, Users,
+  AlertCircle, Bot, Check, CheckCircle2, Copy, ExternalLink, FileAudio, FileText, FolderGit2, Image as ImageIcon, Inbox, Loader2,
+  Paperclip, RefreshCw, RotateCcw, Search, Send, Sparkles, User, Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import { GeorgIAPensando } from "./GeorgIAPensando";
 import {
-  analizarTicket, cerrarTicketPortal, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
+  analisisGuardado, cerrarTicketPortal, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
   type AnalisisTicket, type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
 
@@ -229,32 +230,23 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
   onCerrar: () => void;
 }) {
   const [analisis, setAnalisis] = useState<AnalisisTicket | null>(null);
-  const [analizando, setAnalizando] = useState(false);
-  const [errorAnalisis, setErrorAnalisis] = useState<string | null>(null);
+  const [cargandoAnalisis, setCargandoAnalisis] = useState(true);
   const [prompt, setPrompt] = useState<string>(() => leerBorrador(t.id) ?? "");
   const [copiado, setCopiado] = useState(false);
+  const [confirmar, setConfirmar] = useState(false);
+  const [mandando, setMandando] = useState(false);
+  const [errorMandar, setErrorMandar] = useState<string | null>(null);
+  const [recienMandado, setRecienMandado] = useState<{ numero: number; url: string } | null>(null);
+  const issue = recienMandado ?? enviado?.issue ?? null;
 
-  const investigar = async (forzar: boolean) => {
-    setAnalizando(true);
-    setErrorAnalisis(null);
-    try {
-      setAnalisis((await analizarTicket(t.id, forzar)).analisis);
-    } catch (e) {
-      setErrorAnalisis(mensajeDeError(e));
-    } finally {
-      setAnalizando(false);
-    }
-  };
-  // Se investiga al abrir el ticket (o se trae la investigación guardada).
+  // Solo la investigación que haya dejado el análisis por API (ya retirado).
   useEffect(() => {
     let vivo = true;
-    analizarTicket(t.id, false)
-      .then((r) => vivo && setAnalisis(r.analisis))
-      .catch((e) => vivo && setErrorAnalisis(mensajeDeError(e)))
-      .finally(() => vivo && setAnalizando(false));
+    analisisGuardado(t.id)
+      .then((a) => vivo && setAnalisis(a))
+      .finally(() => vivo && setCargandoAnalisis(false));
     return () => { vivo = false; };
   }, [t.id]);
-  const cargandoAnalisis = analizando || (!analisis && !errorAnalisis);
 
   const generado = useMemo(() => promptDeTicket(t, analisis), [t, analisis]);
   const editado = prompt !== "" && prompt !== generado;
@@ -266,6 +258,21 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
     setTimeout(() => setCopiado(false), 1600);
     // Copiar = pasarlo a Claude: desde aquí se vigilan los deploys de este ticket.
     if (!enviado) await marcarEnviado(email, t).then(onEnviado).catch(() => {});
+  };
+
+  const mandar = async () => {
+    setMandando(true);
+    setErrorMandar(null);
+    try {
+      const r = await mandarAClaude(t.id, valor);
+      setRecienMandado({ numero: r.numero, url: r.url });
+      setConfirmar(false);
+      onEnviado();
+    } catch (e) {
+      setErrorMandar(mensajeDeError(e));
+    } finally {
+      setMandando(false);
+    }
   };
 
   const otros = t.asignados.filter((a) => !a.soyYo);
@@ -349,7 +356,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
           <>
             {imagenes.length > 0 && (
               <p className="mb-2 text-[11px] text-muted-foreground">
-                Para Claude Code: pega el .md y luego cada imagen con <strong>Copiar imagen</strong> → Ctrl/Cmd+V, en el orden numerado.
+                "Mandar a Claude" las lleva por URL. Si pegas el .md a mano, pega cada imagen con <strong>Copiar imagen</strong> → Ctrl/Cmd+V, en el orden numerado.
               </p>
             )}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -359,25 +366,14 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
         )}
       </div>
 
-      <div>
-        <div className="mb-2 flex items-center gap-2">
-          <h3 className="flex flex-1 items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            <Sparkles className="h-3.5 w-3.5" /> Dónde trabajar (investigación de GeorgIA)
+      {analisis && (
+        <div>
+          <h3 className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Sparkles className="h-3.5 w-3.5" /> Investigación previa (guardada)
           </h3>
-          <button type="button" onClick={() => void investigar(true)} disabled={analizando} className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs text-muted-foreground hover:bg-muted disabled:opacity-50" title="Volver a investigar">
-            <RefreshCw className={cn("h-3 w-3", analizando && "animate-spin")} /> Investigar de nuevo
-          </button>
-        </div>
-        {cargandoAnalisis ? (
-          <p className="flex items-center gap-2 rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> GeorgIA está revisando docs y código… (puede tardar un minuto)
-          </p>
-        ) : errorAnalisis ? (
-          <p className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{errorAnalisis}</p>
-        ) : analisis && (
           <div className="space-y-2 rounded-lg border bg-muted/20 p-3 text-sm">
             {analisis.resumen && <p>{analisis.resumen}</p>}
-            {analisis.repos.length ? analisis.repos.map((r) => (
+            {analisis.repos.map((r) => (
               <div key={r.repo} className="rounded-md bg-background p-2">
                 <p className="flex items-center gap-1.5 text-xs font-semibold"><FolderGit2 className="h-3.5 w-3.5 text-primary" />{r.repo}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">{r.motivo}</p>
@@ -385,9 +381,36 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
                   <ul className="mt-1 space-y-0.5">{r.rutas.map((p) => <li key={p} className="truncate font-mono text-[11px]">{p}</li>)}</ul>
                 )}
               </div>
-            )) : <p className="text-xs text-muted-foreground">No parece un cambio de código.</p>}
+            ))}
           </div>
-        )}
+        </div>
+      )}
+
+      <div className="rounded-lg border border-violet-300/60 bg-violet-50/60 p-3 dark:border-violet-800/60 dark:bg-violet-950/20">
+        <div className="flex flex-wrap items-center gap-2">
+          <Bot className="h-4 w-4 text-violet-600 dark:text-violet-300" />
+          <p className="min-w-0 flex-1 text-sm">
+            {issue ? (
+              <>Claude Code ya lo tiene: <a href={issue.url} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">issue #{issue.numero}</a>. Ahí comenta los PRs hacia dev; para pedir ajustes, comenta con <code>@claude</code>.</>
+            ) : (
+              <>Claude Code investiga, arregla y abre los PRs hacia <strong>dev</strong> (con tu suscripción). Tú solo revisas y apruebas.</>
+            )}
+          </p>
+          {!issue && (confirmar ? (
+            <span className="flex items-center gap-1.5">
+              <button type="button" onClick={() => setConfirmar(false)} disabled={mandando} className="h-8 rounded-md px-2.5 text-xs font-medium hover:bg-muted">Cancelar</button>
+              <button type="button" onClick={() => void mandar()} disabled={mandando || cargandoAnalisis} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-50">
+                {mandando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Sí, mandar
+              </button>
+            </span>
+          ) : (
+            <button type="button" onClick={() => setConfirmar(true)} disabled={cargandoAnalisis} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-50">
+              <Send className="h-3.5 w-3.5" /> Mandar a Claude
+            </button>
+          ))}
+        </div>
+        {confirmar && !issue && <p className="mt-2 text-[11px] text-muted-foreground">Se manda el .md de abajo tal como está (con tus ediciones). Usa la ventana de 5 h de tu plan.</p>}
+        {errorMandar && <p className="mt-2 text-xs text-destructive">{errorMandar}</p>}
       </div>
 
       <div>
@@ -398,7 +421,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
               <RotateCcw className="h-3 w-3" /> Restaurar
             </button>
           )}
-          <button type="button" onClick={() => void copiar()} disabled={cargandoAnalisis} className="inline-flex h-7 items-center gap-1 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground disabled:opacity-50" title={cargandoAnalisis ? "Espera a que termine la investigación" : undefined}>
+          <button type="button" onClick={() => void copiar()} disabled={cargandoAnalisis} className="inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-xs font-medium hover:bg-muted disabled:opacity-50" title="Para pegarlo a mano en Claude Code">
             {copiado ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             {copiado ? "Copiado" : "Copiar .md"}
           </button>
@@ -411,8 +434,8 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
           className="w-full resize-y rounded-lg border bg-muted/30 p-3 font-mono text-[12px] leading-relaxed outline-none focus:ring-2 focus:ring-ring"
         />
         <p className="mt-1 text-[11px] text-muted-foreground">
-          {editado ? "Editado: tus cambios se guardan en este navegador." : "Generado del ticket y la investigación; edítalo libremente."}{" "}
-          Pégalo en Claude Code dentro del repo. Los commits llevarán el trailer <code>Ticket-SOZU</code>: cuando su PR llegue a PRD, GeorgIA te avisa para cerrarlo.
+          {editado ? "Editado: tus cambios se guardan en este navegador." : "Generado del ticket; edítalo libremente antes de mandarlo."}{" "}
+          Los commits llevarán el trailer <code>Ticket-SOZU</code>: cuando su PR llegue a PRD, GeorgIA te avisa para cerrarlo.
         </p>
       </div>
     </div>

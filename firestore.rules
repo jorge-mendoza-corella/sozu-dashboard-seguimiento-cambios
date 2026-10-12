@@ -481,8 +481,8 @@ service cloud.firestore {
       allow write: if esRootVerificado();
     }
 
-    // Investigación previa de cada ticket (repos/rutas/pasos): la escribe la función
-    // `agenteAnalizarTicket`; la leen los usuarios del dashboard.
+    // Investigación previa de cada ticket (repos/rutas/pasos). La escribía la función
+    // `agenteAnalizarTicket` (retirada); queda como solo lectura en el panel.
     match /agente_tickets/{ticketId} {
       allow read: if request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.token.email));

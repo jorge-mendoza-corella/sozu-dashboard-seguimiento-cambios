@@ -7,8 +7,10 @@
  * de espera, ordenados por prioridad y antigüedad.
  *
  * Flujo completo:
- *   1. GeorgIA investiga en qué repos hay que trabajar (`agenteAnalizarTicket`).
- *   2. Se copia el .md para Claude Code; eso registra el ticket como "enviado"
+ *   1. "Mandar a Claude" (`agenteMandarAClaude`) abre un issue con el .md en el
+ *      repo orquestador; Claude Code (suscripción, en GitHub Actions) investiga,
+ *      arregla y abre PRs hacia `dev`. Copiar el .md a mano sigue disponible.
+ *      Cualquiera de los dos registra el ticket como "enviado"
  *      (`agente_tickets_enviados/{email}__{id}`).
  *   3. Los commits llevan el trailer `Ticket-SOZU: #<folio>`. Cuando un deploy a
  *      PRD trae un PR con ese trailer, se anota el PR en el registro y GeorgIA
@@ -16,7 +18,7 @@
  *   4. Cerrar (`agenteCerrarTicket`) pasa el ticket a Resuelto con la nota.
  */
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { arrayUnion, collection, doc, getDocs, query, setDoc, where } from "firebase/firestore";
+import { arrayUnion, collection, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
 import { app, db } from "./firebase";
 import { prDeMergeConCommits } from "./github";
 
@@ -72,17 +74,35 @@ export interface RespuestaTickets {
 
 const functions = getFunctions(app, "us-central1");
 const llamarTickets = httpsCallable<Record<string, never>, RespuestaTickets>(functions, "agenteTickets", { timeout: 60_000 });
-const llamarAnalisis = httpsCallable<{ ticketId: string; forzar?: boolean }, { analisis: AnalisisTicket; analizadoEn: string; desdeCache: boolean }>(
-  functions, "agenteAnalizarTicket", { timeout: 300_000 },
-);
+const llamarMandar = httpsCallable<{ ticketId: string; md: string }, IssueClaude>(functions, "agenteMandarAClaude", { timeout: 60_000 });
 const llamarCerrar = httpsCallable<{ ticketId: string; nota: string }, { ok: true; etapa: string }>(functions, "agenteCerrarTicket", { timeout: 60_000 });
 
 export async function misTickets(): Promise<RespuestaTickets> {
   return (await llamarTickets({})).data;
 }
 
-export async function analizarTicket(ticketId: string, forzar = false) {
-  return (await llamarAnalisis({ ticketId, forzar })).data;
+export interface IssueClaude {
+  numero: number;
+  url: string;
+  yaExistia: boolean;
+}
+
+/** Abre el issue para Claude Code con el .md (ya editado). Si ya se mandó, devuelve el mismo. */
+export async function mandarAClaude(ticketId: string, md: string): Promise<IssueClaude> {
+  return (await llamarMandar({ ticketId, md })).data;
+}
+
+/**
+ * Investigación que dejó el análisis por API (ya retirado), si el ticket la
+ * tiene. Solo lectura: los tickets nuevos no la llevan.
+ */
+export async function analisisGuardado(ticketId: string): Promise<AnalisisTicket | null> {
+  try {
+    const x = (await getDoc(doc(db, "agente_tickets", ticketId))).data();
+    return x?.analisis ? (x.analisis as AnalisisTicket) : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function cerrarTicketPortal(ticketId: string, nota: string) {
@@ -127,9 +147,9 @@ export function trailerDeTicket(t: TicketAgente): string {
 }
 
 /**
- * Prompt en Markdown para pasarle el ticket a Claude Code. Incluye lo que GeorgIA
- * investigó (repos, rutas, pasos), la convención de commits y cómo van las
- * imágenes. Es un punto de partida: el panel deja editarlo antes de copiarlo.
+ * Prompt en Markdown para pasarle el ticket a Claude Code: datos, evidencias (por
+ * URL), la investigación previa si un análisis viejo la dejó, y la convención
+ * de commits. Es un punto de partida: el panel deja editarlo antes de mandarlo.
  */
 export function promptDeTicket(t: TicketAgente, a: AnalisisTicket | null): string {
   const asignados = t.asignados.map((p) => `${p.nombre}${p.email ? ` <${p.email}>` : ""}`).join(", ") || "—";
@@ -137,8 +157,15 @@ export function promptDeTicket(t: TicketAgente, a: AnalisisTicket | null): strin
   const otras = t.evidencias.filter((e) => e.tipo !== "imagen");
   const repos = a?.repos.length
     ? a.repos.map((r) => `- **${r.repo}**: ${r.motivo}${r.rutas.length ? `\n${r.rutas.map((p) => `  - \`${p}\``).join("\n")}` : ""}`).join("\n")
-    : "- (GeorgIA no identificó repos: investiga tú dónde está el cambio antes de tocar código)";
+    : "";
   const pasos = a?.pasos.length ? a.pasos.map((p, i) => `${i + 1}. ${p}`).join("\n") : "";
+  const investigacion = a && (a.resumen || repos)
+    ? `## Investigación previa (puede estar desactualizada)
+
+${a.resumen ? `${a.resumen}\n\n` : ""}${repos}
+${pasos ? `\n### Pasos sugeridos\n\n${pasos}\n` : ""}
+`
+    : "";
   return `# Ticket ${t.folio}: ${t.titulo}
 
 **Abierto por:** ${t.abiertoPor ?? "—"} · **Fecha:** ${fechaLarga(t.abiertoEn)}
@@ -149,18 +176,14 @@ export function promptDeTicket(t: TicketAgente, a: AnalisisTicket | null): strin
 
 ${t.descripcion.trim() || "(sin descripción)"}
 
-## Dónde trabajar (investigación previa de GeorgIA)
+${investigacion}## Evidencias
 
-${a?.resumen ? `${a.resumen}\n\n` : ""}${repos}
-${pasos ? `\n### Pasos sugeridos\n\n${pasos}\n` : ""}
-## Evidencias
-
-${imagenes.length ? `Hay ${imagenes.length} imagen(es) adjunta(s); te las pego después de este mensaje (Ctrl/Cmd+V), en este orden:\n${imagenes.map((e, i) => `${i + 1}. ${e.nombre}${e.url ? ` — ${e.url}` : ""}`).join("\n")}` : "- Sin imágenes adjuntas."}
+${imagenes.length ? `Hay ${imagenes.length} imagen(es) adjunta(s), en este orden (descárgalas de su URL para verlas):\n${imagenes.map((e, i) => `${i + 1}. ${e.nombre}${e.url ? ` — ${e.url}` : ""}`).join("\n")}` : "- Sin imágenes adjuntas."}
 ${otras.length ? `\nOtros adjuntos:\n${otras.map((e) => `- ${e.tipo}: ${e.nombre}${e.url ? ` — ${e.url}` : ""}`).join("\n")}` : ""}
 
 ## Qué necesito
 
-1. Confirma en el código lo que dice la investigación previa (puede estar incompleta) y ubica la causa raíz con referencias \`archivo:línea\`.
+1. Investiga en qué repos está el cambio y ubica la causa raíz con referencias \`archivo:línea\`.
 2. Aplica el arreglo mínimo en una rama nueva por repo (\`fix/ticket-${t.numero}\`), con pruebas que cubran el caso.
 3. **Cada commit de este cambio** debe terminar con esta línea (trailer), tal cual:
 
@@ -189,6 +212,8 @@ export interface TicketEnviado {
   titulo: string;
   prs: PrDeTicket[];
   cerrado: boolean;
+  /** Issue del repo orquestador, si se mandó con "Mandar a Claude". */
+  issue: { numero: number; url: string } | null;
 }
 
 const ENVIADOS = () => collection(db, "agente_tickets_enviados");
@@ -214,6 +239,7 @@ export async function misEnviados(email: string): Promise<TicketEnviado[]> {
       titulo: String(x.titulo ?? ""),
       prs: Array.isArray(x.prs) ? x.prs : [],
       cerrado: x.cerrado === true,
+      issue: x.issue?.url ? { numero: Number(x.issue.numero), url: String(x.issue.url) } : null,
     };
   });
 }
