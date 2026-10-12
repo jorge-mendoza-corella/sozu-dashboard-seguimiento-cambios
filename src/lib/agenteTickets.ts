@@ -171,10 +171,32 @@ export function gritosDeCierre(folios: string[], nombre: string): string[] {
   ];
 }
 
-const fechaCorta = (iso: string) =>
-  new Date(iso).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric", timeZone: "America/Mexico_City" });
-const fechaLarga = (iso: string) =>
-  new Date(iso).toLocaleString("es-MX", { dateStyle: "long", timeStyle: "short", timeZone: "America/Mexico_City" });
+/**
+ * El portal guarda muchos tickets con solo la fecha, como medianoche UTC
+ * ("2026-10-12" → 2026-10-12T00:00Z). Pasada a hora de México esa medianoche cae
+ * a las 6 pm del día ANTERIOR, y el ticket del 12 se leía del 11. Una hora de
+ * 00:00:00 UTC exacta se toma como fecha sin hora: se muestra ese día, sin hora.
+ */
+export const esSoloFecha = (iso: string) => {
+  const d = new Date(iso);
+  return !Number.isNaN(d.getTime()) && d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0;
+};
+
+const zonaDe = (iso: string) => (esSoloFecha(iso) ? "UTC" : "America/Mexico_City");
+
+/** Fecha de apertura de un ticket, con o sin hora según lo que guarde el portal. */
+export function fechaTicket(iso: string, estilo: "dia" | "corta" | "larga"): string {
+  const d = new Date(iso);
+  const timeZone = zonaDe(iso);
+  if (estilo === "dia") return d.toLocaleDateString("es-MX", { day: "numeric", month: "short", timeZone });
+  if (estilo === "corta") return d.toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric", timeZone });
+  return esSoloFecha(iso)
+    ? d.toLocaleDateString("es-MX", { dateStyle: "long", timeZone })
+    : d.toLocaleString("es-MX", { dateStyle: "long", timeStyle: "short", timeZone });
+}
+
+const fechaCorta = (iso: string) => fechaTicket(iso, "corta");
+const fechaLarga = (iso: string) => fechaTicket(iso, "larga");
 
 /** La línea que cada commit del cambio debe llevar al final (git trailer). */
 export function trailerDeTicket(t: TicketAgente): string {

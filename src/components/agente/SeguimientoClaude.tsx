@@ -64,16 +64,62 @@ function Mensaje({ m }: { m: MensajeClaude }) {
   );
 }
 
-export function SeguimientoClaude({ ticketId, issue }: { ticketId: string; issue: { numero: number; url: string } }) {
-  const qc = useQueryClient();
-  const clave = ["claude-seguimiento", ticketId];
-  const q = useQuery({
-    queryKey: clave,
+/** Misma consulta en la lista y en el detalle: comparten caché y sondeo. */
+function useSeguimiento(ticketId: string) {
+  return useQuery({
+    queryKey: ["claude-seguimiento", ticketId],
     queryFn: () => seguimientoClaude(ticketId),
     refetchInterval: (query) => (activo(query.state.data?.estado) ? 15_000 : 60_000),
     refetchIntervalInBackground: false,
     retry: 1,
   });
+}
+
+const porcentaje = (p: { hechos: number; total: number } | null) => (p ? Math.round((p.hechos / p.total) * 100) : null);
+
+/** Barra delgada: con checklist, el avance; sin él y trabajando, indeterminada. */
+function Barra({ estado, pct, alto = "h-1.5" }: { estado: EstadoClaude; pct: number | null; alto?: string }) {
+  // <span> y no <div>: también va dentro del <button> de cada ticket en la lista.
+  return (
+    <span className={cn("block w-full overflow-hidden rounded-full bg-muted", alto)} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct ?? undefined}>
+      <span
+        className={cn(
+          "block h-full rounded-full transition-[width] duration-500 ease-out",
+          estado === "error" ? "bg-red-500" : estado === "terminado" ? "bg-emerald-500" : estado === "esperando_respuesta" ? "bg-amber-500" : "bg-violet-500",
+          pct === null && "w-1/3 animate-pulse motion-reduce:animate-none",
+        )}
+        style={pct !== null ? { width: `${Math.max(pct, activo(estado) ? 5 : 0)}%` } : undefined}
+      />
+    </span>
+  );
+}
+
+/** Para la lista de tickets: chip con el estado y barra de avance mientras trabaja. */
+export function EstadoClaudeMini({ ticketId }: { ticketId: string }) {
+  const { data: s } = useSeguimiento(ticketId);
+  if (!s) {
+    return <span className="rounded bg-violet-100 px-1 text-[9px] font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">en Claude</span>;
+  }
+  return (
+    <span className={cn("inline-flex items-center gap-0.5 rounded px-1 text-[9px] font-semibold", COLOR[s.estado])} title={`Claude Code: ${ETIQUETA[s.estado]}`}>
+      {activo(s.estado) && <Loader2 className="h-2.5 w-2.5 animate-spin motion-reduce:animate-none" />}
+      {s.estado === "esperando_respuesta" ? "te pregunta" : ETIQUETA[s.estado].toLowerCase()}
+      {s.progreso && activo(s.estado) && ` ${porcentaje(s.progreso)}%`}
+    </span>
+  );
+}
+
+/** Barra bajo el renglón de la lista; solo mientras hay algo en curso o esperando. */
+export function BarraClaudeMini({ ticketId }: { ticketId: string }) {
+  const { data: s } = useSeguimiento(ticketId);
+  if (!s || !(activo(s.estado) || s.estado === "esperando_respuesta")) return null;
+  return <span className="mt-1 block"><Barra estado={s.estado} pct={porcentaje(s.progreso)} alto="h-1" /></span>;
+}
+
+export function SeguimientoClaude({ ticketId, issue }: { ticketId: string; issue: { numero: number; url: string } }) {
+  const qc = useQueryClient();
+  const clave = ["claude-seguimiento", ticketId];
+  const q = useSeguimiento(ticketId);
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +140,7 @@ export function SeguimientoClaude({ ticketId, issue }: { ticketId: string; issue
   };
 
   const s = q.data;
-  const pct = s?.progreso ? Math.round((s.progreso.hechos / s.progreso.total) * 100) : null;
+  const pct = porcentaje(s?.progreso ?? null);
   const esperando = s?.estado === "esperando_respuesta";
   // La conversación sin el comentario de avance viejo: solo el último checklist.
   const ultimoSeguimiento = s ? [...s.mensajes].reverse().find((m) => m.esSeguimiento)?.id : undefined;
@@ -124,16 +170,7 @@ export function SeguimientoClaude({ ticketId, issue }: { ticketId: string; issue
 
       {s && (activo(s.estado) || pct !== null) && (
         <div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct ?? undefined}>
-            <div
-              className={cn(
-                "h-full rounded-full transition-[width] duration-500 ease-out",
-                s.estado === "error" ? "bg-red-500" : s.estado === "terminado" ? "bg-emerald-500" : "bg-violet-500",
-                pct === null && "w-1/3 animate-pulse motion-reduce:animate-none",
-              )}
-              style={pct !== null ? { width: `${Math.max(pct, activo(s.estado) ? 5 : 0)}%` } : undefined}
-            />
-          </div>
+          <Barra estado={s.estado} pct={pct} />
           <p className="mt-1 text-[10px] text-muted-foreground">
             {s.progreso ? `${s.progreso.hechos} de ${s.progreso.total} pasos` : s.estado === "en_cola" ? "Esperando a que arranque la corrida…" : "Arrancando…"}
           </p>

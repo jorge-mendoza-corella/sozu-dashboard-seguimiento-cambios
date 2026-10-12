@@ -20,9 +20,9 @@ import {
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import { GeorgIAPensando } from "./GeorgIAPensando";
-import { SeguimientoClaude } from "./SeguimientoClaude";
+import { BarraClaudeMini, EstadoClaudeMini, SeguimientoClaude } from "./SeguimientoClaude";
 import {
-  analisisGuardado, cerrarTicketPortal, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
+  analisisGuardado, cerrarTicketPortal, esSoloFecha, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
   type AnalisisTicket, type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
 
@@ -151,13 +151,18 @@ export function TicketsAgente({ email, tickets, cargando, error, revisado, onRef
                 <span className="flex items-center gap-1.5">
                   <span className="font-mono text-[10px] text-muted-foreground">{t.folio}</span>
                   {t.prioridad && <span className={cn("rounded px-1 text-[9px] font-semibold uppercase", COLOR_PRIORIDAD[t.prioridad])}>{t.prioridad}</span>}
-                  {env && <span className="rounded bg-violet-100 px-1 text-[9px] font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300" title="Ya se pasó a Claude">{env.prs.length ? "en PRD" : "en Claude"}</span>}
+                  {env && (env.prs.length
+                    ? <span className="rounded bg-violet-100 px-1 text-[9px] font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300" title="Ya llegó a PRD">en PRD</span>
+                    : env.issue
+                      ? <EstadoClaudeMini ticketId={t.id} />
+                      : <span className="rounded bg-violet-100 px-1 text-[9px] font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300" title="Se copió el .md para Claude">en Claude</span>)}
                   <span className="ml-auto text-[10px] text-muted-foreground">{t.etapa}</span>
                 </span>
                 <span className={cn("mt-0.5 block truncate font-medium", actual?.id === t.id && "text-primary")}>{t.titulo}</span>
                 <span className="block truncate text-[10px] text-muted-foreground">
-                  {t.abiertoPor ?? "—"} · {new Date(t.abiertoEn).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+                  {t.abiertoPor ?? "—"} · {fechaTicket(t.abiertoEn, "dia")}
                 </span>
+                {env?.issue && !env.prs.length && <BarraClaudeMini ticketId={t.id} />}
               </button>
             );
           })}
@@ -343,7 +348,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
 
       <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
         <Dato icono={User} etiqueta="Abierto por">{t.abiertoPor ?? "—"}</Dato>
-        <Dato icono={FileText} etiqueta="Fecha">{fecha(t.abiertoEn)}</Dato>
+        <Dato icono={FileText} etiqueta="Fecha">{esSoloFecha(t.abiertoEn) ? fechaTicket(t.abiertoEn, "corta") : fecha(t.abiertoEn)}</Dato>
         <Dato icono={Users} etiqueta="Para">
           <span className="flex flex-wrap gap-1">
             {t.asignados.map((a) => (
