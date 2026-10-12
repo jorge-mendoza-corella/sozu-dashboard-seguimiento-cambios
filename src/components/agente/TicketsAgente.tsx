@@ -14,12 +14,13 @@ import * as Dialog from "@radix-ui/react-dialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  AlertCircle, Bot, Check, CheckCircle2, Copy, ExternalLink, FileAudio, FileText, FolderGit2, Image as ImageIcon, Inbox, Loader2,
+  AlertCircle, Bot, Check, CheckCircle2, Copy, ExternalLink, FileAudio, FileText, FileVideo, FolderGit2, Image as ImageIcon, Inbox, Loader2,
   Paperclip, RefreshCw, RotateCcw, Search, Send, Sparkles, User, Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import { GeorgIAPensando } from "./GeorgIAPensando";
+import { SeguimientoClaude } from "./SeguimientoClaude";
 import {
   analisisGuardado, cerrarTicketPortal, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
   type AnalisisTicket, type TicketAgente, type TicketEnviado,
@@ -425,7 +426,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
           <Bot className="h-4 w-4 text-violet-600 dark:text-violet-300" />
           <p className="min-w-0 flex-1 text-sm">
             {issue ? (
-              <>Claude Code ya lo tiene: <a href={issue.url} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">issue #{issue.numero}</a>. Ahí comenta los PRs hacia dev; para pedir ajustes, comenta con <code>@claude</code>.</>
+              <>Mandado a Claude Code. Aquí ves en qué va, los PRs hacia <strong>dev</strong> y lo que te pregunte.</>
             ) : (
               <>Claude Code investiga, arregla y abre los PRs hacia <strong>dev</strong> (con tu suscripción). Tú solo revisas y apruebas.</>
             )}
@@ -443,6 +444,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
             </button>
           ))}
         </div>
+        {issue && <SeguimientoClaude ticketId={t.id} issue={issue} />}
         {confirmar && !issue && <p className="mt-2 text-[11px] text-muted-foreground">Se manda el .md de abajo tal como está (con tus ediciones). Usa la ventana de 5 h de tu plan.</p>}
         {errorMandar && <p className="mt-2 text-xs text-destructive">{errorMandar}</p>}
       </div>
@@ -518,6 +520,14 @@ function Evidencia({ e, n }: { e: TicketAgente["evidencias"][number]; n: number 
             {estado === "ok" ? "Copiada" : estado === "error" ? "No se pudo" : "Copiar imagen"}
           </button>
         </div>
+      </div>
+    );
+  }
+  if (e.tipo === "video") {
+    return (
+      <div className="col-span-2 rounded-md border p-2">
+        <p className="mb-1 flex items-center gap-1 truncate text-[10px] text-muted-foreground"><FileVideo className="h-3 w-3" />{e.nombre}</p>
+        <video controls preload="metadata" src={e.url} className="max-h-64 w-full rounded bg-black" />
       </div>
     );
   }
