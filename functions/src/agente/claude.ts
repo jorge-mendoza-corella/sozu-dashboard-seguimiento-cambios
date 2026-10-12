@@ -50,6 +50,19 @@ const MAX_RESPUESTA = 4_000;
 
 const esSeguimiento = (b: string) => b.includes("View job") && /Claude (Code is working|finished|encountered)/i.test(b);
 
+/**
+ * Claude a veces deja las preguntas en su comentario de avance (con track_progress
+ * la respuesta final va ahí) sin la marca. Se reconoce igual: un paso sin palomear
+ * que habla de esperar respuesta/confirmación, o al menos una línea que termina
+ * en "?" al final del mensaje.
+ */
+function pidePregunta(b: string): boolean {
+  if (b.includes(MARCA_PREGUNTA)) return true;
+  if (/^\s*- \[ \].*(respuest|confirm|decid|defin|esperar)/im.test(b)) return true;
+  const cola = b.slice(-2500);
+  return cola.split("\n").some((l) => /\?\**\s*$/.test(l.trim()) && l.trim().length > 12);
+}
+
 const limpiar = (b: string) =>
   b.replace(/<!-- georgia-[^>]*-->/g, "").replace(/^@claude\s*/i, "").trim();
 
@@ -81,7 +94,9 @@ export async function seguimientoClaude(
       quien: humano?.[1] ?? (deClaude ? null : c.user?.login ?? null),
       cuerpo: limpiar(b),
       fecha: c.updated_at ?? c.created_at,
-      esPregunta: deClaude && b.includes(MARCA_PREGUNTA),
+      // En el de avance solo cuenta cuando ya terminó: mientras trabaja, el
+      // checklist tiene pasos sin palomear que no son preguntas.
+      esPregunta: deClaude && (esSeguimiento(b) ? /Claude finished/i.test(b) && pidePregunta(b) : pidePregunta(b)),
       esSeguimiento: deClaude && esSeguimiento(b),
     };
   });
