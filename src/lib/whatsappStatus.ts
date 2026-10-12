@@ -1,5 +1,6 @@
 import { collection, getDocs } from "firebase/firestore";
-import { db } from "./firebase";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import { app, db } from "./firebase";
 
 // ---------------------------------------------------------------------------
 // Si la instancia de WhatsApp (Evolution API) de cada empresa sigue conectada.
@@ -102,4 +103,25 @@ export async function dispararRevisionWhatsapp(): Promise<void> {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
     body: JSON.stringify({ ref: "main" }),
   }).catch(() => undefined);
+}
+
+export interface QrWhatsapp {
+  conectado: boolean;
+  /** data:image/png;base64,... */
+  qr: string | null;
+  pairingCode: string | null;
+  detalle: string | null;
+}
+
+const llamarQr = httpsCallable<{ clientId: string }, QrWhatsapp>(
+  getFunctions(app, "us-central1"), "whatsappQr", { timeout: 60_000 },
+);
+
+/**
+ * QR para reconectar la instancia de la empresa (función `whatsappQr`: la apikey
+ * de Evolution se queda en el servidor). Si ya se conectó, `conectado` viene en
+ * true y la función ya dejó `whatsappStatus` en verde.
+ */
+export async function qrWhatsapp(clientId: string): Promise<QrWhatsapp> {
+  return (await llamarQr({ clientId })).data;
 }
