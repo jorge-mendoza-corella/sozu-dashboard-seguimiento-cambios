@@ -43,7 +43,7 @@ export interface TicketSalida {
   abiertoPor: string | null;
   abiertoEn: string;
   asignados: { nombre: string; email: string | null; soyYo: boolean }[];
-  evidencias: { nombre: string; tipo: "imagen" | "audio" | "documento" | "otro"; url: string | null }[];
+  evidencias: { nombre: string; tipo: "imagen" | "audio" | "video" | "documento" | "otro"; url: string | null }[];
   url: string | null;
 }
 
@@ -51,7 +51,7 @@ export interface TicketSalida {
 type Fila = any;
 
 const tipoEvidencia = (t: string | null): TicketSalida["evidencias"][number]["tipo"] =>
-  t === "foto" ? "imagen" : t === "audio" ? "audio" : t === "documento" ? "documento" : "otro";
+  t === "foto" ? "imagen" : t === "audio" ? "audio" : t === "video" ? "video" : t === "documento" ? "documento" : "otro";
 
 export const sinAcentos = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 

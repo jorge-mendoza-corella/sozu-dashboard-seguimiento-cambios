@@ -22,6 +22,7 @@ import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
 import { cerrarTicket, clienteSupabase, ticketsAsignados } from "./agente/tickets.js";
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
+import { issueDelTicket, responderAClaude, seguimientoClaude } from "./agente/claude.js";
 import { qrWhatsapp } from "./whatsapp.js";
 
 initializeApp();
@@ -336,6 +337,64 @@ export const agenteMandarAClaude = onCall<{ ticketId: string; md: string }>(
       console.error("[agenteMandarAClaude]", e);
       throw new HttpsError("unavailable", `No se pudo abrir el issue en ${ORQUESTADOR.owner}/${ORQUESTADOR.repo}.`);
     }
+  },
+);
+
+/**
+ * `agenteClaudeSeguimiento`: en qué va Claude Code con un ticket mandado (estado,
+ * avance del checklist, conversación y PRs). Solo el de quien lo mandó.
+ */
+export const agenteClaudeSeguimiento = onCall<{ ticketId: string }>(
+  {
+    region: "us-central1",
+    secrets: [GITHUB_TOKEN],
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    maxInstances: 5,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  async (req) => {
+    const usuario = await verificarAcceso(req, "tickets");
+    const ticketId = String(req.data?.ticketId ?? "");
+    if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
+    const issue = await issueDelTicket(usuario.email, ticketId);
+    try {
+      const gh = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
+      return await seguimientoClaude(gh, issue);
+    } catch (e) {
+      console.error("[agenteClaudeSeguimiento]", e);
+      throw new HttpsError("unavailable", "No se pudo leer el avance en GitHub.");
+    }
+  },
+);
+
+/**
+ * `agenteClaudeResponder`: contesta a Claude desde el dashboard (comentario con
+ * @claude en el issue, que dispara otra corrida sobre la misma rama y PR).
+ */
+export const agenteClaudeResponder = onCall<{ ticketId: string; texto: string }>(
+  {
+    region: "us-central1",
+    secrets: [GITHUB_TOKEN],
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    maxInstances: 5,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  async (req) => {
+    const usuario = await verificarAcceso(req, "tickets");
+    const ticketId = String(req.data?.ticketId ?? "");
+    if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
+    const issue = await issueDelTicket(usuario.email, ticketId);
+    const gh = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
+    try {
+      await responderAClaude(gh, usuario.email, issue.numero, String(req.data?.texto ?? ""));
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      console.error("[agenteClaudeResponder]", e);
+      throw new HttpsError("unavailable", "No se pudo mandar la respuesta a GitHub.");
+    }
+    return { ok: true };
   },
 );
 

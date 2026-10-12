@@ -35,7 +35,7 @@ export interface PersonaTicket {
 
 export interface EvidenciaTicket {
   nombre: string;
-  tipo: "imagen" | "audio" | "documento" | "otro";
+  tipo: "imagen" | "audio" | "video" | "documento" | "otro";
   /** URL pública del archivo en Storage (bucket `documentos`). */
   url: string | null;
 }
@@ -85,6 +85,41 @@ export interface IssueClaude {
   numero: number;
   url: string;
   yaExistia: boolean;
+}
+
+export type EstadoClaude = "en_cola" | "trabajando" | "esperando_respuesta" | "terminado" | "error";
+
+export interface MensajeClaude {
+  id: number;
+  autor: "claude" | "persona";
+  quien: string | null;
+  cuerpo: string;
+  fecha: string;
+  esPregunta: boolean;
+  esSeguimiento: boolean;
+}
+
+export interface SeguimientoClaude {
+  estado: EstadoClaude;
+  progreso: { hechos: number; total: number } | null;
+  runUrl: string | null;
+  issueUrl: string;
+  mensajes: MensajeClaude[];
+  prs: string[];
+  revisado: string;
+}
+
+const llamarSeguimiento = httpsCallable<{ ticketId: string }, SeguimientoClaude>(functions, "agenteClaudeSeguimiento", { timeout: 60_000 });
+const llamarResponder = httpsCallable<{ ticketId: string; texto: string }, { ok: true }>(functions, "agenteClaudeResponder", { timeout: 60_000 });
+
+/** En qué va Claude Code con el ticket: estado, avance, conversación y PRs. */
+export async function seguimientoClaude(ticketId: string): Promise<SeguimientoClaude> {
+  return (await llamarSeguimiento({ ticketId })).data;
+}
+
+/** Contesta a Claude (comentario con @claude en el issue: arranca otra corrida). */
+export async function responderAClaude(ticketId: string, texto: string): Promise<void> {
+  await llamarResponder({ ticketId, texto });
 }
 
 /** Abre el issue para Claude Code con el .md (ya editado). Si ya se mandó, devuelve el mismo. */
@@ -179,7 +214,7 @@ ${t.descripcion.trim() || "(sin descripción)"}
 ${investigacion}## Evidencias
 
 ${imagenes.length ? `Hay ${imagenes.length} imagen(es) adjunta(s), en este orden (descárgalas de su URL para verlas):\n${imagenes.map((e, i) => `${i + 1}. ${e.nombre}${e.url ? ` — ${e.url}` : ""}`).join("\n")}` : "- Sin imágenes adjuntas."}
-${otras.length ? `\nOtros adjuntos:\n${otras.map((e) => `- ${e.tipo}: ${e.nombre}${e.url ? ` — ${e.url}` : ""}`).join("\n")}` : ""}
+${otras.length ? `\nOtros adjuntos:\n${otras.map((e) => `- ${e.tipo}: ${e.nombre}${e.url ? ` — ${e.url}` : ""}`).join("\n")}` : ""}${otras.some((e) => e.tipo === "audio" || e.tipo === "video") ? "\n\nLos audios y videos ya vienen transcritos (y los videos, en capturas) en la carpeta de evidencias: léelos antes de empezar; muchas veces ahí está el detalle del problema." : ""}
 
 ## Qué necesito
 
