@@ -99,22 +99,43 @@ export interface MensajeClaude {
   esSeguimiento: boolean;
 }
 
+export type EstadoPr = "abierto" | "en_dev" | "en_main" | "en_prd" | "cerrado";
+
+export interface PrClaude {
+  url: string;
+  owner: string;
+  repo: string;
+  numero: number;
+  titulo: string;
+  estado: EstadoPr;
+  prMain: { numero: number; url: string } | null;
+}
+
 export interface SeguimientoClaude {
   estado: EstadoClaude;
   progreso: { hechos: number; total: number } | null;
   runUrl: string | null;
   issueUrl: string;
   mensajes: MensajeClaude[];
-  prs: string[];
+  /** PRs que abrió Claude y en qué van. */
+  prs: PrClaude[];
+  /** Todos los PRs vigentes ya están en PRD: se puede cerrar. */
+  listoParaCerrar: boolean;
   revisado: string;
 }
 
-const llamarSeguimiento = httpsCallable<{ ticketId: string }, SeguimientoClaude>(functions, "agenteClaudeSeguimiento", { timeout: 60_000 });
+/** PRs vigentes (sin los cerrados sin merge) y cuántos ya llegaron a PRD. */
+export function avancePrs(prs: PrClaude[]): { enPrd: number; total: number } {
+  const vigentes = prs.filter((p) => p.estado !== "cerrado");
+  return { enPrd: vigentes.filter((p) => p.estado === "en_prd").length, total: vigentes.length };
+}
+
+const llamarSeguimiento = httpsCallable<{ ticketId: string; forzarPrs?: boolean }, SeguimientoClaude>(functions, "agenteClaudeSeguimiento", { timeout: 60_000 });
 const llamarResponder = httpsCallable<{ ticketId: string; texto: string }, { ok: true }>(functions, "agenteClaudeResponder", { timeout: 60_000 });
 
 /** En qué va Claude Code con el ticket: estado, avance, conversación y PRs. */
-export async function seguimientoClaude(ticketId: string): Promise<SeguimientoClaude> {
-  return (await llamarSeguimiento({ ticketId })).data;
+export async function seguimientoClaude(ticketId: string, forzarPrs = false): Promise<SeguimientoClaude> {
+  return (await llamarSeguimiento({ ticketId, forzarPrs })).data;
 }
 
 /** Contesta a Claude (comentario con @claude en el issue: arranca otra corrida). */
@@ -302,6 +323,11 @@ export interface TicketEnviado {
   titulo: string;
   prs: PrDeTicket[];
   cerrado: boolean;
+  /**
+   * Ya se puede cerrar. Mandado a Claude: TODOS sus PRs en PRD (lo decide el
+   * servidor). Copiado a mano: algún PR con el trailer llegó a PRD.
+   */
+  listo: boolean;
   /** Issue del repo orquestador, si se mandó con "Mandar a Claude". */
   issue: { numero: number; url: string } | null;
 }
@@ -329,6 +355,7 @@ export async function misEnviados(email: string): Promise<TicketEnviado[]> {
       titulo: String(x.titulo ?? ""),
       prs: Array.isArray(x.prs) ? x.prs : [],
       cerrado: x.cerrado === true,
+      listo: x.issue?.url ? x.listoParaCerrar === true : Array.isArray(x.prs) && x.prs.length > 0,
       issue: x.issue?.url ? { numero: Number(x.issue.numero), url: String(x.issue.url) } : null,
     };
   });
@@ -368,6 +395,14 @@ export async function ticketsResueltosEnDeploy(
   const enviados = (await misEnviados(email)).filter((e) => !e.cerrado && folios.includes(e.numero));
   const listos: TicketEnviado[] = [];
   for (const e of enviados) {
+    // Mandado a Claude: puede tener PRs en varios repos. Se cierra hasta que
+    // TODOS estén en PRD, y eso lo revisa el servidor contra GitHub.
+    if (e.issue) {
+      if (e.listo) continue;
+      const s = await seguimientoClaude(e.ticketId, true).catch(() => null);
+      if (s?.listoParaCerrar) listos.push({ ...e, listo: true });
+      continue;
+    }
     // Solo los commits de ESTE ticket; si no hay ninguno con mensaje útil, el título del PR.
     const propios = pr.commits.filter((m) => foliosEnCommits([m]).includes(e.numero));
     const cambios = [...new Set(propios.map(cambioDeCommit).filter((c): c is string => !!c))].slice(0, 8);

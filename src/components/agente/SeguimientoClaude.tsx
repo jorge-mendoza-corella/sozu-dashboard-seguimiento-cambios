@@ -13,7 +13,9 @@ import remarkGfm from "remark-gfm";
 import { Bot, ExternalLink, GitPullRequest, Loader2, MessageCircleQuestion, Send, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
-import { responderAClaude, seguimientoClaude, type EstadoClaude, type MensajeClaude } from "@/lib/agenteTickets";
+import {
+  avancePrs, responderAClaude, seguimientoClaude, type EstadoClaude, type EstadoPr, type MensajeClaude,
+} from "@/lib/agenteTickets";
 
 const ETIQUETA: Record<EstadoClaude, string> = {
   en_cola: "En cola",
@@ -29,6 +31,22 @@ const COLOR: Record<EstadoClaude, string> = {
   esperando_respuesta: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
   terminado: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
   error: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300",
+};
+
+const ETIQUETA_PR: Record<EstadoPr, string> = {
+  abierto: "por revisar",
+  en_dev: "en dev",
+  en_main: "en main, falta deploy",
+  en_prd: "en PRD",
+  cerrado: "cerrado sin merge",
+};
+
+const COLOR_PR: Record<EstadoPr, string> = {
+  abierto: "text-muted-foreground",
+  en_dev: "text-sky-700 dark:text-sky-300",
+  en_main: "text-amber-700 dark:text-amber-300",
+  en_prd: "text-emerald-700 dark:text-emerald-300",
+  cerrado: "text-muted-foreground line-through",
 };
 
 const hora = (iso: string) =>
@@ -97,6 +115,7 @@ function Barra({ estado, pct, alto = "h-1.5" }: { estado: EstadoClaude; pct: num
 /** Para la lista de tickets: chip con el estado y barra de avance mientras trabaja. */
 export function EstadoClaudeMini({ ticketId }: { ticketId: string }) {
   const { data: s } = useSeguimiento(ticketId);
+  const avance = avancePrs(s?.prs ?? []);
   if (!s) {
     return <span className="rounded bg-violet-100 px-1 text-[9px] font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">en Claude</span>;
   }
@@ -111,7 +130,7 @@ export function EstadoClaudeMini({ ticketId }: { ticketId: string }) {
       title={`Claude Code: ${ETIQUETA[s.estado]}`}
     >
       {activo(s.estado) && <Loader2 className="h-2.5 w-2.5 animate-spin motion-reduce:animate-none" />}
-      {s.estado === "esperando_respuesta" ? "te pregunta" : ETIQUETA[s.estado].toLowerCase()}
+      {s.estado === "esperando_respuesta" ? "te pregunta" : s.estado === "terminado" && avance.total ? `${avance.enPrd}/${avance.total} en PRD` : ETIQUETA[s.estado].toLowerCase()}
       {s.progreso && activo(s.estado) && ` ${porcentaje(s.progreso)}%`}
     </span>
   );
@@ -124,12 +143,14 @@ export function BarraClaudeMini({ ticketId }: { ticketId: string }) {
   return <span className="mt-1 block"><Barra estado={s.estado} pct={porcentaje(s.progreso)} alto="h-1" /></span>;
 }
 
-export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado }: {
+export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado, onListo }: {
   ticketId: string;
   issue: { numero: number; url: string };
   /** Llegó desde el grito de GeorgIA: bajar al cuadro de respuesta y dejar el cursor ahí. */
   enfocar?: boolean;
   onEnfocado?: () => void;
+  /** Todos los PRs llegaron a PRD: el registro ya cambió, hay que releerlo. */
+  onListo?: () => void;
 }) {
   const qc = useQueryClient();
   const clave = ["claude-seguimiento", ticketId];
@@ -138,6 +159,12 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
   const cuadro = useRef<HTMLDivElement>(null);
   const campo = useRef<HTMLTextAreaElement>(null);
   const cargado = !!q.data;
+  const listo = !!q.data?.listoParaCerrar;
+  useEffect(() => {
+    if (listo) onListo?.();
+    // Solo al pasar a listo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listo]);
   useEffect(() => {
     if (!enfocar || !cargado) return;
     // Un respiro para que el panel termine de entrar antes de desplazar.
@@ -205,12 +232,32 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
       )}
 
       {s && s.prs.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {s.prs.map((u) => (
-            <a key={u} href={u} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-medium text-primary hover:bg-muted">
-              <GitPullRequest className="h-3 w-3" /> {u.replace("https://github.com/", "").replace("/pull/", "#")}
-            </a>
-          ))}
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap gap-1.5">
+            {s.prs.map((p) => (
+              <a
+                key={p.url}
+                href={p.url}
+                target="_blank"
+                rel="noreferrer"
+                title={p.titulo || undefined}
+                className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-medium text-primary hover:bg-muted"
+              >
+                <GitPullRequest className="h-3 w-3" /> {p.repo}#{p.numero}
+                <span className={cn("font-normal", COLOR_PR[p.estado])}>· {ETIQUETA_PR[p.estado]}</span>
+              </a>
+            ))}
+          </div>
+          {s.estado !== "trabajando" && s.estado !== "en_cola" && (() => {
+            const a = avancePrs(s.prs);
+            return a.total > 0 && (
+              <p className={cn("text-[11px]", s.listoParaCerrar ? "font-medium text-emerald-700 dark:text-emerald-300" : "text-muted-foreground")}>
+                {s.listoParaCerrar
+                  ? "Todo en PRD: ya puedes cerrar el ticket."
+                  : `${a.enPrd} de ${a.total} PR${a.total === 1 ? "" : "s"} en PRD. El cierre se habilita cuando estén todos.`}
+              </p>
+            );
+          })()}
         </div>
       )}
 

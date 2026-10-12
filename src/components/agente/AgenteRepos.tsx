@@ -143,19 +143,26 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
     if (!permisos.tickets || !email) return;
     const revisar = async () => {
       if (document.hidden) return;
-      const enviados = (await misEnviados(email).catch(() => [])).filter((e) => e.issue && !e.prs.length && !e.cerrado);
+      const enviados = (await misEnviados(email).catch(() => [])).filter((e) => e.issue && !e.listo && !e.cerrado);
       const esperando: { ticketId: string; folio: string; pregunta: number }[] = [];
+      // También detecta lo que llegó a PRD con el dashboard cerrado u oculto.
+      const listos: TicketEnviado[] = [];
       for (const e of enviados) {
         const s = await qc.fetchQuery({
           queryKey: ["claude-seguimiento", e.ticketId],
           queryFn: () => seguimientoClaude(e.ticketId),
           staleTime: 60_000,
         }).catch(() => null);
+        if (s?.listoParaCerrar) {
+          listos.push({ ...e, listo: true });
+          continue;
+        }
         if (s?.estado !== "esperando_respuesta") continue;
         const pregunta = [...s.mensajes].reverse().find((m) => m.esPregunta)?.id ?? 0;
         esperando.push({ ticketId: e.ticketId, folio: e.folio, pregunta });
       }
       setPorResponder(esperando);
+      if (listos.length) window.dispatchEvent(new CustomEvent(EVENTO_TICKETS_LISTOS, { detail: { tickets: listos } }));
       const avisadas = leerAvisadas();
       const nuevas = esperando.filter((x) => !avisadas.includes(`${x.ticketId}:${x.pregunta}`));
       if (nuevas.length && !abiertoRef.current) {
