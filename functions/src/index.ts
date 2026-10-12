@@ -344,7 +344,7 @@ export const agenteMandarAClaude = onCall<{ ticketId: string; md: string }>(
  * `agenteClaudeSeguimiento`: en qué va Claude Code con un ticket mandado (estado,
  * avance del checklist, conversación y PRs). Solo el de quien lo mandó.
  */
-export const agenteClaudeSeguimiento = onCall<{ ticketId: string }>(
+export const agenteClaudeSeguimiento = onCall<{ ticketId: string; forzarPrs?: boolean }>(
   {
     region: "us-central1",
     secrets: [GITHUB_TOKEN],
@@ -360,7 +360,7 @@ export const agenteClaudeSeguimiento = onCall<{ ticketId: string }>(
     const issue = await issueDelTicket(usuario.email, ticketId);
     try {
       const gh = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
-      return await seguimientoClaude(gh, issue);
+      return await seguimientoClaude(gh, issue, { email: usuario.email, ticketId, forzarPrs: req.data?.forzarPrs === true });
     } catch (e) {
       console.error("[agenteClaudeSeguimiento]", e);
       throw new HttpsError("unavailable", "No se pudo leer el avance en GitHub.");
@@ -420,8 +420,9 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string }>(
     if (!nota.trim()) throw new HttpsError("invalid-argument", "La nota de seguimiento no puede ir vacía.");
     // Solo se cierra desde aquí lo que ya llegó a PRD por un PR hacia main ligado al ticket.
     const enviado = (await getFirestore().doc(`agente_tickets_enviados/${usuario.email}__${ticketId}`).get()).data();
-    if (!Array.isArray(enviado?.prs) || enviado.prs.length === 0) {
-      throw new HttpsError("failed-precondition", "Este ticket no tiene un PR hacia main en PRD ligado; ciérralo cuando llegue.");
+    // Mandado a Claude: todos sus PRs en PRD. Copiado a mano: algún PR con el trailer en PRD.
+    if (enviado?.issue ? enviado.listoParaCerrar !== true : !Array.isArray(enviado?.prs) || enviado.prs.length === 0) {
+      throw new HttpsError("failed-precondition", "Todavía no están en PRD todos los PRs de este ticket; ciérralo cuando lleguen.");
     }
     try {
       const r = await cerrarTicket(clienteSupabase(SUPABASE_SERVICE_KEY.value()), usuario.email, Number(ticketId), nota);

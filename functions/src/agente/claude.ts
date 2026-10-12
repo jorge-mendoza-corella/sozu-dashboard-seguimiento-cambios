@@ -14,6 +14,7 @@ import type { Octokit } from "@octokit/rest";
 import { getFirestore } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
 import { ORQUESTADOR } from "./mandar.js";
+import { estadoPrsTicket, type PrClaude } from "./prsTicket.js";
 
 export type EstadoClaude = "en_cola" | "trabajando" | "esperando_respuesta" | "terminado" | "error";
 
@@ -35,7 +36,10 @@ export interface SeguimientoClaude {
   runUrl: string | null;
   issueUrl: string;
   mensajes: MensajeClaude[];
-  prs: string[];
+  /** PRs que Claude abrió, con en qué van (abierto, en dev, en main, en PRD). */
+  prs: PrClaude[];
+  /** Todos los PRs vigentes ya están en PRD: se puede cerrar el ticket. */
+  listoParaCerrar: boolean;
   revisado: string;
 }
 
@@ -56,7 +60,11 @@ export async function issueDelTicket(email: string, ticketId: string): Promise<{
   return { numero: Number(x.issue.numero), url: String(x.issue.url) };
 }
 
-export async function seguimientoClaude(gh: Octokit, issue: { numero: number; url: string }): Promise<SeguimientoClaude> {
+export async function seguimientoClaude(
+  gh: Octokit,
+  issue: { numero: number; url: string },
+  quien: { email: string; ticketId: string; forzarPrs?: boolean },
+): Promise<SeguimientoClaude> {
   const [{ data: datosIssue }, comentarios, { data: runs }] = await Promise.all([
     gh.issues.get({ ...ORQUESTADOR, issue_number: issue.numero }),
     gh.paginate(gh.issues.listComments, { ...ORQUESTADOR, issue_number: issue.numero, per_page: 100 }),
@@ -107,10 +115,14 @@ export async function seguimientoClaude(gh: Octokit, issue: { numero: number; ur
     if (total) progreso = { hechos, total };
   }
 
-  const prs = [...new Set(
+  const urls = [...new Set(
     mensajes.filter((m) => m.autor === "claude")
       .flatMap((m) => m.cuerpo.match(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g) ?? []),
   )];
+  // Mientras Claude trabaja los PRs cambian a cada rato: se revisan al terminar.
+  const prsEstado = estado === "trabajando" || estado === "en_cola"
+    ? { prs: urls.map((url) => prDeUrl(url)).filter((p): p is PrClaude => !!p), listo: false }
+    : await estadoPrsTicket(gh, quien.email, quien.ticketId, urls, quien.forzarPrs);
 
   return {
     estado,
@@ -118,9 +130,16 @@ export async function seguimientoClaude(gh: Octokit, issue: { numero: number; ur
     runUrl: run?.html_url ?? null,
     issueUrl: issue.url,
     mensajes,
-    prs,
+    prs: prsEstado.prs,
+    listoParaCerrar: prsEstado.listo,
     revisado: new Date().toISOString(),
   };
+}
+
+/** PR sin consultar a GitHub (mientras Claude sigue trabajando). */
+function prDeUrl(url: string): PrClaude | null {
+  const m = url.match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/);
+  return m ? { url, owner: m[1], repo: m[2], numero: Number(m[3]), titulo: "", estado: "abierto", prMain: null } : null;
 }
 
 /** Comenta en el issue con @claude: dispara otra corrida con la respuesta. */

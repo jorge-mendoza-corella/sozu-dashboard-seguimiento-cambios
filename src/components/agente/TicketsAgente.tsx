@@ -164,8 +164,8 @@ export function TicketsAgente({
                 <span className="flex items-center gap-1.5">
                   <span className="font-mono text-[10px] text-muted-foreground">{t.folio}</span>
                   {t.prioridad && <span className={cn("rounded px-1 text-[9px] font-semibold uppercase", COLOR_PRIORIDAD[t.prioridad])}>{t.prioridad}</span>}
-                  {env && (env.prs.length
-                    ? <span className="rounded bg-violet-100 px-1 text-[9px] font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300" title="Ya llegó a PRD">en PRD</span>
+                  {env && (env.listo
+                    ? <span className="rounded bg-emerald-100 px-1 text-[9px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" title="Todo en PRD: ya se puede cerrar">en PRD</span>
                     : env.issue
                       ? <EstadoClaudeMini ticketId={t.id} />
                       : <span className="rounded bg-violet-100 px-1 text-[9px] font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300" title="Se copió el .md para Claude">en Claude</span>)}
@@ -175,7 +175,7 @@ export function TicketsAgente({
                 <span className="block truncate text-[10px] text-muted-foreground">
                   {t.abiertoPor ?? "—"} · {fechaTicket(t.abiertoEn, "dia")}
                 </span>
-                {env?.issue && !env.prs.length && <BarraClaudeMini ticketId={t.id} />}
+                {env?.issue && !env.listo && <BarraClaudeMini ticketId={t.id} />}
               </button>
             );
           })}
@@ -347,16 +347,18 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
           </p>
           <h2 className="mt-1 text-lg font-semibold leading-snug">{t.titulo}</h2>
         </div>
-        {/* Solo se cierra desde aquí si ya hay un PR hacia main con este ticket en PRD. */}
+        {/* Solo se cierra cuando todo lo del ticket está en PRD (ver `listo`). */}
         <button
           type="button"
           onClick={onCerrar}
-          disabled={!enviado?.prs.length}
+          disabled={!enviado?.listo}
           className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-emerald-500/50 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-border disabled:bg-muted disabled:text-muted-foreground dark:bg-emerald-950/30 dark:text-emerald-300"
           title={
-            enviado?.prs.length
+            enviado?.listo
               ? "Pasar el ticket a Resuelto en el portal, con nota de seguimiento"
-              : "Se habilita cuando un PR hacia main con este ticket (trailer Ticket-SOZU) llegue a PRD"
+              : enviado?.issue
+                ? "Se habilita cuando TODOS los PRs que abrió Claude para este ticket estén en PRD"
+                : "Se habilita cuando un PR hacia main con este ticket (trailer Ticket-SOZU) llegue a PRD"
           }
         >
           <CheckCircle2 className="h-4 w-4" /> Cerrar ticket
@@ -383,7 +385,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
             <span className="block text-[11px] text-muted-foreground">Todos → Mis tickets → folio {t.numero}. Necesitas tener sesión iniciada en el admin.</span>
           </Dato>
         )}
-        {enviado && enviado.prs.length > 0 && (
+        {enviado?.listo && enviado.prs.length > 0 && (
           <Dato icono={FolderGit2} etiqueta="En PRD">
             {enviado.prs.map((p) => (
               <a key={`${p.repo}${p.pr}`} href={p.url} target="_blank" rel="noreferrer" className="mr-2 text-primary hover:underline">{p.repo} #{p.pr}</a>
@@ -466,7 +468,15 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
             </button>
           ))}
         </div>
-        {issue && <SeguimientoClaude ticketId={t.id} issue={issue} enfocar={enfocarRespuesta} onEnfocado={onRespuestaEnfocada} />}
+        {issue && (
+          <SeguimientoClaude
+            ticketId={t.id}
+            issue={issue}
+            enfocar={enfocarRespuesta}
+            onEnfocado={onRespuestaEnfocada}
+            onListo={enviado?.listo ? undefined : onEnviado}
+          />
+        )}
         {confirmar && !issue && <p className="mt-2 text-[11px] text-muted-foreground">Se manda el .md de abajo tal como está (con tus ediciones). Usa la ventana de 5 h de tu plan.</p>}
         {errorMandar && <p className="mt-2 text-xs text-destructive">{errorMandar}</p>}
       </div>
@@ -576,6 +586,9 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
   onCerrado: () => void;
 }) {
   const [nota, setNota] = useState(() => (enviado?.prs.length ? notaDeCierre(enviado.prs) : "Listo, favor de validar.\n\n- "));
+  // Puede haber cambios que no pasaron por aquí (otro PR, un ajuste a mano): se
+  // pide confirmar que ya se revisó todo, viendo qué fue lo que llegó a PRD.
+  const [revisado, setRevisado] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hecho, setHecho] = useState<string | null>(null);
@@ -611,6 +624,28 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
             </p>
           ) : (
             <>
+              {enviado && enviado.prs.length > 0 && (
+                <div className="mt-4 rounded-lg border bg-muted/20 p-3">
+                  <p className="text-xs font-medium">Se pasó a PRD:</p>
+                  <ul className="mt-1.5 space-y-1">
+                    {enviado.prs.map((p) => (
+                      <li key={`${p.repo}${p.pr}`} className="flex items-center gap-1.5 text-xs">
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                        <a href={p.url} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">{p.repo} #{p.pr}</a>
+                        <span className="truncate text-muted-foreground">{p.cambios[0]}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-amber-400/60 bg-amber-50 p-2.5 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                <input type="checkbox" checked={revisado} onChange={(e) => setRevisado(e.target.checked)} className="mt-0.5 h-3.5 w-3.5 accent-emerald-600" />
+                <span>
+                  Ya revisé que no falta nada: {enviado && enviado.prs.length > 0
+                    ? <>lo de arriba ({enviado.prs.map((p) => `${p.repo} #${p.pr}`).join(", ")}) es todo lo del ticket y ya está en PRD; no hay otro PR pendiente.</>
+                    : <>todos los cambios del ticket ya están en PRD.</>}
+                </span>
+              </label>
               <p className="mt-4 text-xs text-muted-foreground">
                 Pasa a <strong>Resuelto</strong> en el portal y deja esta nota en el seguimiento (a tu nombre). Puntos cortos:
               </p>
@@ -623,7 +658,7 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
               {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
               <div className="mt-4 flex justify-end gap-2">
                 <button type="button" onClick={onCancelar} disabled={enviando} className="h-9 rounded-md px-3 text-sm font-medium hover:bg-muted">No, todavía no</button>
-                <button type="button" onClick={() => void cerrar()} disabled={enviando || !nota.trim()} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:opacity-50">
+                <button type="button" onClick={() => void cerrar()} disabled={enviando || !nota.trim() || !revisado} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:opacity-50">
                   {enviando && <Loader2 className="h-4 w-4 animate-spin" />} Sí, cerrar ticket
                 </button>
               </div>
