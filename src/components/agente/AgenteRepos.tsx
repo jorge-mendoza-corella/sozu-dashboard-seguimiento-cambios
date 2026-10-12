@@ -27,8 +27,10 @@ import {
 import { AgenteVolador, EVENTO_ALERTA_TICKETS, type DetalleAlerta } from "./AgenteVolador";
 import { TicketsAgente } from "./TicketsAgente";
 import {
-  gritosDeCierre, gritosDeTickets, INTERVALO_TICKETS_MS, misTickets, nombreDeEmail, type TicketAgente, type TicketEnviado,
+  gritosDeCierre, gritosDePregunta, gritosDeTickets, INTERVALO_TICKETS_MS, misEnviados, misTickets, nombreDeEmail, seguimientoClaude,
+  type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
+import { useQueryClient } from "@tanstack/react-query";
 import { EVENTO_TICKETS_LISTOS } from "@/lib/festejoDeploy";
 import { useVigiaDeploys } from "@/hooks/useVigiaDeploys";
 import { useAuth } from "@/hooks/useAuth";
@@ -45,6 +47,17 @@ interface Props {
   /** Preferencia guardada en el perfil (`users/{email}.agenteVolador`). */
   personajeVisible?: boolean;
 }
+
+/** Cada cuánto se revisa si Claude Code espera respuesta en algún ticket mandado. */
+const INTERVALO_PREGUNTAS_MS = 2 * 60_000;
+const CLAVE_AVISADAS = "georgia:preguntas-avisadas";
+/** Preguntas de Claude por las que ya se gritó ("<ticketId>:<idComentario>"). */
+const leerAvisadas = (): string[] => {
+  try { return JSON.parse(localStorage.getItem(CLAVE_AVISADAS) ?? "[]") as string[]; } catch { return []; }
+};
+const guardarAvisadas = (v: string[]) => {
+  try { localStorage.setItem(CLAVE_AVISADAS, JSON.stringify(v.slice(-100))); } catch { /* sin storage: puede repetir el grito */ }
+};
 
 export function AgenteRepos({ email, personajeVisible = true }: Props) {
   // El perfil se lee una vez al entrar; el cambio desde Configuración llega por evento.
@@ -121,6 +134,43 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
   }, [permisos.tickets, email]);
   const atenderCierre = useCallback(() => setCerrarAhora(null), []);
 
+  // Claude Code se detuvo a preguntar algo en un ticket mandado: GeorgIA grita
+  // (una vez por pregunta) y su clic lleva directo al cuadro para contestar.
+  const qc = useQueryClient();
+  const [porResponder, setPorResponder] = useState<{ ticketId: string; folio: string }[]>([]);
+  const [responderAhora, setResponderAhora] = useState<string | null>(null);
+  useEffect(() => {
+    if (!permisos.tickets || !email) return;
+    const revisar = async () => {
+      if (document.hidden) return;
+      const enviados = (await misEnviados(email).catch(() => [])).filter((e) => e.issue && !e.prs.length && !e.cerrado);
+      const esperando: { ticketId: string; folio: string; pregunta: number }[] = [];
+      for (const e of enviados) {
+        const s = await qc.fetchQuery({
+          queryKey: ["claude-seguimiento", e.ticketId],
+          queryFn: () => seguimientoClaude(e.ticketId),
+          staleTime: 60_000,
+        }).catch(() => null);
+        if (s?.estado !== "esperando_respuesta") continue;
+        const pregunta = [...s.mensajes].reverse().find((m) => m.esPregunta)?.id ?? 0;
+        esperando.push({ ticketId: e.ticketId, folio: e.folio, pregunta });
+      }
+      setPorResponder(esperando);
+      const avisadas = leerAvisadas();
+      const nuevas = esperando.filter((x) => !avisadas.includes(`${x.ticketId}:${x.pregunta}`));
+      if (nuevas.length && !abiertoRef.current) {
+        guardarAvisadas([...avisadas, ...nuevas.map((x) => `${x.ticketId}:${x.pregunta}`)]);
+        window.dispatchEvent(new CustomEvent<DetalleAlerta>(EVENTO_ALERTA_TICKETS, {
+          detail: { gritos: gritosDePregunta(nuevas.map((x) => x.folio), nombreDeEmail(email)) },
+        }));
+      }
+    };
+    const primera = setTimeout(() => void revisar(), 12_000);
+    const cada = setInterval(() => void revisar(), INTERVALO_PREGUNTAS_MS);
+    return () => { clearTimeout(primera); clearInterval(cada); };
+  }, [permisos.tickets, email, qc]);
+  const atenderRespuesta = useCallback(() => setResponderAhora(null), []);
+
   // Ir a Tickets antes de la primera revisión: se revisa en ese momento.
   const irATickets = () => {
     setPestana("tickets");
@@ -130,8 +180,12 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
   const abrir = (motivo: "chat" | "tickets") => {
     if (motivo === "tickets" && permisos.tickets) {
       irATickets();
-      // Si el grito era de "ya se puede cerrar", se abre directo el cierre.
-      if (porCerrar.length) {
+      // Si Claude espera respuesta, eso va primero: directo al cuadro para contestar.
+      if (porResponder.length) {
+        setResponderAhora(porResponder[0].ticketId);
+        setPorResponder((p) => p.slice(1));
+      } else if (porCerrar.length) {
+        // Si el grito era de "ya se puede cerrar", se abre directo el cierre.
         setCerrarAhora(porCerrar[0].ticketId);
         setPorCerrar((p) => p.slice(1));
       }
@@ -213,6 +267,8 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
                 email={email}
                 cerrarAhora={cerrarAhora}
                 onCerrarAtendido={atenderCierre}
+                responderAhora={responderAhora}
+                onResponderAtendido={atenderRespuesta}
                 tickets={tickets}
                 cargando={cargandoTickets}
                 error={errorTickets}
