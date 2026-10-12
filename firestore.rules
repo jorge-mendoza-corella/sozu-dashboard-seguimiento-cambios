@@ -481,8 +481,8 @@ service cloud.firestore {
       allow write: if esRootVerificado();
     }
 
-    // Investigación previa de cada ticket (repos/rutas/pasos): la escribe la función
-    // `agenteAnalizarTicket`; la leen los usuarios del dashboard.
+    // Investigación previa de cada ticket (repos/rutas/pasos). La escribía la función
+    // `agenteAnalizarTicket` (retirada); queda como solo lectura en el panel.
     match /agente_tickets/{ticketId} {
       allow read: if request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.token.email));
@@ -497,6 +497,19 @@ service cloud.firestore {
       allow create, update: if request.auth != null
         && request.resource.data.owner == request.auth.token.email
         && request.resource.data.ticketId is string
+        && docId == request.auth.token.email + '__' + request.resource.data.ticketId;
+    }
+
+    // .md del ticket editado por cada quien (borrador antes de mandarlo a Claude).
+    // Aparte de los enviados: guardar un borrador no cuenta como mandarlo.
+    // Id = "<email>__<ticketId>": cada quien solo ve y toca los suyos.
+    match /agente_tickets_borradores/{docId} {
+      allow read, delete: if request.auth != null && resource.data.owner == request.auth.token.email;
+      allow create, update: if request.auth != null
+        && request.resource.data.owner == request.auth.token.email
+        && request.resource.data.ticketId is string
+        && request.resource.data.md is string
+        && request.resource.data.md.size() <= 60000
         && docId == request.auth.token.email + '__' + request.resource.data.ticketId;
     }
 

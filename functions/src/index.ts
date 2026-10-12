@@ -21,7 +21,7 @@ import { docPorRuta, indiceDocs, limpiarRuta, obtenerCorpus } from "./agente/doc
 import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.js";
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
 import { cerrarTicket, clienteSupabase, ticketsAsignados } from "./agente/tickets.js";
-import { analizarTicket } from "./agente/analisis.js";
+import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
 import { qrWhatsapp } from "./whatsapp.js";
 
 initializeApp();
@@ -304,49 +304,37 @@ export const agenteTickets = onCall(
 );
 
 /**
- * `agenteAnalizarTicket`: GeorgIA investiga en docs y código en qué repos hay que
- * trabajar un ticket (va en el .md para Claude Code). Se guarda en
- * `agente_tickets/{id}` y se reusa salvo `forzar`. Solo tickets asignados a quien pide.
+ * `agenteMandarAClaude`: abre en el repo orquestador un issue con el .md del
+ * ticket; Claude Code (suscripción, en GitHub Actions) lo trabaja y abre PRs
+ * hacia `dev`. Reemplaza al análisis por API (`agenteAnalizarTicket`), que
+ * costaba en cada ticket: Claude Code ya investiga por su cuenta. Solo tickets
+ * asignados a quien lo manda. Ver agente/mandar.ts.
  */
-export const agenteAnalizarTicket = onCall<{ ticketId: string; forzar?: boolean }>(
+export const agenteMandarAClaude = onCall<{ ticketId: string; md: string }>(
   {
     region: "us-central1",
-    secrets: [ANTHROPIC_API_KEY, GITHUB_TOKEN, GITHUB_DOCS_TOKEN, SUPABASE_SERVICE_KEY],
-    timeoutSeconds: 300,
-    memory: "1GiB",
+    secrets: [GITHUB_TOKEN, SUPABASE_SERVICE_KEY],
+    timeoutSeconds: 60,
+    memory: "512MiB",
     maxInstances: 5,
     cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
   },
   async (req) => {
     const usuario = await verificarAcceso(req, "tickets");
     const ticketId = String(req.data?.ticketId ?? "");
+    const md = typeof req.data?.md === "string" ? req.data.md : "";
     if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
-    const ref = getFirestore().doc(`agente_tickets/${ticketId}`);
-    if (!req.data?.forzar) {
-      const previo = (await ref.get()).data();
-      if (previo?.analisis) return { analisis: previo.analisis, analizadoEn: previo.analizadoEn, desdeCache: true };
-    }
+    if (!md.trim()) throw new HttpsError("invalid-argument", "El .md del ticket viene vacío.");
     const tickets = await ticketsAsignados(clienteSupabase(SUPABASE_SERVICE_KEY.value()), usuario.email);
     const t = tickets.find((x) => x.id === ticketId);
     if (!t) throw new HttpsError("not-found", "Ese ticket no está entre tus pendientes.");
-    await consumirCupo(usuario);
-
-    const ghCodigo = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
-    const ghDocs = GITHUB_DOCS_TOKEN.value() ? new Octokit({ auth: GITHUB_DOCS_TOKEN.value(), userAgent: "sozu-dashboard-agente" }) : ghCodigo;
-    const [corpus, repos] = await Promise.all([obtenerCorpus(ghDocs), reposPermitidos(usuario)]);
-    const system: Anthropic.Beta.BetaTextBlockParam[] = [
-      { type: "text", text: INSTRUCCIONES },
-      { type: "text", text: bloqueDocs(indiceDocs(corpus), corpus.sha) },
-      { type: "text", text: bloqueRepos(repos), cache_control: { type: "ephemeral" } },
-    ];
+    const repos = await reposPermitidos(usuario);
     try {
-      const analisis = await analizarTicket(ANTHROPIC_API_KEY.value(), { ghDocs, ghCodigo, repos }, system, t);
-      const analizadoEn = new Date().toISOString();
-      await ref.set({ numero: t.numero, titulo: t.titulo, analisis, analizadoEn, por: usuario.email }, { merge: true });
-      return { analisis, analizadoEn, desdeCache: false };
+      const gh = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
+      return await mandarAClaude(gh, usuario.email, t, md, repos);
     } catch (e) {
-      console.error("[agenteAnalizarTicket]", e);
-      throw new HttpsError("unavailable", "GeorgIA no pudo terminar la investigación. Intenta de nuevo.");
+      console.error("[agenteMandarAClaude]", e);
+      throw new HttpsError("unavailable", `No se pudo abrir el issue en ${ORQUESTADOR.owner}/${ORQUESTADOR.repo}.`);
     }
   },
 );
