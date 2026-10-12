@@ -9,7 +9,7 @@
  * botón para cerrar el ticket en el portal. La investigación por API ya no corre;
  * la que algún ticket ya tenga se muestra como solo lectura.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -33,6 +33,9 @@ interface Props {
   error: string | null;
   revisado: string | null;
   onRefrescar: () => void;
+  /** Ticket donde Claude espera respuesta: se abre y se enfoca el cuadro para contestar. */
+  responderAhora: string | null;
+  onResponderAtendido: () => void;
   /** Ticket cuyo diálogo de cierre hay que abrir (GeorgIA avisó que ya está en PRD). */
   cerrarAhora: string | null;
   onCerrarAtendido: () => void;
@@ -50,7 +53,9 @@ const COLOR_PRIORIDAD: Record<string, string> = {
 const sinAcentos = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const unicos = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))].sort();
 
-export function TicketsAgente({ email, tickets, cargando, error, revisado, onRefrescar, cerrarAhora, onCerrarAtendido }: Props) {
+export function TicketsAgente({
+  email, tickets, cargando, error, revisado, onRefrescar, cerrarAhora, onCerrarAtendido, responderAhora, onResponderAtendido,
+}: Props) {
   const [elegido, setElegido] = useState<string | null>(null);
   const [fPipeline, setFPipeline] = useState("");
   const [fEtapa, setFEtapa] = useState("");
@@ -82,7 +87,15 @@ export function TicketsAgente({ email, tickets, cargando, error, revisado, onRef
       (!q || sinAcentos(`${t.folio} ${t.titulo} ${t.abiertoPor ?? ""} ${t.descripcion}`).includes(q)));
   }, [tickets, fPipeline, fEtapa, fPrioridad, fTexto]);
 
-  const actual = filtrados.find((t) => t.id === (elegido ?? cerrarAhora)) ?? filtrados[0] ?? null;
+  // Lo que pide GeorgIA (contestar o cerrar) manda sobre lo elegido a mano. Se
+  // busca en todos los tickets, no solo en los filtrados: un filtro no lo esconde.
+  const pedidoPorGeorgia = responderAhora ?? cerrarAhora;
+  const actual = (pedidoPorGeorgia && (tickets ?? []).find((t) => t.id === pedidoPorGeorgia))
+    || filtrados.find((t) => t.id === elegido) || filtrados[0] || null;
+  const respuestaAtendida = useCallback(() => {
+    if (responderAhora) setElegido(responderAhora);
+    onResponderAtendido();
+  }, [responderAhora, onResponderAtendido]);
   const enviadoDe = (t: TicketAgente) => enviados.find((e) => e.ticketId === t.id) ?? null;
   const claseSelect = "h-7 min-w-0 flex-1 rounded-md border bg-background px-1.5 text-[11px]";
 
@@ -91,7 +104,7 @@ export function TicketsAgente({ email, tickets, cargando, error, revisado, onRef
       <aside
         className={cn(
           "min-h-0 flex-1 flex-col md:flex md:w-80 md:flex-none md:border-r",
-          detalleMovil || cerrarAhora ? "hidden" : "flex",
+          detalleMovil || pedidoPorGeorgia ? "hidden" : "flex",
         )}
       >
         <div className="flex h-11 items-center gap-2 border-b px-3 text-xs text-muted-foreground">
@@ -172,7 +185,7 @@ export function TicketsAgente({ email, tickets, cargando, error, revisado, onRef
       <section
         className={cn(
           "min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 md:block md:py-5",
-          detalleMovil || cerrarAhora ? "block" : "hidden",
+          detalleMovil || pedidoPorGeorgia ? "block" : "hidden",
         )}
       >
         {/* Regresar a la lista (solo celular). */}
@@ -191,6 +204,8 @@ export function TicketsAgente({ email, tickets, cargando, error, revisado, onRef
             enviado={enviadoDe(actual)}
             onEnviado={() => misEnviados(email).then(setEnviados).catch(() => {})}
             onCerrar={() => setCerrando(actual)}
+            enfocarRespuesta={actual.id === responderAhora}
+            onRespuestaEnfocada={respuestaAtendida}
           />
         ) : !cargando && !error && <p className="py-10 text-center text-sm text-muted-foreground">Elige un ticket.</p>}
       </section>
@@ -231,12 +246,14 @@ const guardarBorrador = (id: string, v: string | null) => {
 /** Se guarda en Firestore cuando dejas de escribir por este tiempo. */
 const GUARDAR_MS = 1_000;
 
-function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
+function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuesta, onRespuestaEnfocada }: {
   t: TicketAgente;
   email: string;
   enviado: TicketEnviado | null;
   onEnviado: () => void;
   onCerrar: () => void;
+  enfocarRespuesta: boolean;
+  onRespuestaEnfocada: () => void;
 }) {
   const [analisis, setAnalisis] = useState<AnalisisTicket | null>(null);
   const [cargandoAnalisis, setCargandoAnalisis] = useState(true);
@@ -449,7 +466,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
             </button>
           ))}
         </div>
-        {issue && <SeguimientoClaude ticketId={t.id} issue={issue} />}
+        {issue && <SeguimientoClaude ticketId={t.id} issue={issue} enfocar={enfocarRespuesta} onEnfocado={onRespuestaEnfocada} />}
         {confirmar && !issue && <p className="mt-2 text-[11px] text-muted-foreground">Se manda el .md de abajo tal como está (con tus ediciones). Usa la ventana de 5 h de tu plan.</p>}
         {errorMandar && <p className="mt-2 text-xs text-destructive">{errorMandar}</p>}
       </div>

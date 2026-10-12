@@ -6,7 +6,7 @@
  * Se consulta cada 15 s mientras trabaja y cada minuto en lo demás, solo con el
  * ticket abierto.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -101,7 +101,15 @@ export function EstadoClaudeMini({ ticketId }: { ticketId: string }) {
     return <span className="rounded bg-violet-100 px-1 text-[9px] font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">en Claude</span>;
   }
   return (
-    <span className={cn("inline-flex items-center gap-0.5 rounded px-1 text-[9px] font-semibold", COLOR[s.estado])} title={`Claude Code: ${ETIQUETA[s.estado]}`}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-0.5 rounded px-1 text-[9px] font-semibold",
+        COLOR[s.estado],
+        // Esperando respuesta es lo único que pide algo de ti: que se note.
+        s.estado === "esperando_respuesta" && "animate-pulse ring-1 ring-amber-400 motion-reduce:animate-none",
+      )}
+      title={`Claude Code: ${ETIQUETA[s.estado]}`}
+    >
       {activo(s.estado) && <Loader2 className="h-2.5 w-2.5 animate-spin motion-reduce:animate-none" />}
       {s.estado === "esperando_respuesta" ? "te pregunta" : ETIQUETA[s.estado].toLowerCase()}
       {s.progreso && activo(s.estado) && ` ${porcentaje(s.progreso)}%`}
@@ -116,11 +124,30 @@ export function BarraClaudeMini({ ticketId }: { ticketId: string }) {
   return <span className="mt-1 block"><Barra estado={s.estado} pct={porcentaje(s.progreso)} alto="h-1" /></span>;
 }
 
-export function SeguimientoClaude({ ticketId, issue }: { ticketId: string; issue: { numero: number; url: string } }) {
+export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado }: {
+  ticketId: string;
+  issue: { numero: number; url: string };
+  /** Llegó desde el grito de GeorgIA: bajar al cuadro de respuesta y dejar el cursor ahí. */
+  enfocar?: boolean;
+  onEnfocado?: () => void;
+}) {
   const qc = useQueryClient();
   const clave = ["claude-seguimiento", ticketId];
   const q = useSeguimiento(ticketId);
   const [texto, setTexto] = useState("");
+  const cuadro = useRef<HTMLDivElement>(null);
+  const campo = useRef<HTMLTextAreaElement>(null);
+  const cargado = !!q.data;
+  useEffect(() => {
+    if (!enfocar || !cargado) return;
+    // Un respiro para que el panel termine de entrar antes de desplazar.
+    const t = setTimeout(() => {
+      cuadro.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      campo.current?.focus({ preventScroll: true });
+      onEnfocado?.();
+    }, 350);
+    return () => clearTimeout(t);
+  }, [enfocar, cargado, onEnfocado]);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -195,9 +222,10 @@ export function SeguimientoClaude({ ticketId, issue }: { ticketId: string; issue
         </div>
       )}
 
-      <div className={cn("rounded-lg border p-2", esperando && "border-amber-400 ring-2 ring-amber-300/50 dark:ring-amber-700/40")}>
+      <div ref={cuadro} className={cn("scroll-mt-4 rounded-lg border p-2", esperando && "border-amber-400 ring-2 ring-amber-300/50 dark:ring-amber-700/40")}>
         {esperando && <p className="mb-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">Claude se detuvo a preguntarte algo. Contéstale aquí:</p>}
         <textarea
+          ref={campo}
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
           rows={esperando ? 3 : 2}
