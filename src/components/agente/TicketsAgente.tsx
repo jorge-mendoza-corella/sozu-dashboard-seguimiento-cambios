@@ -22,7 +22,7 @@ import { mensajeDeError } from "@/lib/agenteRepos";
 import { GeorgIAPensando } from "./GeorgIAPensando";
 import { SeguimientoClaude } from "./SeguimientoClaude";
 import {
-  analisisGuardado, cerrarTicketPortal, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
+  analisisGuardado, cerrarTicketPortal, esSoloFecha, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
   type AnalisisTicket, type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
 
@@ -156,7 +156,7 @@ export function TicketsAgente({ email, tickets, cargando, error, revisado, onRef
                 </span>
                 <span className={cn("mt-0.5 block truncate font-medium", actual?.id === t.id && "text-primary")}>{t.titulo}</span>
                 <span className="block truncate text-[10px] text-muted-foreground">
-                  {t.abiertoPor ?? "—"} · {new Date(t.abiertoEn).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+                  {t.abiertoPor ?? "—"} · {fechaTicket(t.abiertoEn, "dia")}
                 </span>
               </button>
             );
@@ -343,7 +343,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
 
       <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
         <Dato icono={User} etiqueta="Abierto por">{t.abiertoPor ?? "—"}</Dato>
-        <Dato icono={FileText} etiqueta="Fecha">{fecha(t.abiertoEn)}</Dato>
+        <Dato icono={FileText} etiqueta="Fecha">{esSoloFecha(t.abiertoEn) ? fechaTicket(t.abiertoEn, "corta") : fecha(t.abiertoEn)}</Dato>
         <Dato icono={Users} etiqueta="Para">
           <span className="flex flex-wrap gap-1">
             {t.asignados.map((a) => (
