@@ -18,7 +18,7 @@
  *   4. Cerrar (`agenteCerrarTicket`) pasa el ticket a Resuelto con la nota.
  */
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { arrayUnion, collection, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
+import { arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where } from "firebase/firestore";
 import { app, db } from "./firebase";
 import { prDeMergeConCommits } from "./github";
 
@@ -194,6 +194,28 @@ ${otras.length ? `\nOtros adjuntos:\n${otras.map((e) => `- ${e.tipo}: ${e.nombre
    El dashboard la usa para saber que el deploy a producción resolvió este ticket.
 4. Abre el PR hacia \`dev\` siguiendo el flujo del repo y resume qué cambiaste, en puntos cortos.
 `;
+}
+
+// ── Borrador del .md ───────────────────────────────────────────────────────
+
+/**
+ * El .md editado se guarda en Firestore (por persona y ticket) para no perderlo
+ * al cambiar de navegador o de equipo. `null` = no hay edición: se usa el generado.
+ */
+const borradorRef = (email: string, ticketId: string) => doc(db, "agente_tickets_borradores", `${email}__${ticketId}`);
+
+export async function leerBorradorMd(email: string, ticketId: string): Promise<string | null> {
+  try {
+    const x = (await getDoc(borradorRef(email, ticketId))).data();
+    return typeof x?.md === "string" ? x.md : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function guardarBorradorMd(email: string, ticketId: string, md: string | null): Promise<void> {
+  if (md === null) await deleteDoc(borradorRef(email, ticketId));
+  else await setDoc(borradorRef(email, ticketId), { owner: email, ticketId, md, editadoEn: serverTimestamp() });
 }
 
 // ── Registro de tickets enviados a Claude ──────────────────────────────────

@@ -9,7 +9,7 @@
  * botón para cerrar el ticket en el portal. La investigación por API ya no corre;
  * la que algún ticket ya tenga se muestra como solo lectura.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import { GeorgIAPensando } from "./GeorgIAPensando";
 import {
-  analisisGuardado, cerrarTicketPortal, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
+  analisisGuardado, cerrarTicketPortal, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
   type AnalisisTicket, type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
 
@@ -212,6 +212,7 @@ function Dato({ icono: Icono, etiqueta, children }: { icono: typeof User; etique
 }
 
 const claveBorrador = (id: string) => `agente-ticket-prompt:${id}`;
+/** Copia local: aparece al instante mientras llega la de Firestore, y cubre si no hay red. */
 const leerBorrador = (id: string) => {
   try { return localStorage.getItem(claveBorrador(id)); } catch { return null; }
 };
@@ -219,8 +220,10 @@ const guardarBorrador = (id: string, v: string | null) => {
   try {
     if (v === null) localStorage.removeItem(claveBorrador(id));
     else localStorage.setItem(claveBorrador(id), v);
-  } catch { /* sin storage: el borrador vive solo en memoria */ }
+  } catch { /* sin storage: queda la copia de Firestore */ }
 };
+/** Se guarda en Firestore cuando dejas de escribir por este tiempo. */
+const GUARDAR_MS = 1_000;
 
 function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
   t: TicketAgente;
@@ -232,6 +235,37 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
   const [analisis, setAnalisis] = useState<AnalisisTicket | null>(null);
   const [cargandoAnalisis, setCargandoAnalisis] = useState(true);
   const [prompt, setPrompt] = useState<string>(() => leerBorrador(t.id) ?? "");
+  const [guardado, setGuardado] = useState<"guardado" | "guardando" | "error" | null>(null);
+  const pendiente = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const tocado = useRef(false);
+
+  // El borrador de Firestore manda sobre el local (puede venir de otro equipo),
+  // salvo que ya hayas empezado a escribir aquí.
+  useEffect(() => {
+    let vivo = true;
+    leerBorradorMd(email, t.id).then((md) => {
+      if (!vivo || tocado.current || md === null) return;
+      setPrompt(md);
+      guardarBorrador(t.id, md);
+      setGuardado("guardado");
+    });
+    return () => { vivo = false; };
+  }, [email, t.id]);
+  useEffect(() => () => clearTimeout(pendiente.current), []);
+
+  const editar = (v: string | null) => {
+    tocado.current = true;
+    setPrompt(v ?? "");
+    guardarBorrador(t.id, v);
+    clearTimeout(pendiente.current);
+    setGuardado("guardando");
+    const persistir = () =>
+      guardarBorradorMd(email, t.id, v)
+        .then(() => setGuardado(v === null ? null : "guardado"))
+        .catch(() => setGuardado("error"));
+    if (v === null) void persistir();
+    else pendiente.current = setTimeout(() => void persistir(), GUARDAR_MS);
+  };
   const [copiado, setCopiado] = useState(false);
   const [confirmar, setConfirmar] = useState(false);
   const [mandando, setMandando] = useState(false);
@@ -417,7 +451,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <h3 className="flex-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Prompt para Claude (.md)</h3>
           {editado && (
-            <button type="button" onClick={() => { setPrompt(""); guardarBorrador(t.id, null); }} className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs text-muted-foreground hover:bg-muted" title="Volver al prompt generado">
+            <button type="button" onClick={() => editar(null)} className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs text-muted-foreground hover:bg-muted" title="Volver al prompt generado">
               <RotateCcw className="h-3 w-3" /> Restaurar
             </button>
           )}
@@ -428,13 +462,15 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar }: {
         </div>
         <textarea
           value={valor}
-          onChange={(e) => { setPrompt(e.target.value); guardarBorrador(t.id, e.target.value); }}
+          onChange={(e) => editar(e.target.value)}
           spellCheck={false}
           rows={18}
           className="w-full resize-y rounded-lg border bg-muted/30 p-3 font-mono text-[12px] leading-relaxed outline-none focus:ring-2 focus:ring-ring"
         />
         <p className="mt-1 text-[11px] text-muted-foreground">
-          {editado ? "Editado: tus cambios se guardan en este navegador." : "Generado del ticket; edítalo libremente antes de mandarlo."}{" "}
+          {editado
+            ? guardado === "guardando" ? "Guardando…" : guardado === "error" ? "No se pudo guardar en la nube; quedó en este navegador." : "Editado: guardado en tu cuenta (lo ves desde cualquier equipo)."
+            : "Generado del ticket; edítalo libremente antes de mandarlo."}{" "}
           Los commits llevarán el trailer <code>Ticket-SOZU</code>: cuando su PR llegue a PRD, GeorgIA te avisa para cerrarlo.
         </p>
       </div>
