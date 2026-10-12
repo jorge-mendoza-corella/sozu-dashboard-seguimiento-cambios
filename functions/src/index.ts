@@ -22,6 +22,7 @@ import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
 import { cerrarTicket, clienteSupabase, ticketsAsignados } from "./agente/tickets.js";
 import { analizarTicket } from "./agente/analisis.js";
+import { qrWhatsapp } from "./whatsapp.js";
 
 initializeApp();
 
@@ -394,4 +395,20 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string }>(
       throw new HttpsError("unavailable", "No se pudo cerrar el ticket en el portal.");
     }
   },
+);
+
+/**
+ * `whatsappQr`: QR para reconectar el WhatsApp (Evolution API) de una empresa
+ * desde el badge rojo de la barra. Si ya está conectada, lo marca en
+ * `whatsappStatus` y no devuelve QR. Ver whatsapp.ts.
+ */
+export const whatsappQr = onCall<{ clientId: string }>(
+  {
+    region: "us-central1",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    maxInstances: 3,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  (req) => qrWhatsapp(req),
 );
