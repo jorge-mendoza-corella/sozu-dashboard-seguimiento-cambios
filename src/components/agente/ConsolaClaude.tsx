@@ -58,6 +58,7 @@ function Lineas({ lineas, enVivo, className }: { lineas: LineaConsola[]; enVivo:
       {lineas.map((l, i) => (
         <p key={`${l.t}-${i}`} className="flex gap-2 whitespace-pre-wrap break-all">
           <span className="shrink-0 text-zinc-600">{hora(l.t)}</span>
+          {l.repo && <span className="shrink-0 self-start rounded bg-zinc-800 px-1 text-[10px] font-semibold text-zinc-300">{l.repo}</span>}
           <span className={COLOR[l.tipo] ?? "text-zinc-300"}>{l.texto}</span>
         </p>
       ))}

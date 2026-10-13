@@ -507,6 +507,8 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
           <div className="rounded-lg border border-violet-300/60 bg-violet-50/60 p-3 dark:border-violet-800/60 dark:bg-violet-950/20">
             <SeguimientoClaude
               ticketId={t.id}
+              folio={t.folio}
+              titulo={t.titulo}
               issue={issue}
               enfocar={enfocarRespuesta}
               onEnfocado={onRespuestaEnfocada}

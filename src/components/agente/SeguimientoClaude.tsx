@@ -16,7 +16,7 @@ import { ConsolaFlotante } from "./ConsolaClaude";
 import { useConsola } from "@/hooks/useConsolaClaude";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import {
-  avancePrs, duracion, MAX_ADJUNTO_MB, responderAClaude, seguimientoClaude, subirAdjunto, tipoAdjunto,
+  avancePrs, duracion, MAX_ADJUNTO_MB, siglaRepo, responderAClaude, seguimientoClaude, subirAdjunto, tipoAdjunto,
   type AdjuntoRespuesta, type EstadoClaude, type EstadoPr, type MensajeClaude,
 } from "@/lib/agenteTickets";
 
@@ -123,6 +123,65 @@ function Mensaje({ m }: { m: MensajeClaude }) {
   );
 }
 
+/**
+ * Qué sesión de Claude Code trabaja este ticket. Corre en GitHub Actions (no en
+ * tu Mac), así que no sale en `claude --resume`; el chip dice cuál es (ticket,
+ * asunto, repos, id) y copia un comando para retomarlo desde la terminal en su
+ * misma rama. La transcripción completa queda como artefacto de la corrida.
+ */
+function SesionClaude({ folio, titulo, issue, sesion, runUrl, repos }: {
+  folio: string;
+  titulo: string;
+  issue: { numero: number; url: string };
+  sesion: string | null;
+  runUrl: string | null;
+  repos: string[];
+}) {
+  const [copiado, setCopiado] = useState(false);
+  const numero = folio.replace(/^#/, "");
+  const siglas = [...new Set(repos.map(siglaRepo))];
+  const corto = titulo.length > 38 ? `${titulo.slice(0, 37)}…` : titulo;
+  const comando = [
+    `# Ticket ${folio} · ${titulo}`,
+    `# issue jorgeIMendoza/sozu-georgia-tareas#${issue.numero}${sesion ? ` · sesión ${sesion}` : ""}${siglas.length ? ` · repos ${siglas.join(" ")}` : ""}`,
+    `gh issue view ${issue.numero} -R jorgeIMendoza/sozu-georgia-tareas --comments`,
+    `claude "Retoma el ticket ${folio} (${titulo}). Contexto: issue jorgeIMendoza/sozu-georgia-tareas#${issue.numero} y sus comentarios (léelos con gh). Rama fix/ticket-${numero} en ${repos.length ? repos.join(", ") : "los repos de sus PRs"}."`,
+  ].join("\n");
+  const copiar = async () => {
+    await navigator.clipboard.writeText(comando);
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 1600);
+  };
+  return (
+    <span className="inline-flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => void copiar()}
+        className="inline-flex max-w-[22rem] items-center gap-1 rounded-md border bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+        title={[
+          `Sesión de Claude Code · ticket ${folio}`,
+          titulo,
+          sesion ? `Id de sesión: ${sesion}` : "El id de sesión llega al terminar la corrida.",
+          siglas.length ? `Repos: ${siglas.join(", ")}` : null,
+          "Corre en GitHub Actions, no en tu Mac. Clic: copia el comando para retomarlo en la terminal.",
+        ].filter(Boolean).join("\n")}
+      >
+        <Terminal className="h-3 w-3 shrink-0" />
+        <span className="font-semibold text-foreground">Sesión {numero}</span>
+        <span className="truncate">· {corto}</span>
+        {siglas.map((x) => <span key={x} className="rounded bg-muted px-1 font-bold">{x}</span>)}
+        {sesion && <span className="font-mono opacity-70">{sesion.slice(0, 8)}</span>}
+        <span className="shrink-0 text-primary">{copiado ? "copiado" : "· copiar"}</span>
+      </button>
+      {runUrl && (
+        <a href={`${runUrl}#artifacts`} target="_blank" rel="noreferrer" className="text-[10px] text-muted-foreground hover:text-foreground hover:underline" title="Transcripción completa de la sesión (artefacto de la corrida, 14 días)">
+          transcripción
+        </a>
+      )}
+    </span>
+  );
+}
+
 /** Misma consulta en la lista y en el detalle: comparten caché y sondeo. */
 function useSeguimiento(ticketId: string) {
   return useQuery({
@@ -208,8 +267,11 @@ export function BarraClaudeMini({ ticketId }: { ticketId: string }) {
   return <span className="mt-1 block"><Barra estado={s.estado} pct={porcentaje(s.progreso, s.estado)} alto="h-1" /></span>;
 }
 
-export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado, onListo }: {
+export function SeguimientoClaude({ ticketId, folio, titulo, issue, enfocar = false, onEnfocado, onListo }: {
   ticketId: string;
+  /** Para ubicar la sesión: "#1274" y el asunto. */
+  folio: string;
+  titulo: string;
   issue: { numero: number; url: string };
   /** Llegó desde el grito de GeorgIA: bajar al cuadro de respuesta y dejar el cursor ahí. */
   enfocar?: boolean;
@@ -379,6 +441,7 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
             corrida <ExternalLink className="h-3 w-3" />
           </a>
         )}
+        <SesionClaude folio={folio} titulo={titulo} issue={issue} sesion={consola.sesion} runUrl={s?.runUrl ?? null} repos={(s?.prs ?? []).map((p) => p.repo)} />
         {s && <span className="ml-auto text-[10px] text-muted-foreground">revisado {hora(s.revisado)}</span>}
       </div>
 
@@ -435,6 +498,7 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
                 title={p.titulo || undefined}
                 className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-medium text-primary hover:bg-muted"
               >
+                <span className="rounded bg-violet-100 px-1 text-[9px] font-bold text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">{siglaRepo(p.repo)}</span>
                 <GitPullRequest className="h-3 w-3" /> {p.repo}#{p.numero}
                 <span className={cn("font-normal", COLOR_PR[p.estado])}>· {ETIQUETA_PR[p.estado]}</span>
               </a>

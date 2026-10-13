@@ -24,7 +24,7 @@ import { cerrarTicket, clienteSupabase, ticketsAsignados } from "./agente/ticket
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
 import { issueDelTicket, responderAClaude, seguimientoClaude, type AdjuntoRespuesta } from "./agente/claude.js";
 import { abrirSubida } from "./agente/adjuntos.js";
-import { abrirConsola, ErrorConsola, finConsola, lineaConsola } from "./agente/consola.js";
+import { abrirConsola, ErrorConsola, finConsola, lineaConsola, sesionConsola } from "./agente/consola.js";
 import { qrWhatsapp } from "./whatsapp.js";
 
 initializeApp();
@@ -433,7 +433,7 @@ export const agenteSubirAdjunto = onCall<{ ticketId: string; nombre: string; tip
  * deploy no tiene. El runner la llama sin sesión (POST {"data": {...}}); la
  * autenticación va en el cuerpo (OIDC de GitHub o la llave). Ver agente/consola.ts.
  */
-export const agenteClaudeLog = onCall<{ accion: string; issue: number; jwt?: string; llave?: string; texto?: string; tipo?: string }>(
+export const agenteClaudeLog = onCall<{ accion: string; issue: number; jwt?: string; llave?: string; texto?: string; tipo?: string; repo?: string }>(
   { region: "us-central1", timeoutSeconds: 30, memory: "256MiB", maxInstances: 10 },
   async (req) => {
     const b = req.data ?? ({} as Record<string, unknown>);
@@ -442,7 +442,8 @@ export const agenteClaudeLog = onCall<{ accion: string; issue: number; jwt?: str
       if (!Number.isInteger(issue) || issue <= 0) throw new ErrorConsola(400, "issue inválido");
       if (b.accion === "abrir") return await abrirConsola(String(b.jwt ?? ""), issue);
       const llave = String(b.llave ?? "");
-      if (b.accion === "linea") await lineaConsola(issue, llave, String(b.texto ?? ""), String(b.tipo ?? ""));
+      if (b.accion === "linea") await lineaConsola(issue, llave, String(b.texto ?? ""), String(b.tipo ?? ""), String(b.repo ?? ""));
+      else if (b.accion === "sesion") await sesionConsola(issue, llave, String(b.texto ?? ""));
       else if (b.accion === "fin") await finConsola(issue, llave);
       else throw new ErrorConsola(400, "accion inválida");
       return { ok: true };

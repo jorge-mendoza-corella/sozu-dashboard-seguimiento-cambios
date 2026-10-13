@@ -68,15 +68,29 @@ async function validar(issue: number, llave: string) {
   }
 }
 
-export async function lineaConsola(issue: number, llave: string, texto: string, tipo: string): Promise<void> {
+export async function lineaConsola(issue: number, llave: string, texto: string, tipo: string, repo = ""): Promise<void> {
   await validar(issue, llave);
-  const linea = { t: Date.now(), tipo: String(tipo).slice(0, 20), texto: String(texto).replace(/\s+/g, " ").trim().slice(0, MAX_TEXTO) };
+  const linea = {
+    t: Date.now(),
+    tipo: String(tipo).slice(0, 20),
+    texto: String(texto).replace(/\s+/g, " ").trim().slice(0, MAX_TEXTO),
+    // Sigla de dos letras del repo (BD, BE, FE…), si la acción toca uno.
+    repo: /^[A-Z0-9]{2}$/.test(repo) ? repo : "",
+  };
   if (!linea.texto) return;
   await getFirestore().runTransaction(async (tx) => {
     const d = (await tx.get(ref(issue))).data() ?? {};
     const lineas = [...(Array.isArray(d.lineas) ? d.lineas : []), linea].slice(-MAX_LINEAS);
     tx.update(ref(issue), { lineas, activo: true });
   });
+}
+
+/** Id de la sesión de Claude Code de esta corrida (para ubicarla en GitHub). */
+export async function sesionConsola(issue: number, llave: string, sesion: string): Promise<void> {
+  await validar(issue, llave);
+  const id = String(sesion).trim();
+  if (!/^[\w-]{8,80}$/.test(id)) return;
+  await ref(issue).update({ sesion: id });
 }
 
 export async function finConsola(issue: number, llave: string): Promise<void> {
