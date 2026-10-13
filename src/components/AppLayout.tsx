@@ -13,7 +13,6 @@ import { canAdminister, isRootAdmin } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
 import { AvancesDraftBadge } from "@/components/AvancesDraftBadge";
 import { ActionsUsoBadge } from "@/components/ActionsUsoBadge";
-import { WhatsappStatusBadge } from "@/components/WhatsappStatusBadge";
 import { RelojHeader } from "@/components/RelojHeader";
 import { useNuevaVersion } from "@/hooks/useNuevaVersion";
 import { BuildNotifier } from "@/components/codemagic/BuildNotifier";
@@ -162,9 +161,6 @@ export function AppLayout({ children }: Props) {
             <ActionsUsoBadge appUser={appUser} />
           </nav>
           <div className="ml-auto flex items-center gap-3">
-            {/* Conexión de WhatsApp (Evolution API): fuera del <nav> para que
-                también se vea en móvil, donde el rojo importa igual. */}
-            <WhatsappStatusBadge appUser={appUser} />
             {/* Fecha y hora; al pasar el mouse, reloj de manecillas estilo macOS. */}
             <RelojHeader />
             {hayVersionNueva ? (
