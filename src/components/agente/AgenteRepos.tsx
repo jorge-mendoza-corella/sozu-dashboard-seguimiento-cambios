@@ -28,8 +28,9 @@ import { AgenteVolador, EVENTO_ALERTA_TICKETS, type DetalleAlerta } from "./Agen
 import { TicketsAgente } from "./TicketsAgente";
 import {
   gritosDeCierre, gritosDePregunta, gritosDeTickets, INTERVALO_TICKETS_MS, misEnviados, misTickets, nombreDeEmail, seguimientoClaude,
-  type TicketAgente, type TicketEnviado,
+  type EstadoClaude, type SeguimientoClaude, type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
+import { pitido } from "@/lib/sonido";
 import { useQueryClient } from "@tanstack/react-query";
 import { EVENTO_TICKETS_LISTOS } from "@/lib/festejoDeploy";
 import { useVigiaDeploys } from "@/hooks/useVigiaDeploys";
@@ -50,6 +51,8 @@ interface Props {
 
 /** Cada cuánto se revisa si Claude Code espera respuesta en algún ticket mandado. */
 const INTERVALO_PREGUNTAS_MS = 2 * 60_000;
+/** Con Claude trabajando en algún ticket: para avisar en cuanto termine. */
+const INTERVALO_ACTIVO_MS = 20_000;
 const CLAVE_AVISADAS = "georgia:preguntas-avisadas";
 /** Preguntas de Claude por las que ya se gritó ("<ticketId>:<idComentario>"). */
 const leerAvisadas = (): string[] => {
@@ -139,11 +142,15 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
   const qc = useQueryClient();
   const [porResponder, setPorResponder] = useState<{ ticketId: string; folio: string }[]>([]);
   const [responderAhora, setResponderAhora] = useState<string | null>(null);
+  const foliosRef = useRef(new Map<string, string>());
   useEffect(() => {
     if (!permisos.tickets || !email) return;
+    let hayActivo = false;
     const revisar = async () => {
       if (document.hidden) return;
       const enviados = (await misEnviados(email).catch(() => [])).filter((e) => e.issue && !e.listo && !e.cerrado);
+      for (const e of enviados) foliosRef.current.set(e.ticketId, e.folio);
+      hayActivo = false;
       const esperando: { ticketId: string; folio: string; pregunta: number }[] = [];
       // También detecta lo que llegó a PRD con el dashboard cerrado u oculto.
       const listos: TicketEnviado[] = [];
@@ -151,8 +158,9 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
         const s = await qc.fetchQuery({
           queryKey: ["claude-seguimiento", e.ticketId],
           queryFn: () => seguimientoClaude(e.ticketId),
-          staleTime: 60_000,
+          staleTime: 15_000,
         }).catch(() => null);
+        if (s?.estado === "trabajando" || s?.estado === "en_cola") hayActivo = true;
         if (s?.listoParaCerrar) {
           listos.push({ ...e, listo: true });
           continue;
@@ -172,9 +180,45 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
         }));
       }
     };
-    const primera = setTimeout(() => void revisar(), 12_000);
-    const cada = setInterval(() => void revisar(), INTERVALO_PREGUNTAS_MS);
-    return () => { clearTimeout(primera); clearInterval(cada); };
+    // Mientras Claude trabaja en algún ticket se revisa cada 20 s (para avisar
+    // en cuanto termine); si no, cada 2 min.
+    let siguiente = setTimeout(function ciclo() {
+      void revisar().finally(() => {
+        siguiente = setTimeout(ciclo, hayActivo ? INTERVALO_ACTIVO_MS : INTERVALO_PREGUNTAS_MS);
+      });
+    }, 12_000);
+    return () => clearTimeout(siguiente);
+  }, [permisos.tickets, email, qc]);
+
+  // Pitido (y grito de GeorgIA) cuando una corrida de Claude termina. Se mira el
+  // caché, que alimentan el panel abierto y la revisión de arriba: suena una
+  // sola vez por corrida, venga de donde venga el dato.
+  useEffect(() => {
+    if (!permisos.tickets || !email) return;
+    const previo = new Map<string, EstadoClaude>();
+    return qc.getQueryCache().subscribe((ev) => {
+      if (ev.type !== "updated" || ev.query.queryKey[0] !== "claude-seguimiento") return;
+      const id = String(ev.query.queryKey[1]);
+      const s = ev.query.state.data as SeguimientoClaude | undefined;
+      if (!s) return;
+      const antes = previo.get(id);
+      previo.set(id, s.estado);
+      const estabaActivo = antes === "trabajando" || antes === "en_cola";
+      if (!estabaActivo || s.estado === "trabajando" || s.estado === "en_cola") return;
+      const folio = foliosRef.current.get(id) ?? "el ticket";
+      const nombre = nombreDeEmail(email);
+      pitido(s.estado === "terminado" ? "listo" : s.estado === "error" ? "error" : "pregunta");
+      // La pregunta ya la grita la revisión de arriba; aquí terminado o falló.
+      if (s.estado === "terminado" || s.estado === "error") {
+        window.dispatchEvent(new CustomEvent<DetalleAlerta>(EVENTO_ALERTA_TICKETS, {
+          detail: {
+            gritos: s.estado === "terminado"
+              ? [`¡${nombre}! Claude terminó ${folio}`, "¡Ya quedó, revisa los PRs!", `¡Listo ${folio}, ${nombre}!`]
+              : [`¡${nombre}! Claude falló en ${folio}`, "¡Algo tronó en la corrida!", "¡Dame clic y lo revisas!"],
+          },
+        }));
+      }
+    });
   }, [permisos.tickets, email, qc]);
   const atenderRespuesta = useCallback(() => setResponderAhora(null), []);
 

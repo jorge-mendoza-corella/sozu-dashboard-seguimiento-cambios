@@ -102,15 +102,24 @@ export async function seguimientoClaude(
   });
 
   // Corridas de este issue: issues y issue_comment llevan el título del issue.
-  const run = runs.workflow_runs.find((r) => r.display_title === datosIssue.title) ?? null;
-  const corriendo = run && (run.status === "queued" || run.status === "in_progress" || run.status === "waiting" || run.status === "pending");
+  // El comentario de avance que crea Claude dispara otra corrida que se queda
+  // pendiente detrás de la actual (y luego se salta): la más nueva no es la que
+  // trabaja. Manda la que está en curso; si no hay, la pendiente; si no, la
+  // última que terminó sin saltarse.
+  const delIssue = runs.workflow_runs.filter((r) => r.display_title === datosIssue.title);
+  const enEspera = (st: string | null) => st === "queued" || st === "waiting" || st === "pending" || st === "requested";
+  const enCurso = delIssue.find((r) => r.status === "in_progress") ?? null;
+  const pendiente = delIssue.find((r) => enEspera(r.status)) ?? null;
+  const terminada = delIssue.find((r) => r.status === "completed" && r.conclusion !== "skipped") ?? null;
+  const run = enCurso ?? pendiente ?? terminada;
+  const corriendo = !!(enCurso || pendiente);
   const seguimiento = [...mensajes].reverse().find((m) => m.esSeguimiento) ?? null;
   const ultimoHumano = [...mensajes].reverse().find((m) => m.autor === "persona") ?? null;
   const ultimaPregunta = [...mensajes].reverse().find((m) => m.esPregunta) ?? null;
 
   let estado: EstadoClaude;
   if (corriendo) {
-    estado = run.status === "in_progress" ? "trabajando" : "en_cola";
+    estado = enCurso ? "trabajando" : "en_cola";
   } else if (!run && !seguimiento) {
     estado = "en_cola";
   } else if (ultimaPregunta && (!ultimoHumano || ultimoHumano.fecha < ultimaPregunta.fecha)) {
@@ -124,7 +133,10 @@ export async function seguimientoClaude(
   }
 
   let progreso: SeguimientoClaude["progreso"] = null;
-  if (seguimiento) {
+  // Con una corrida activa, el checklist solo cuenta si es de ESA corrida (uno
+  // de la anterior está completo y pintaría 100% mientras sigue trabajando).
+  const checklistVigente = !seguimiento || !corriendo || !run?.created_at || seguimiento.fecha >= run.created_at;
+  if (seguimiento && checklistVigente) {
     const hechos = (seguimiento.cuerpo.match(/^\s*- \[x\]/gim) ?? []).length;
     const total = hechos + (seguimiento.cuerpo.match(/^\s*- \[ \]/gm) ?? []).length;
     if (total) progreso = { hechos, total };
