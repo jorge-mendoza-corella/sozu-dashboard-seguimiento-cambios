@@ -24,10 +24,10 @@ import {
   MAX_TITULO, mensajeDeError, permisosAgente, preguntar, renombrarConversacion, SUGERENCIAS,
   type ConversacionAgente, type DocumentoAgente, type HerramientaUsada, type MensajeAgente, type PermisosAgente,
 } from "@/lib/agenteRepos";
-import { AgenteVolador, EVENTO_ALERTA_TICKETS, type DetalleAlerta } from "./AgenteVolador";
+import { AgenteVolador, EVENTO_ALERTA_TICKETS, EVENTO_CLAUDE, type DetalleAlerta, type DetalleClaude } from "./AgenteVolador";
 import { TicketsAgente } from "./TicketsAgente";
 import {
-  gritosDeCierre, gritosDePregunta, gritosDeTickets, INTERVALO_TICKETS_MS, misEnviados, misTickets, nombreDeEmail, seguimientoClaude,
+  gritosDeCierre, gritosDeTickets, INTERVALO_TICKETS_MS, misEnviados, misTickets, nombreDeEmail, seguimientoClaude,
   type EstadoClaude, type SeguimientoClaude, type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
 import { pitido } from "@/lib/sonido";
@@ -175,19 +175,28 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
       const nuevas = esperando.filter((x) => !avisadas.includes(`${x.ticketId}:${x.pregunta}`));
       if (nuevas.length && !abiertoRef.current) {
         guardarAvisadas([...avisadas, ...nuevas.map((x) => `${x.ticketId}:${x.pregunta}`)]);
-        window.dispatchEvent(new CustomEvent<DetalleAlerta>(EVENTO_ALERTA_TICKETS, {
-          detail: { gritos: gritosDePregunta(nuevas.map((x) => x.folio), nombreDeEmail(email)) },
+        // Escena de pregunta: GeorgIA baja con el "?" y se queda hasta el clic.
+        window.dispatchEvent(new CustomEvent<DetalleClaude>(EVENTO_CLAUDE, {
+          detail: { resultado: "pregunta", folio: nuevas.map((x) => x.folio).join(", "), nombre: nombreDeEmail(email) },
         }));
       }
     };
     // Mientras Claude trabaja en algún ticket se revisa cada 20 s (para avisar
-    // en cuanto termine); si no, cada 2 min.
+    // en cuanto termine); si no, cada 2 min. Con la pestaña oculta no se revisa:
+    // al volver a ella se revisa en ese momento.
     let siguiente = setTimeout(function ciclo() {
       void revisar().finally(() => {
         siguiente = setTimeout(ciclo, hayActivo ? INTERVALO_ACTIVO_MS : INTERVALO_PREGUNTAS_MS);
       });
     }, 12_000);
-    return () => clearTimeout(siguiente);
+    const alVolver = () => {
+      if (!document.hidden) void revisar();
+    };
+    document.addEventListener("visibilitychange", alVolver);
+    return () => {
+      clearTimeout(siguiente);
+      document.removeEventListener("visibilitychange", alVolver);
+    };
   }, [permisos.tickets, email, qc]);
 
   // Pitido (y grito de GeorgIA) cuando una corrida de Claude termina. Se mira el
@@ -208,14 +217,11 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
       const folio = foliosRef.current.get(id) ?? "el ticket";
       const nombre = nombreDeEmail(email);
       pitido(s.estado === "terminado" ? "listo" : s.estado === "error" ? "error" : "pregunta");
-      // La pregunta ya la grita la revisión de arriba; aquí terminado o falló.
+      // Escena de GeorgIA: celebra o se sacude. La pregunta la actúa la revisión
+      // de arriba (una vez por pregunta).
       if (s.estado === "terminado" || s.estado === "error") {
-        window.dispatchEvent(new CustomEvent<DetalleAlerta>(EVENTO_ALERTA_TICKETS, {
-          detail: {
-            gritos: s.estado === "terminado"
-              ? [`¡${nombre}! Claude terminó ${folio}`, "¡Ya quedó, revisa los PRs!", `¡Listo ${folio}, ${nombre}!`]
-              : [`¡${nombre}! Claude falló en ${folio}`, "¡Algo tronó en la corrida!", "¡Dame clic y lo revisas!"],
-          },
+        window.dispatchEvent(new CustomEvent<DetalleClaude>(EVENTO_CLAUDE, {
+          detail: { resultado: s.estado === "terminado" ? "ok" : "fallo", folio, nombre },
         }));
       }
     });

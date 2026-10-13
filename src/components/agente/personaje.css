@@ -205,6 +205,138 @@
 [data-pose="alerta"] .agente-volador__cuerpo { animation: pj-rebote 190ms ease-in-out infinite alternate; }
 @keyframes pj-agita { from { transform: rotate(-150deg); } to { transform: rotate(-185deg); } }
 
+/* ── Claude Code terminó una corrida (tickets) ─────────────────────────────── */
+/* Terminó bien: brinquitos con los dos brazos arriba, alternando, y palomita. */
+.agente-volador__sprite[data-pose="victoria"] { animation: pj-victoria 560ms cubic-bezier(0.23, 1, 0.32, 1) infinite alternate; }
+[data-pose="victoria"] .pj-brazo-robot { animation: pj-pump 560ms ease-in-out infinite alternate; }
+[data-pose="victoria"] .pj-brazo       { animation: pj-pump-b 560ms ease-in-out infinite alternate; }
+[data-pose="victoria"] .pj-pierna-a    { transform: rotate(8deg); }
+[data-pose="victoria"] .pj-pierna-b    { transform: rotate(-8deg); }
+@keyframes pj-victoria {
+  from { transform: translateY(0) scale(1.04, 0.95); }
+  to   { transform: translateY(-14%) scale(0.98, 1.03); }
+}
+@keyframes pj-pump   { from { transform: rotate(-150deg); } to { transform: rotate(-178deg); } }
+@keyframes pj-pump-b { from { transform: rotate(160deg); } to { transform: rotate(132deg); } }
+
+.agente-volador__claude-ok {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 2px);
+  translate: -50% 0;
+  pointer-events: none;
+}
+.agente-volador__claude-ok b {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+  background: #7c3aed;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+  box-shadow: 0 6px 16px -6px rgb(124 58 237 / 0.7);
+  animation: pj-palomita-entra 380ms cubic-bezier(0.23, 1, 0.32, 1), pj-flota 1.1s ease-in-out 380ms infinite alternate;
+}
+.agente-volador__claude-ok i {
+  position: absolute;
+  font-style: normal;
+  font-size: 12px;
+  color: #a78bfa;
+  animation: pj-destello 900ms ease-in-out infinite;
+}
+.agente-volador__claude-ok i:nth-of-type(1) { left: -14px; top: 4px; }
+.agente-volador__claude-ok i:nth-of-type(2) { right: -14px; top: -2px; animation-delay: 300ms; }
+.agente-volador__claude-ok i:nth-of-type(3) { left: 10px; top: -14px; animation-delay: 600ms; }
+@keyframes pj-palomita-entra { from { opacity: 0; transform: scale(0.6) rotate(-20deg); } }
+@keyframes pj-flota { to { transform: translateY(-5px); } }
+@keyframes pj-destello {
+  0%, 100% { opacity: 0; transform: scale(0.6) rotate(0deg); }
+  50%      { opacity: 1; transform: scale(1.1) rotate(45deg); }
+}
+
+/* Pregunta: cabeza ladeada, una mano arriba y un "?" grande flotando. */
+.agente-volador__sprite[data-pose="pregunta"] { transform-origin: 50% 100%; animation: pj-ladea 1.6s ease-in-out infinite alternate; }
+[data-pose="pregunta"] .pj-brazo-robot { transform: rotate(-125deg); }
+[data-pose="pregunta"] .pj-antebrazo   { transform: rotate(-35deg); }
+[data-pose="pregunta"] .pj-brazo       { transform: rotate(35deg); }
+@keyframes pj-ladea { from { transform: rotate(-5deg); } to { transform: rotate(6deg); } }
+
+.agente-volador__claude-pregunta {
+  position: absolute;
+  left: 58%;
+  bottom: calc(100% - 4px);
+  pointer-events: none;
+  font: 900 36px/1 ui-rounded, system-ui, sans-serif;
+  color: #f59e0b;
+  text-shadow: 0 2px 0 #b45309, 0 6px 14px rgb(180 83 9 / 0.35);
+  animation: pj-palomita-entra 320ms cubic-bezier(0.23, 1, 0.32, 1), pj-pregunta 900ms ease-in-out 320ms infinite alternate;
+}
+@keyframes pj-pregunta {
+  from { transform: translateY(0) rotate(-8deg); }
+  to   { transform: translateY(-8px) rotate(10deg); }
+}
+
+/* Falló: se sacude con chispazos y le sale humo. */
+.agente-volador__sprite[data-pose="chispazo"] { animation: pj-sacude 110ms linear infinite; }
+[data-pose="chispazo"] .pj-brazo-robot { transform: rotate(18deg); }
+[data-pose="chispazo"] .pj-brazo       { transform: rotate(-12deg); }
+@keyframes pj-sacude {
+  0%   { transform: translate(0, 0) rotate(0deg); }
+  25%  { transform: translate(-2px, 1px) rotate(-1.5deg); }
+  50%  { transform: translate(2px, -1px) rotate(1.5deg); }
+  75%  { transform: translate(-1px, 0) rotate(-1deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+.agente-volador__claude-fallo {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - 10px);
+  translate: -50% 0;
+  width: 72px;
+  height: 40px;
+  pointer-events: none;
+}
+.agente-volador__claude-fallo i {
+  position: absolute;
+  font-style: normal;
+  font-size: 16px;
+  animation: pj-chispa 420ms steps(2, jump-none) infinite;
+}
+.agente-volador__claude-fallo i:nth-of-type(1) { left: 0; top: 12px; }
+.agente-volador__claude-fallo i:nth-of-type(2) { left: 26px; top: 0; font-size: 20px; animation-delay: 140ms; }
+.agente-volador__claude-fallo i:nth-of-type(3) { right: 0; top: 14px; animation-delay: 280ms; }
+.agente-volador__claude-fallo em {
+  position: absolute;
+  left: 30px;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #9ca3af;
+  box-shadow: 10px 4px 0 -2px #a1a1aa, -9px 6px 0 -3px #d4d4d8;
+  animation: pj-humo 1.4s ease-out infinite;
+}
+@keyframes pj-chispa { 0% { opacity: 1; transform: scale(1); } 100% { opacity: 0.15; transform: scale(0.8); } }
+@keyframes pj-humo {
+  from { opacity: 0.8; transform: translateY(0) scale(0.7); }
+  to   { opacity: 0; transform: translateY(-26px) scale(1.5); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agente-volador__sprite[data-pose="victoria"],
+  .agente-volador__sprite[data-pose="pregunta"],
+  .agente-volador__sprite[data-pose="chispazo"],
+  [data-pose="victoria"] .pj-brazo-robot,
+  [data-pose="victoria"] .pj-brazo,
+  .agente-volador__claude-ok b,
+  .agente-volador__claude-ok i,
+  .agente-volador__claude-pregunta,
+  .agente-volador__claude-fallo i,
+  .agente-volador__claude-fallo em { animation: none; }
+}
+
 /* ── Estilos de vuelo (data-vuelo, solo en volar) ─────────────────────────── */
 /* Nado: crol en el aire — brazos en molino alternados y patada. */
 [data-pose="volar"][data-vuelo="nado"] .pj-brazo-robot { animation: pj-crol 1.5s linear infinite; }
@@ -417,6 +549,22 @@
   animation: pj-letrero-entra 220ms var(--ease-out);
 }
 .agente-volador__letrero[data-tipo="fallo"] {
+  color: #7f1d1d;
+  background: #fee2e2;
+  border-color: #dc2626;
+  animation: pj-letrero-entra 220ms var(--ease-out);
+}
+.agente-volador__letrero[data-tipo="claude"] {
+  color: #4c1d95;
+  background: #ede9fe;
+  border-color: #7c3aed;
+}
+.agente-volador__letrero[data-tipo="claude-pregunta"] {
+  color: #78350f;
+  background: #fef3c7;
+  border-color: #f59e0b;
+}
+.agente-volador__letrero[data-tipo="claude-fallo"] {
   color: #7f1d1d;
   background: #fee2e2;
   border-color: #dc2626;

@@ -213,17 +213,6 @@ export async function cerrarTicketPortal(ticketId: string, nota: string) {
   return (await llamarCerrar({ ticketId, nota })).data;
 }
 
-/** Claude Code se detuvo a preguntar algo en estos tickets. */
-export function gritosDePregunta(folios: string[], nombre: string): string[] {
-  const f = folios.join(", ");
-  return [
-    `¡${nombre}! Claude te pregunta algo en ${f}`,
-    `¡Ey! Claude está esperando tu respuesta (${f})`,
-    "¡Dame clic y te llevo a contestarle!",
-    `¡${nombre}, Claude no puede seguir sin ti!`,
-  ];
-}
-
 /** "jorge.mendoza@sozu.com" → "Jorge". */
 export function nombreDeEmail(email: string | null | undefined): string {
   const base = (email ?? "").split("@")[0].split(/[._-]/)[0];
