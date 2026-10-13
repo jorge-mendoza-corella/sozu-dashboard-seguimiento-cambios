@@ -56,8 +56,27 @@ const hora = (iso: string) =>
 
 const activo = (e: EstadoClaude | undefined) => e === "en_cola" || e === "trabajando";
 
+/**
+ * Saca del texto la sección "Adjuntos:" ("- audio: nombre — url") que manda el
+ * dashboard: en GitHub va con la URL completa (el orquestador la necesita para
+ * bajar y transcribir), pero aquí se muestra como reproductor o miniatura.
+ */
+const LINEA_ADJUNTO = /^\s*-\s*(imagen|video|audio)\s*:\s*(.+?)\s+—\s+(https:\/\/\S+)\s*$/i;
+
+function separarAdjuntos(cuerpo: string): { texto: string; adjuntos: { tipo: string; nombre: string; url: string }[] } {
+  const adjuntos: { tipo: string; nombre: string; url: string }[] = [];
+  const lineas = cuerpo.split("\n").filter((l) => {
+    const m = l.match(LINEA_ADJUNTO);
+    if (m) adjuntos.push({ tipo: m[1].toLowerCase(), nombre: m[2], url: m[3] });
+    return !m;
+  });
+  const texto = (adjuntos.length ? lineas.filter((l) => !/^\s*Adjuntos:\s*$/i.test(l)) : lineas).join("\n").trim();
+  return { texto, adjuntos };
+}
+
 function Mensaje({ m }: { m: MensajeClaude }) {
   const deClaude = m.autor === "claude";
+  const { texto, adjuntos } = separarAdjuntos(m.cuerpo);
   return (
     <div className={cn("flex gap-2", !deClaude && "flex-row-reverse")} data-pregunta={m.esPregunta || undefined}>
       <span className={cn("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full", deClaude ? "bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300" : "bg-primary/15 text-primary")}>
@@ -76,9 +95,28 @@ function Mensaje({ m }: { m: MensajeClaude }) {
         </p>
         <div className="prose prose-xs max-w-none break-words text-xs dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-a:text-primary prose-pre:text-[11px]">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a> }}>
-            {m.cuerpo}
+            {texto}
           </ReactMarkdown>
         </div>
+        {adjuntos.length > 0 && (
+          <div className="mt-1.5 space-y-1.5">
+            {adjuntos.map((a) => (
+              <div key={a.url} className="rounded-md border bg-background/60 p-1.5">
+                <p className="mb-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+                  {a.tipo === "imagen" ? "🖼" : a.tipo === "video" ? "🎬" : "🎙"}
+                  <a href={a.url} target="_blank" rel="noreferrer" className="truncate text-primary hover:underline" title={a.nombre}>{a.nombre}</a>
+                </p>
+                {a.tipo === "audio" && <audio controls preload="metadata" src={a.url} className="h-8 w-full" />}
+                {a.tipo === "video" && <video controls preload="metadata" src={a.url} className="max-h-48 w-full rounded bg-black" />}
+                {a.tipo === "imagen" && (
+                  <a href={a.url} target="_blank" rel="noreferrer">
+                    <img src={a.url} alt={a.nombre} loading="lazy" className="max-h-40 rounded object-contain" />
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
