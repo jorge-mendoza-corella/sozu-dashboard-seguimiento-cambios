@@ -14,7 +14,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  AlertCircle, Bot, Check, CheckCircle2, Copy, ExternalLink, FileAudio, FileText, FileVideo, FolderGit2, Image as ImageIcon, Inbox, Loader2,
+  AlertCircle, Bot, ChevronDown, Check, CheckCircle2, Copy, ExternalLink, FileAudio, FileText, FileVideo, FolderGit2, Image as ImageIcon, Inbox, Loader2,
   Paperclip, RefreshCw, RotateCcw, Search, Send, Sparkles, User, Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -366,7 +366,10 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
       </header>
 
       {/* 1. Descripción del ticket */}
-      <Seccion numero={1} titulo="Descripción del ticket">
+      {/* Sin mandar: abierta (es lo que hay que leer para el prompt). Ya con
+          trabajo de Claude: contraída, lo vigente es el trabajo. La key la
+          reinicia al mandarlo. */}
+      <Seccion key={issue ? "con-trabajo" : "sin-trabajo"} numero={1} titulo="Descripción del ticket" abierta={!issue}>
         <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
           <Dato icono={User} etiqueta="Abierto por">{t.abiertoPor ?? "—"}</Dato>
           <Dato icono={FileText} etiqueta="Fecha">{esSoloFecha(t.abiertoEn) ? fechaTicket(t.abiertoEn, "corta") : fecha(t.abiertoEn)}</Dato>
@@ -516,16 +519,34 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
   );
 }
 
-/** Encabezado de cada parte del detalle: 1. descripción, 2. prompt o trabajo en Claude. */
-function Seccion({ numero, titulo, icono: Icono, children }: { numero: number; titulo: string; icono?: typeof User; children: React.ReactNode }) {
+/**
+ * Cada parte del detalle (1. descripción, 2. prompt o trabajo en Claude), con
+ * su encabezado para contraerla o expandirla. `abierta` es como arranca.
+ */
+function Seccion({ numero, titulo, icono: Icono, abierta: abiertaInicial = true, children }: {
+  numero: number;
+  titulo: string;
+  icono?: typeof User;
+  abierta?: boolean;
+  children: React.ReactNode;
+}) {
+  const [abierta, setAbierta] = useState(abiertaInicial);
   return (
     <section className="space-y-3">
-      <h3 className="flex items-center gap-2 border-b pb-1.5 text-sm font-semibold">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">{numero}</span>
-        {Icono && <Icono className="h-4 w-4 text-violet-600 dark:text-violet-300" />}
-        {titulo}
+      <h3>
+        <button
+          type="button"
+          onClick={() => setAbierta((v) => !v)}
+          aria-expanded={abierta}
+          className="flex w-full items-center gap-2 border-b pb-1.5 text-left text-sm font-semibold hover:text-primary"
+        >
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">{numero}</span>
+          {Icono && <Icono className="h-4 w-4 text-violet-600 dark:text-violet-300" />}
+          <span className="flex-1">{titulo}</span>
+          <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform duration-200", !abierta && "-rotate-90")} />
+        </button>
       </h3>
-      {children}
+      {abierta && children}
     </section>
   );
 }
