@@ -24,6 +24,8 @@ import { cerrarTicket, clienteSupabase, ticketsAsignados } from "./agente/ticket
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
 import { issueDelTicket, responderAClaude, seguimientoClaude, type AdjuntoRespuesta } from "./agente/claude.js";
 import { abrirSubida } from "./agente/adjuntos.js";
+import { contenidoUsuario, recortarImagenes, validarAdjuntosChat, type AdjuntoChat } from "./agente/adjuntosChat.js";
+import { procesarAdjunto } from "./agente/procesarAdjunto.js";
 import { abrirConsola, ErrorConsola, finConsola, lineaConsola, sesionConsola } from "./agente/consola.js";
 import { qrWhatsapp } from "./whatsapp.js";
 import { falloDocs } from "./docsFallo.js";
@@ -54,6 +56,7 @@ export type ChunkAgente =
 interface Entrada {
   conversacionId?: string | null;
   mensaje: string;
+  adjuntos?: AdjuntoChat[];
 }
 
 export const agenteRepos = onCall<Entrada, Promise<unknown>, ChunkAgente>(
@@ -67,8 +70,9 @@ export const agenteRepos = onCall<Entrada, Promise<unknown>, ChunkAgente>(
   },
   async (req, res) => {
     const usuario = await verificarAcceso(req);
+    const adjuntos = validarAdjuntosChat(req.data?.adjuntos, usuario.email);
     const mensaje = typeof req.data?.mensaje === "string" ? req.data.mensaje.trim() : "";
-    if (!mensaje || mensaje.length > MAX_MENSAJE) {
+    if ((!mensaje && adjuntos.length === 0) || mensaje.length > MAX_MENSAJE) {
       throw new HttpsError("invalid-argument", `El mensaje debe tener entre 1 y ${MAX_MENSAJE} caracteres.`);
     }
     const restantes = await consumirCupo(usuario);
@@ -98,8 +102,14 @@ export const agenteRepos = onCall<Entrada, Promise<unknown>, ChunkAgente>(
       const previos = await mensajesRef.orderBy("creado", "desc").limit(MAX_HISTORIAL * 2).get();
       for (const d of previos.docs.reverse()) {
         const m = d.data();
-        if (m.error || typeof m.texto !== "string" || !m.texto.trim()) continue;
-        historial.push({ role: m.rol === "asistente" ? "assistant" : "user", content: m.texto });
+        if (m.error || typeof m.texto !== "string") continue;
+        const adj = Array.isArray(m.adjuntos) ? (m.adjuntos as AdjuntoChat[]) : [];
+        if (!m.texto.trim() && adj.length === 0) continue;
+        historial.push(
+          m.rol === "asistente"
+            ? { role: "assistant", content: m.texto }
+            : { role: "user", content: contenidoUsuario(m.texto, adj) },
+        );
       }
       // El primer mensaje mandado a la API tiene que ser del usuario.
       while (historial[0]?.role === "assistant") historial.shift();
@@ -109,13 +119,13 @@ export const agenteRepos = onCall<Entrada, Promise<unknown>, ChunkAgente>(
     if (nueva) {
       await convRef.set({
         owner: usuario.email,
-        titulo: mensaje.replace(/\s+/g, " ").slice(0, MAX_TITULO),
+        titulo: (mensaje || `Adjunto: ${adjuntos[0].nombre}`).replace(/\s+/g, " ").slice(0, MAX_TITULO),
         fijada: false,
         creado: ahora,
         actualizado: ahora,
       });
     }
-    await mensajesRef.add({ rol: "usuario", texto: mensaje, creado: ahora });
+    await mensajesRef.add({ rol: "usuario", texto: mensaje, ...(adjuntos.length ? { adjuntos } : {}), creado: ahora });
 
     // ── Contexto: docs + repos del usuario ─────────────────────────────────
     const ghCodigo = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
@@ -133,8 +143,11 @@ export const agenteRepos = onCall<Entrada, Promise<unknown>, ChunkAgente>(
     const fecha = new Date().toLocaleDateString("es-MX", { timeZone: "America/Mexico_City", dateStyle: "full" });
     const messages: Anthropic.Beta.BetaMessageParam[] = [
       ...historial,
-      { role: "user", content: `[Hoy es ${fecha}. Pregunta de ${usuario.email}]\n\n${mensaje}` },
+      { role: "user", content: contenidoUsuario(`[Hoy es ${fecha}. Pregunta de ${usuario.email}]\n\n${mensaje}`, adjuntos) },
     ];
+    // Imágenes de turnos viejos: solo las últimas MAX_IMAGENES (las anteriores
+    // quedan como texto con su nombre) para no inflar cada vuelta.
+    recortarImagenes(messages);
 
     const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
     const ctx = { ghDocs, ghCodigo, repos };
@@ -404,7 +417,8 @@ export const agenteClaudeResponder = onCall<{ ticketId: string; texto: string; a
 
 /**
  * `agenteSubirAdjunto`: abre la subida de una imagen, video o audio para la
- * respuesta a Claude (ver agente/adjuntos.ts). Solo tickets que la persona mandó.
+ * respuesta a Claude (solo tickets que la persona mandó) o, con ticketId
+ * "chat", para una pregunta a GeorgIA. Ver agente/adjuntos.ts.
  */
 export const agenteSubirAdjunto = onCall<{ ticketId: string; nombre: string; tipo: string; tamano: number }>(
   {
@@ -415,10 +429,13 @@ export const agenteSubirAdjunto = onCall<{ ticketId: string; nombre: string; tip
     cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
   },
   async (req) => {
-    const usuario = await verificarAcceso(req, "tickets");
     const ticketId = String(req.data?.ticketId ?? "");
-    if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
-    await issueDelTicket(usuario.email, ticketId);
+    const esChat = ticketId === "chat";
+    const usuario = await verificarAcceso(req, esChat ? "agente" : "tickets");
+    if (!esChat) {
+      if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
+      await issueDelTicket(usuario.email, ticketId);
+    }
     const origen = req.rawRequest.headers.origin;
     return abrirSubida(
       usuario.email, ticketId, String(req.data?.nombre ?? "archivo"), String(req.data?.tipo ?? ""), Number(req.data?.tamano),
@@ -551,6 +568,35 @@ export const docsFallo = onCall<{ owner: string; repo: string; runId: number }>(
     } catch (e) {
       console.error("[docsFallo]", e);
       throw new HttpsError("unavailable", "No se pudo leer el log del run.");
+    }
+  },
+);
+
+/**
+ * `agenteProcesarAdjunto`: transcribe un audio o video (y saca cuadros del
+ * video) que la persona subió para GeorgIA. Ver agente/procesarAdjunto.ts.
+ * Una petición por instancia: Whisper ocupa los dos CPUs.
+ */
+export const agenteProcesarAdjunto = onCall<{ url: string; tipo: "audio" | "video" }>(
+  {
+    region: "us-central1",
+    timeoutSeconds: 540,
+    memory: "4GiB",
+    cpu: 2,
+    concurrency: 1,
+    maxInstances: 3,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  async (req) => {
+    const usuario = await verificarAcceso(req);
+    const tipo = req.data?.tipo;
+    if (tipo !== "audio" && tipo !== "video") throw new HttpsError("invalid-argument", "Solo audio o video.");
+    try {
+      return await procesarAdjunto(usuario.email, String(req.data?.url ?? ""), tipo);
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      console.error("[agenteProcesarAdjunto]", e);
+      throw new HttpsError("unavailable", "No se pudo transcribir el archivo.");
     }
   },
 );

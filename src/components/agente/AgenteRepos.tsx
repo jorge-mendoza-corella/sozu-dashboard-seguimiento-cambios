@@ -23,7 +23,10 @@ import {
   borrarConversacion, escucharConversaciones, esRutaDoc, fijarConversacion, leerDocumento, leerMensajes, MAX_MENSAJE,
   MAX_TITULO, mensajeDeError, permisosAgente, preguntar, renombrarConversacion, SUGERENCIAS,
   type ConversacionAgente, type DocumentoAgente, type HerramientaUsada, type MensajeAgente, type PermisosAgente,
+  type AdjuntoChat,
 } from "@/lib/agenteRepos";
+import { AdjuntoEnMensaje, AdjuntosPendientes, BotonesAdjuntar } from "./Adjuntos";
+import { useAdjuntos } from "@/hooks/useAdjuntos";
 import { AgenteVolador, EVENTO_ALERTA_TICKETS, EVENTO_CLAUDE, type DetalleAlerta, type DetalleClaude } from "./AgenteVolador";
 import { TicketsAgente } from "./TicketsAgente";
 import {
@@ -344,6 +347,7 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
 
 interface EnCurso {
   pregunta: string;
+  adjuntos: AdjuntoChat[];
   texto: string;
   herramientas: HerramientaUsada[];
 }
@@ -385,13 +389,13 @@ function PanelAgente({ email, verDocs }: { email: string; verDocs: boolean }) {
     finRef.current?.scrollIntoView({ block: "end" });
   }, [mensajes, enCurso?.texto, enCurso?.herramientas.length]);
 
-  const enviar = async (texto: string) => {
+  const enviar = async (texto: string, adjuntos: AdjuntoChat[] = []) => {
     const pregunta = texto.trim();
-    if (!pregunta || enCurso) return;
+    if ((!pregunta && adjuntos.length === 0) || enCurso) return;
     setError(null);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
-    setEnCurso({ pregunta, texto: "", herramientas: [] });
+    setEnCurso({ pregunta, adjuntos, texto: "", herramientas: [] });
     try {
       const r = await preguntar(activa, pregunta, (c) => {
         setEnCurso((p) =>
@@ -399,10 +403,10 @@ function PanelAgente({ email, verDocs }: { email: string; verDocs: boolean }) {
             : c.tipo === "texto" ? { ...p, texto: p.texto + c.delta }
             : { ...p, herramientas: [...p.herramientas, { nombre: c.nombre, etiqueta: c.etiqueta }] },
         );
-      }, ctrl.signal);
+      }, ctrl.signal, adjuntos);
       setMensajes((m) => [
         ...m,
-        { id: `u-${r.mensajeId}`, rol: "usuario", texto: pregunta, herramientas: [], docs: [] },
+        { id: `u-${r.mensajeId}`, rol: "usuario", texto: pregunta, herramientas: [], docs: [], adjuntos },
         { id: r.mensajeId, rol: "asistente", texto: r.texto, herramientas: r.herramientas, docs: r.docs ?? [] },
       ]);
       setActiva(r.conversacionId);
@@ -411,7 +415,7 @@ function PanelAgente({ email, verDocs }: { email: string; verDocs: boolean }) {
       if (ctrl.signal.aborted) return;
       setError(mensajeDeError(e));
       // La pregunta queda en el hilo, como la guarda la función.
-      setMensajes((m) => [...m, { id: `u-${Date.now()}`, rol: "usuario", texto: pregunta, herramientas: [], docs: [] }]);
+      setMensajes((m) => [...m, { id: `u-${Date.now()}`, rol: "usuario", texto: pregunta, herramientas: [], docs: [], adjuntos }]);
     } finally {
       if (abortRef.current === ctrl) abortRef.current = null;
       setEnCurso(null);
@@ -479,7 +483,7 @@ function PanelAgente({ email, verDocs }: { email: string; verDocs: boolean }) {
               {mensajes.map((m) => <Burbuja key={m.id} mensaje={m} />)}
               {enCurso && (
                 <>
-                  <Burbuja mensaje={{ id: "p", rol: "usuario", texto: enCurso.pregunta, herramientas: [], docs: [] }} />
+                  <Burbuja mensaje={{ id: "p", rol: "usuario", texto: enCurso.pregunta, herramientas: [], docs: [], adjuntos: enCurso.adjuntos }} />
                   <RespuestaEnCurso enCurso={enCurso} />
                 </>
               )}
@@ -730,6 +734,11 @@ function Burbuja({ mensaje }: { mensaje: MensajeAgente }) {
     return (
       <div className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground">
         {mensaje.texto}
+        {!!mensaje.adjuntos?.length && (
+          <div className={cn("space-y-1.5 whitespace-normal", mensaje.texto && "mt-2")}>
+            {mensaje.adjuntos.map((a) => <AdjuntoEnMensaje key={a.url} a={a} sobreColor />)}
+          </div>
+        )}
       </div>
     );
   }
@@ -772,12 +781,13 @@ function Composer({
   enviando, onEnviar, onDetener, restantes,
 }: {
   enviando: boolean;
-  onEnviar: (t: string) => void;
+  onEnviar: (t: string, adjuntos: AdjuntoChat[]) => void;
   onDetener: () => void;
   restantes: number | null;
 }) {
   const [texto, setTexto] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
+  const adj = useAdjuntos({ carpeta: "chat", transcribir: true });
 
   useEffect(() => {
     const t = ref.current;
@@ -786,10 +796,15 @@ function Composer({
     t.style.height = `${Math.min(t.scrollHeight, 200)}px`;
   }, [texto]);
 
+  const hayAlgo = !!texto.trim() || adj.listos.length > 0;
+  const puedeMandar = hayAlgo && !enviando && !adj.ocupado && !adj.grabando;
+
   const mandar = () => {
-    if (!texto.trim() || enviando) return;
-    onEnviar(texto);
+    if (!puedeMandar) return;
+    onEnviar(texto, adj.listos);
     setTexto("");
+    adj.limpiar();
+    adj.setError(null);
   };
 
   const alTeclear = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -802,7 +817,9 @@ function Composer({
   return (
     <div className="border-t px-4 py-3 sm:px-8">
       <div className="mx-auto max-w-3xl">
-        <div className="flex items-end gap-2 rounded-xl border bg-background px-3 py-2 focus-within:ring-2 focus-within:ring-ring">
+        <AdjuntosPendientes a={adj} className="mb-2 max-h-64 overflow-y-auto" />
+        <div className="flex items-end gap-1 rounded-xl border bg-background px-2 py-2 focus-within:ring-2 focus-within:ring-ring">
+          <BotonesAdjuntar a={adj} compacto />
           <textarea
             ref={ref}
             rows={1}
@@ -810,8 +827,9 @@ function Composer({
             maxLength={MAX_MENSAJE}
             onChange={(e) => setTexto(e.target.value)}
             onKeyDown={alTeclear}
+            onPaste={adj.alPegar}
             placeholder="Pregunta sobre los repos, la base de datos o cómo se usa una pantalla…"
-            className="max-h-[200px] flex-1 resize-none bg-transparent py-1 text-sm outline-none"
+            className="max-h-[200px] flex-1 resize-none bg-transparent px-1 py-1 text-sm outline-none"
             autoFocus
           />
           {enviando ? (
@@ -822,7 +840,8 @@ function Composer({
             <button
               type="button"
               onClick={mandar}
-              disabled={!texto.trim()}
+              disabled={!puedeMandar}
+              title={adj.ocupado ? "Espera a que terminen de subir (o transcribirse) los adjuntos" : undefined}
               className="rounded-lg bg-primary p-2 text-primary-foreground transition-opacity disabled:opacity-40"
               aria-label="Enviar"
             >
@@ -830,9 +849,11 @@ function Composer({
             </button>
           )}
         </div>
-        <p className="mt-1.5 flex justify-between text-[10px] text-muted-foreground">
-          <span>Enter envía · Shift+Enter salto de línea · Alt+K abre/cierra</span>
-          <span>
+        <p className="mt-1.5 flex justify-between gap-2 text-[10px] text-muted-foreground">
+          {adj.error
+            ? <span className="text-destructive">{adj.error}</span>
+            : <span>Enter envía · Shift+Enter salto de línea · Alt+K abre/cierra · Imágenes, audios y videos (se transcriben)</span>}
+          <span className="shrink-0">
             {texto.length >= MAX_MENSAJE * 0.8 && `${texto.length}/${MAX_MENSAJE} · `}
             {restantes !== null && restantes <= 10 && `${restantes} preguntas restantes esta hora`}
           </span>
