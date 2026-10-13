@@ -22,7 +22,8 @@ import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
 import { cerrarTicket, clienteSupabase, ticketsAsignados } from "./agente/tickets.js";
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
-import { issueDelTicket, responderAClaude, seguimientoClaude } from "./agente/claude.js";
+import { issueDelTicket, responderAClaude, seguimientoClaude, type AdjuntoRespuesta } from "./agente/claude.js";
+import { abrirSubida } from "./agente/adjuntos.js";
 import { qrWhatsapp } from "./whatsapp.js";
 
 initializeApp();
@@ -372,7 +373,7 @@ export const agenteClaudeSeguimiento = onCall<{ ticketId: string; forzarPrs?: bo
  * `agenteClaudeResponder`: contesta a Claude desde el dashboard (comentario con
  * @claude en el issue, que dispara otra corrida sobre la misma rama y PR).
  */
-export const agenteClaudeResponder = onCall<{ ticketId: string; texto: string }>(
+export const agenteClaudeResponder = onCall<{ ticketId: string; texto: string; adjuntos?: AdjuntoRespuesta[] }>(
   {
     region: "us-central1",
     secrets: [GITHUB_TOKEN],
@@ -388,13 +389,39 @@ export const agenteClaudeResponder = onCall<{ ticketId: string; texto: string }>
     const issue = await issueDelTicket(usuario.email, ticketId);
     const gh = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
     try {
-      await responderAClaude(gh, usuario.email, issue.numero, String(req.data?.texto ?? ""));
+      const adjuntos = Array.isArray(req.data?.adjuntos) ? req.data.adjuntos : [];
+      await responderAClaude(gh, usuario.email, issue.numero, String(req.data?.texto ?? ""), adjuntos);
     } catch (e) {
       if (e instanceof HttpsError) throw e;
       console.error("[agenteClaudeResponder]", e);
       throw new HttpsError("unavailable", "No se pudo mandar la respuesta a GitHub.");
     }
     return { ok: true };
+  },
+);
+
+/**
+ * `agenteSubirAdjunto`: abre la subida de una imagen, video o audio para la
+ * respuesta a Claude (ver agente/adjuntos.ts). Solo tickets que la persona mandó.
+ */
+export const agenteSubirAdjunto = onCall<{ ticketId: string; nombre: string; tipo: string; tamano: number }>(
+  {
+    region: "us-central1",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    maxInstances: 5,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  async (req) => {
+    const usuario = await verificarAcceso(req, "tickets");
+    const ticketId = String(req.data?.ticketId ?? "");
+    if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
+    await issueDelTicket(usuario.email, ticketId);
+    const origen = req.rawRequest.headers.origin;
+    return abrirSubida(
+      usuario.email, ticketId, String(req.data?.nombre ?? "archivo"), String(req.data?.tipo ?? ""), Number(req.data?.tamano),
+      typeof origen === "string" ? origen : undefined,
+    );
   },
 );
 

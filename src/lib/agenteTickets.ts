@@ -131,7 +131,45 @@ export function avancePrs(prs: PrClaude[]): { enPrd: number; total: number } {
 }
 
 const llamarSeguimiento = httpsCallable<{ ticketId: string; forzarPrs?: boolean }, SeguimientoClaude>(functions, "agenteClaudeSeguimiento", { timeout: 60_000 });
-const llamarResponder = httpsCallable<{ ticketId: string; texto: string }, { ok: true }>(functions, "agenteClaudeResponder", { timeout: 60_000 });
+export interface AdjuntoRespuesta {
+  nombre: string;
+  tipo: "imagen" | "video" | "audio";
+  url: string;
+}
+
+const llamarResponder = httpsCallable<{ ticketId: string; texto: string; adjuntos: AdjuntoRespuesta[] }, { ok: true }>(
+  functions, "agenteClaudeResponder", { timeout: 60_000 },
+);
+const llamarSubida = httpsCallable<{ ticketId: string; nombre: string; tipo: string; tamano: number }, { sesion: string; url: string }>(
+  functions, "agenteSubirAdjunto", { timeout: 60_000 },
+);
+
+export const MAX_ADJUNTO_MB = 200;
+
+export const tipoAdjunto = (mime: string): AdjuntoRespuesta["tipo"] | null =>
+  mime.startsWith("image/") ? "imagen" : mime.startsWith("video/") ? "video" : mime.startsWith("audio/") ? "audio" : null;
+
+/**
+ * Sube una imagen, video o audio para la respuesta a Claude. La función abre la
+ * subida y el archivo va directo a Storage (sin pasar por el callable, que tiene
+ * tope de tamaño); `alAvanzar` recibe 0–1.
+ */
+export async function subirAdjunto(ticketId: string, archivo: File, alAvanzar: (p: number) => void): Promise<AdjuntoRespuesta> {
+  const tipo = tipoAdjunto(archivo.type);
+  if (!tipo) throw new Error("Solo imágenes, videos o audios.");
+  if (archivo.size > MAX_ADJUNTO_MB * 1024 * 1024) throw new Error(`Pasa de ${MAX_ADJUNTO_MB} MB.`);
+  const { sesion, url } = (await llamarSubida({ ticketId, nombre: archivo.name, tipo: archivo.type, tamano: archivo.size })).data;
+  await new Promise<void>((ok, mal) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", sesion);
+    xhr.setRequestHeader("Content-Type", archivo.type);
+    xhr.upload.onprogress = (e) => e.lengthComputable && alAvanzar(e.loaded / e.total);
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? ok() : mal(new Error(`La subida respondió ${xhr.status}.`)));
+    xhr.onerror = () => mal(new Error("No se pudo subir el archivo."));
+    xhr.send(archivo);
+  });
+  return { nombre: archivo.name, tipo, url };
+}
 
 /** En qué va Claude Code con el ticket: estado, avance, conversación y PRs. */
 export async function seguimientoClaude(ticketId: string, forzarPrs = false): Promise<SeguimientoClaude> {
@@ -139,8 +177,8 @@ export async function seguimientoClaude(ticketId: string, forzarPrs = false): Pr
 }
 
 /** Contesta a Claude (comentario con @claude en el issue: arranca otra corrida). */
-export async function responderAClaude(ticketId: string, texto: string): Promise<void> {
-  await llamarResponder({ ticketId, texto });
+export async function responderAClaude(ticketId: string, texto: string, adjuntos: AdjuntoRespuesta[] = []): Promise<void> {
+  await llamarResponder({ ticketId, texto, adjuntos });
 }
 
 /** Abre el issue para Claude Code con el .md (ya editado). Si ya se mandó, devuelve el mismo. */
