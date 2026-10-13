@@ -126,6 +126,24 @@ export interface SeguimientoClaude {
   revisado: string;
 }
 
+/**
+ * Sigla de dos letras de cada repo (la misma que pone el orquestador en la
+ * consola): para saber de qué repo es cada cosa cuando el ticket toca varios.
+ */
+const SIGLAS: Record<string, string> = {
+  "sozu-supabase-migrations": "BD",
+  "sozu-edge-functions": "BE",
+  "sozu-admin": "FE",
+  "sozu-cliente-app": "AC",
+  "sozu-agente-app": "AA",
+  "sozu-n8n-workflows": "N8",
+  "sozu-mcp": "MC",
+  "sozu-docs": "DO",
+  "server-stp": "ST",
+  "extraccion-avances": "EA",
+};
+export const siglaRepo = (repo: string) => SIGLAS[repo] ?? repo.replace(/^sozu-/, "").slice(0, 2).toUpperCase();
+
 /** "45s", "12m", "1h 05m". */
 export function duracion(desdeIso: string, hasta = Date.now()): string {
   const s = Math.max(0, Math.round((hasta - Date.parse(desdeIso)) / 1000));
