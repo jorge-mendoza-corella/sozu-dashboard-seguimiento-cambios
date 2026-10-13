@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { MessageCircle, MessageCircleOff, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,7 +21,11 @@ import type { AvisosDelProyecto } from "@/hooks/useAvisos";
 // todos los repos—, que es lo que no se ve en ninguna otra parte.
 // ---------------------------------------------------------------------------
 
-export function AvisosBanner({ avisos }: { avisos: AvisosDelProyecto | undefined }) {
+export function AvisosBanner({ avisos, punto }: {
+  avisos: AvisosDelProyecto | undefined;
+  /** Punto de conexión de WhatsApp de la empresa (WhatsappStatusBadge), si hay monitor. */
+  punto?: ReactNode | null;
+}) {
   // Sin permiso para leer la configuración no se pinta nada: un "no avisa" que
   // en realidad significa "no puedo saberlo" manda a arreglar algo que no está
   // roto.
@@ -65,6 +70,7 @@ export function AvisosBanner({ avisos }: { avisos: AvisosDelProyecto | undefined
       {sinTelefono.length > 0
         ? <AlertTriangle className="h-3 w-3" />
         : <MessageCircle className="h-3 w-3" />}
+      {punto}
       {/* Sin nombres: este chip habla del PROYECTO, no de un cambio concreto.
           Sacar un login aquí lo hacía parecer el destinatario de algo que está
           pasando, cuando quien recibe cada aviso depende del PR o del deploy —y

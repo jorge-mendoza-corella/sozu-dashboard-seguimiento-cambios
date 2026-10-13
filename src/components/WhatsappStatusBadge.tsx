@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -8,12 +8,14 @@ import {
 } from "@/lib/whatsappStatus";
 
 // ---------------------------------------------------------------------------
-// Conexión de WhatsApp (Evolution API), en la barra de arriba.
+// Conexión de WhatsApp (Evolution API) de UNA empresa, dentro del chip "Avisa
+// por WhatsApp" del proyecto (el teléfono de avisos se configura por empresa;
+// antes vivía en la barra de arriba y mezclaba todas).
 //
-// Verde parpadeando = todas las instancias conectadas. Rojo = alguna se cayó, y
-// lo dice con texto: cuando la sesión se cierra los avisos dejan de llegar sin
-// error visible en ningún otro lado. Solo lo ven los administradores; el admin
-// de empresa, solo sus empresas.
+// Conectada: un punto verde parpadeando dentro del chip de avisos. Caída: el
+// chip entero se vuelve rojo y lo dice con texto, porque cuando la sesión se
+// cierra los avisos dejan de llegar sin error visible en ningún otro lado. Solo
+// lo ven los administradores; el admin de empresa, solo sus empresas.
 //
 // En rojo, al pasar el mouse (o tocarlo en móvil) se abre un panel con el detalle
 // y el QR para volver a vincular cada instancia caída, si quien mira puede
@@ -106,7 +108,16 @@ function QrReconexion({ s, onConectado }: { s: WhatsappStatus; onConectado: () =
   );
 }
 
-export function WhatsappStatusBadge({ appUser }: { appUser: AppUser | null }) {
+export function WhatsappStatusBadge({ appUser, clientId, children }: {
+  appUser: AppUser | null;
+  /** Empresa del proyecto en pantalla. */
+  clientId: string | null | undefined;
+  /**
+   * Lo que se pinta si NO está caída (el chip de avisos), con el punto de
+   * conexión para meterlo dentro; `null` si no hay monitor que mostrar.
+   */
+  children: (punto: ReactNode | null) => ReactNode;
+}) {
   const qc = useQueryClient();
   const [abierto, setAbierto] = useState(false);
   const cierre = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -140,13 +151,11 @@ export function WhatsappStatusBadge({ appUser }: { appUser: AppUser | null }) {
     if (esAdmin && hayQueRevisar) void dispararRevisionWhatsapp();
   }, [esAdmin, hayQueRevisar]);
 
-  if (!esAdmin || !data) return null;
-
   const suyas = adminClientIds(appUser);
-  const visibles = data.filter(
-    (s) => s.estado !== "apagado" && (suyas === null || suyas.includes(s.clientId)),
+  const visibles = (data ?? []).filter(
+    (s) => s.clientId === clientId && s.estado !== "apagado" && (suyas === null || suyas.includes(s.clientId)),
   );
-  if (visibles.length === 0) return null;
+  if (!esAdmin || visibles.length === 0) return <>{children(null)}</>;
 
   const peor = visibles.reduce<Tono>((acc, s) => {
     const t = tonoDe(s);
@@ -156,9 +165,7 @@ export function WhatsappStatusBadge({ appUser }: { appUser: AppUser | null }) {
   const caidas = visibles.filter((s) => tonoDe(s) === "rojo");
   const texto =
     peor === "rojo"
-      ? caidas.length === 1
-        ? `WhatsApp desconectado · ${caidas[0].instancia}`
-        : `WhatsApp: ${caidas.length} desconectadas`
+      ? `WhatsApp desconectado · ${caidas[0].instancia}`
       : peor === "ambar"
         ? "WhatsApp sin revisar"
         : peor === "gris"
@@ -183,52 +190,38 @@ export function WhatsappStatusBadge({ appUser }: { appUser: AppUser | null }) {
     .filter(Boolean)
     .join("\n");
 
-  const badge = (
-    <span
-      className={cn(
-        "flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium",
-        peor === "rojo"
-          ? "animate-pulse border border-red-500 bg-red-100 font-semibold text-red-700 motion-reduce:animate-none dark:border-red-600 dark:bg-red-950/60 dark:text-red-300"
-          : peor === "ambar"
-            ? "text-amber-700 dark:text-amber-300"
-            : "text-muted-foreground",
+  const punto = (
+    <span className="relative flex h-2 w-2 shrink-0" title={titulo} role="status" aria-label={texto}>
+      {peor === "verde" && (
+        <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75 animate-ping motion-reduce:animate-none" />
       )}
-      title={peor === "rojo" ? undefined : titulo}
-      role="status"
-      onMouseEnter={peor === "rojo" ? abrir : undefined}
-      onMouseLeave={peor === "rojo" ? cerrarPronto : undefined}
-      onClick={peor === "rojo" ? () => setAbierto((a) => !a) : undefined}
-    >
-      <span className={cn("relative flex shrink-0", peor === "rojo" ? "h-3.5 w-3.5" : "h-2.5 w-2.5")}>
-        {(peor === "verde" || peor === "rojo") && (
-          <span
-            className={cn(
-              "absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping motion-reduce:animate-none",
-              COLOR_PUNTO[peor],
-            )}
-          />
-        )}
-        <span
-          className={cn(
-            "relative inline-flex h-full w-full rounded-full",
-            COLOR_PUNTO[peor],
-            peor === "rojo" && "ring-2 ring-red-300 dark:ring-red-800",
-          )}
-        />
-      </span>
-      {/* En verde basta el punto en pantallas chicas; el rojo siempre se lee. */}
-      <span className={cn(peor === "verde" && "hidden lg:inline")}>{texto}</span>
+      <span className={cn("relative inline-flex h-full w-full rounded-full", COLOR_PUNTO[peor])} />
     </span>
   );
+  if (peor !== "rojo") return <>{children(punto)}</>;
 
-  if (peor !== "rojo") return badge;
+  const badge = (
+    <span
+      className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-red-500 bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700 animate-pulse motion-reduce:animate-none dark:border-red-600 dark:bg-red-950/60 dark:text-red-300"
+      role="status"
+      onMouseEnter={abrir}
+      onMouseLeave={cerrarPronto}
+      onClick={() => setAbierto((a) => !a)}
+    >
+      <span className="relative flex h-3 w-3 shrink-0">
+        <span className={cn("absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping motion-reduce:animate-none", COLOR_PUNTO.rojo)} />
+        <span className={cn("relative inline-flex h-full w-full rounded-full ring-2 ring-red-300 dark:ring-red-800", COLOR_PUNTO.rojo)} />
+      </span>
+      {texto}
+    </span>
+  );
 
   return (
     <div className="relative">
       {badge}
       {abierto && (
         <div
-          className="absolute right-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] space-y-3 rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-lg"
+          className="absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] space-y-3 rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-lg"
           onMouseEnter={abrir}
           onMouseLeave={cerrarPronto}
         >

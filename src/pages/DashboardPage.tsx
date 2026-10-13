@@ -16,6 +16,7 @@ import { EmpresaSelector } from "@/components/EmpresaSelector";
 import { useEmpresaActiva } from "@/hooks/useEmpresaActiva";
 import { useAvisosPorEmpresa } from "@/hooks/useNotifications";
 import { useAvisosPorProyecto } from "@/hooks/useAvisos";
+import { WhatsappStatusBadge } from "@/components/WhatsappStatusBadge";
 import { AvisosBanner } from "@/components/AvisosBanner";
 import { empresasDeProyectos } from "@/lib/empresas";
 import { useAuth } from "@/hooks/useAuth";
@@ -699,7 +700,12 @@ export function DashboardPage() {
                           comía un renglón entero, siempre, para algo que se
                           consulta de vez en cuando. */}
                       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <AvisosBanner avisos={avisosPorProyecto.get(p.id)} />
+                        {/* La conexión de WhatsApp es por empresa: va en el chip de
+                            avisos del proyecto (punto verde; caída, el chip en rojo
+                            con el QR para reconectar). */}
+                        <WhatsappStatusBadge appUser={appUser} clientId={p.clientId}>
+                          {(punto) => <AvisosBanner avisos={avisosPorProyecto.get(p.id)} punto={punto} />}
+                        </WhatsappStatusBadge>
                         {isRoot && (
                           <p className="text-xs text-muted-foreground">
                             Arrastra las tarjetas para reordenarlas. El orden se guarda automáticamente.
