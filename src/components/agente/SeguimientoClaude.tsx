@@ -348,6 +348,7 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
 
   const s = q.data;
   useReloj(activo(s?.estado), 5_000);
+  const ultimaAccion = consola.lineas.at(-1) ?? null;
   const pct = porcentaje(s?.progreso ?? null, s?.estado);
   const esperando = s?.estado === "esperando_respuesta";
   // La conversación sin el comentario de avance viejo: solo el último checklist.
@@ -413,6 +414,11 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
             {s.progreso
               ? `${s.progreso.hechos} de ${s.progreso.total} pasos${activo(s.estado) && s.progreso.hechos === s.progreso.total ? " · cerrando la corrida…" : ""}`
               : s.estado === "en_cola" ? "Esperando a que arranque la corrida…" : "Arrancando…"}
+            {/* La lista de pasos la actualiza Claude cuando se acuerda; la consola
+                dice si de verdad sigue haciendo algo. */}
+            {activo(s.estado) && ultimaAccion && (
+              <span title={ultimaAccion.texto}> · última acción hace {duracion(new Date(ultimaAccion.t).toISOString())}: {ultimaAccion.texto.slice(0, 70)}{ultimaAccion.texto.length > 70 ? "…" : ""}</span>
+            )}
           </p>
         </div>
       )}
