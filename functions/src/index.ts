@@ -41,7 +41,8 @@ const GITHUB_DOCS_TOKEN = defineSecret("DASHBOARD_GITHUB_DOCS_TOKEN");
 // tickets asignados a quien pregunta (ver agente/tickets.ts).
 const SUPABASE_SERVICE_KEY = defineSecret("AGENTE_SUPABASE_SERVICE_KEY");
 
-const MODELO = "claude-opus-5-5";
+// Sonnet: responde bien preguntas de docs y código y cuesta varias veces menos que Opus.
+const MODELO = "claude-sonnet-5-5";
 const MAX_MENSAJE = 4_000;
 /** Turnos previos (pregunta + respuesta) que se mandan como contexto. */
 const MAX_HISTORIAL = 20;

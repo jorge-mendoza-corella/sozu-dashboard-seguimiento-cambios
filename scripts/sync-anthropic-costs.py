@@ -84,6 +84,91 @@ def fetch_usage_buckets(key, days=90):
     return buckets
 
 
+def anthropic_get_soft(path, key):
+    """Como anthropic_get, pero un error no tumba el sync del resto."""
+    try:
+        return anthropic_get_raw(path, key)
+    except urllib.error.HTTPError as e:
+        print(f"Anthropic API error {e.code} en {path.split('?')[0]}: {e.read().decode()[:300]}", file=sys.stderr)
+        return None
+
+
+def anthropic_get_raw(path, key):
+    req = urllib.request.Request(f"https://api.anthropic.com/v1{path}", headers={
+        "anthropic-version": "2023-06-01",
+        "x-api-key": key,
+    })
+    with urllib.request.urlopen(req) as r:
+        return json.loads(r.read())
+
+
+def pages_soft(path, key):
+    items, page = [], None
+    while True:
+        sep = "&" if "?" in path else "?"
+        data = anthropic_get_soft(path + (f"{sep}page={urllib.parse.quote(page)}" if page else ""), key)
+        if data is None:
+            return None
+        items.extend(data.get("data", []))
+        if not data.get("has_more") or not data.get("next_page"):
+            return items
+        page = data["next_page"]
+
+
+def resumen_mes(key):
+    """
+    Gasto del mes en curso (UTC) para el badge de costos del dashboard:
+      - cost_report: lo que factura Anthropic, en USD (sin estimar).
+      - usage_report por api_key_id + modelo: para repartir el gasto por llave
+        (docs, GeorgIA, …), que cost_report no desglosa. El dashboard le pone
+        precio con su tabla y lo escala al total real.
+    """
+    hoy = datetime.datetime.now(datetime.timezone.utc)
+    inicio = hoy.strftime("%Y-%m-01T00:00:00Z")
+    q = f"?starting_at={urllib.parse.quote(inicio)}&bucket_width=1d&limit=31"
+    costo = pages_soft(f"/organizations/cost_report{q}&group_by[]=description", key)
+    uso = pages_soft(f"/organizations/usage_report/messages{q}&group_by[]=api_key_id&group_by[]=model", key)
+    llaves = pages_soft("/organizations/api_keys?limit=100", key)
+
+    total = 0.0
+    por_concepto = {}
+    for b in costo or []:
+        for r in b.get("results", []):
+            # amount viene en centavos de dólar, como texto decimal.
+            usd = float(r.get("amount") or 0) / 100
+            total += usd
+            concepto = r.get("description") or r.get("cost_type") or "otro"
+            por_concepto[concepto] = por_concepto.get(concepto, 0) + usd
+
+    nombres = {k.get("id"): k.get("name") or k.get("id") for k in (llaves or [])}
+    por_llave = {}
+    for b in uso or []:
+        for r in b.get("results", []):
+            k = r.get("api_key_id") or "__sin_llave__"
+            m = r.get("model") or "?"
+            d = por_llave.setdefault(k, {"nombre": nombres.get(k, "Consola / sin llave" if k == "__sin_llave__" else k), "modelos": {}})
+            t = d["modelos"].setdefault(m, {"input": 0, "output": 0, "cacheRead": 0, "cacheCreate": 0})
+            t["input"] += r.get("uncached_input_tokens", 0)
+            t["output"] += r.get("output_tokens", 0)
+            t["cacheRead"] += r.get("cache_read_input_tokens", 0)
+            cc = r.get("cache_creation") or {}
+            t["cacheCreate"] += cc.get("ephemeral_1h_input_tokens", 0) + cc.get("ephemeral_5m_input_tokens", 0)
+
+    print(f"  Mes: ${total:.2f} USD; conceptos={len(por_concepto)}; llaves con uso={len(por_llave)}")
+    for c, v in sorted(por_concepto.items(), key=lambda x: -x[1])[:8]:
+        print(f"    {c}: ${v:.2f}")
+    for d in por_llave.values():
+        print(f"    llave '{d['nombre']}': modelos={list(d['modelos'])}")
+    return {
+        "anio": hoy.year,
+        "mes": hoy.month,
+        "totalUsd": round(total, 4) if costo is not None else None,
+        "porConcepto": {k: round(v, 4) for k, v in por_concepto.items()},
+        "porLlave": por_llave,
+        "error": None if costo is not None else "No se pudo leer cost_report (¿la admin key tiene acceso?)",
+    }
+
+
 def firestore_patch(doc_path, fields, token):
     url = f"{FIRESTORE_URL}/{doc_path}"
     body = json.dumps({"fields": fields}).encode()
@@ -140,6 +225,14 @@ def main():
             "updatedAt":     {"stringValue": updated_at},
         },
         token
+    )
+
+    print("6. Gasto del mes → anthropic_costs_cache/mes...")
+    mes = resumen_mes(key)
+    firestore_patch(
+        "anthropic_costs_cache/mes",
+        {"json": {"stringValue": json.dumps(mes)}, "updatedAt": {"stringValue": updated_at}},
+        token,
     )
 
     print(f"\nDone. {len(buckets)} buckets, {len(org_users)} org users → Firestore at {updated_at}")

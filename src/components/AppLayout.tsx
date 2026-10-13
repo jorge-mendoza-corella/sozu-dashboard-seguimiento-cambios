@@ -12,7 +12,7 @@ import { useAvancesAccess, AVANCES_URL_DEFAULT } from "@/hooks/useClients";
 import { canAdminister, isRootAdmin } from "@/lib/firestoreUsers";
 import { Button } from "@/components/ui/button";
 import { AvancesDraftBadge } from "@/components/AvancesDraftBadge";
-import { ActionsUsoBadge } from "@/components/ActionsUsoBadge";
+import { CostosBadge } from "@/components/CostosBadge";
 import { RelojHeader } from "@/components/RelojHeader";
 import { useNuevaVersion } from "@/hooks/useNuevaVersion";
 import { BuildNotifier } from "@/components/codemagic/BuildNotifier";
@@ -156,9 +156,9 @@ export function AppLayout({ children }: Props) {
                 <ExternalLink className="h-3 w-3 opacity-60" />
               </a>
             ) : null}
-            {/* Consumo de Actions. El propio badge decide si se pinta: solo lo
-                ven los administradores. */}
-            <ActionsUsoBadge appUser={appUser} />
+            {/* Costos del mes (GitHub Actions + API de Anthropic). El propio
+                badge decide si se pinta: solo lo ven los administradores. */}
+            <CostosBadge appUser={appUser} />
           </nav>
           <div className="ml-auto flex items-center gap-3">
             {/* Fecha y hora; al pasar el mouse, reloj de manecillas estilo macOS. */}
