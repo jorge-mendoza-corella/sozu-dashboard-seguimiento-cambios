@@ -10,13 +10,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Bot, Terminal, ExternalLink, GitPullRequest, Loader2, MessageCircleQuestion, Mic, Paperclip, Send, Square, User, X } from "lucide-react";
+import { Bot, ChevronDown, Terminal, ExternalLink, GitPullRequest, Loader2, MessageCircleQuestion, Mic, Paperclip, Send, Square, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConsolaFlotante } from "./ConsolaClaude";
-import { useConsola } from "@/hooks/useConsolaClaude";
+import { useConsola, type Consola } from "@/hooks/useConsolaClaude";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import {
-  avancePrs, duracion, MAX_ADJUNTO_MB, siglaRepo, responderAClaude, seguimientoClaude, subirAdjunto, tipoAdjunto,
+  avancePrs, duracion, MAX_ADJUNTO_MB, siglaRepo, type PrClaude, responderAClaude, seguimientoClaude, subirAdjunto, tipoAdjunto,
   type AdjuntoRespuesta, type EstadoClaude, type EstadoPr, type MensajeClaude,
 } from "@/lib/agenteTickets";
 
@@ -182,6 +182,103 @@ function SesionClaude({ folio, titulo, issue, sesion, runUrl, repos }: {
   );
 }
 
+/**
+ * PRs agrupados por repo, cada repo contraído por default: sigla, cuántos PRs
+ * y en qué van. Al abrirlo, sus PRs y la sesión de Claude en ese repo (la
+ * consola filtrada a lo que hizo ahí) y el comando para retomarlo.
+ */
+function ReposDelTicket({ prs, consola, folio, titulo, issue, onSesion }: {
+  prs: PrClaude[];
+  consola: Consola;
+  folio: string;
+  titulo: string;
+  issue: { numero: number; url: string };
+  onSesion: (sigla: string) => void;
+}) {
+  const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
+  const [copiado, setCopiado] = useState<string | null>(null);
+  const grupos = [...prs.reduce((m, p) => m.set(p.repo, [...(m.get(p.repo) ?? []), p]), new Map<string, PrClaude[]>())];
+  const numero = folio.replace(/^#/, "");
+
+  return (
+    <ul className="space-y-1">
+      {grupos.map(([repo, lista]) => {
+        const sig = siglaRepo(repo);
+        const abierto = abiertos.has(repo);
+        const acciones = consola.lineas.filter((l) => l.repo === sig).length;
+        const conteo = lista.reduce<Record<string, number>>((c, p) => ({ ...c, [p.estado]: (c[p.estado] ?? 0) + 1 }), {});
+        const resumen = (Object.keys(conteo) as EstadoPr[]).map((e) => `${conteo[e]} ${ETIQUETA_PR[e]}`).join(" · ");
+        const comando = [
+          `# Ticket ${folio} · ${titulo} · repo ${repo} (${sig})`,
+          `gh issue view ${issue.numero} -R jorgeIMendoza/sozu-georgia-tareas --comments`,
+          `gh repo clone ${lista[0].owner}/${repo} && cd ${repo} && git switch fix/ticket-${numero}`,
+          `claude "Retoma el ticket ${folio} (${titulo}) en este repo. Contexto: issue jorgeIMendoza/sozu-georgia-tareas#${issue.numero} y sus comentarios (léelos con gh). PRs: ${lista.map((p) => `#${p.numero}`).join(", ")}."`,
+        ].join("\n");
+        return (
+          <li key={repo} className="rounded-md border bg-background">
+            <button
+              type="button"
+              onClick={() => setAbiertos((a) => { const n = new Set(a); if (n.has(repo)) n.delete(repo); else n.add(repo); return n; })}
+              aria-expanded={abierto}
+              className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-[11px] hover:bg-muted/50"
+            >
+              <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200", !abierto && "-rotate-90")} />
+              <span className="rounded bg-violet-100 px-1 text-[9px] font-bold text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">{sig}</span>
+              <span className="font-medium">{repo}</span>
+              <span className="text-muted-foreground">· {lista.length} PR{lista.length === 1 ? "" : "s"}</span>
+              <span className="ml-auto truncate text-[10px] text-muted-foreground">{resumen}</span>
+            </button>
+            {abierto && (
+              <div className="space-y-1.5 border-t px-2 py-1.5">
+                <div className="flex flex-wrap gap-1.5">
+                  {lista.map((p) => (
+                    <a
+                      key={p.url}
+                      href={p.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={p.titulo || undefined}
+                      className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-muted"
+                    >
+                      <GitPullRequest className="h-3 w-3" /> #{p.numero}
+                      {p.titulo && <span className="max-w-[14rem] truncate font-normal text-foreground">{p.titulo}</span>}
+                      <span className={cn("font-normal", COLOR_PR[p.estado])}>· {ETIQUETA_PR[p.estado]}</span>
+                    </a>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => onSesion(sig)}
+                    className="inline-flex items-center gap-1 rounded-md bg-zinc-900 px-2 py-0.5 font-medium text-zinc-200 hover:bg-zinc-800"
+                    title={`Lo que hizo Claude en ${repo} (consola filtrada)`}
+                  >
+                    <Terminal className="h-3 w-3" /> Sesión en {sig}
+                    <span className="opacity-70">· {acciones} acciones</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(comando);
+                      setCopiado(repo);
+                      setTimeout(() => setCopiado(null), 1600);
+                    }}
+                    className="rounded-md border px-2 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    title="Copia los comandos para retomar este repo en la terminal (rama del ticket)"
+                  >
+                    {copiado === repo ? "copiado" : "Seguir en terminal"}
+                  </button>
+                  {consola.sesion && <span className="font-mono text-muted-foreground" title={`Id de sesión: ${consola.sesion}`}>{consola.sesion.slice(0, 8)}</span>}
+                </div>
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /** Misma consulta en la lista y en el detalle: comparten caché y sondeo. */
 function useSeguimiento(ticketId: string) {
   return useQuery({
@@ -288,8 +385,9 @@ export function SeguimientoClaude({ ticketId, folio, titulo, issue, enfocar = fa
   const conversacion = useRef<HTMLDivElement>(null);
   const zonaAvance = useRef<HTMLDivElement>(null);
   const consola = useConsola(issue.numero);
-  const [ventanaConsola, setVentanaConsola] = useState(false);
-  const cerrarVentana = useCallback(() => setVentanaConsola(false), []);
+  // Ventana flotante de la consola; con `repo` (sigla), solo lo de ese repo.
+  const [ventanaConsola, setVentanaConsola] = useState<{ repo: string | null } | null>(null);
+  const cerrarVentana = useCallback(() => setVentanaConsola(null), []);
   const cargado = !!q.data;
   const listo = !!q.data?.listoParaCerrar;
   const esperandoAhora = q.data?.estado === "esperando_respuesta";
@@ -448,7 +546,7 @@ export function SeguimientoClaude({ ticketId, folio, titulo, issue, enfocar = fa
       {s && !(activo(s.estado) || pct !== null) && consola.lineas.length > 0 && (
         <button
           type="button"
-          onClick={() => setVentanaConsola(true)}
+          onClick={() => setVentanaConsola({ repo: null })}
           className="inline-flex items-center gap-1 rounded-md bg-zinc-900 px-2 py-0.5 text-[10px] font-medium text-zinc-200 hover:bg-zinc-800"
           title="Ver la consola de la última corrida"
         >
@@ -463,7 +561,7 @@ export function SeguimientoClaude({ ticketId, folio, titulo, issue, enfocar = fa
             {(consola.lineas.length > 0 || activo(s.estado)) && (
               <button
                 type="button"
-                onClick={() => setVentanaConsola(true)}
+                onClick={() => setVentanaConsola({ repo: null })}
                 className="inline-flex shrink-0 items-center gap-1 rounded-md bg-zinc-900 px-2 py-0.5 text-[10px] font-medium text-zinc-200 hover:bg-zinc-800"
                 title="Ver la consola de Claude en una ventana"
               >
@@ -488,22 +586,14 @@ export function SeguimientoClaude({ ticketId, folio, titulo, issue, enfocar = fa
 
       {s && s.prs.length > 0 && (
         <div className="space-y-1.5">
-          <div className="flex flex-wrap gap-1.5">
-            {s.prs.map((p) => (
-              <a
-                key={p.url}
-                href={p.url}
-                target="_blank"
-                rel="noreferrer"
-                title={p.titulo || undefined}
-                className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-[11px] font-medium text-primary hover:bg-muted"
-              >
-                <span className="rounded bg-violet-100 px-1 text-[9px] font-bold text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">{siglaRepo(p.repo)}</span>
-                <GitPullRequest className="h-3 w-3" /> {p.repo}#{p.numero}
-                <span className={cn("font-normal", COLOR_PR[p.estado])}>· {ETIQUETA_PR[p.estado]}</span>
-              </a>
-            ))}
-          </div>
+          <ReposDelTicket
+            prs={s.prs}
+            consola={consola}
+            folio={folio}
+            titulo={titulo}
+            issue={issue}
+            onSesion={(repo) => setVentanaConsola({ repo })}
+          />
           {s.estado !== "trabajando" && s.estado !== "en_cola" && (() => {
             const a = avancePrs(s.prs);
             return a.total > 0 && (
@@ -520,7 +610,13 @@ export function SeguimientoClaude({ ticketId, folio, titulo, issue, enfocar = fa
       {q.error && <p className="text-xs text-destructive">{mensajeDeError(q.error)}</p>}
 
       {ventanaConsola && (
-        <ConsolaFlotante consola={consola} trabajando={activo(s?.estado)} titulo={`issue #${issue.numero}`} onCerrar={cerrarVentana} />
+        <ConsolaFlotante
+          consola={consola}
+          trabajando={activo(s?.estado)}
+          titulo={ventanaConsola.repo ? `${ventanaConsola.repo} · ${folio}` : `${folio} · issue #${issue.numero}`}
+          filtro={ventanaConsola.repo}
+          onCerrar={cerrarVentana}
+        />
       )}
 
       {mensajes.length > 0 && (
