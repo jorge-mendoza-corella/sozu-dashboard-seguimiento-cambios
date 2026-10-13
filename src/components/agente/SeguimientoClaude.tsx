@@ -212,7 +212,9 @@ function SesionClaude({ folio, titulo, issue, sesion, runUrl, repos }: {
  * y en qué van. Al abrirlo, sus PRs y la sesión de Claude en ese repo (la
  * consola filtrada a lo que hizo ahí) y el comando para retomarlo.
  */
-function ReposDelTicket({ prs, consola, folio, titulo, issue, onSesion }: {
+function ReposDelTicket({ trabajando, prs, consola, folio, titulo, issue, onSesion }: {
+  /** Con la corrida activa, se resalta el repo de la última acción de la consola. */
+  trabajando: boolean;
   prs: PrClaude[];
   consola: Consola;
   folio: string;
@@ -223,6 +225,7 @@ function ReposDelTicket({ prs, consola, folio, titulo, issue, onSesion }: {
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
   const [copiado, setCopiado] = useState<string | null>(null);
   const grupos = [...prs.reduce((m, p) => m.set(p.repo, [...(m.get(p.repo) ?? []), p]), new Map<string, PrClaude[]>())];
+  const ultimaConRepo = trabajando ? [...consola.lineas].reverse().find((l) => l.repo) : undefined;
   const numero = folio.replace(/^#/, "");
 
   return (
@@ -230,6 +233,7 @@ function ReposDelTicket({ prs, consola, folio, titulo, issue, onSesion }: {
       {grupos.map(([repo, lista]) => {
         const sig = siglaRepo(repo);
         const abierto = abiertos.has(repo);
+        const aqui = ultimaConRepo?.repo === sig;
         const acciones = consola.lineas.filter((l) => l.repo === sig).length;
         const conteo = lista.reduce<Record<string, number>>((c, p) => ({ ...c, [p.estado]: (c[p.estado] ?? 0) + 1 }), {});
         const resumen = (Object.keys(conteo) as EstadoPr[]).map((e) => `${conteo[e]} ${ETIQUETA_PR[e]}`).join(" · ");
@@ -240,7 +244,13 @@ function ReposDelTicket({ prs, consola, folio, titulo, issue, onSesion }: {
           `claude "Retoma el ticket ${folio} (${titulo}) en este repo. Contexto: issue jorgeIMendoza/sozu-georgia-tareas#${issue.numero} y sus comentarios (léelos con gh). PRs: ${lista.map((p) => `#${p.numero}`).join(", ")}."`,
         ].join("\n");
         return (
-          <li key={repo} className="rounded-md border bg-background">
+          <li
+            key={repo}
+            className={cn(
+              "rounded-md border bg-background transition-colors duration-300",
+              aqui && "border-violet-400 bg-violet-50/70 ring-1 ring-violet-300 dark:border-violet-700 dark:bg-violet-950/30 dark:ring-violet-800",
+            )}
+          >
             <button
               type="button"
               onClick={() => setAbiertos((a) => { const n = new Set(a); if (n.has(repo)) n.delete(repo); else n.add(repo); return n; })}
@@ -251,6 +261,15 @@ function ReposDelTicket({ prs, consola, folio, titulo, issue, onSesion }: {
               <span className="rounded bg-violet-100 px-1 text-[9px] font-bold text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">{sig}</span>
               <span className="font-medium">{repo}</span>
               <span className="text-muted-foreground">· {lista.length} PR{lista.length === 1 ? "" : "s"}</span>
+              {aqui && ultimaConRepo && (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full bg-violet-600 px-1.5 py-px text-[9px] font-semibold text-white"
+                  title={ultimaConRepo.texto}
+                >
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white motion-reduce:animate-none" />
+                  trabajando aquí · hace {duracion(new Date(ultimaConRepo.t).toISOString())}
+                </span>
+              )}
               <span className="ml-auto truncate text-[10px] text-muted-foreground">{resumen}</span>
             </button>
             {abierto && (
@@ -612,6 +631,7 @@ export function SeguimientoClaude({ ticketId, folio, titulo, issue, enfocar = fa
       {s && s.prs.length > 0 && (
         <div className="space-y-1.5">
           <ReposDelTicket
+            trabajando={activo(s.estado)}
             prs={s.prs}
             consola={consola}
             folio={folio}
