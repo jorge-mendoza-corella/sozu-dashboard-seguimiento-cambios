@@ -40,13 +40,21 @@ export async function abrirSubida(
   const bucket = getStorage().bucket();
   const ruta = `georgia-adjuntos/${email}/${ticketId}/${Date.now()}-${limpiarNombre(nombre)}`;
   const token = randomUUID();
-  const [sesion] = await bucket.file(ruta).createResumableUpload({
-    origin: origen,
-    metadata: {
-      contentType: tipo,
-      metadata: { firebaseStorageDownloadTokens: token, subidoPor: email, ticketId },
-    },
-  });
+  let sesion: string;
+  try {
+    [sesion] = await bucket.file(ruta).createResumableUpload({
+      origin: origen,
+      metadata: {
+        contentType: tipo,
+        metadata: { firebaseStorageDownloadTokens: token, subidoPor: email, ticketId },
+      },
+    });
+  } catch (e) {
+    if ((e as { code?: number }).code === 404) {
+      throw new HttpsError("failed-precondition", "Firebase Storage no está activado en el proyecto: hay que activarlo para subir adjuntos.");
+    }
+    throw e;
+  }
   const url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(ruta)}?alt=media&token=${token}`;
   return { sesion, url };
 }
