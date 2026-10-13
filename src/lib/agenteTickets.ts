@@ -121,7 +121,17 @@ export interface SeguimientoClaude {
   prs: PrClaude[];
   /** Todos los PRs vigentes ya están en PRD: se puede cerrar. */
   listoParaCerrar: boolean;
+  /** Arranque de la corrida activa (o la última) y su fin, si ya terminó. */
+  corrida?: { inicio: string; fin: string | null } | null;
   revisado: string;
+}
+
+/** "45s", "12m", "1h 05m". */
+export function duracion(desdeIso: string, hasta = Date.now()): string {
+  const s = Math.max(0, Math.round((hasta - Date.parse(desdeIso)) / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
 }
 
 /** PRs vigentes (sin los cerrados sin merge) y cuántos ya llegaron a PRD. */
