@@ -960,7 +960,7 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             <Zap className="h-3.5 w-3.5" /> Últimos deploys
             {/* Solo en repos que generan documentación en sozu-docs. */}
-            {status.docs && <DocsStatusDot docs={status.docs} />}
+            {status.docs && <DocsStatusDot docs={status.docs} owner={status.owner} repo={status.repo} onRefetch={readOnly ? undefined : onRefetch} />}
           </h4>
           <div className="flex flex-wrap gap-1.5">
             {runsVisibles.length === 0

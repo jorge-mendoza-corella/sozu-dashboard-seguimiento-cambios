@@ -708,7 +708,8 @@ async function workflowsDelRepo(owner: string, repo: string): Promise<WorkflowsD
  *
  * - `ok`: el último run en main terminó bien y es del commit que hoy está en main.
  * - `actualizando`: hay uno corriendo o en cola.
- * - `fallo`: el último terminó mal (la llave de Anthropic vencida da 401 aquí).
+ * - `fallo`: el último terminó mal (sin crédito en Anthropic, llave vencida…; la
+ *   causa la lee `docsFallo` del log).
  * - `desactualizada`: el último terminó bien, pero main ya avanzó y no hay run
  *   para ese commit — el push no la disparó, o se canceló antes de empezar.
  */
@@ -1703,4 +1704,28 @@ export async function prDeMergeConCommits(
   if (!pr) return null;
   const { data: commits } = await octokit.pulls.listCommits({ owner, repo, pull_number: pr.number, per_page: 100 });
   return { numero: pr.number, titulo: pr.title, url: pr.html_url, commits: commits.map((c) => c.commit.message) };
+}
+
+/**
+ * Vuelve a generar la documentación de un repo (como el usuario de la sesión).
+ *
+ * Primero la lanza de nuevo sobre `main` (así toma el commit de hoy aunque el
+ * run fallido sea de uno anterior); si el workflow no acepta `workflow_dispatch`
+ * (422), reintenta los jobs fallidos del run.
+ */
+export async function reintentarDocs(owner: string, repo: string, run: WorkflowRun): Promise<void> {
+  try {
+    if (run.workflowId) {
+      try {
+        await actor().actions.createWorkflowDispatch({ owner, repo, workflow_id: run.workflowId, ref: "main" });
+        return;
+      } catch (err) {
+        if ((err as { status?: number }).status !== 422 || !run.runId) throw err;
+      }
+    }
+    if (!run.runId) throw new Error("El run no trae id.");
+    await actor().actions.reRunWorkflowFailedJobs({ owner, repo, run_id: run.runId });
+  } catch (err) {
+    throw await errorDeEscritura(err, owner, repo, "reintentar la documentación");
+  }
 }
