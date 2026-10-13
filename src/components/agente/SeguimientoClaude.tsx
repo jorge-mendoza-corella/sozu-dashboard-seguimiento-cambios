@@ -94,7 +94,15 @@ function useSeguimiento(ticketId: string) {
   });
 }
 
-const porcentaje = (p: { hechos: number; total: number } | null) => (p ? Math.round((p.hechos / p.total) * 100) : null);
+/**
+ * Avance de la barra. Mientras la corrida sigue activa nunca llega a 100: con
+ * todo palomeado aún falta cerrarla (commits, PRs, comentario final).
+ */
+const porcentaje = (p: { hechos: number; total: number } | null, estado?: EstadoClaude) => {
+  if (!p) return null;
+  const pct = Math.round((p.hechos / p.total) * 100);
+  return activo(estado) ? Math.min(pct, 95) : pct;
+};
 
 /** Barra delgada: con checklist, el avance; sin él y trabajando, indeterminada. */
 function Barra({ estado, pct, alto = "h-1.5" }: { estado: EstadoClaude; pct: number | null; alto?: string }) {
@@ -132,7 +140,7 @@ export function EstadoClaudeMini({ ticketId }: { ticketId: string }) {
     >
       {activo(s.estado) && <Loader2 className="h-2.5 w-2.5 animate-spin motion-reduce:animate-none" />}
       {s.estado === "esperando_respuesta" ? "te pregunta" : s.estado === "terminado" && avance.total ? `${avance.enPrd}/${avance.total} en PRD` : ETIQUETA[s.estado].toLowerCase()}
-      {s.progreso && activo(s.estado) && ` ${porcentaje(s.progreso)}%`}
+      {s.progreso && activo(s.estado) && ` ${porcentaje(s.progreso, s.estado)}%`}
     </span>
   );
 }
@@ -141,7 +149,7 @@ export function EstadoClaudeMini({ ticketId }: { ticketId: string }) {
 export function BarraClaudeMini({ ticketId }: { ticketId: string }) {
   const { data: s } = useSeguimiento(ticketId);
   if (!s || !(activo(s.estado) || s.estado === "esperando_respuesta")) return null;
-  return <span className="mt-1 block"><Barra estado={s.estado} pct={porcentaje(s.progreso)} alto="h-1" /></span>;
+  return <span className="mt-1 block"><Barra estado={s.estado} pct={porcentaje(s.progreso, s.estado)} alto="h-1" /></span>;
 }
 
 export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado, onListo }: {
@@ -265,7 +273,7 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
   };
 
   const s = q.data;
-  const pct = porcentaje(s?.progreso ?? null);
+  const pct = porcentaje(s?.progreso ?? null, s?.estado);
   const esperando = s?.estado === "esperando_respuesta";
   // La conversación sin el comentario de avance viejo: solo el último checklist.
   const ultimoSeguimiento = s ? [...s.mensajes].reverse().find((m) => m.esSeguimiento)?.id : undefined;
@@ -297,7 +305,9 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
         <div>
           <Barra estado={s.estado} pct={pct} />
           <p className="mt-1 text-[10px] text-muted-foreground">
-            {s.progreso ? `${s.progreso.hechos} de ${s.progreso.total} pasos` : s.estado === "en_cola" ? "Esperando a que arranque la corrida…" : "Arrancando…"}
+            {s.progreso
+              ? `${s.progreso.hechos} de ${s.progreso.total} pasos${activo(s.estado) && s.progreso.hechos === s.progreso.total ? " · cerrando la corrida…" : ""}`
+              : s.estado === "en_cola" ? "Esperando a que arranque la corrida…" : "Arrancando…"}
           </p>
         </div>
       )}
