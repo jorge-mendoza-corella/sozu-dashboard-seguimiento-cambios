@@ -50,7 +50,14 @@ const MARCA_PREGUNTA = "<!-- georgia-pregunta -->";
 const MARCA_HUMANO = /<!-- georgia-humano:([^\s>]+) -->/;
 const MAX_RESPUESTA = 4_000;
 
-const esSeguimiento = (b: string) => b.includes("View job") && /Claude (Code is working|finished|encountered)/i.test(b);
+/**
+ * Comentario de avance de claude-code-action: siempre termina con el enlace
+ * "View job". El encabezado ("Claude Code is working…") no sirve para
+ * reconocerlo: Claude lo reescribe con su propio título.
+ */
+const esSeguimiento = (b: string) => /\[View job( run)?\]\(https:\/\/github\.com\//i.test(b);
+/** Mientras trabaja, el comentario de avance trae el spinner (un <img>) o "is working". */
+const avanceTerminado = (b: string) => !/user-attachments\/assets\/5ac382c7|Claude Code is working/i.test(b);
 
 /**
  * Claude a veces deja las preguntas en su comentario de avance (con track_progress
@@ -100,7 +107,7 @@ export async function seguimientoClaude(
       fecha: c.updated_at ?? c.created_at,
       // En el de avance solo cuenta cuando ya terminó: mientras trabaja, el
       // checklist tiene pasos sin palomear que no son preguntas.
-      esPregunta: deClaude && (esSeguimiento(b) ? /Claude finished/i.test(b) && pidePregunta(b) : pidePregunta(b)),
+      esPregunta: deClaude && (esSeguimiento(b) ? avanceTerminado(b) && pidePregunta(b) : pidePregunta(b)),
       esSeguimiento: deClaude && esSeguimiento(b),
     };
   });
