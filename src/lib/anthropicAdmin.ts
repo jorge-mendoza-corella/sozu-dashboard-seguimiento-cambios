@@ -87,8 +87,18 @@ interface Pricing {
   cacheCreate: number;
 }
 
-// Prefix-matched: longest match wins. Prices as of 2025.
+// Se toma la PRIMERA entrada contenida en el nombre del modelo, así que las
+// familias nuevas van antes que los prefijos genéricos ("claude-opus-4").
+// Aproximado: sirve para repartir el gasto; el total real sale de cost_report.
 const PRICING_TABLE: [string, Pricing][] = [
+  ["claude-opus-5",    { input: 5/1e6,    output: 25/1e6,   cacheRead: 0.5/1e6,   cacheCreate: 6.25/1e6  }],
+  ["claude-opus-4-8",  { input: 5/1e6,    output: 25/1e6,   cacheRead: 0.5/1e6,   cacheCreate: 6.25/1e6  }],
+  ["claude-opus-4-7",  { input: 5/1e6,    output: 25/1e6,   cacheRead: 0.5/1e6,   cacheCreate: 6.25/1e6  }],
+  ["claude-opus-4-6",  { input: 5/1e6,    output: 25/1e6,   cacheRead: 0.5/1e6,   cacheCreate: 6.25/1e6  }],
+  ["claude-opus-4-5",  { input: 5/1e6,    output: 25/1e6,   cacheRead: 0.5/1e6,   cacheCreate: 6.25/1e6  }],
+  ["claude-sonnet-5",  { input: 3/1e6,    output: 15/1e6,   cacheRead: 0.3/1e6,   cacheCreate: 3.75/1e6  }],
+  ["claude-haiku-5",   { input: 1/1e6,    output: 5/1e6,    cacheRead: 0.1/1e6,   cacheCreate: 1.25/1e6  }],
+  ["claude-haiku-4-5", { input: 1/1e6,    output: 5/1e6,    cacheRead: 0.1/1e6,   cacheCreate: 1.25/1e6  }],
   ["claude-opus-4",    { input: 15/1e6,   output: 75/1e6,   cacheRead: 1.5/1e6,   cacheCreate: 18.75/1e6 }],
   ["claude-sonnet-4",  { input: 3/1e6,    output: 15/1e6,   cacheRead: 0.3/1e6,   cacheCreate: 3.75/1e6  }],
   ["claude-haiku-4",   { input: 0.8/1e6,  output: 4/1e6,    cacheRead: 0.08/1e6,  cacheCreate: 1/1e6     }],
@@ -108,7 +118,7 @@ function getModelPricing(model: string): Pricing {
   return PRICING_TABLE[1][1]; // fallback: Sonnet 4
 }
 
-function computeResultCost(r: RawUsageResult): number {
+export function computeResultCost(r: RawUsageResult): number {
   const p = getModelPricing(r.model);
   const cacheCreateTokens =
     (r.cache_creation?.ephemeral_1h_input_tokens ?? 0) +
