@@ -49,7 +49,18 @@ export interface MensajeAgente {
   herramientas: HerramientaUsada[];
   /** Documentos de sozu-docs que el agente leyó para responder. */
   docs: string[];
+  /** Imágenes, audios y videos que la persona mandó con la pregunta. */
+  adjuntos?: AdjuntoChat[];
   error?: boolean;
+}
+
+/** Adjunto de una pregunta: audio y video llegan ya transcritos (y el video con cuadros). */
+export interface AdjuntoChat {
+  tipo: "imagen" | "audio" | "video";
+  nombre: string;
+  url: string;
+  transcripcion?: string | null;
+  cuadros?: string[];
 }
 
 export type ChunkAgente =
@@ -72,13 +83,21 @@ export interface DocumentoAgente {
   sha: string;
 }
 
-const llamar = httpsCallable<{ conversacionId: string | null; mensaje: string }, RespuestaAgente, ChunkAgente>(
+const llamar = httpsCallable<{ conversacionId: string | null; mensaje: string; adjuntos?: AdjuntoChat[] }, RespuestaAgente, ChunkAgente>(
   functions,
   "agenteRepos",
   { timeout: 540_000 },
 );
 
 const llamarDoc = httpsCallable<{ ruta: string }, DocumentoAgente>(functions, "agenteDoc");
+const llamarProcesar = httpsCallable<{ url: string; tipo: "audio" | "video" }, { transcripcion: string | null; cuadros: string[] }>(
+  functions, "agenteProcesarAdjunto", { timeout: 540_000 },
+);
+
+/** Transcribe un audio/video ya subido (y saca cuadros del video) para GeorgIA. */
+export async function procesarAdjunto(url: string, tipo: "audio" | "video") {
+  return (await llamarProcesar({ url, tipo })).data;
+}
 
 /** Documento completo de sozu-docs (requiere el permiso "Ver documentación"). */
 export async function leerDocumento(ruta: string): Promise<DocumentoAgente> {
@@ -94,8 +113,9 @@ export async function preguntar(
   mensaje: string,
   alTrozo: (c: ChunkAgente) => void,
   signal?: AbortSignal,
+  adjuntos: AdjuntoChat[] = [],
 ): Promise<RespuestaAgente> {
-  const { stream, data } = await llamar.stream({ conversacionId, mensaje }, { signal });
+  const { stream, data } = await llamar.stream({ conversacionId, mensaje, ...(adjuntos.length ? { adjuntos } : {}) }, { signal });
   for await (const c of stream) alTrozo(c);
   return data;
 }
@@ -109,6 +129,8 @@ export function mensajeDeError(e: unknown): string {
   if (code.endsWith("invalid-argument")) return msg;
   if (code.endsWith("unauthenticated")) return "Tu sesión expiró. Vuelve a iniciar sesión.";
   if (code.endsWith("deadline-exceeded")) return "La respuesta tardó demasiado. Intenta con una pregunta más acotada.";
+  if (code.endsWith("unavailable") || code.endsWith("failed-precondition")) return msg || "No se pudo completar. Intenta de nuevo.";
+  if (!code && msg) return msg;
   return "No se pudo completar la respuesta. Intenta de nuevo.";
 }
 
@@ -233,6 +255,7 @@ export async function leerMensajes(conversacionId: string): Promise<MensajeAgent
       texto: String(m.texto ?? ""),
       herramientas: Array.isArray(m.herramientas) ? m.herramientas : [],
       docs: listaDe(m.docs),
+      ...(Array.isArray(m.adjuntos) && m.adjuntos.length ? { adjuntos: m.adjuntos as AdjuntoChat[] } : {}),
     });
   }
   return out;
