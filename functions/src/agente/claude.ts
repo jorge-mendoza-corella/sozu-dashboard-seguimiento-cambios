@@ -157,10 +157,13 @@ export async function seguimientoClaude(
     mensajes.filter((m) => m.autor === "claude")
       .flatMap((m) => m.cuerpo.match(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g) ?? []),
   )];
-  // Mientras Claude trabaja los PRs cambian a cada rato: se revisan al terminar.
-  const prsEstado = estado === "trabajando" || estado === "en_cola"
-    ? { prs: urls.map((url) => prDeUrl(url)).filter((p): p is PrClaude => !!p), listo: false }
-    : await estadoPrsTicket(gh, quien.email, quien.ticketId, urls, quien.forzarPrs);
+  // También mientras trabaja: un PR de una corrida anterior puede estar ya en
+  // dev o en main. `estadoPrsTicket` reusa lo revisado hace < 10 min (y rehace
+  // en cuanto aparece un PR nuevo), así que no se gasta una consulta por sondeo.
+  const prsEstado = await estadoPrsTicket(gh, quien.email, quien.ticketId, urls, quien.forzarPrs).catch(() => ({
+    prs: urls.map((url) => prDeUrl(url)).filter((p): p is PrClaude => !!p),
+    listo: false,
+  }));
 
   return {
     estado,
