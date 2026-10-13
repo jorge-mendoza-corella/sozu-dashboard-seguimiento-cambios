@@ -157,14 +157,39 @@ function prDeUrl(url: string): PrClaude | null {
   return m ? { url, owner: m[1], repo: m[2], numero: Number(m[3]), titulo: "", estado: "abierto", prMain: null } : null;
 }
 
-/** Comenta en el issue con @claude: dispara otra corrida con la respuesta. */
-export async function responderAClaude(gh: Octokit, email: string, numero: number, texto: string): Promise<void> {
-  const t = texto.trim();
+export interface AdjuntoRespuesta {
+  nombre: string;
+  tipo: "imagen" | "video" | "audio";
+  url: string;
+}
+
+/** Solo URLs de Storage de este proyecto (las que abre `agenteSubirAdjunto`). */
+const URL_ADJUNTO = /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[\w.-]+\/o\/georgia-adjuntos%2F[^\s]+$/;
+
+/**
+ * Comenta en el issue con @claude: dispara otra corrida con la respuesta. Los
+ * adjuntos van en el formato que lee el orquestador ("- audio: nombre — url"):
+ * los audios y videos se transcriben antes de que arranque Claude.
+ */
+export async function responderAClaude(
+  gh: Octokit,
+  email: string,
+  numero: number,
+  texto: string,
+  adjuntos: AdjuntoRespuesta[] = [],
+): Promise<void> {
+  const validos = adjuntos
+    .filter((a) => ["imagen", "video", "audio"].includes(a?.tipo) && typeof a.url === "string" && URL_ADJUNTO.test(a.url))
+    .slice(0, 10);
+  const lista = validos.length
+    ? `\n\nAdjuntos:\n${validos.map((a) => `- ${a.tipo}: ${String(a.nombre).replace(/\s+/g, " ").slice(0, 80)} — ${a.url}`).join("\n")}`
+    : "";
+  const t = texto.trim() || (validos.length ? "Te mando adjuntos." : "");
   if (!t) throw new HttpsError("invalid-argument", "La respuesta viene vacía.");
   if (t.length > MAX_RESPUESTA) throw new HttpsError("invalid-argument", "La respuesta es demasiado larga.");
   await gh.issues.createComment({
     ...ORQUESTADOR,
     issue_number: numero,
-    body: `@claude ${t}\n\n— ${email}, desde el dashboard <!-- georgia-humano:${email} -->`,
+    body: `@claude ${t}${lista}\n\n— ${email}, desde el dashboard <!-- georgia-humano:${email} -->`,
   });
 }

@@ -10,11 +10,12 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Bot, ExternalLink, GitPullRequest, Loader2, MessageCircleQuestion, Send, User } from "lucide-react";
+import { Bot, ExternalLink, GitPullRequest, Loader2, MessageCircleQuestion, Mic, Paperclip, Send, Square, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import {
-  avancePrs, responderAClaude, seguimientoClaude, type EstadoClaude, type EstadoPr, type MensajeClaude,
+  avancePrs, MAX_ADJUNTO_MB, responderAClaude, seguimientoClaude, subirAdjunto, tipoAdjunto,
+  type AdjuntoRespuesta, type EstadoClaude, type EstadoPr, type MensajeClaude,
 } from "@/lib/agenteTickets";
 
 const ETIQUETA: Record<EstadoClaude, string> = {
@@ -57,7 +58,7 @@ const activo = (e: EstadoClaude | undefined) => e === "en_cola" || e === "trabaj
 function Mensaje({ m }: { m: MensajeClaude }) {
   const deClaude = m.autor === "claude";
   return (
-    <div className={cn("flex gap-2", !deClaude && "flex-row-reverse")}>
+    <div className={cn("flex gap-2", !deClaude && "flex-row-reverse")} data-pregunta={m.esPregunta || undefined}>
       <span className={cn("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full", deClaude ? "bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300" : "bg-primary/15 text-primary")}>
         {deClaude ? <Bot className="h-3.5 w-3.5" /> : <User className="h-3.5 w-3.5" />}
       </span>
@@ -158,32 +159,102 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
   const [texto, setTexto] = useState("");
   const cuadro = useRef<HTMLDivElement>(null);
   const campo = useRef<HTMLTextAreaElement>(null);
+  const conversacion = useRef<HTMLDivElement>(null);
   const cargado = !!q.data;
   const listo = !!q.data?.listoParaCerrar;
+  const esperandoAhora = q.data?.estado === "esperando_respuesta";
   useEffect(() => {
     if (listo) onListo?.();
     // Solo al pasar a listo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listo]);
+
+  // Al abrir un ticket que espera respuesta (desde la lista o desde GeorgIA):
+  // la conversación se recorre hasta las preguntas de Claude y el cuadro de
+  // respuesta queda a la vista, con el cursor. Una vez por apertura.
+  const yaEnfocado = useRef(false);
   useEffect(() => {
-    if (!enfocar || !cargado) return;
+    if (yaEnfocado.current || !cargado || !(enfocar || esperandoAhora)) return;
+    yaEnfocado.current = true;
     // Un respiro para que el panel termine de entrar antes de desplazar.
     const t = setTimeout(() => {
-      cuadro.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      const caja = conversacion.current;
+      const pregunta = caja?.querySelectorAll<HTMLElement>("[data-pregunta]");
+      const ultima = pregunta?.[pregunta.length - 1];
+      if (caja && ultima) {
+        // Dentro del mensaje, el título "Preguntas" si lo hay; si no, la última lista.
+        const titulo = [...ultima.querySelectorAll<HTMLElement>("h1,h2,h3,h4,strong,p")].find((el) => /^\s*preguntas?\b/i.test(el.textContent ?? ""));
+        const destino = titulo ?? [...ultima.querySelectorAll<HTMLElement>("ol,ul")].pop() ?? ultima;
+        caja.scrollTop += destino.getBoundingClientRect().top - caja.getBoundingClientRect().top - 8;
+      }
+      cuadro.current?.scrollIntoView({ behavior: "smooth", block: "end" });
       campo.current?.focus({ preventScroll: true });
       onEnfocado?.();
     }, 350);
     return () => clearTimeout(t);
-  }, [enfocar, cargado, onEnfocado]);
+  }, [enfocar, esperandoAhora, cargado, onEnfocado]);
+
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ── Adjuntos: se suben en cuanto se eligen; la respuesta lleva sus URLs ──
+  type Adjunto = { id: string; nombre: string; tipo: AdjuntoRespuesta["tipo"]; avance: number; listo?: AdjuntoRespuesta; error?: string };
+  const [adjuntos, setAdjuntos] = useState<Adjunto[]>([]);
+  const selector = useRef<HTMLInputElement>(null);
+  const subiendo = adjuntos.some((x) => !x.listo && !x.error);
+
+  const agregar = (archivos: File[]) => {
+    for (const f of archivos) {
+      const tipo = tipoAdjunto(f.type);
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      if (!tipo) {
+        setError(`"${f.name}" no es imagen, video ni audio.`);
+        continue;
+      }
+      setAdjuntos((xs) => [...xs, { id, nombre: f.name, tipo, avance: 0 }]);
+      subirAdjunto(ticketId, f, (p) => setAdjuntos((xs) => xs.map((x) => (x.id === id ? { ...x, avance: p } : x))))
+        .then((r) => setAdjuntos((xs) => xs.map((x) => (x.id === id ? { ...x, avance: 1, listo: r } : x))))
+        .catch((e) => setAdjuntos((xs) => xs.map((x) => (x.id === id ? { ...x, error: mensajeDeError(e) } : x))));
+    }
+  };
+
+  // Nota de voz desde el navegador.
+  const [grabando, setGrabando] = useState(false);
+  const grabadora = useRef<MediaRecorder | null>(null);
+  const grabar = async () => {
+    if (grabando) {
+      grabadora.current?.stop();
+      return;
+    }
+    try {
+      const flujo = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(flujo);
+      const partes: Blob[] = [];
+      rec.ondataavailable = (e) => e.data.size && partes.push(e.data);
+      rec.onstop = () => {
+        flujo.getTracks().forEach((t) => t.stop());
+        setGrabando(false);
+        const tipo = rec.mimeType || "audio/webm";
+        const ext = tipo.includes("mp4") ? "m4a" : tipo.includes("ogg") ? "ogg" : "webm";
+        const hora = new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }).replace(":", "");
+        agregar([new File(partes, `nota-de-voz-${hora}.${ext}`, { type: tipo.split(";")[0] })]);
+      };
+      grabadora.current = rec;
+      rec.start();
+      setGrabando(true);
+    } catch {
+      setError("No se pudo usar el micrófono (revisa el permiso del navegador).");
+    }
+  };
+  useEffect(() => () => grabadora.current?.stop(), []);
 
   const responder = async () => {
     setEnviando(true);
     setError(null);
     try {
-      await responderAClaude(ticketId, texto);
+      await responderAClaude(ticketId, texto, adjuntos.flatMap((x) => (x.listo ? [x.listo] : [])));
       setTexto("");
+      setAdjuntos([]);
       // La corrida tarda unos segundos en aparecer en GitHub.
       setTimeout(() => void qc.invalidateQueries({ queryKey: clave }), 4_000);
     } catch (e) {
@@ -264,7 +335,7 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
       {q.error && <p className="text-xs text-destructive">{mensajeDeError(q.error)}</p>}
 
       {mensajes.length > 0 && (
-        <div className="max-h-96 space-y-2 overflow-y-auto rounded-lg border bg-muted/20 p-2">
+        <div ref={conversacion} className="max-h-96 space-y-2 overflow-y-auto rounded-lg border bg-muted/20 p-2">
           {mensajes.map((m) => <Mensaje key={m.id} m={m} />)}
         </div>
       )}
@@ -275,18 +346,63 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
           ref={campo}
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
+          onPaste={(e) => {
+            // Pegar una captura de pantalla la adjunta.
+            const archivos = [...e.clipboardData.files].filter((f) => tipoAdjunto(f.type));
+            if (archivos.length) {
+              e.preventDefault();
+              agregar(archivos);
+            }
+          }}
           rows={esperando ? 3 : 2}
           maxLength={4000}
           placeholder={esperando ? "Tu respuesta para Claude…" : "Pídele un ajuste o dale más contexto…"}
           className="w-full resize-y bg-transparent text-xs outline-none"
         />
+        {adjuntos.length > 0 && (
+          <ul className="mb-2 flex flex-wrap gap-1.5">
+            {adjuntos.map((x) => (
+              <li key={x.id} className={cn("relative flex max-w-[14rem] items-center gap-1 overflow-hidden rounded-md border bg-background py-1 pl-2 pr-1 text-[11px]", x.error && "border-destructive/50 text-destructive")} title={x.error ?? x.nombre}>
+                <span className="text-muted-foreground">{x.tipo === "imagen" ? "🖼" : x.tipo === "video" ? "🎬" : "🎙"}</span>
+                <span className="truncate">{x.nombre}</span>
+                {!x.listo && !x.error && <span className="shrink-0 tabular-nums text-muted-foreground">{Math.round(x.avance * 100)}%</span>}
+                <button type="button" onClick={() => setAdjuntos((xs) => xs.filter((y) => y.id !== x.id))} className="shrink-0 rounded p-0.5 hover:bg-muted" title="Quitar">
+                  <X className="h-3 w-3" />
+                </button>
+                {!x.listo && !x.error && (
+                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-violet-500 transition-[width] duration-200 ease-out" style={{ width: `${x.avance * 100}%` }} />
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="flex items-center gap-2">
+          <input
+            ref={selector}
+            type="file"
+            multiple
+            accept="image/*,video/*,audio/*"
+            className="hidden"
+            onChange={(e) => { agregar([...(e.target.files ?? [])]); e.target.value = ""; }}
+          />
+          <button type="button" onClick={() => selector.current?.click()} className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] text-muted-foreground hover:bg-muted" title={`Imagen, video o audio (hasta ${MAX_ADJUNTO_MB} MB). También puedes pegar una captura.`}>
+            <Paperclip className="h-3 w-3" /> Adjuntar
+          </button>
+          <button
+            type="button"
+            onClick={() => void grabar()}
+            className={cn("inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] hover:bg-muted", grabando ? "border-red-400 text-red-600" : "text-muted-foreground")}
+            title={grabando ? "Detener y adjuntar" : "Grabar una nota de voz"}
+          >
+            {grabando ? <><Square className="h-3 w-3 fill-current" /> Detener</> : <><Mic className="h-3 w-3" /> Nota de voz</>}
+          </button>
           {error && <p className="flex-1 text-[11px] text-destructive">{error}</p>}
-          <span className="flex-1 text-[10px] text-muted-foreground">{activo(s?.estado) ? "Si sigue trabajando, tu mensaje entra al terminar la corrida actual." : "Arranca otra corrida sobre la misma rama y PR."}</span>
+          {!error && <span className="flex-1 text-[10px] text-muted-foreground">{activo(s?.estado) ? "Si sigue trabajando, tu mensaje entra al terminar la corrida actual." : "Audios y videos se transcriben para Claude."}</span>}
           <button
             type="button"
             onClick={() => void responder()}
-            disabled={enviando || !texto.trim()}
+            disabled={enviando || subiendo || grabando || (!texto.trim() && !adjuntos.some((x) => x.listo))}
+            title={subiendo ? "Espera a que terminen de subir los adjuntos" : undefined}
             className="inline-flex h-7 items-center gap-1 rounded-md bg-violet-600 px-2.5 text-xs font-semibold text-white disabled:opacity-50"
           >
             {enviando ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />} {esperando ? "Responder" : "Mandar"}
