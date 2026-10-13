@@ -12,6 +12,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Bot, ExternalLink, GitPullRequest, Loader2, MessageCircleQuestion, Mic, Paperclip, Send, Square, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ConsolaClaude } from "./ConsolaClaude";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import {
   avancePrs, MAX_ADJUNTO_MB, responderAClaude, seguimientoClaude, subirAdjunto, tipoAdjunto,
@@ -343,6 +344,8 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
       )}
 
       {q.error && <p className="text-xs text-destructive">{mensajeDeError(q.error)}</p>}
+
+      <ConsolaClaude issue={issue.numero} trabajando={activo(s?.estado)} />
 
       {mensajes.length > 0 && (
         <div ref={conversacion} className="max-h-96 space-y-2 overflow-y-auto rounded-lg border bg-muted/20 p-2">
