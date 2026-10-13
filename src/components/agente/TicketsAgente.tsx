@@ -365,150 +365,168 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
         </button>
       </header>
 
-      <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
-        <Dato icono={User} etiqueta="Abierto por">{t.abiertoPor ?? "—"}</Dato>
-        <Dato icono={FileText} etiqueta="Fecha">{esSoloFecha(t.abiertoEn) ? fechaTicket(t.abiertoEn, "corta") : fecha(t.abiertoEn)}</Dato>
-        <Dato icono={Users} etiqueta="Para">
-          <span className="flex flex-wrap gap-1">
-            {t.asignados.map((a) => (
-              <span key={a.email ?? a.nombre} className={cn("rounded-full px-2 py-0.5 text-[11px]", a.soyYo ? "bg-primary/15 font-semibold text-primary" : "bg-muted")} title={a.email ?? undefined}>
-                {a.soyYo ? `${a.nombre} (tú)` : a.nombre}
-              </span>
-            ))}
-          </span>
-          {otros.length > 0 && <span className="mt-1 block text-[11px] text-muted-foreground">También va para: {otros.map((o) => o.nombre).join(", ")}</span>}
-        </Dato>
-        {(t.categoria || t.proyecto) && <Dato icono={Inbox} etiqueta="Categoría">{[t.categoria, t.proyecto].filter(Boolean).join(" · ")}</Dato>}
-        {t.url && (
-          <Dato icono={ExternalLink} etiqueta="Portal">
-            <a href={t.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">Abrir {t.folio} en el portal de tickets</a>
-            <span className="block text-[11px] text-muted-foreground">Todos → Mis tickets → folio {t.numero}. Necesitas tener sesión iniciada en el admin.</span>
+      {/* 1. Descripción del ticket */}
+      <Seccion numero={1} titulo="Descripción del ticket">
+        <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+          <Dato icono={User} etiqueta="Abierto por">{t.abiertoPor ?? "—"}</Dato>
+          <Dato icono={FileText} etiqueta="Fecha">{esSoloFecha(t.abiertoEn) ? fechaTicket(t.abiertoEn, "corta") : fecha(t.abiertoEn)}</Dato>
+          <Dato icono={Users} etiqueta="Para">
+            <span className="flex flex-wrap gap-1">
+              {t.asignados.map((a) => (
+                <span key={a.email ?? a.nombre} className={cn("rounded-full px-2 py-0.5 text-[11px]", a.soyYo ? "bg-primary/15 font-semibold text-primary" : "bg-muted")} title={a.email ?? undefined}>
+                  {a.soyYo ? `${a.nombre} (tú)` : a.nombre}
+                </span>
+              ))}
+            </span>
+            {otros.length > 0 && <span className="mt-1 block text-[11px] text-muted-foreground">También va para: {otros.map((o) => o.nombre).join(", ")}</span>}
           </Dato>
-        )}
-        {enviado?.listo && enviado.prs.length > 0 && (
-          <Dato icono={FolderGit2} etiqueta="En PRD">
-            {enviado.prs.map((p) => (
-              <a key={`${p.repo}${p.pr}`} href={p.url} target="_blank" rel="noreferrer" className="mr-2 text-primary hover:underline">{p.repo} #{p.pr}</a>
-            ))}
-          </Dato>
-        )}
-      </div>
-
-      <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Descripción</h3>
-        {t.descripcion.trim() ? (
-          <div className="prose prose-sm max-w-none dark:prose-invert prose-a:text-primary">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a> }}>
-              {t.descripcion}
-            </ReactMarkdown>
-          </div>
-        ) : <p className="text-sm text-muted-foreground">Sin descripción.</p>}
-      </div>
-
-      <div>
-        <h3 className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          <Paperclip className="h-3.5 w-3.5" /> Evidencias ({t.evidencias.length})
-        </h3>
-        {t.evidencias.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Sin evidencias adjuntas.</p>
-        ) : (
-          <>
-            {imagenes.length > 0 && (
-              <p className="mb-2 text-[11px] text-muted-foreground">
-                "Mandar a Claude" las lleva por URL. Si pegas el .md a mano, pega cada imagen con <strong>Copiar imagen</strong> → Ctrl/Cmd+V, en el orden numerado.
-              </p>
-            )}
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {t.evidencias.map((e, i) => <Evidencia key={`${e.url}${i}`} e={e} n={e.tipo === "imagen" ? imagenes.indexOf(e) + 1 : null} />)}
+          {(t.categoria || t.proyecto) && <Dato icono={Inbox} etiqueta="Categoría">{[t.categoria, t.proyecto].filter(Boolean).join(" · ")}</Dato>}
+          {t.url && (
+            <Dato icono={ExternalLink} etiqueta="Portal">
+              <a href={t.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">Abrir {t.folio} en el portal de tickets</a>
+              <span className="block text-[11px] text-muted-foreground">Todos → Mis tickets → folio {t.numero}. Necesitas tener sesión iniciada en el admin.</span>
+            </Dato>
+          )}
+          {enviado?.listo && enviado.prs.length > 0 && (
+            <Dato icono={FolderGit2} etiqueta="En PRD">
+              {enviado.prs.map((p) => (
+                <a key={`${p.repo}${p.pr}`} href={p.url} target="_blank" rel="noreferrer" className="mr-2 text-primary hover:underline">{p.repo} #{p.pr}</a>
+              ))}
+            </Dato>
+          )}
+        </div>
+        <div>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Descripción</h3>
+          {t.descripcion.trim() ? (
+            <div className="prose prose-sm max-w-none dark:prose-invert prose-a:text-primary">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a> }}>
+                {t.descripcion}
+              </ReactMarkdown>
             </div>
-          </>
-        )}
-      </div>
-
-      {analisis && (
+          ) : <p className="text-sm text-muted-foreground">Sin descripción.</p>}
+        </div>
         <div>
           <h3 className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            <Sparkles className="h-3.5 w-3.5" /> Investigación previa (guardada)
+            <Paperclip className="h-3.5 w-3.5" /> Evidencias ({t.evidencias.length})
           </h3>
-          <div className="space-y-2 rounded-lg border bg-muted/20 p-3 text-sm">
-            {analisis.resumen && <p>{analisis.resumen}</p>}
-            {analisis.repos.map((r) => (
-              <div key={r.repo} className="rounded-md bg-background p-2">
-                <p className="flex items-center gap-1.5 text-xs font-semibold"><FolderGit2 className="h-3.5 w-3.5 text-primary" />{r.repo}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{r.motivo}</p>
-                {r.rutas.length > 0 && (
-                  <ul className="mt-1 space-y-0.5">{r.rutas.map((p) => <li key={p} className="truncate font-mono text-[11px]">{p}</li>)}</ul>
-                )}
+          {t.evidencias.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sin evidencias adjuntas.</p>
+          ) : (
+            <>
+              {imagenes.length > 0 && (
+                <p className="mb-2 text-[11px] text-muted-foreground">
+                  "Mandar a Claude" las lleva por URL. Si pegas el .md a mano, pega cada imagen con <strong>Copiar imagen</strong> → Ctrl/Cmd+V, en el orden numerado.
+                </p>
+              )}
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {t.evidencias.map((e, i) => <Evidencia key={`${e.url}${i}`} e={e} n={e.tipo === "imagen" ? imagenes.indexOf(e) + 1 : null} />)}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </div>
+        {analisis && (
+          <div>
+            <h3 className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <Sparkles className="h-3.5 w-3.5" /> Investigación previa (guardada)
+            </h3>
+            <div className="space-y-2 rounded-lg border bg-muted/20 p-3 text-sm">
+              {analisis.resumen && <p>{analisis.resumen}</p>}
+              {analisis.repos.map((r) => (
+                <div key={r.repo} className="rounded-md bg-background p-2">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold"><FolderGit2 className="h-3.5 w-3.5 text-primary" />{r.repo}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{r.motivo}</p>
+                  {r.rutas.length > 0 && (
+                    <ul className="mt-1 space-y-0.5">{r.rutas.map((p) => <li key={p} className="truncate font-mono text-[11px]">{p}</li>)}</ul>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Seccion>
+
+      {/* 2. Prompt para Claude: solo mientras no se ha mandado. */}
+      {!issue && (
+        <Seccion numero={2} titulo="Prompt para Claude">
+          <div>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <p className="flex-1 text-[11px] text-muted-foreground">El .md que recibe Claude: edítalo si hace falta antes de mandarlo.</p>
+              {editado && (
+                <button type="button" onClick={() => editar(null)} className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs text-muted-foreground hover:bg-muted" title="Volver al prompt generado">
+                  <RotateCcw className="h-3 w-3" /> Restaurar
+                </button>
+              )}
+              <button type="button" onClick={() => void copiar()} disabled={cargandoAnalisis} className="inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-xs font-medium hover:bg-muted disabled:opacity-50" title="Para pegarlo a mano en Claude Code">
+                {copiado ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {copiado ? "Copiado" : "Copiar .md"}
+              </button>
+            </div>
+            <textarea
+              value={valor}
+              onChange={(e) => editar(e.target.value)}
+              spellCheck={false}
+              rows={18}
+              className="w-full resize-y rounded-lg border bg-muted/30 p-3 font-mono text-[12px] leading-relaxed outline-none focus:ring-2 focus:ring-ring"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {editado
+                ? guardado === "guardando" ? "Guardando…" : guardado === "error" ? "No se pudo guardar en la nube; quedó en este navegador." : "Editado: guardado en tu cuenta (lo ves desde cualquier equipo)."
+                : "Generado del ticket; edítalo libremente antes de mandarlo."}{" "}
+              Los commits llevarán el trailer <code>Ticket-SOZU</code>: cuando su PR llegue a PRD, GeorgIA te avisa para cerrarlo.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-violet-300/60 bg-violet-50/60 p-3 dark:border-violet-800/60 dark:bg-violet-950/20">
+            <Bot className="h-4 w-4 text-violet-600 dark:text-violet-300" />
+            <p className="min-w-0 flex-1 text-sm">
+              Claude Code investiga, arregla y abre los PRs hacia <strong>dev</strong> (con tu suscripción). Tú solo revisas y apruebas.
+            </p>
+            {confirmar ? (
+              <span className="flex items-center gap-1.5">
+                <button type="button" onClick={() => setConfirmar(false)} disabled={mandando} className="h-8 rounded-md px-2.5 text-xs font-medium hover:bg-muted">Cancelar</button>
+                <button type="button" onClick={() => void mandar()} disabled={mandando || cargandoAnalisis} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-50">
+                  {mandando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Sí, mandar
+                </button>
+              </span>
+            ) : (
+              <button type="button" onClick={() => setConfirmar(true)} disabled={cargandoAnalisis} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-50">
+                <Send className="h-3.5 w-3.5" /> Mandar a Claude
+              </button>
+            )}
+            {confirmar && <p className="w-full text-[11px] text-muted-foreground">Se manda el .md de arriba tal como está (con tus ediciones). Usa la ventana de 5 h de tu plan.</p>}
+            {errorMandar && <p className="w-full text-xs text-destructive">{errorMandar}</p>}
+          </div>
+        </Seccion>
       )}
 
-      <div className="rounded-lg border border-violet-300/60 bg-violet-50/60 p-3 dark:border-violet-800/60 dark:bg-violet-950/20">
-        <div className="flex flex-wrap items-center gap-2">
-          <Bot className="h-4 w-4 text-violet-600 dark:text-violet-300" />
-          <p className="min-w-0 flex-1 text-sm">
-            {issue ? (
-              <>Mandado a Claude Code. Aquí ves en qué va, los PRs hacia <strong>dev</strong> y lo que te pregunte.</>
-            ) : (
-              <>Claude Code investiga, arregla y abre los PRs hacia <strong>dev</strong> (con tu suscripción). Tú solo revisas y apruebas.</>
-            )}
-          </p>
-          {!issue && (confirmar ? (
-            <span className="flex items-center gap-1.5">
-              <button type="button" onClick={() => setConfirmar(false)} disabled={mandando} className="h-8 rounded-md px-2.5 text-xs font-medium hover:bg-muted">Cancelar</button>
-              <button type="button" onClick={() => void mandar()} disabled={mandando || cargandoAnalisis} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-50">
-                {mandando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />} Sí, mandar
-              </button>
-            </span>
-          ) : (
-            <button type="button" onClick={() => setConfirmar(true)} disabled={cargandoAnalisis} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-50">
-              <Send className="h-3.5 w-3.5" /> Mandar a Claude
-            </button>
-          ))}
-        </div>
-        {issue && (
-          <SeguimientoClaude
-            ticketId={t.id}
-            issue={issue}
-            enfocar={enfocarRespuesta}
-            onEnfocado={onRespuestaEnfocada}
-            onListo={enviado?.listo ? undefined : onEnviado}
-          />
-        )}
-        {confirmar && !issue && <p className="mt-2 text-[11px] text-muted-foreground">Se manda el .md de abajo tal como está (con tus ediciones). Usa la ventana de 5 h de tu plan.</p>}
-        {errorMandar && <p className="mt-2 text-xs text-destructive">{errorMandar}</p>}
-      </div>
-
-      <div>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <h3 className="flex-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Prompt para Claude (.md)</h3>
-          {editado && (
-            <button type="button" onClick={() => editar(null)} className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs text-muted-foreground hover:bg-muted" title="Volver al prompt generado">
-              <RotateCcw className="h-3 w-3" /> Restaurar
-            </button>
-          )}
-          <button type="button" onClick={() => void copiar()} disabled={cargandoAnalisis} className="inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-xs font-medium hover:bg-muted disabled:opacity-50" title="Para pegarlo a mano en Claude Code">
-            {copiado ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-            {copiado ? "Copiado" : "Copiar .md"}
-          </button>
-        </div>
-        <textarea
-          value={valor}
-          onChange={(e) => editar(e.target.value)}
-          spellCheck={false}
-          rows={18}
-          className="w-full resize-y rounded-lg border bg-muted/30 p-3 font-mono text-[12px] leading-relaxed outline-none focus:ring-2 focus:ring-ring"
-        />
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          {editado
-            ? guardado === "guardando" ? "Guardando…" : guardado === "error" ? "No se pudo guardar en la nube; quedó en este navegador." : "Editado: guardado en tu cuenta (lo ves desde cualquier equipo)."
-            : "Generado del ticket; edítalo libremente antes de mandarlo."}{" "}
-          Los commits llevarán el trailer <code>Ticket-SOZU</code>: cuando su PR llegue a PRD, GeorgIA te avisa para cerrarlo.
-        </p>
-      </div>
+      {/* 3. Trabajo en Claude: aparece al mandarlo (y el prompt se oculta). */}
+      {issue && (
+        <Seccion numero={2} titulo="Trabajo en Claude" icono={Bot}>
+          <div className="rounded-lg border border-violet-300/60 bg-violet-50/60 p-3 dark:border-violet-800/60 dark:bg-violet-950/20">
+            <SeguimientoClaude
+              ticketId={t.id}
+              issue={issue}
+              enfocar={enfocarRespuesta}
+              onEnfocado={onRespuestaEnfocada}
+              onListo={enviado?.listo ? undefined : onEnviado}
+            />
+          </div>
+        </Seccion>
+      )}
     </div>
+  );
+}
+
+/** Encabezado de cada parte del detalle: 1. descripción, 2. prompt o trabajo en Claude. */
+function Seccion({ numero, titulo, icono: Icono, children }: { numero: number; titulo: string; icono?: typeof User; children: React.ReactNode }) {
+  return (
+    <section className="space-y-3">
+      <h3 className="flex items-center gap-2 border-b pb-1.5 text-sm font-semibold">
+        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">{numero}</span>
+        {Icono && <Icono className="h-4 w-4 text-violet-600 dark:text-violet-300" />}
+        {titulo}
+      </h3>
+      {children}
+    </section>
   );
 }
 
