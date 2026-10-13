@@ -12,7 +12,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Bot, Terminal, ExternalLink, GitPullRequest, Loader2, MessageCircleQuestion, Mic, Paperclip, Send, Square, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ConsolaClaude, ConsolaFlotante } from "./ConsolaClaude";
+import { ConsolaFlotante } from "./ConsolaClaude";
 import { useConsola } from "@/hooks/useConsolaClaude";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import {
@@ -381,6 +381,16 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
         {s && <span className="ml-auto text-[10px] text-muted-foreground">revisado {hora(s.revisado)}</span>}
       </div>
 
+      {s && !(activo(s.estado) || pct !== null) && consola.lineas.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setVentanaConsola(true)}
+          className="inline-flex items-center gap-1 rounded-md bg-zinc-900 px-2 py-0.5 text-[10px] font-medium text-zinc-200 hover:bg-zinc-800"
+          title="Ver la consola de la última corrida"
+        >
+          <Terminal className="h-3 w-3" /> Consola
+        </button>
+      )}
       {s && (activo(s.estado) || pct !== null) && (
         <div ref={zonaAvance} className="scroll-mt-4">
           <div className="flex items-center gap-2">
@@ -439,7 +449,6 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
 
       {q.error && <p className="text-xs text-destructive">{mensajeDeError(q.error)}</p>}
 
-      <ConsolaClaude consola={consola} trabajando={activo(s?.estado)} onVentana={() => setVentanaConsola(true)} />
       {ventanaConsola && (
         <ConsolaFlotante consola={consola} trabajando={activo(s?.estado)} titulo={`issue #${issue.numero}`} onCerrar={cerrarVentana} />
       )}
