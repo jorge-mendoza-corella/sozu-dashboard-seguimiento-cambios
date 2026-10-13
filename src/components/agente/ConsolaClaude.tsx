@@ -3,14 +3,13 @@
  * archivos, búsquedas, plan), en tiempo real (onSnapshot). La escribe la función
  * `agenteClaudeLog` desde un hook del orquestador; solo trae la última corrida.
  *
- * Dos formas de verla, con el mismo dato:
- *   - en línea, plegable, dentro del panel del ticket;
- *   - como ventana flotante que se arrastra y cambia de tamaño. Va dentro del
- *     panel (no en un portal): el diálogo de GeorgIA es modal y bloquea lo que
- *     quede fuera; y así, al cerrar el detalle, la ventana se cierra con él.
+ * Se ve como ventana flotante (botón "Consola" junto a la barra de avance) que
+ * se arrastra y cambia de tamaño. Va dentro del panel (no en un portal): el
+ * diálogo de GeorgIA es modal y bloquea lo que quede fuera; y así, al cerrar el
+ * detalle, la ventana se cierra con él.
  */
 import { useEffect, useRef, useState, type PointerEvent as PE } from "react";
-import { ChevronDown, GripHorizontal, Maximize2, Terminal, X } from "lucide-react";
+import { GripHorizontal, Terminal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Consola, LineaConsola } from "@/hooks/useConsolaClaude";
 
@@ -63,30 +62,6 @@ function Lineas({ lineas, enVivo, className }: { lineas: LineaConsola[]; enVivo:
         </p>
       ))}
       {enVivo && <span className="inline-block h-3 w-1.5 translate-y-0.5 animate-pulse bg-zinc-300 motion-reduce:animate-none" />}
-    </div>
-  );
-}
-
-/** En línea, plegable; con botón para abrirla como ventana. */
-export function ConsolaClaude({ consola, trabajando, onVentana }: { consola: Consola; trabajando: boolean; onVentana: () => void }) {
-  const [abierta, setAbierta] = useState(true);
-  if (!consola.lineas.length && !trabajando) return null;
-  const enVivo = consola.activo || trabajando;
-  return (
-    <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-200 shadow-inner">
-      <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-1.5 text-[11px] text-zinc-400">
-        <button type="button" onClick={() => setAbierta((v) => !v)} className="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-zinc-200">
-          <Terminal className="h-3.5 w-3.5 shrink-0" />
-          <span className="font-medium text-zinc-300">Consola de Claude</span>
-          <EnVivo enVivo={enVivo} />
-          <span className="ml-auto tabular-nums">{consola.lineas.length} líneas</span>
-          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", !abierta && "-rotate-90")} />
-        </button>
-        <button type="button" onClick={onVentana} className="rounded p-0.5 hover:bg-zinc-800 hover:text-zinc-100" title="Abrir como ventana flotante">
-          <Maximize2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      {abierta && <Lineas lineas={consola.lineas} enVivo={enVivo} className="max-h-56" />}
     </div>
   );
 }
