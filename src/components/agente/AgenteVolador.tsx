@@ -36,6 +36,25 @@ export interface DetalleAlerta {
 /** Cuánto grita antes de rendirse y volver a volar (la próxima revisión insiste). */
 const ALERTA_MS = 90_000;
 
+/**
+ * Una corrida de Claude Code (tickets) terminó: GeorgIA baja y lo actúa.
+ *   ok       -> celebra con los brazos arriba, palomita violeta y confeti
+ *   pregunta -> ladea la cabeza con un "?" grande; se queda hasta el clic
+ *   fallo    -> se sacude con chispazos y humo
+ * El clic abre la pestaña de Tickets (AgenteRepos lleva al ticket).
+ */
+export const EVENTO_CLAUDE = "agente:claude";
+export interface DetalleClaude {
+  resultado: "ok" | "pregunta" | "fallo";
+  folio: string;
+  nombre: string;
+}
+const CLAUDE_OK_MS = 9000;
+const CLAUDE_FALLO_MS = 9000;
+const CLAUDE_PREGUNTA_MS = 45_000;
+/** Escenas que no se interrumpen entre sí (la siguiente espera en la cola). */
+const ESCENAS: Pose[] = ["festejo", "llorar", "brinco", "victoria", "pregunta", "chispazo"];
+
 const COLORES_CONFETI = ["#f59e0b", "#ef4444", "#22d3ee", "#a855f7", "#22c55e", "#facc15", "#3b82f6", "#ec4899"];
 
 /** Logos para el confeti de las tiendas (siluetas simples, como data URL). */
@@ -80,7 +99,8 @@ function lanzarConfeti(tipo: "colores" | "android" | "ios" = "colores") {
   setTimeout(() => capa.remove(), ultimo + 200);
 }
 
-type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta" | "llorar" | "brinco";
+type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta" | "llorar" | "brinco"
+  | "victoria" | "pregunta" | "chispazo";
 export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando" | "relajado" | "comiendo" | "sorbiendo" | "lamiendo";
 /** Cómo vuela: puño al frente, nadando de crol, o boca arriba con las manos en la nuca. */
 export type EstiloVuelo = "superman" | "nado" | "relax";
@@ -141,7 +161,12 @@ const VIÑETAS_STORE: Viñeta[] = [
 /** Antojo en la mano de atrás: pizza o refresco cuando descansa, helado cuando vuela. */
 export type Snack = "pizza" | "refresco" | "helado";
 /** Letrero fijo arriba al centro durante el festejo o el llanto. */
-type Letrero = { tipo: "exito" | "fallo" | "dev" | "dev-fallo" | "store"; titulo: string; linea: string; id: number };
+type Letrero = {
+  tipo: "exito" | "fallo" | "dev" | "dev-fallo" | "store" | "claude" | "claude-pregunta" | "claude-fallo";
+  titulo: string;
+  linea: string;
+  id: number;
+};
 /** Cuánto dura el llanto por un deploy fallido. */
 const LLANTO_MS = 9000;
 /** Lo que el letrero se queda en pantalla después de que termina la escena. */
@@ -149,6 +174,25 @@ const LETRERO_EXTRA_MS = 4500;
 /** Duración del huracán de un deploy a PRD exitoso. */
 const FESTEJO_MS = 8000;
 type Dialogo = { id: number; texto: string; tipo: "grito" | "habla" | "zzz" };
+
+const FRASES_CLAUDE_OK = [
+  (n: string) => `¡A huevo, ${n}! Revisa los PRs`,
+  () => "¡Claude ya la armó!",
+  () => "¡Dame clic y ves qué hizo!",
+  () => "¡Listo, nomás apruébalo!",
+];
+const FRASES_CLAUDE_PREGUNTA = [
+  (n: string) => `¡${n}, Claude no puede seguir sin ti!`,
+  () => "¡Dame clic y le contestas!",
+  () => "Mmm… ¿y ahora qué le digo?",
+  () => "¡Está esperando tu respuesta!",
+];
+const FRASES_CLAUDE_FALLO = [
+  () => "¡Algo tronó en la corrida!",
+  (n: string) => `¡${n}, se cayó el trabajo!`,
+  () => "¡Dame clic y lo revisas!",
+  () => "¡Chispas! Hay que ver el log",
+];
 
 /** Lo que dice según lo que hace. Groserías de oficina mexicana: leves, nada de insultos. */
 const FRASES = {
@@ -356,6 +400,21 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         setDialogo({ id: Date.now(), texto: gritos[0], tipo: "grito" });
       };
       window.addEventListener(EVENTO_ALERTA_TICKETS, alAlertaQuieto);
+      // Sin movimiento: solo el letrero de Claude.
+      const alClaudeQuieto = (e: Event) => {
+        const c = (e as CustomEvent<DetalleClaude>).detail;
+        if (!c) return;
+        alertaRef.current = { apagar: () => setLetrero(null) };
+        setAnimo(c.resultado === "fallo" ? "llorando" : c.resultado === "ok" ? "feliz" : "serio");
+        setLetrero({
+          tipo: c.resultado === "ok" ? "claude" : c.resultado === "pregunta" ? "claude-pregunta" : "claude-fallo",
+          id: Date.now(),
+          titulo: c.resultado === "ok" ? `🤖 Claude terminó ${c.folio}` : c.resultado === "pregunta" ? `❓ Claude te pregunta algo · ${c.folio}` : `💥 Claude falló en ${c.folio}`,
+          linea: una(c.resultado === "ok" ? FRASES_CLAUDE_OK : c.resultado === "pregunta" ? FRASES_CLAUDE_PREGUNTA : FRASES_CLAUDE_FALLO)(c.nombre),
+        });
+        if (c.resultado !== "pregunta") setTimeout(() => setLetrero(null), 9000);
+      };
+      window.addEventListener(EVENTO_CLAUDE, alClaudeQuieto);
       const colocar = () => { el.style.transform = `translate3d(${MARGEN + 8}px, ${piso()}px, 0)`; };
       colocar();
       window.addEventListener("resize", colocar);
@@ -364,6 +423,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         window.removeEventListener(EVENTO_FESTEJO, alFestejo);
         window.removeEventListener(EVENTO_FALLO, alFallo);
         window.removeEventListener(EVENTO_ALERTA_TICKETS, alAlertaQuieto);
+        window.removeEventListener(EVENTO_CLAUDE, alClaudeQuieto);
       };
     }
 
@@ -379,12 +439,18 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       hasta: 0, // fin de la pose temporal (ms)
       siguiente: "despegar" as Pose, // qué sigue después de agacharse
       // Deploys por reaccionar (llegan por evento): festejo o llanto, en fila.
-      festejos: [] as (DetalleFestejo & { tipo: Letrero["tipo"] | "dev-ok" | "dev-fallo" | "store-ok" | "store-fallo"; store?: DetalleStore })[],
+      festejos: [] as (DetalleFestejo & {
+        tipo: Letrero["tipo"] | "dev-ok" | "dev-fallo" | "store-ok" | "store-fallo" | "claude-ok";
+        store?: DetalleStore;
+        claude?: DetalleClaude;
+      })[],
       festejoRepo: "",
       festejoInicio: 0,
       festejoTheta: 0,
       alertaGritos: [] as string[],
       alertaHasta: 0,
+      /** El clic atendió la escena de Claude: se corta al volver. */
+      cortarEscena: false,
       alertaIdx: 0,
       proximaCurva: 0,
       ganasDeAterrizar: performance.now() + azar(14_000, 26_000),
@@ -400,6 +466,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       }
     };
     let escenaStore: DetalleStore | null = null;
+    let escenaClaude: DetalleClaude | null = null;
     let idDialogo = 0;
     let idLetrero = 0;
     // Al terminar la escena el letrero se queda unos segundos más, quieto, para
@@ -489,10 +556,32 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       if (pausaRef.current) return;
 
       // Festejo pendiente: interrumpe lo que esté haciendo.
-      if (s.festejos.length && s.pose !== "festejo" && s.pose !== "llorar" && s.pose !== "brinco") {
+      if (s.festejos.length && !ESCENAS.includes(s.pose)) {
         const d = s.festejos.shift()!;
         escenaStore = d.store ?? null;
-        if ((d.tipo === "store-ok" || d.tipo === "store-fallo") && d.store) {
+        escenaClaude = d.claude ?? null;
+        if (d.claude) {
+          // Claude Code terminó una corrida: cada resultado con su escena.
+          const c = d.claude;
+          idLetrero += 1;
+          finDialogo = 0;
+          setDialogo(null);
+          if (c.resultado === "ok") {
+            cambiarPose("victoria", CLAUDE_OK_MS);
+            ponerAnimo("grito");
+            lanzarConfeti();
+            setLetrero({ tipo: "claude", id: idLetrero, titulo: `🤖 Claude terminó ${c.folio}`, linea: una(FRASES_CLAUDE_OK)(c.nombre) });
+          } else if (c.resultado === "pregunta") {
+            cambiarPose("pregunta", CLAUDE_PREGUNTA_MS);
+            ponerAnimo("serio");
+            setLetrero({ tipo: "claude-pregunta", id: idLetrero, titulo: `❓ Claude te pregunta algo · ${c.folio}`, linea: una(FRASES_CLAUDE_PREGUNTA)(c.nombre) });
+          } else {
+            cambiarPose("chispazo", CLAUDE_FALLO_MS);
+            ponerAnimo("llorando");
+            setLetrero({ tipo: "claude-fallo", id: idLetrero, titulo: `💥 Claude falló en ${c.folio}`, linea: una(FRASES_CLAUDE_FALLO)(c.nombre) });
+          }
+          proximaFrase = ahora + 3200;
+        } else if ((d.tipo === "store-ok" || d.tipo === "store-fallo") && d.store) {
           // Tienda: huracán con logos de Android/Apple, viñeta y letrero; o llanto si falló.
           const st = d.store;
           const icono = st.plataforma === "ios" ? "" : "🤖";
@@ -549,7 +638,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       }
 
       // Alerta de tickets: baja al piso y se queda gritando (el festejo manda más).
-      if (s.alertaGritos.length && !["alerta", "festejo", "llorar", "brinco"].includes(s.pose)) {
+      if (s.alertaGritos.length && s.pose !== "alerta" && !ESCENAS.includes(s.pose)) {
         cambiarPose("alerta");
         ponerAnimo("grito");
         s.alertaHasta = ahora + ALERTA_MS;
@@ -722,6 +811,27 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           }
           break;
         }
+        case "victoria":
+        case "pregunta":
+        case "chispazo": {
+          // Baja al piso donde esté y ahí actúa (la pose la anima personaje.css).
+          if (s.y < piso()) s.y = Math.min(piso(), s.y + 520 * dt);
+          if (escenaClaude && ahora >= proximaFrase) {
+            const frases = s.pose === "victoria" ? FRASES_CLAUDE_OK : s.pose === "pregunta" ? FRASES_CLAUDE_PREGUNTA : FRASES_CLAUDE_FALLO;
+            const nombre = escenaClaude.nombre;
+            setLetrero((l) => (l ? { ...l, linea: una(frases)(nombre) } : l));
+            proximaFrase = ahora + 3200;
+          }
+          if (fin || s.cortarEscena) {
+            s.cortarEscena = false;
+            soltarLetrero();
+            escenaClaude = null;
+            ponerAnimo("feliz");
+            cambiarPose("agachar", 200);
+            s.siguiente = "despegar";
+          }
+          break;
+        }
         case "agachar": {
           if (fin) {
             if (s.siguiente === "caminar") {
@@ -777,7 +887,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
         setDialogo(null);
         if (animoActual === "grito" && s.pose !== "alerta") ponerAnimo("feliz");
       }
-      if (!finDialogo && ahora >= proximaFrase && !["festejo", "alerta", "llorar", "brinco"].includes(s.pose)) {
+      if (!finDialogo && ahora >= proximaFrase && s.pose !== "alerta" && !ESCENAS.includes(s.pose)) {
         if (s.pose === "volar" && snackActual === "helado") {
           // Con helado no grita: lo disfruta.
           if (Math.random() < 0.5) decir(una(FRASES.helado), "habla", 2400);
@@ -871,6 +981,15 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       alertaRef.current = { apagar: () => { s.alertaGritos = []; } };
     };
     window.addEventListener(EVENTO_ALERTA_TICKETS, alAlerta);
+    const alClaude = (e: Event) => {
+      const c = (e as CustomEvent<DetalleClaude>).detail;
+      if (!c) return;
+      if (c.resultado === "ok" && pausaRef.current) lanzarConfeti();
+      s.festejos.push({ repo: c.folio, tipo: "claude-ok", claude: c });
+      // El clic durante (o después de) la escena lleva a Tickets.
+      alertaRef.current = { apagar: () => { s.cortarEscena = true; } };
+    };
+    window.addEventListener(EVENTO_CLAUDE, alClaude);
 
     frame = requestAnimationFrame(paso);
     const alRedimensionar = () => {
@@ -888,6 +1007,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       window.removeEventListener(EVENTO_DEV_FALLO, alDevFallo);
       window.removeEventListener(EVENTO_STORE, alStore);
       window.removeEventListener(EVENTO_ALERTA_TICKETS, alAlerta);
+      window.removeEventListener(EVENTO_CLAUDE, alClaude);
     };
   }, []);
 
@@ -962,6 +1082,17 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           </div>,
           document.body,
         )}
+      {pose === "victoria" && (
+        <span className="agente-volador__claude-ok" aria-hidden>
+          <b>✓</b><i>✦</i><i>✦</i><i>✦</i>
+        </span>
+      )}
+      {pose === "pregunta" && <span className="agente-volador__claude-pregunta" aria-hidden>?</span>}
+      {pose === "chispazo" && (
+        <span className="agente-volador__claude-fallo" aria-hidden>
+          <i>⚡</i><i>💥</i><i>⚡</i><em />
+        </span>
+      )}
       {pose === "llorar" && (
         <span className="agente-volador__nube" aria-hidden>
           <i /><i /><i />
