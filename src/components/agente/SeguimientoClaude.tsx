@@ -6,13 +6,14 @@
  * Se consulta cada 15 s mientras trabaja y cada minuto en lo demás, solo con el
  * ticket abierto.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Bot, ExternalLink, GitPullRequest, Loader2, MessageCircleQuestion, Mic, Paperclip, Send, Square, User, X } from "lucide-react";
+import { Bot, Terminal, ExternalLink, GitPullRequest, Loader2, MessageCircleQuestion, Mic, Paperclip, Send, Square, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ConsolaClaude } from "./ConsolaClaude";
+import { ConsolaClaude, ConsolaFlotante } from "./ConsolaClaude";
+import { useConsola } from "@/hooks/useConsolaClaude";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import {
   avancePrs, duracion, MAX_ADJUNTO_MB, responderAClaude, seguimientoClaude, subirAdjunto, tipoAdjunto,
@@ -223,6 +224,10 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
   const cuadro = useRef<HTMLDivElement>(null);
   const campo = useRef<HTMLTextAreaElement>(null);
   const conversacion = useRef<HTMLDivElement>(null);
+  const zonaAvance = useRef<HTMLDivElement>(null);
+  const consola = useConsola(issue.numero);
+  const [ventanaConsola, setVentanaConsola] = useState(false);
+  const cerrarVentana = useCallback(() => setVentanaConsola(false), []);
   const cargado = !!q.data;
   const listo = !!q.data?.listoParaCerrar;
   const esperandoAhora = q.data?.estado === "esperando_respuesta";
@@ -232,12 +237,24 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listo]);
 
-  // Al abrir un ticket que espera respuesta (desde la lista o desde GeorgIA):
-  // la conversación se recorre hasta las preguntas de Claude y el cuadro de
-  // respuesta queda a la vista, con el cursor. Una vez por apertura.
+  // Al abrir el ticket, una vez por apertura, se lleva la vista a lo vigente:
+  //  - espera respuesta (desde la lista o desde GeorgIA): las preguntas de Claude
+  //    y el cuadro de respuesta, con el cursor;
+  //  - trabajando: el avance (barra y consola) y la conversación en lo último.
   const yaEnfocado = useRef(false);
+  const trabajandoAhora = activo(q.data?.estado);
   useEffect(() => {
-    if (yaEnfocado.current || !cargado || !(enfocar || esperandoAhora)) return;
+    if (yaEnfocado.current || !cargado) return;
+    if (!(enfocar || esperandoAhora) && trabajandoAhora) {
+      yaEnfocado.current = true;
+      const t = setTimeout(() => {
+        const caja = conversacion.current;
+        if (caja) caja.scrollTop = caja.scrollHeight;
+        zonaAvance.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 350);
+      return () => clearTimeout(t);
+    }
+    if (!(enfocar || esperandoAhora)) return;
     yaEnfocado.current = true;
     // Un respiro para que el panel termine de entrar antes de desplazar.
     const t = setTimeout(() => {
@@ -255,7 +272,7 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
       onEnfocado?.();
     }, 350);
     return () => clearTimeout(t);
-  }, [enfocar, esperandoAhora, cargado, onEnfocado]);
+  }, [enfocar, esperandoAhora, trabajandoAhora, cargado, onEnfocado]);
 
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -365,8 +382,23 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
       </div>
 
       {s && (activo(s.estado) || pct !== null) && (
-        <div>
-          <Barra estado={s.estado} pct={pct} />
+        <div ref={zonaAvance} className="scroll-mt-4">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1"><Barra estado={s.estado} pct={pct} /></div>
+            {/* Acceso rápido a la consola, en ventana flotante. */}
+            {(consola.lineas.length > 0 || activo(s.estado)) && (
+              <button
+                type="button"
+                onClick={() => setVentanaConsola(true)}
+                className="inline-flex shrink-0 items-center gap-1 rounded-md bg-zinc-900 px-2 py-0.5 text-[10px] font-medium text-zinc-200 hover:bg-zinc-800"
+                title="Ver la consola de Claude en una ventana"
+              >
+                <Terminal className="h-3 w-3" />
+                Consola
+                {(consola.activo || activo(s.estado)) && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400 motion-reduce:animate-none" />}
+              </button>
+            )}
+          </div>
           <p className="mt-1 text-[10px] text-muted-foreground">
             {s.progreso
               ? `${s.progreso.hechos} de ${s.progreso.total} pasos${activo(s.estado) && s.progreso.hechos === s.progreso.total ? " · cerrando la corrida…" : ""}`
@@ -407,7 +439,10 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
 
       {q.error && <p className="text-xs text-destructive">{mensajeDeError(q.error)}</p>}
 
-      <ConsolaClaude issue={issue.numero} trabajando={activo(s?.estado)} />
+      <ConsolaClaude consola={consola} trabajando={activo(s?.estado)} onVentana={() => setVentanaConsola(true)} />
+      {ventanaConsola && (
+        <ConsolaFlotante consola={consola} trabajando={activo(s?.estado)} titulo={`issue #${issue.numero}`} onCerrar={cerrarVentana} />
+      )}
 
       {mensajes.length > 0 && (
         <div ref={conversacion} className="max-h-96 space-y-2 overflow-y-auto rounded-lg border bg-muted/20 p-2">
