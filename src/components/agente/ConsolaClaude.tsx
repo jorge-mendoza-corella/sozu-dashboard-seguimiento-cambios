@@ -68,12 +68,15 @@ function Lineas({ lineas, enVivo, className }: { lineas: LineaConsola[]; enVivo:
 }
 
 /** Ventana flotante: se arrastra por la barra de título y se redimensiona por la esquina. */
-export function ConsolaFlotante({ consola, trabajando, titulo, onCerrar }: {
+export function ConsolaFlotante({ consola, trabajando, titulo, filtro = null, onCerrar }: {
   consola: Consola;
   trabajando: boolean;
   titulo: string;
+  /** Sigla de repo: solo las líneas de ese repo. */
+  filtro?: string | null;
   onCerrar: () => void;
 }) {
+  const lineas = filtro ? consola.lineas.filter((l) => l.repo === filtro) : consola.lineas;
   const ANCHO = 560;
   const [pos, setPos] = useState(() => ({
     x: Math.max(16, (typeof window !== "undefined" ? window.innerWidth : 1200) - ANCHO - 32),
@@ -125,12 +128,12 @@ export function ConsolaFlotante({ consola, trabajando, titulo, onCerrar }: {
         <Terminal className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate font-medium text-zinc-300">Consola de Claude · {titulo}</span>
         <EnVivo enVivo={enVivo} />
-        <span className="ml-auto shrink-0 tabular-nums">{consola.lineas.length} líneas</span>
+        <span className="ml-auto shrink-0 tabular-nums">{lineas.length} líneas{filtro ? ` de ${filtro}` : ""}</span>
         <button type="button" onClick={onCerrar} className="rounded p-0.5 hover:bg-zinc-800 hover:text-zinc-100" title="Cerrar ventana (Esc)">
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
-      <Lineas lineas={consola.lineas} enVivo={enVivo} className="min-h-0 flex-1" />
+      <Lineas lineas={lineas} enVivo={enVivo} className="min-h-0 flex-1" />
     </div>
   );
 }
