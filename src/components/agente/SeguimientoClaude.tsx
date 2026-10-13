@@ -75,9 +75,30 @@ function separarAdjuntos(cuerpo: string): { texto: string; adjuntos: { tipo: str
   return { texto, adjuntos };
 }
 
+/** Quita la firma que lleva el comentario en GitHub ("— correo, desde el dashboard"): ya va en el encabezado. */
+const sinFirma = (t: string) => t.replace(/\n*\s*—\s*\S+@\S+,\s*desde el dashboard\s*$/i, "").trimEnd();
+
+/** Texto tal cual (con sus saltos de línea) y las URLs como enlace. */
+function TextoPlano({ texto }: { texto: string }) {
+  const partes = texto.split(/(https?:\/\/[^\s)]+)/g);
+  return (
+    <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">
+      {partes.map((p, i) =>
+        /^https?:\/\//.test(p)
+          ? <a key={i} href={p} target="_blank" rel="noreferrer" className="underline underline-offset-2 opacity-90 hover:opacity-100">{p}</a>
+          : p,
+      )}
+    </p>
+  );
+}
+
 function Mensaje({ m }: { m: MensajeClaude }) {
   const deClaude = m.autor === "claude";
-  const { texto, adjuntos } = separarAdjuntos(m.cuerpo);
+  const separado = separarAdjuntos(m.cuerpo);
+  const adjuntos = separado.adjuntos;
+  // Lo tuyo se muestra como lo escribiste: sin Markdown (que junta los
+  // renglones) y sin la firma de GitHub. Lo de Claude sí es Markdown.
+  const texto = deClaude ? separado.texto : sinFirma(separado.texto);
   return (
     <div className={cn("flex gap-2", !deClaude && "flex-row-reverse")} data-pregunta={m.esPregunta || undefined}>
       <span className={cn("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full", deClaude ? "bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300" : "bg-primary/15 text-primary")}>
@@ -85,27 +106,31 @@ function Mensaje({ m }: { m: MensajeClaude }) {
       </span>
       <div
         className={cn(
-          "min-w-0 max-w-[88%] rounded-lg border px-3 py-2",
-          m.esPregunta ? "border-amber-400/70 bg-amber-50 dark:bg-amber-950/30" : deClaude ? "bg-background" : "bg-primary/5",
+          "min-w-0 max-w-[88%] px-3 py-2 shadow-sm",
+          deClaude
+            ? cn("rounded-2xl rounded-tl-sm border", m.esPregunta ? "border-amber-400/70 bg-amber-50 dark:bg-amber-950/30" : "bg-background")
+            : "rounded-2xl rounded-tr-sm bg-violet-600 text-white dark:bg-violet-700",
         )}
       >
-        <p className="mb-1 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+        <p className={cn("mb-1 flex items-center gap-1.5 text-[10px]", deClaude ? "text-muted-foreground" : "justify-end text-violet-100")}>
           {m.esPregunta && <MessageCircleQuestion className="h-3 w-3 text-amber-600" />}
           {deClaude ? (m.esSeguimiento ? "Claude · avance" : m.esPregunta ? "Claude pregunta" : "Claude") : m.quien ?? "Tú"}
           <span>· {hora(m.fecha)}</span>
         </p>
-        <div className="prose prose-xs max-w-none break-words text-xs dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-a:text-primary prose-pre:text-[11px]">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a> }}>
-            {texto}
-          </ReactMarkdown>
-        </div>
+        {deClaude ? (
+          <div className="prose prose-xs max-w-none break-words text-xs dark:prose-invert prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-a:text-primary prose-pre:text-[11px]">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a> }}>
+              {texto}
+            </ReactMarkdown>
+          </div>
+        ) : texto && <TextoPlano texto={texto} />}
         {adjuntos.length > 0 && (
           <div className="mt-1.5 space-y-1.5">
             {adjuntos.map((a) => (
-              <div key={a.url} className="rounded-md border bg-background/60 p-1.5">
+              <div key={a.url} className={cn("rounded-md border p-1.5", deClaude ? "bg-background/60" : "border-white/20 bg-white/10")}>
                 <p className="mb-1 flex items-center gap-1 text-[10px] text-muted-foreground">
                   {a.tipo === "imagen" ? "🖼" : a.tipo === "video" ? "🎬" : "🎙"}
-                  <a href={a.url} target="_blank" rel="noreferrer" className="truncate text-primary hover:underline" title={a.nombre}>{a.nombre}</a>
+                  <a href={a.url} target="_blank" rel="noreferrer" className={cn("truncate hover:underline", deClaude ? "text-primary" : "text-white")} title={a.nombre}>{a.nombre}</a>
                 </p>
                 {a.tipo === "audio" && <audio controls preload="metadata" src={a.url} className="h-8 w-full" />}
                 {a.tipo === "video" && <video controls preload="metadata" src={a.url} className="max-h-48 w-full rounded bg-black" />}
