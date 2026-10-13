@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { ConsolaClaude } from "./ConsolaClaude";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import {
-  avancePrs, MAX_ADJUNTO_MB, responderAClaude, seguimientoClaude, subirAdjunto, tipoAdjunto,
+  avancePrs, duracion, MAX_ADJUNTO_MB, responderAClaude, seguimientoClaude, subirAdjunto, tipoAdjunto,
   type AdjuntoRespuesta, type EstadoClaude, type EstadoPr, type MensajeClaude,
 } from "@/lib/agenteTickets";
 
@@ -122,10 +122,25 @@ function Barra({ estado, pct, alto = "h-1.5" }: { estado: EstadoClaude; pct: num
   );
 }
 
+/** Re-render cada `ms` mientras `activo`: para que el tiempo transcurrido avance solo. */
+function useReloj(activo: boolean, ms = 15_000) {
+  const [, setTic] = useState(0);
+  useEffect(() => {
+    if (!activo) return;
+    const id = setInterval(() => setTic((t) => t + 1), ms);
+    return () => clearInterval(id);
+  }, [activo, ms]);
+}
+
+/** Tiempo de la corrida: corriendo, desde que arrancó; terminada, lo que duró. */
+const tiempoCorrida = (c: { inicio: string; fin: string | null } | null | undefined) =>
+  c ? duracion(c.inicio, c.fin ? Date.parse(c.fin) : Date.now()) : null;
+
 /** Para la lista de tickets: chip con el estado y barra de avance mientras trabaja. */
 export function EstadoClaudeMini({ ticketId }: { ticketId: string }) {
   const { data: s } = useSeguimiento(ticketId);
   const avance = avancePrs(s?.prs ?? []);
+  useReloj(activo(s?.estado));
   if (!s) {
     return <span className="rounded bg-violet-100 px-1 text-[9px] font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">en Claude</span>;
   }
@@ -142,6 +157,7 @@ export function EstadoClaudeMini({ ticketId }: { ticketId: string }) {
       {activo(s.estado) && <Loader2 className="h-2.5 w-2.5 animate-spin motion-reduce:animate-none" />}
       {s.estado === "esperando_respuesta" ? "te pregunta" : s.estado === "terminado" && avance.total ? `${avance.enPrd}/${avance.total} en PRD` : ETIQUETA[s.estado].toLowerCase()}
       {s.progreso && activo(s.estado) && ` ${porcentaje(s.progreso, s.estado)}%`}
+      {activo(s.estado) && s.corrida && <span className="font-normal opacity-80">· {tiempoCorrida(s.corrida)}</span>}
     </span>
   );
 }
@@ -274,6 +290,7 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
   };
 
   const s = q.data;
+  useReloj(activo(s?.estado), 5_000);
   const pct = porcentaje(s?.progreso ?? null, s?.estado);
   const esperando = s?.estado === "esperando_respuesta";
   // La conversación sin el comentario de avance viejo: solo el último checklist.
@@ -287,6 +304,11 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
           <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold", COLOR[s.estado])}>
             {activo(s.estado) && <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" />}
             {ETIQUETA[s.estado]}
+            {s.corrida && (
+              <span className="font-normal opacity-80" title={activo(s.estado) ? "Tiempo desde que arrancó la corrida" : "Lo que duró la última corrida"}>
+                · {activo(s.estado) ? tiempoCorrida(s.corrida) : `duró ${tiempoCorrida(s.corrida)}`}
+              </span>
+            )}
           </span>
         ) : q.isLoading ? (
           <span className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Revisando…</span>

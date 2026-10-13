@@ -40,6 +40,8 @@ export interface SeguimientoClaude {
   prs: PrClaude[];
   /** Todos los PRs vigentes ya están en PRD: se puede cerrar el ticket. */
   listoParaCerrar: boolean;
+  /** Arranque de la corrida activa (o en cola) y, si ya terminó, cuándo. */
+  corrida: { inicio: string; fin: string | null } | null;
   revisado: string;
 }
 
@@ -161,6 +163,12 @@ export async function seguimientoClaude(
     mensajes,
     prs: prsEstado.prs,
     listoParaCerrar: prsEstado.listo,
+    corrida: run
+      ? {
+          inicio: run.run_started_at ?? run.created_at,
+          fin: corriendo ? null : run.updated_at ?? null,
+        }
+      : null,
     revisado: new Date().toISOString(),
   };
 }
