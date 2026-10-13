@@ -26,6 +26,7 @@ import { issueDelTicket, responderAClaude, seguimientoClaude, type AdjuntoRespue
 import { abrirSubida } from "./agente/adjuntos.js";
 import { abrirConsola, ErrorConsola, finConsola, lineaConsola, sesionConsola } from "./agente/consola.js";
 import { qrWhatsapp } from "./whatsapp.js";
+import { falloDocs } from "./docsFallo.js";
 
 initializeApp();
 
@@ -518,4 +519,38 @@ export const whatsappQr = onCall<{ clientId: string }>(
     cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
   },
   (req) => qrWhatsapp(req),
+);
+
+/**
+ * `docsFallo`: causa del último fallo de la documentación automática de un repo
+ * (sin crédito en Anthropic, llave inválida…), leída del log del job. Ver
+ * docsFallo.ts. Cualquier sesión de Google verificada del dashboard.
+ */
+export const docsFallo = onCall<{ owner: string; repo: string; runId: number }>(
+  {
+    region: "us-central1",
+    secrets: [GITHUB_TOKEN],
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    maxInstances: 3,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  async (req) => {
+    if (!req.auth?.token.email || req.auth.token.email_verified !== true) {
+      throw new HttpsError("unauthenticated", "Inicia sesión.");
+    }
+    const owner = String(req.data?.owner ?? "");
+    const repo = String(req.data?.repo ?? "");
+    const runId = Number(req.data?.runId);
+    if (!/^[\w.-]{1,100}$/.test(owner) || !/^[\w.-]{1,100}$/.test(repo) || !Number.isSafeInteger(runId) || runId <= 0) {
+      throw new HttpsError("invalid-argument", "Run inválido.");
+    }
+    const gh = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard" });
+    try {
+      return await falloDocs(gh, owner, repo, runId);
+    } catch (e) {
+      console.error("[docsFallo]", e);
+      throw new HttpsError("unavailable", "No se pudo leer el log del run.");
+    }
+  },
 );
