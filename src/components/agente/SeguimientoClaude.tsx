@@ -223,7 +223,8 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
   const [error, setError] = useState<string | null>(null);
 
   // ── Adjuntos: se suben en cuanto se eligen; la respuesta lleva sus URLs ──
-  type Adjunto = { id: string; nombre: string; tipo: AdjuntoRespuesta["tipo"]; avance: number; listo?: AdjuntoRespuesta; error?: string };
+  // `local`: URL del archivo en el navegador, para oírlo o verlo antes de mandarlo.
+  type Adjunto = { id: string; nombre: string; tipo: AdjuntoRespuesta["tipo"]; avance: number; local: string; listo?: AdjuntoRespuesta; error?: string };
   const [adjuntos, setAdjuntos] = useState<Adjunto[]>([]);
   const selector = useRef<HTMLInputElement>(null);
   const subiendo = adjuntos.some((x) => !x.listo && !x.error);
@@ -236,7 +237,7 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
         setError(`"${f.name}" no es imagen, video ni audio.`);
         continue;
       }
-      setAdjuntos((xs) => [...xs, { id, nombre: f.name, tipo, avance: 0 }]);
+      setAdjuntos((xs) => [...xs, { id, nombre: f.name, tipo, avance: 0, local: URL.createObjectURL(f) }]);
       subirAdjunto(ticketId, f, (p) => setAdjuntos((xs) => xs.map((x) => (x.id === id ? { ...x, avance: p } : x))))
         .then((r) => setAdjuntos((xs) => xs.map((x) => (x.id === id ? { ...x, avance: 1, listo: r } : x))))
         .catch((e) => setAdjuntos((xs) => xs.map((x) => (x.id === id ? { ...x, error: mensajeDeError(e) } : x))));
@@ -261,7 +262,8 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
         setGrabando(false);
         const tipo = rec.mimeType || "audio/webm";
         const ext = tipo.includes("mp4") ? "m4a" : tipo.includes("ogg") ? "ogg" : "webm";
-        const hora = new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }).replace(":", "");
+        const d = new Date();
+        const hora = `${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
         agregar([new File(partes, `nota-de-voz-${hora}.${ext}`, { type: tipo.split(";")[0] })]);
       };
       grabadora.current = rec;
@@ -395,18 +397,39 @@ export function SeguimientoClaude({ ticketId, issue, enfocar = false, onEnfocado
           className="w-full resize-y bg-transparent text-xs outline-none"
         />
         {adjuntos.length > 0 && (
-          <ul className="mb-2 flex flex-wrap gap-1.5">
+          <ul className="mb-2 space-y-1.5">
             {adjuntos.map((x) => (
-              <li key={x.id} className={cn("relative flex max-w-[14rem] items-center gap-1 overflow-hidden rounded-md border bg-background py-1 pl-2 pr-1 text-[11px]", x.error && "border-destructive/50 text-destructive")} title={x.error ?? x.nombre}>
-                <span className="text-muted-foreground">{x.tipo === "imagen" ? "🖼" : x.tipo === "video" ? "🎬" : "🎙"}</span>
-                <span className="truncate">{x.nombre}</span>
-                {!x.listo && !x.error && <span className="shrink-0 tabular-nums text-muted-foreground">{Math.round(x.avance * 100)}%</span>}
-                <button type="button" onClick={() => setAdjuntos((xs) => xs.filter((y) => y.id !== x.id))} className="shrink-0 rounded p-0.5 hover:bg-muted" title="Quitar">
-                  <X className="h-3 w-3" />
-                </button>
+              <li key={x.id} className={cn("rounded-md border bg-background p-1.5 text-[11px]", x.error && "border-destructive/50")}>
+                <div className="relative flex items-center gap-1.5 overflow-hidden">
+                  <span className="text-muted-foreground">{x.tipo === "imagen" ? "🖼" : x.tipo === "video" ? "🎬" : "🎙"}</span>
+                  <span className={cn("min-w-0 flex-1 truncate", x.error && "text-destructive")} title={x.nombre}>{x.nombre}</span>
+                  {x.listo ? (
+                    <span className="shrink-0 text-emerald-600 dark:text-emerald-400">listo</span>
+                  ) : !x.error && (
+                    <span className="shrink-0 tabular-nums text-muted-foreground">{Math.round(x.avance * 100)}%</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      URL.revokeObjectURL(x.local);
+                      setAdjuntos((xs) => xs.filter((y) => y.id !== x.id));
+                    }}
+                    className="shrink-0 rounded p-0.5 hover:bg-muted"
+                    title="Quitar"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
                 {!x.listo && !x.error && (
-                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-violet-500 transition-[width] duration-200 ease-out" style={{ width: `${x.avance * 100}%` }} />
+                  <span className="mt-1 block h-0.5 w-full overflow-hidden rounded bg-muted">
+                    <span className="block h-full bg-violet-500 transition-[width] duration-200 ease-out" style={{ width: `${x.avance * 100}%` }} />
+                  </span>
                 )}
+                {/* Para oírlo / verlo antes de mandarlo. */}
+                {x.tipo === "audio" && <audio controls src={x.local} className="mt-1 h-8 w-full" />}
+                {x.tipo === "video" && <video controls src={x.local} className="mt-1 max-h-40 w-full rounded bg-black" />}
+                {x.tipo === "imagen" && <img src={x.local} alt={x.nombre} className="mt-1 max-h-32 rounded object-contain" />}
+                {x.error && <p className="mt-1 text-[11px] text-destructive">No se subió: {x.error}</p>}
               </li>
             ))}
           </ul>
