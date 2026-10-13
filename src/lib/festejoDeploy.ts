@@ -66,7 +66,18 @@ export type ReaccionDeploy = { rama: "main" | "dev"; resultado: "exito" | "fallo
  * nuevo y reciente, avisa a GeorgIA y hace brillar la tarjeta. Los cancelados y
  * saltados no cuentan. Devuelve lo que anunció.
  */
-export function revisarDeploys(owner: string, repo: string, runs: WorkflowRun[], detalle: DetalleFestejo): ReaccionDeploy[] {
+/**
+ * `silencio`: el repo es de otra empresa que la elegida. Se registra que ya se
+ * vio el run (para no festejarlo de golpe al cambiar de empresa) pero GeorgIA
+ * no reacciona.
+ */
+export function revisarDeploys(
+  owner: string,
+  repo: string,
+  runs: WorkflowRun[],
+  detalle: DetalleFestejo,
+  silencio = false,
+): ReaccionDeploy[] {
   const out: ReaccionDeploy[] = [];
   for (const rama of ["main", "dev"] as const) {
     const clave = `${owner}/${repo}:${rama}`;
@@ -84,7 +95,7 @@ export function revisarDeploys(owner: string, repo: string, runs: WorkflowRun[],
       rama === "main"
         ? resultado === "exito" ? EVENTO_FESTEJO : EVENTO_FALLO
         : resultado === "exito" ? EVENTO_DEV_OK : EVENTO_DEV_FALLO;
-    window.dispatchEvent(new CustomEvent<DetalleFestejo>(evento, { detail: detalle }));
+    if (!silencio) window.dispatchEvent(new CustomEvent<DetalleFestejo>(evento, { detail: detalle }));
     window.dispatchEvent(new CustomEvent<DetalleBrillo>(EVENTO_BRILLO, { detail: { owner, repo, tipo: resultado } }));
     out.push({ rama, resultado, sha: ultimo.headSha ?? null });
   }

@@ -9,6 +9,7 @@ import {
 import { useProjects } from "@/hooks/useProjectsRepos";
 import { cn } from "@/lib/utils";
 import { EVENTO_STORE, type DetalleStore } from "@/lib/festejoDeploy";
+import { useEmpresaActiva } from "@/hooks/useEmpresaActiva";
 
 /**
  * Plataforma y tienda de un envío a PRODUCCIÓN (Play Store / App Store), para que
@@ -64,6 +65,9 @@ interface Aviso {
  * layout para enterarse aunque no estés viendo la pestaña Deploy App.
  */
 export function BuildNotifier() {
+  const { empresa: empresaActiva } = useEmpresaActiva();
+  const empresaRef = useRef(empresaActiva);
+  useEffect(() => { empresaRef.current = empresaActiva; }, [empresaActiva]);
   const { data: projects = [] } = useProjects();
   const appIds = projects.map((p) => p.codemagicAppId).filter((id): id is string => !!id);
 
@@ -149,7 +153,10 @@ export function BuildNotifier() {
       const d = destinoDe(b.workflowId ?? "");
       const info = buildStatusInfo(b.status);
       if (!d || (info.tone !== "success" && info.tone !== "failed")) continue;
-      const app = proyectosRef.current.find((p) => p.codemagicAppId === b.appId)?.name ?? "la app";
+      const proyecto = proyectosRef.current.find((p) => p.codemagicAppId === b.appId);
+      // Solo de la empresa elegida en el dashboard ("Todas": de cualquiera).
+      if (empresaRef.current && proyecto?.clientId !== empresaRef.current) continue;
+      const app = proyecto?.name ?? "la app";
       window.dispatchEvent(new CustomEvent<DetalleStore>(EVENTO_STORE, {
         detail: { ok: info.tone === "success", plataforma: d.plataforma, destino: d.destino, app },
       }));

@@ -14,6 +14,7 @@ import { EVENTO_TICKETS_LISTOS, revisarDeploys } from "@/lib/festejoDeploy";
 import { ticketsResueltosEnDeploy } from "@/lib/agenteTickets";
 import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
 import { useClients } from "@/hooks/useClients";
+import { useEmpresaActiva } from "@/hooks/useEmpresaActiva";
 import type { RepoStatus } from "@/lib/github";
 import type { AppUser } from "@/lib/firestoreUsers";
 
@@ -22,25 +23,30 @@ export function useVigiaDeploys(usuario: AppUser | null, revisarTickets: boolean
   const { data: repos = [] } = useRepos();
   const { data: proyectos = [] } = useProjects();
   const { data: empresas = [] } = useClients(usuario);
+  // Solo se avisa de los repos de la empresa elegida en el dashboard ("Todas": de todos).
+  const { empresa: empresaActiva } = useEmpresaActiva();
 
   // Lo que el suscriptor necesita leer sin re-suscribirse a cada render.
-  const ctx = useRef({ repos, proyectos, empresas, email: usuario?.email ?? null, revisarTickets });
+  const ctx = useRef({ repos, proyectos, empresas, empresaActiva, email: usuario?.email ?? null, revisarTickets });
   useEffect(() => {
-    ctx.current = { repos, proyectos, empresas, email: usuario?.email ?? null, revisarTickets };
-  }, [repos, proyectos, empresas, usuario?.email, revisarTickets]);
+    ctx.current = { repos, proyectos, empresas, empresaActiva, email: usuario?.email ?? null, revisarTickets };
+  }, [repos, proyectos, empresas, empresaActiva, usuario?.email, revisarTickets]);
 
   useEffect(() => {
     const revisar = (estados: RepoStatus[]) => {
-      const { repos, proyectos, empresas, email, revisarTickets } = ctx.current;
+      const { repos, proyectos, empresas, empresaActiva, email, revisarTickets } = ctx.current;
       for (const st of estados) {
         const monitoreado = repos.find((r) => r.owner === st.owner && r.repo === st.repo);
         const proyecto = proyectos.find((p) => p.id === monitoreado?.projectId);
         const empresa = empresas.find((c) => c.id === proyecto?.clientId);
+        // De otra empresa: no se festeja ni se llora. Se sigue llevando la cuenta
+        // (revisarDeploys) para no festejarlo de golpe al cambiar de empresa.
+        const deOtraEmpresa = !!empresaActiva && proyecto?.clientId !== empresaActiva;
         const reacciones = revisarDeploys(st.owner, st.repo, st.latestRuns, {
           repo: st.label,
           proyecto: proyecto?.name ?? null,
           empresa: empresa ? empresa.tradeName || empresa.legalName : null,
-        });
+        }, deOtraEmpresa);
         const prd = reacciones.find((r) => r.rama === "main" && r.resultado === "exito");
         if (prd?.sha && email && revisarTickets) {
           ticketsResueltosEnDeploy(email, st.owner, st.repo, st.label, prd.sha)

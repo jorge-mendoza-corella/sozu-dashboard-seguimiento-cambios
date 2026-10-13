@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Empresa elegida en la navegación, compartida entre Resumen y CI/CD.
@@ -13,6 +13,8 @@ import { useCallback, useState } from "react";
 
 const CLAVE = "empresa-activa";
 
+const EVENTO_EMPRESA = "dashboard:empresa-activa";
+
 export function useEmpresaActiva() {
   const [empresa, setEmpresa] = useState<string | null>(() => {
     try {
@@ -22,6 +24,14 @@ export function useEmpresaActiva() {
     }
   });
 
+  // Varias partes la leen a la vez (la pantalla y el vigía de GeorgIA, que solo
+  // avisa de los repos de la empresa elegida): al cambiarla, todas se enteran.
+  useEffect(() => {
+    const alCambiar = (e: Event) => setEmpresa((e as CustomEvent<string | null>).detail ?? null);
+    window.addEventListener(EVENTO_EMPRESA, alCambiar);
+    return () => window.removeEventListener(EVENTO_EMPRESA, alCambiar);
+  }, []);
+
   const elegir = useCallback((id: string | null) => {
     try {
       if (id === null) sessionStorage.removeItem(CLAVE);
@@ -30,6 +40,7 @@ export function useEmpresaActiva() {
       // Sin sessionStorage la elección solo dura lo que dure la pantalla.
     }
     setEmpresa(id);
+    window.dispatchEvent(new CustomEvent<string | null>(EVENTO_EMPRESA, { detail: id }));
   }, []);
 
   return { empresa, elegir };
