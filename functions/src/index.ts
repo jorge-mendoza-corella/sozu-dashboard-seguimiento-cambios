@@ -15,7 +15,7 @@ import { Octokit } from "@octokit/rest";
 import { initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
-import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
+import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { consumirCupo, reposPermitidos, verificarAcceso } from "./agente/acceso.js";
 import { docPorRuta, indiceDocs, limpiarRuta, obtenerCorpus } from "./agente/docs.js";
 import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.js";
@@ -428,36 +428,30 @@ export const agenteSubirAdjunto = onCall<{ ticketId: string; nombre: string; tip
 
 /**
  * `agenteClaudeLog`: la corrida de Claude Code en GitHub Actions manda aquí lo
- * que va haciendo (consola en vivo del panel). HTTP, no callable: lo llama el
- * runner, no el dashboard. Ver agente/consola.ts.
+ * que va haciendo (consola en vivo del panel). Callable y no onRequest: una
+ * función HTTP nueva pide permiso de IAM para hacerla pública, que la cuenta de
+ * deploy no tiene. El runner la llama sin sesión (POST {"data": {...}}); la
+ * autenticación va en el cuerpo (OIDC de GitHub o la llave). Ver agente/consola.ts.
  */
-export const agenteClaudeLog = onRequest(
-  { region: "us-central1", timeoutSeconds: 30, memory: "256MiB", maxInstances: 10, invoker: "public" },
-  async (req, res) => {
-    if (req.method !== "POST") {
-      res.status(405).send("POST");
-      return;
-    }
-    const b = (req.body ?? {}) as Record<string, unknown>;
+export const agenteClaudeLog = onCall<{ accion: string; issue: number; jwt?: string; llave?: string; texto?: string; tipo?: string }>(
+  { region: "us-central1", timeoutSeconds: 30, memory: "256MiB", maxInstances: 10 },
+  async (req) => {
+    const b = req.data ?? ({} as Record<string, unknown>);
     const issue = Number(b.issue);
     try {
       if (!Number.isInteger(issue) || issue <= 0) throw new ErrorConsola(400, "issue inválido");
-      if (b.accion === "abrir") {
-        res.json(await abrirConsola(String(b.jwt ?? ""), issue));
-        return;
-      }
+      if (b.accion === "abrir") return await abrirConsola(String(b.jwt ?? ""), issue);
       const llave = String(b.llave ?? "");
       if (b.accion === "linea") await lineaConsola(issue, llave, String(b.texto ?? ""), String(b.tipo ?? ""));
       else if (b.accion === "fin") await finConsola(issue, llave);
       else throw new ErrorConsola(400, "accion inválida");
-      res.json({ ok: true });
+      return { ok: true };
     } catch (e) {
       if (e instanceof ErrorConsola) {
-        res.status(e.status).json({ error: e.message });
-        return;
+        throw new HttpsError(e.status === 401 ? "unauthenticated" : e.status === 403 ? "permission-denied" : e.status === 404 ? "not-found" : "invalid-argument", e.message);
       }
       console.error("[agenteClaudeLog]", e);
-      res.status(500).json({ error: "interno" });
+      throw new HttpsError("internal", "interno");
     }
   },
 );
