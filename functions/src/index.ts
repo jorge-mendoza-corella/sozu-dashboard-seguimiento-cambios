@@ -15,7 +15,7 @@ import { Octokit } from "@octokit/rest";
 import { initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
-import { HttpsError, onCall } from "firebase-functions/v2/https";
+import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
 import { consumirCupo, reposPermitidos, verificarAcceso } from "./agente/acceso.js";
 import { docPorRuta, indiceDocs, limpiarRuta, obtenerCorpus } from "./agente/docs.js";
 import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.js";
@@ -24,6 +24,7 @@ import { cerrarTicket, clienteSupabase, ticketsAsignados } from "./agente/ticket
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
 import { issueDelTicket, responderAClaude, seguimientoClaude, type AdjuntoRespuesta } from "./agente/claude.js";
 import { abrirSubida } from "./agente/adjuntos.js";
+import { abrirConsola, ErrorConsola, finConsola, lineaConsola } from "./agente/consola.js";
 import { qrWhatsapp } from "./whatsapp.js";
 
 initializeApp();
@@ -422,6 +423,42 @@ export const agenteSubirAdjunto = onCall<{ ticketId: string; nombre: string; tip
       usuario.email, ticketId, String(req.data?.nombre ?? "archivo"), String(req.data?.tipo ?? ""), Number(req.data?.tamano),
       typeof origen === "string" ? origen : undefined,
     );
+  },
+);
+
+/**
+ * `agenteClaudeLog`: la corrida de Claude Code en GitHub Actions manda aquí lo
+ * que va haciendo (consola en vivo del panel). HTTP, no callable: lo llama el
+ * runner, no el dashboard. Ver agente/consola.ts.
+ */
+export const agenteClaudeLog = onRequest(
+  { region: "us-central1", timeoutSeconds: 30, memory: "256MiB", maxInstances: 10, invoker: "public" },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.status(405).send("POST");
+      return;
+    }
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const issue = Number(b.issue);
+    try {
+      if (!Number.isInteger(issue) || issue <= 0) throw new ErrorConsola(400, "issue inválido");
+      if (b.accion === "abrir") {
+        res.json(await abrirConsola(String(b.jwt ?? ""), issue));
+        return;
+      }
+      const llave = String(b.llave ?? "");
+      if (b.accion === "linea") await lineaConsola(issue, llave, String(b.texto ?? ""), String(b.tipo ?? ""));
+      else if (b.accion === "fin") await finConsola(issue, llave);
+      else throw new ErrorConsola(400, "accion inválida");
+      res.json({ ok: true });
+    } catch (e) {
+      if (e instanceof ErrorConsola) {
+        res.status(e.status).json({ error: e.message });
+        return;
+      }
+      console.error("[agenteClaudeLog]", e);
+      res.status(500).json({ error: "interno" });
+    }
   },
 );
 

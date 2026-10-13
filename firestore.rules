@@ -513,6 +513,13 @@ service cloud.firestore {
         && docId == request.auth.token.email + '__' + request.resource.data.ticketId;
     }
 
+    // Consola en vivo de Claude Code (lo que va haciendo en la corrida). La escribe
+    // la función `agenteClaudeLog`; la lee solo quien mandó el ticket.
+    match /agente_claude_log/{issue} {
+      allow read: if request.auth != null && resource.data.owner == request.auth.token.email;
+      allow write: if false;
+    }
+
     // Cupo por hora: solo lo toca la función (admin SDK).
     match /agente_uso/{email} {
       allow read, write: if false;

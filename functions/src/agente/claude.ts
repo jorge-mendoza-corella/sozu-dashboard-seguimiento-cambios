@@ -63,8 +63,10 @@ function pidePregunta(b: string): boolean {
   return cola.split("\n").some((l) => /\?\**\s*$/.test(l.trim()) && l.trim().length > 12);
 }
 
+// Sin el HTML que mete claude-code-action (el spinner es un <img>): el panel no
+// interpreta HTML y se veía como texto.
 const limpiar = (b: string) =>
-  b.replace(/<!-- georgia-[^>]*-->/g, "").replace(/^@claude\s*/i, "").trim();
+  b.replace(/<!-- georgia-[^>]*-->/g, "").replace(/<img\b[^>]*>/gi, "").replace(/^@claude\s*/i, "").trim();
 
 /** El issue que este ticket abrió (si lo mandó esta persona). */
 export async function issueDelTicket(email: string, ticketId: string): Promise<{ numero: number; url: string }> {
