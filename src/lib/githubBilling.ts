@@ -52,6 +52,8 @@ export interface GithubActionsUso {
    * tablero dice hasta dónde llega en vez de dar por hecho el mes entero.
    */
   periodo: { anio: number; mes: number; desde: string | null; hasta: string | null } | null;
+  /** Neto por día ("2026-10-01" → USD). Vacío en la facturación vieja. */
+  porDia: Record<string, number>;
   updatedAt: string | null;
   /** Por qué no hay datos, cuando no los hay. */
   error: string | null;
@@ -87,6 +89,7 @@ export async function getGithubActionsUso(): Promise<GithubActionsUso | null> {
             descuento: 0,
             plataforma: null,
             periodo: null,
+            porDia: {},
             updatedAt,
             error: d.error,
           }
@@ -105,6 +108,7 @@ export async function getGithubActionsUso(): Promise<GithubActionsUso | null> {
       descuento: raw.descuento ?? 0,
       plataforma: raw.plataforma ?? null,
       periodo: raw.periodo ?? null,
+      porDia: raw.porDia ?? {},
       updatedAt,
       error: d.error ?? null,
     };
