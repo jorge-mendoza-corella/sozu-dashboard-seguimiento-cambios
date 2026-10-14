@@ -55,6 +55,16 @@ const COLOR_PRIORIDAD: Record<string, string> = {
 const sinAcentos = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const unicos = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))].sort();
 
+/**
+ * Sin ticket abierto: si quien entra aún no conecta su cuenta de Claude, aquí
+ * mismo puede hacerlo (no tiene que esperar a tener un ticket para eso).
+ */
+function SinTicketElegido() {
+  const token = useTokenClaude();
+  if (token.data && !token.data.conectado) return <ConectarClaude className="m-1" />;
+  return <p className="py-10 text-center text-sm text-muted-foreground">Elige un ticket.</p>;
+}
+
 export function TicketsAgente({
   email, tickets, cargando, error, revisado, onRefrescar, cerrarAhora, onCerrarAtendido, responderAhora, onResponderAtendido,
 }: Props) {
@@ -209,7 +219,9 @@ export function TicketsAgente({
             enfocarRespuesta={actual.id === responderAhora}
             onRespuestaEnfocada={respuestaAtendida}
           />
-        ) : !cargando && !error && <p className="py-10 text-center text-sm text-muted-foreground">Elige un ticket.</p>}
+        ) : !cargando && !error && (
+          <SinTicketElegido />
+        )}
       </section>
       {dialogoCierre && (
         <CerrarTicketDialog

@@ -758,10 +758,13 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
 
     // listBranches devuelve las ramas en orden alfabético y paginado, así que
     // en repos con muchas ramas (cambios_*, feat/*) "main" puede quedar fuera.
-    // Traemos main y dev explícitamente si no vinieron en la lista.
+    // Traemos main y dev explícitamente si no vinieron en la lista. Solo si la
+    // lista vino llena (hay más páginas): si cupo entera, que falte dev es que
+    // el repo no la tiene, y pedirla cada 2 min solo llenaba la consola de 404.
     const rawBranches = [...branchesResp.data];
+    const listaCompleta = branchesResp.data.length < 100;
     for (const required of ["main", "dev"]) {
-      if (!rawBranches.some((b) => b.name === required)) {
+      if (!listaCompleta && !rawBranches.some((b) => b.name === required)) {
         try {
           const { data } = await octokit.repos.getBranch({ owner, repo, branch: required });
           rawBranches.push(data as unknown as (typeof rawBranches)[number]);
@@ -1557,12 +1560,10 @@ export function mismoCommit(a?: string, b?: string): boolean {
 /** ¿Se despliega solo al mergear a dev? Sin variable definida, sí. */
 export async function getAutoDeployDev(owner: string, repo: string): Promise<boolean> {
   try {
-    const { data } = await octokit.actions.getRepoVariable({
-      owner,
-      repo,
-      name: "AUTO_DEPLOY_DEV",
-    });
-    return data.value !== "false";
+    // La lista y no la variable suelta: sin definir, la variable contesta 404
+    // (el caso normal) y el navegador lo pinta como error en consola.
+    const { data } = await octokit.actions.listRepoVariables({ owner, repo, per_page: 30 });
+    return data.variables.find((v) => v.name === "AUTO_DEPLOY_DEV")?.value !== "false";
   } catch {
     // 404 = nunca se tocó, que es el comportamiento de siempre: desplegar.
     // Cualquier otro fallo también cae aquí y se asume lo mismo, porque
