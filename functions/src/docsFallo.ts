@@ -1,5 +1,6 @@
 /**
- * Por qué falló la documentación automática (sozu-docs) de un repo.
+ * Por qué falló una corrida que usa a Claude: la documentación automática
+ * (sozu-docs) de un repo o un ticket mandado a Claude Code (orquestador).
  *
  * El navegador no puede leer el log de un job (GitHub lo redirige a un blob sin
  * CORS), así que lo baja esta función con el token del dashboard y busca el
@@ -9,7 +10,8 @@
  */
 import type { Octokit } from "@octokit/rest";
 
-export type CausaDocs = "sin_credito" | "llave_invalida" | "limite" | "saturado" | "otro";
+export type CausaDocs =
+  | "token_vencido" | "limite_suscripcion" | "sin_credito" | "llave_invalida" | "limite" | "saturado" | "otro";
 
 export interface FalloDocs {
   causa: CausaDocs;
@@ -17,7 +19,11 @@ export interface FalloDocs {
   detalle: string | null;
 }
 
+// El orden importa: el token de la suscripción vencido también contesta 401 /
+// authentication_error, y tiene que ganarle a "llave de API inválida".
 const PATRONES: [CausaDocs, RegExp][] = [
+  ["token_vencido", /oauth token (has )?(expired|been revoked|revoked|is invalid)|token (has )?expired|please run \/login|invalid bearer token|oauth[^\n]*authentication_error|authentication_error[^\n]*oauth/i],
+  ["limite_suscripcion", /usage limit reached|claude ai usage limit|hit your (usage )?limit|5-hour limit|limit will reset/i],
   ["sin_credito", /credit balance is too low/i],
   ["llave_invalida", /authentication_error|invalid x-api-key|\b401\b.*(api|key)/i],
   ["limite", /rate_limit_error|\b429\b/i],

@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import { GeorgIAPensando } from "./GeorgIAPensando";
+import { AvisoTokenClaude } from "./AvisoTokenClaude";
 import { BarraClaudeMini, EstadoClaudeMini, SeguimientoClaude } from "./SeguimientoClaude";
 import {
   analisisGuardado, cerrarTicketPortal, esSoloFecha, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
@@ -478,6 +479,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
               Los commits llevarán el trailer <code>Ticket-SOZU</code>: cuando su PR llegue a PRD, GeorgIA te avisa para cerrarlo.
             </p>
           </div>
+          <AvisoTokenClaude />
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-violet-300/60 bg-violet-50/60 p-3 dark:border-violet-800/60 dark:bg-violet-950/20">
             <Bot className="h-4 w-4 text-violet-600 dark:text-violet-300" />
             <p className="min-w-0 flex-1 text-sm">

@@ -29,6 +29,7 @@ import { procesarAdjunto } from "./agente/procesarAdjunto.js";
 import { abrirConsola, ErrorConsola, finConsola, lineaConsola, sesionConsola } from "./agente/consola.js";
 import { qrWhatsapp } from "./whatsapp.js";
 import { falloDocs } from "./docsFallo.js";
+import { leerTokenClaude, marcarTokenRenovado } from "./agente/tokenClaude.js";
 
 initializeApp();
 
@@ -382,6 +383,29 @@ export const agenteClaudeSeguimiento = onCall<{ ticketId: string; forzarPrs?: bo
       console.error("[agenteClaudeSeguimiento]", e);
       throw new HttpsError("unavailable", "No se pudo leer el avance en GitHub.");
     }
+  },
+);
+
+/**
+ * `agenteClaudeToken`: cuándo vence el token de la suscripción de Claude que usan
+ * el orquestador y los docs (para avisar antes). `renovado: true` lo marca como
+ * recién renovado; solo el root, que es quien cambia el secret.
+ */
+export const agenteClaudeToken = onCall<{ renovado?: boolean }>(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    maxInstances: 5,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  async (req) => {
+    const usuario = await verificarAcceso(req, "tickets");
+    if (req.data?.renovado === true) {
+      if (!usuario.esRoot) throw new HttpsError("permission-denied", "Solo el administrador renueva el token.");
+      return await marcarTokenRenovado(usuario.email);
+    }
+    return await leerTokenClaude();
   },
 );
 

@@ -15,6 +15,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
 import { ORQUESTADOR } from "./mandar.js";
 import { estadoPrsTicket, type PrClaude } from "./prsTicket.js";
+import { falloDocs, type FalloDocs } from "../docsFallo.js";
 
 export type EstadoClaude = "en_cola" | "trabajando" | "esperando_respuesta" | "terminado" | "error";
 
@@ -42,6 +43,8 @@ export interface SeguimientoClaude {
   listoParaCerrar: boolean;
   /** Arranque de la corrida activa (o en cola) y, si ya terminó, cuándo. */
   corrida: { inicio: string; fin: string | null } | null;
+  /** Por qué falló la última corrida (token vencido, límite de la ventana…), si falló. */
+  fallo: FalloDocs | null;
   revisado: string;
 }
 
@@ -165,9 +168,15 @@ export async function seguimientoClaude(
     listo: false,
   }));
 
+  // Solo cuando la corrida falló: el log se baja una vez y queda en caché.
+  const fallo = estado === "error" && run?.conclusion === "failure"
+    ? await falloDocs(gh, ORQUESTADOR.owner, ORQUESTADOR.repo, run.id).catch(() => null)
+    : null;
+
   return {
     estado,
     progreso,
+    fallo,
     runUrl: run?.html_url ?? null,
     issueUrl: issue.url,
     mensajes,

@@ -21,6 +21,7 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 import { arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where } from "firebase/firestore";
 import { app, db } from "./firebase";
 import { prDeMergeConCommits } from "./github";
+import type { FalloDocs } from "./docsFallo";
 
 export const INTERVALO_TICKETS_MS = 15 * 60_000;
 /** Trailer que identifica un commit con su ticket (lo pide el .md). */
@@ -123,6 +124,8 @@ export interface SeguimientoClaude {
   listoParaCerrar: boolean;
   /** Arranque de la corrida activa (o la última) y su fin, si ya terminó. */
   corrida?: { inicio: string; fin: string | null } | null;
+  /** Por qué falló la última corrida, si falló (lo saca la función del log). */
+  fallo?: FalloDocs | null;
   revisado: string;
 }
 
@@ -197,6 +200,23 @@ export async function subirAdjunto(ticketId: string, archivo: File, alAvanzar: (
     xhr.send(archivo);
   });
   return { nombre: archivo.name, tipo, url };
+}
+
+export interface TokenClaude {
+  renovado: string | null;
+  vence: string | null;
+}
+
+const llamarToken = httpsCallable<{ renovado?: boolean }, TokenClaude>(functions, "agenteClaudeToken", { timeout: 30_000 });
+
+/** Cuándo vence el token de la suscripción de Claude (orquestador y docs). */
+export async function tokenClaude(): Promise<TokenClaude> {
+  return (await llamarToken({})).data;
+}
+
+/** Marca el token como recién renovado (solo el root): vence en un año. */
+export async function marcarTokenRenovado(): Promise<TokenClaude> {
+  return (await llamarToken({ renovado: true })).data;
 }
 
 /** En qué va Claude Code con el ticket: estado, avance, conversación y PRs. */
