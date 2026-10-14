@@ -16,6 +16,7 @@
  *   entidades_relacionadas → personas (o el texto tickets.solicitante)
  */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { getFirestore } from "firebase-admin/firestore";
 
 export const SUPABASE_URL = "https://tzmhgfjmddkfyffkkmto.supabase.co";
 /** Enlace directo (sozu-admin abre Mis tickets → pipeline → folio → detalle con ?ticket=). */
@@ -61,15 +62,30 @@ export function clienteSupabase(serviceKey: string): SupabaseClient {
   return createClient(SUPABASE_URL, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
+/**
+ * Usuario del portal de quien entra al dashboard. No siempre es el mismo correo:
+ * hay quien entra al dashboard con su cuenta de Google de otro dominio
+ * (eduardo.araujo@investimento.mx) y en el portal es eduardo.araujo@sozu.com.
+ * Se prueba, en orden: el mismo correo, el `correoPortal` de su ficha en
+ * `users/{email}` (para casos que no sigan la regla) y el mismo usuario en
+ * @sozu.com.
+ */
+export async function usuarioPortal(sb: SupabaseClient, email: string): Promise<{ auth_user_id: string; email: string } | null> {
+  const ficha = (await getFirestore().doc(`users/${email}`).get().catch(() => null))?.data();
+  const explicito = typeof ficha?.correoPortal === "string" ? ficha.correoPortal.trim().toLowerCase() : "";
+  const local = email.split("@")[0];
+  const candidatos = [...new Set([email, explicito, `${local}@sozu.com`].filter(Boolean))];
+  for (const c of candidatos) {
+    const { data, error } = await sb.from("usuarios").select("auth_user_id, email").ilike("email", c).limit(1).maybeSingle();
+    if (error) throw error;
+    if (data?.auth_user_id) return { auth_user_id: data.auth_user_id, email: data.email };
+  }
+  return null;
+}
+
 export async function ticketsAsignados(sb: SupabaseClient, email: string): Promise<TicketSalida[]> {
-  const { data: yo, error: e1 } = await sb
-    .from("usuarios")
-    .select("auth_user_id, nombre, email")
-    .ilike("email", email)
-    .limit(1)
-    .maybeSingle();
-  if (e1) throw e1;
-  if (!yo?.auth_user_id) return [];
+  const yo = await usuarioPortal(sb, email);
+  if (!yo) return [];
   const uid: string = yo.auth_user_id;
 
   // Ids de tickets: por la tabla N:N y por la columna legada.
@@ -194,9 +210,8 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
  * con ese email (queda a su nombre, no a nombre de un robot).
  */
 export async function cerrarTicket(sb: SupabaseClient, email: string, idTicket: number, nota: string): Promise<{ etapa: string }> {
-  const { data: yo, error: e1 } = await sb.from("usuarios").select("auth_user_id").ilike("email", email).limit(1).maybeSingle();
-  if (e1) throw e1;
-  if (!yo?.auth_user_id) throw new Error("sin_usuario_portal");
+  const yo = await usuarioPortal(sb, email);
+  if (!yo) throw new Error("sin_usuario_portal");
   const uid: string = yo.auth_user_id;
 
   const { data: t, error: e2 } = await sb

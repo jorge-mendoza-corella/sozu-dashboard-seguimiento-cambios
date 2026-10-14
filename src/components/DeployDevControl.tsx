@@ -72,9 +72,12 @@ export function DeployDevControl({
   const { data: automatico } = useQuery({
     queryKey: ["auto-deploy-dev", owner, repo],
     queryFn: () => getAutoDeployDev(owner, repo),
-    // Sin deploy de dev no hay variable que consultar ni nada que enseñar.
-    enabled: tieneDeployDev === true,
+    // Sin deploy de dev no hay variable que consultar ni nada que enseñar; y
+    // sin permiso para usar el control, tampoco: GitHub contesta 404 a quien no
+    // administra el repo y solo ensuciaba la consola.
+    enabled: tieneDeployDev === true && (puedeDesplegar || puedeCambiarAutomatico),
     staleTime: 5 * 60_000,
+    retry: false,
   });
 
   if ((!puedeDesplegar && !puedeCambiarAutomatico) || !tieneDeployDev || automatico === undefined) return null;
