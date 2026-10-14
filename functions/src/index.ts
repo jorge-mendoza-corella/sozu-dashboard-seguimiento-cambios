@@ -29,6 +29,9 @@ import { procesarAdjunto } from "./agente/procesarAdjunto.js";
 import { abrirConsola, ErrorConsola, finConsola, lineaConsola, sesionConsola } from "./agente/consola.js";
 import { qrWhatsapp } from "./whatsapp.js";
 import { falloDocs } from "./docsFallo.js";
+import {
+  conectarToken, desconectarToken, exigirTokenClaude, leerTokenClaude, llavePublica, marcarTokenRenovado, secretDe,
+} from "./agente/tokenClaude.js";
 
 initializeApp();
 
@@ -343,13 +346,14 @@ export const agenteMandarAClaude = onCall<{ ticketId: string; md: string }>(
     const md = typeof req.data?.md === "string" ? req.data.md : "";
     if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
     if (!md.trim()) throw new HttpsError("invalid-argument", "El .md del ticket viene vacío.");
+    await exigirTokenClaude(usuario.email, usuario.esRoot);
     const tickets = await ticketsAsignados(clienteSupabase(SUPABASE_SERVICE_KEY.value()), usuario.email);
     const t = tickets.find((x) => x.id === ticketId);
     if (!t) throw new HttpsError("not-found", "Ese ticket no está entre tus pendientes.");
     const repos = await reposPermitidos(usuario);
     try {
       const gh = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
-      return await mandarAClaude(gh, usuario.email, t, md, repos);
+      return await mandarAClaude(gh, usuario.email, t, md, repos, secretDe(usuario.email, usuario.esRoot));
     } catch (e) {
       console.error("[agenteMandarAClaude]", e);
       throw new HttpsError("unavailable", `No se pudo abrir el issue en ${ORQUESTADOR.owner}/${ORQUESTADOR.repo}.`);
@@ -386,6 +390,48 @@ export const agenteClaudeSeguimiento = onCall<{ ticketId: string; forzarPrs?: bo
 );
 
 /**
+ * `agenteClaudeToken`: el token de Claude con el que corren los tickets de quien
+ * llama. `accion`:
+ *   - "leer" (default): si está conectado y cuándo vence (para avisar antes).
+ *   - "llave": llave pública del orquestador, para cifrar el token en el navegador.
+ *   - "conectar": guarda el token YA CIFRADO como secret propio (nunca llega en claro).
+ *   - "desconectar": borra su secret.
+ *   - "renovado": solo el root; marca el token compartido como recién renovado.
+ */
+export const agenteClaudeToken = onCall<{ accion?: string; keyId?: string; cifrado?: string }>(
+  {
+    region: "us-central1",
+    secrets: [GITHUB_TOKEN],
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    maxInstances: 5,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  async (req) => {
+    const usuario = await verificarAcceso(req, "tickets");
+    const accion = req.data?.accion ?? "leer";
+    const gh = () => new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
+    try {
+      if (accion === "leer") return await leerTokenClaude(usuario.email, usuario.esRoot);
+      if (accion === "renovado") {
+        if (!usuario.esRoot) throw new HttpsError("permission-denied", "Solo el administrador renueva el token compartido.");
+        return await marcarTokenRenovado(usuario.email);
+      }
+      // El root usa el token compartido (también lo usan los docs): no se conecta aquí.
+      if (usuario.esRoot) throw new HttpsError("failed-precondition", "Tu token es el compartido: renuévalo con el comando del aviso.");
+      if (accion === "llave") return await llavePublica(gh());
+      if (accion === "conectar") return await conectarToken(gh(), usuario.email, String(req.data?.keyId ?? ""), String(req.data?.cifrado ?? ""));
+      if (accion === "desconectar") return await desconectarToken(gh(), usuario.email);
+      throw new HttpsError("invalid-argument", "Acción inválida.");
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      console.error("[agenteClaudeToken]", e);
+      throw new HttpsError("unavailable", "No se pudo guardar en GitHub. Intenta de nuevo.");
+    }
+  },
+);
+
+/**
  * `agenteClaudeResponder`: contesta a Claude desde el dashboard (comentario con
  * @claude en el issue, que dispara otra corrida sobre la misma rama y PR).
  */
@@ -403,6 +449,7 @@ export const agenteClaudeResponder = onCall<{ ticketId: string; texto: string; a
     const ticketId = String(req.data?.ticketId ?? "");
     if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
     const issue = await issueDelTicket(usuario.email, ticketId);
+    await exigirTokenClaude(usuario.email, usuario.esRoot);
     const gh = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
     try {
       const adjuntos = Array.isArray(req.data?.adjuntos) ? req.data.adjuntos : [];

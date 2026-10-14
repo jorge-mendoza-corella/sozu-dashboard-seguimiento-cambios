@@ -5,7 +5,8 @@
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { app } from "./firebase";
 
-export type CausaDocs = "sin_credito" | "llave_invalida" | "limite" | "saturado" | "otro";
+export type CausaDocs =
+  | "token_vencido" | "limite_suscripcion" | "sin_credito" | "llave_invalida" | "limite" | "saturado" | "otro";
 
 export interface FalloDocs {
   causa: CausaDocs;
@@ -22,6 +23,8 @@ export async function falloDocs(owner: string, repo: string, runId: number): Pro
 
 /** Texto corto para la etiqueta del punto rojo. */
 export const ETIQUETA_CAUSA: Record<CausaDocs, string | null> = {
+  token_vencido: "Token de Claude vencido",
+  limite_suscripcion: "Límite de la ventana de Claude",
   sin_credito: "Sin crédito en la API",
   llave_invalida: "Llave de API inválida",
   limite: "Límite de la API",
@@ -31,6 +34,10 @@ export const ETIQUETA_CAUSA: Record<CausaDocs, string | null> = {
 
 /** Qué hacer, para el tooltip. */
 export const AYUDA_CAUSA: Record<CausaDocs, string> = {
+  token_vencido:
+    "El token de la suscripción de Claude (CLAUDE_CODE_OAUTH_TOKEN) venció o se revocó. Regenera con `claude setup-token` y actualiza el secret (instrucciones en Tickets → Claude).",
+  limite_suscripcion:
+    "Se acabó la ventana de 5 horas de la suscripción de Claude. Reintenta cuando se reinicie.",
   sin_credito:
     "Se acabó el saldo de la API de Anthropic (console.anthropic.com → Plans & Billing). Recárgalo y dale a Reintentar.",
   llave_invalida: "La ANTHROPIC_API_KEY del repo está vencida o revocada: hay que cambiar el secret y reintentar.",

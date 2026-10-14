@@ -13,6 +13,7 @@ import remarkGfm from "remark-gfm";
 import { Bot, ChevronDown, Terminal, ExternalLink, GitPullRequest, Loader2, MessageCircleQuestion, Send, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConsolaFlotante } from "./ConsolaClaude";
+import { AvisoTokenClaude } from "./AvisoTokenClaude";
 import { AdjuntoEnMensaje, AdjuntosPendientes, BotonesAdjuntar } from "./Adjuntos";
 import { useAdjuntos } from "@/hooks/useAdjuntos";
 import { useConsola, type Consola } from "@/hooks/useConsolaClaude";
@@ -528,6 +529,18 @@ export function SeguimientoClaude({ ticketId, folio, titulo, issue, enfocar = fa
         {s && <span className="ml-auto text-[10px] text-muted-foreground">revisado {hora(s.revisado)}</span>}
       </div>
 
+      {s?.estado === "error" && s.fallo?.causa === "token_vencido" && <AvisoTokenClaude fallo={s.fallo} />}
+      {s?.estado === "error" && s.fallo?.causa === "limite_suscripcion" && (
+        <p className="rounded-lg border border-amber-300 bg-amber-50/70 p-2.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          <strong>Falló porque se acabó la ventana de 5 horas de Claude.</strong> Cuando se reinicie, contéstale "reintenta" y sigue donde se quedó.
+          {s.fallo.detalle && <span className="mt-1 block break-all font-mono text-[10.5px] opacity-75">{s.fallo.detalle}</span>}
+        </p>
+      )}
+      {s?.estado === "error" && s.fallo && !["token_vencido", "limite_suscripcion"].includes(s.fallo.causa) && s.fallo.detalle && (
+        <p className="break-all rounded-lg border border-red-300/60 bg-red-50/50 p-2.5 font-mono text-[10.5px] text-red-900 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-200">
+          {s.fallo.detalle}
+        </p>
+      )}
       {s && !(activo(s.estado) || pct !== null) && consola.lineas.length > 0 && (
         <button
           type="button"

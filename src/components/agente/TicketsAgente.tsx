@@ -20,6 +20,8 @@ import {
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import { GeorgIAPensando } from "./GeorgIAPensando";
+import { AvisoTokenClaude, ConectarClaude, EstadoTokenClaude } from "./AvisoTokenClaude";
+import { useTokenClaude } from "@/hooks/useTokenClaude";
 import { BarraClaudeMini, EstadoClaudeMini, SeguimientoClaude } from "./SeguimientoClaude";
 import {
   analisisGuardado, cerrarTicketPortal, esSoloFecha, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
@@ -291,6 +293,8 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
   };
   const [copiado, setCopiado] = useState(false);
   const [confirmar, setConfirmar] = useState(false);
+  // Sin token de Claude conectado no se ofrece mandar: cada quien usa su ventana.
+  const token = useTokenClaude();
   const [mandando, setMandando] = useState(false);
   const [errorMandar, setErrorMandar] = useState<string | null>(null);
   const [recienMandado, setRecienMandado] = useState<{ numero: number; url: string } | null>(null);
@@ -478,6 +482,14 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
               Los commits llevarán el trailer <code>Ticket-SOZU</code>: cuando su PR llegue a PRD, GeorgIA te avisa para cerrarlo.
             </p>
           </div>
+          <AvisoTokenClaude />
+          {!token.data ? (
+            token.isError
+              ? <p className="text-xs text-destructive">No se pudo revisar tu conexión con Claude: {mensajeDeError(token.error)}</p>
+              : <p className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Revisando tu conexión con Claude…</p>
+          ) : !token.data.conectado ? (
+            <ConectarClaude />
+          ) : (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-violet-300/60 bg-violet-50/60 p-3 dark:border-violet-800/60 dark:bg-violet-950/20">
             <Bot className="h-4 w-4 text-violet-600 dark:text-violet-300" />
             <p className="min-w-0 flex-1 text-sm">
@@ -497,7 +509,9 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
             )}
             {confirmar && <p className="w-full text-[11px] text-muted-foreground">Se manda el .md de arriba tal como está (con tus ediciones). Usa la ventana de 5 h de tu plan.</p>}
             {errorMandar && <p className="w-full text-xs text-destructive">{errorMandar}</p>}
+            <EstadoTokenClaude t={token.data!} />
           </div>
+          )}
         </Seccion>
       )}
 
