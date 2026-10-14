@@ -203,20 +203,55 @@ export async function subirAdjunto(ticketId: string, archivo: File, alAvanzar: (
 }
 
 export interface TokenClaude {
+  /** Hay token con el que mandar tickets. */
+  conectado: boolean;
+  /** Es el token compartido del root (también lo usan los docs). */
+  compartido: boolean;
   renovado: string | null;
   vence: string | null;
 }
 
-const llamarToken = httpsCallable<{ renovado?: boolean }, TokenClaude>(functions, "agenteClaudeToken", { timeout: 30_000 });
+const llamarToken = httpsCallable<{ accion?: string; keyId?: string; cifrado?: string }, TokenClaude & { keyId?: string; key?: string }>(
+  functions, "agenteClaudeToken", { timeout: 30_000 },
+);
 
-/** Cuándo vence el token de la suscripción de Claude (orquestador y docs). */
+/** Si quien entra tiene su token de Claude conectado y cuándo vence. */
 export async function tokenClaude(): Promise<TokenClaude> {
-  return (await llamarToken({})).data;
+  return (await llamarToken({ accion: "leer" })).data;
 }
 
-/** Marca el token como recién renovado (solo el root): vence en un año. */
+/** Root: marca el token compartido como recién renovado (vence en un año). */
 export async function marcarTokenRenovado(): Promise<TokenClaude> {
-  return (await llamarToken({ renovado: true })).data;
+  return (await llamarToken({ accion: "renovado" })).data;
+}
+
+/** Lo que imprime `claude setup-token`. */
+export const FORMATO_TOKEN = /^sk-ant-oat01-[A-Za-z0-9_-]{20,}$/;
+
+/**
+ * Conecta el token de Claude de quien entra. Se cifra AQUÍ, en el navegador, con
+ * la llave pública del repo orquestador (sealed box, lo que pide GitHub para
+ * sus secrets): la función y Firestore solo ven el texto cifrado, y solo GitHub
+ * Actions lo puede abrir.
+ */
+export async function conectarClaude(token: string): Promise<TokenClaude> {
+  // La terminal a veces parte el token en varias líneas al copiarlo.
+  const limpio = token.replace(/\s+/g, "");
+  if (!FORMATO_TOKEN.test(limpio)) throw new Error("Eso no parece un token de Claude: empieza con sk-ant-oat01- y es una sola línea.");
+  const { keyId, key } = (await llamarToken({ accion: "llave" })).data;
+  if (!keyId || !key) throw new Error("No se pudo preparar el cifrado.");
+  const sodium = (await import("libsodium-wrappers")).default;
+  await sodium.ready;
+  const cifrado = sodium.to_base64(
+    sodium.crypto_box_seal(sodium.from_string(limpio), sodium.from_base64(key, sodium.base64_variants.ORIGINAL)),
+    sodium.base64_variants.ORIGINAL,
+  );
+  return (await llamarToken({ accion: "conectar", keyId, cifrado })).data;
+}
+
+/** Borra el token de quien entra (deja de poder mandar tickets). */
+export async function desconectarClaude(): Promise<TokenClaude> {
+  return (await llamarToken({ accion: "desconectar" })).data;
 }
 
 /** En qué va Claude Code con el ticket: estado, avance, conversación y PRs. */
