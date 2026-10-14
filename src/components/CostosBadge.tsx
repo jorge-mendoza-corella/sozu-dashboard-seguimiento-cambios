@@ -1,6 +1,7 @@
+import { lazy, Suspense, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { Bot, ChevronDown, Gauge, Github } from "lucide-react";
+import { BarChart3, Bot, ChevronDown, Gauge, Github, List, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getGithubActionsUso, type GithubActionsUso } from "@/lib/githubBilling";
 import { getAnthropicMes, type AnthropicMes } from "@/lib/anthropicMes";
@@ -16,6 +17,8 @@ import { formatDistanceToNow } from "@/lib/timeUtils";
 // de nada. El filtro vive aquí y no en el layout para que no haya dos sitios
 // donde acordarse de aplicarlo.
 // ---------------------------------------------------------------------------
+
+const CostosGrafica = lazy(() => import("./CostosGrafica"));
 
 /** A partir de aquí el cupo empieza a preocupar. */
 const AVISO_PCT = 75;
@@ -141,6 +144,7 @@ function DetalleAnthropic({ a }: { a: AnthropicMes }) {
 
 export function CostosBadge({ appUser }: { appUser: AppUser | null }) {
   const esAdmin = !!appUser && !esRolOperativo(appUser.role);
+  const [vista, setVista] = useState<"detalle" | "grafica">("detalle");
 
   const gh = useQuery({
     queryKey: ["github-actions-uso"],
@@ -193,10 +197,39 @@ export function CostosBadge({ appUser }: { appUser: AppUser | null }) {
           sideOffset={6}
           className="z-50 w-[22rem] max-w-[calc(100vw-16px)] overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg"
         >
-          <div className="flex items-baseline justify-between bg-muted/40 px-3 py-2">
+          <div className="flex items-center gap-2 bg-muted/40 px-3 py-2">
             <span className="text-xs font-semibold">Costos de {mes}</span>
+            <div className="ml-auto inline-flex rounded-md border bg-background p-0.5">
+              {([["detalle", List, "Detalle"], ["grafica", BarChart3, "Gráfica por día"]] as const).map(([v, Icono, txt]) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setVista(v)}
+                  className={cn("rounded p-1", vista === v ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground")}
+                  title={txt}
+                  aria-label={txt}
+                  aria-pressed={vista === v}
+                >
+                  <Icono className="h-3.5 w-3.5" />
+                </button>
+              ))}
+            </div>
             <span className="text-sm font-semibold tabular-nums">{USD(total)}</span>
           </div>
+          {vista === "grafica" ? (
+            <div className="px-3 py-2.5">
+              {Object.keys(gh.data?.porDia ?? {}).length + Object.keys(an.data?.porDia ?? {}).length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">Sin datos por día todavía: aparecen con el siguiente sync.</p>
+              ) : (
+                <Suspense fallback={<Loader2 className="mx-auto my-16 h-4 w-4 animate-spin text-muted-foreground" />}>
+                  <CostosGrafica
+                    github={gh.data && !gh.data.error && Object.keys(gh.data.porDia).length ? gh.data.porDia : null}
+                    anthropic={an.data && Object.keys(an.data.porDia).length ? an.data.porDia : null}
+                  />
+                </Suspense>
+              )}
+            </div>
+          ) : (
           <div className="max-h-[70vh] overflow-y-auto">
             <Seccion icono={<Github className="h-3.5 w-3.5" />} titulo="GitHub Actions" monto={gh.data && !gh.data.error ? USD(ghUsd) : "—"}>
               {!gh.data ? (
@@ -223,6 +256,7 @@ export function CostosBadge({ appUser }: { appUser: AppUser | null }) {
               {an.data ? <DetalleAnthropic a={an.data} /> : <p className="text-[11px] text-muted-foreground">Sin datos todavía (el sync corre cada 15 min).</p>}
             </Seccion>
           </div>
+          )}
         </Menu.Content>
       </Menu.Portal>
     </Menu.Root>

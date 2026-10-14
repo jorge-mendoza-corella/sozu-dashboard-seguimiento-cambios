@@ -132,13 +132,21 @@ def resumen_mes(key):
 
     total = 0.0
     por_concepto = {}
+    # Gasto por día (UTC), para la gráfica del badge. Los días sin consumo
+    # vienen como bucket vacío y quedan en 0.
+    por_dia = {}
     for b in costo or []:
+        dia = (b.get("starting_at") or "")[:10]
+        if dia:
+            por_dia.setdefault(dia, 0.0)
         for r in b.get("results", []):
             # amount viene en centavos de dólar, como texto decimal.
             usd = float(r.get("amount") or 0) / 100
             total += usd
             concepto = r.get("description") or r.get("cost_type") or "otro"
             por_concepto[concepto] = por_concepto.get(concepto, 0) + usd
+            if dia:
+                por_dia[dia] += usd
 
     nombres = {k.get("id"): k.get("name") or k.get("id") for k in (llaves or [])}
     por_llave = {}
@@ -164,6 +172,7 @@ def resumen_mes(key):
         "mes": hoy.month,
         "totalUsd": round(total, 4) if costo is not None else None,
         "porConcepto": {k: round(v, 4) for k, v in por_concepto.items()},
+        "porDia": {k: round(v, 4) for k, v in sorted(por_dia.items())},
         "porLlave": por_llave,
         "error": None if costo is not None else "No se pudo leer cost_report (¿la admin key tiene acceso?)",
     }

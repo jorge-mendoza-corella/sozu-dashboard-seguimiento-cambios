@@ -25,6 +25,7 @@ interface Crudo {
   mes: number;
   totalUsd: number | null;
   porConcepto: Record<string, number>;
+  porDia?: Record<string, number>;
   porLlave: Record<string, { nombre: string; modelos: Record<string, TokensModelo> }>;
   error: string | null;
 }
@@ -43,6 +44,8 @@ export interface AnthropicMes {
   porLlave: CostoLlave[];
   /** Lo más caro por concepto de factura ("Claude Opus 5 - Output Tokens"…). */
   porConcepto: { concepto: string; usd: number }[];
+  /** Lo facturado por día ("2026-10-01" → USD). */
+  porDia: Record<string, number>;
   updatedAt: string | null;
   error: string | null;
 }
@@ -96,6 +99,7 @@ export async function getAnthropicMes(): Promise<AnthropicMes | null> {
     porConcepto: Object.entries(c.porConcepto ?? {})
       .map(([concepto, usd]) => ({ concepto, usd }))
       .sort((a, b) => b.usd - a.usd),
+    porDia: c.porDia ?? {},
     updatedAt: d.updatedAt ?? null,
     error: c.error,
   };

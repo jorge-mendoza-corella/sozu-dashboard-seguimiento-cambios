@@ -136,6 +136,14 @@ def analizar_nuevo(datos: dict) -> dict:
     # que decir hasta dónde llega, no dar por hecho que es el mes entero.
     fechas = sorted(str(u.get("date")) for u in lineas if u.get("date"))
 
+    # Neto por día, para la gráfica del badge de costos. Suma lo mismo que
+    # `costoAproximado`: los días que el plan absorbe salen en 0.
+    por_dia: dict[str, float] = {}
+    for u in lineas:
+        if u.get("date"):
+            dia = str(u["date"])[:10]
+            por_dia[dia] = por_dia.get(dia, 0.0) + float(u.get("netAmount") or 0)
+
     return {
         "usuario": USUARIO,
         # La plataforma nueva no habla de cupo incluido: habla de lo descontado.
@@ -157,6 +165,7 @@ def analizar_nuevo(datos: dict) -> dict:
         "descuento": round(descuento, 2),
         "ciclo": None,
         "plataforma": "nueva",
+        "porDia": {k: round(v, 4) for k, v in sorted(por_dia.items())},
     }
 
 
