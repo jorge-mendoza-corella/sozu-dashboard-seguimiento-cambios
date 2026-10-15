@@ -4,7 +4,7 @@
  */
 import { useSyncExternalStore } from "react";
 
-export type Skin = "cyborg" | "abuelo" | "heroe" | "chibi" | "cientifico" | "raton" | "travieso" | "ramon";
+export type Skin = "cyborg" | "abuelo" | "heroe" | "chibi" | "cientifico" | "raton" | "travieso" | "ramon" | "tomaso" | "licesita";
 
 export const SKINS: { id: Skin; nombre: string; desc: string }[] = [
   { id: "abuelo", nombre: "Abuelo inventor", desc: "Canas, bigote blanco y sonrisa pícara" },
@@ -14,6 +14,8 @@ export const SKINS: { id: Skin; nombre: string; desc: string }[] = [
   { id: "raton", nombre: "Ratón clásico", desc: "Orejotas redondas, guantes blancos y short rojo" },
   { id: "travieso", nombre: "Niño travieso", desc: "Pelo en picos, piel amarilla y playera naranja" },
   { id: "ramon", nombre: "Ramón", desc: "Barba corta, pelo hacia atrás y saco oscuro" },
+  { id: "tomaso", nombre: "Tomaso", desc: "Lentes al aire, cara delgada y traje gris" },
+  { id: "licesita", nombre: "Licesita", desc: "Pelo lacio oscuro, collar y vestido verde azulado" },
   { id: "cyborg", nombre: "Cyborg (original)", desc: "Media cara de acero y brazo robótico" },
 ];
 export const SKIN_DEFAULT: Skin = "abuelo";
@@ -64,6 +66,12 @@ export const PALETA: Record<Skin, {
   /** Cuello; por omisión, la piel. */
   cuello?: string;
   zapato?: string;
+  /** Labios; por omisión, café. */
+  labios?: string;
+  /** Sin mangas: brazos con la piel (vestido). */
+  brazosDescubiertos?: boolean;
+  /** Sin engrane ni botones de latón en el pecho (el saco o el vestido los tapan). */
+  sinEmblema?: boolean;
 }> = {
   cyborg: { piel: ["#f0c4a0", "#c98c65"], camisa: ["#7d8591", "#9aa1ab", "#5c636e"], iris: "#3b5240", ceja: "#111827", pielSolida: "#d9a07a" },
   abuelo: { piel: ["#ffd9bd", "#e09b74"], camisa: ["#8b95a5", "#b8c1cd", "#717c8c"], iris: "#3f6212", ceja: "#e5e7eb", pielSolida: "#f2b993" },
@@ -81,7 +89,17 @@ export const PALETA: Record<Skin, {
   // Piel morena, saco carbón (la camisa gris clara la pone <Saco />) y pantalón de vestir.
   ramon: {
     piel: ["#dca57c", "#a86f49"], camisa: ["#1f2937", "#374151", "#111827"], iris: "#3f2a1d", ceja: "#111827", pielSolida: "#bb8058",
-    pantalon: ["#1e293b", "#334155", "#0f172a"], zapato: "#0c0a09",
+    pantalon: ["#1e293b", "#334155", "#0f172a"], zapato: "#0c0a09", sinEmblema: true,
+  },
+  // Piel clara, traje gris medio (la camisa blanca la pone <Saco />).
+  tomaso: {
+    piel: ["#f6d2b4", "#d29f7c"], camisa: ["#6b7280", "#9ca3af", "#4b5563"], iris: "#3f2a1d", ceja: "#1f2937", pielSolida: "#e0ae8a",
+    pantalon: ["#4b5563", "#6b7280", "#374151"], zapato: "#111827", sinEmblema: true,
+  },
+  // Vestido verde azulado sin mangas, largo (las piernas van del mismo tono).
+  licesita: {
+    piel: ["#f3cba9", "#cf9874"], camisa: ["#0f5e6b", "#1a7f8e", "#0b4a55"], iris: "#2b1a12", ceja: "#1c1917", pielSolida: "#dfa985",
+    pantalon: ["#0f5e6b", "#1a7f8e", "#0b4a55"], zapato: "#1c1917", labios: "#b45a64", brazosDescubiertos: true, sinEmblema: true,
   },
 };
 
