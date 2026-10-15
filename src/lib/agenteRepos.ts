@@ -16,7 +16,7 @@ import {
 } from "firebase/firestore";
 import { app, db } from "./firebase";
 import { SUPERUSER_EMAIL } from "./firestoreUsers";
-import { esSkin, setCorreosAvatar, setSkinGeorgIA, setSkinPropio, SKIN_DEFAULT, type Skin } from "@/components/agente/skinsDatos";
+import { esSkin, setCorreosAvatar, setNombresAvatar, setSkinGeorgIA, setSkinPropio, SKIN_DEFAULT, type Skin } from "@/components/agente/skinsDatos";
 
 const functions = getFunctions(app, "us-central1");
 
@@ -167,6 +167,7 @@ export async function permisosAgente(email: string | null | undefined): Promise<
     setSkinGeorgIA(esSkin(d?.skin) ? d.skin : SKIN_DEFAULT);
     // Correo de cada avatar (quien levanta el ticket).
     setCorreosAvatar(d?.correosAvatar);
+    setNombresAvatar(d?.nombresAvatar);
     const agente = esRoot || listaDe(d?.emails).includes(email);
     return {
       agente,
@@ -241,6 +242,14 @@ export async function cambiarCorreoAvatar(skin: Skin, correo: string): Promise<v
   const nuevos = { ...actuales, [skin]: c };
   await setDoc(ACCESO(), { correosAvatar: nuevos }, { merge: true });
   setCorreosAvatar(nuevos);
+}
+
+/** Nombre visible de un avatar ("" = el del catálogo). Solo el root escribe el doc. */
+export async function cambiarNombreAvatar(skin: Skin, nombre: string): Promise<void> {
+  const d = (await getDoc(ACCESO())).data();
+  const nuevos = { ...((d?.nombresAvatar ?? {}) as Record<string, unknown>), [skin]: nombre.trim().slice(0, 40) };
+  await setDoc(ACCESO(), { nombresAvatar: nuevos }, { merge: true });
+  setNombresAvatar(nuevos);
 }
 
 export async function cambiarTickets(email: string, activar: boolean): Promise<void> {

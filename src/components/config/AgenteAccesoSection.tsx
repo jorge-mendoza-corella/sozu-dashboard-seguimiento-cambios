@@ -4,12 +4,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { setUserAgenteVolador, SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
+import { getUserByEmail, setUserAgenteVolador, SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { ConfirmarApagarAgentito } from "@/components/agente/ConfirmarApagarAgentito";
 import { SelectorSkin } from "./SelectorSkin";
 import { Personaje } from "@/components/agente/AgenteVolador";
-import { SKINS, useSkinGeneral, type Skin } from "@/components/agente/skinsDatos";
+import { useNombresAvatar, useSkinGeneral, type Skin } from "@/components/agente/skinsDatos";
 import { cambiarTickets, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, leerSkinsPorPersona, quitarAccesoAgente } from "@/lib/agenteRepos";
 
 // ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ function Interruptor({ activo, deshabilitado, onCambiar, etiqueta }: {
 function AvatarDe({ skin }: { skin: Skin | undefined }) {
   const general = useSkinGeneral();
   const s = skin ?? general;
-  const nombre = SKINS.find((x) => x.id === s)?.nombre ?? s;
+  const nombre = useNombresAvatar()(s);
   const etiqueta = skin ? nombre : `General (${nombre})`;
   return (
     <span className="flex w-28 items-center justify-center gap-1" title={etiqueta}>
@@ -89,6 +89,20 @@ export function AgenteAccesoSection() {
   // Lo elige cada quien en su panel: aquí solo se muestra.
   const [skins, setSkins] = useState<Record<string, Skin>>({});
   useEffect(() => { leerSkinsPorPersona().then(setSkins).catch(() => setSkins({})); }, []);
+  // GeorgIA volando, por persona (users/{email}.agenteVolador; el root puede
+  // escribir la ficha de los demás). null = sin ficha de usuario: no se toca.
+  const [voladores, setVoladores] = useState<Record<string, boolean | null>>({});
+  const emailsAcceso = acceso?.emails.join(",") ?? "";
+  useEffect(() => {
+    const otros = emailsAcceso.split(",").filter((e) => e && e !== SUPERUSER_EMAIL);
+    if (!otros.length) return;
+    let vivo = true;
+    void Promise.all(otros.map(async (e) => {
+      const u = await getUserByEmail(e).catch(() => null);
+      return [e, u ? u.agenteVolador !== false : null] as const;
+    })).then((pares) => vivo && setVoladores(Object.fromEntries(pares)));
+    return () => { vivo = false; };
+  }, [emailsAcceso]);
 
   const run = async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
@@ -203,7 +217,25 @@ export function AgenteAccesoSection() {
                       />
                     )}
                   </span>
-                  <span className="w-28" aria-hidden />
+                  <span className="flex w-28 justify-center">
+                    {busy === `volador:${e}` ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : voladores[e] === undefined ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/40" />
+                    ) : voladores[e] === null ? (
+                      <span className="text-[10px] text-muted-foreground" title="No tiene ficha en Usuarios">—</span>
+                    ) : (
+                      <Interruptor
+                        activo={!!voladores[e]}
+                        deshabilitado={busy !== null}
+                        onCambiar={() => void run(`volador:${e}`, async () => {
+                          await setUserAgenteVolador(e, !voladores[e]);
+                          setVoladores((v) => ({ ...v, [e]: !v[e] }));
+                        })}
+                        etiqueta={voladores[e] ? "Esconder a GeorgIA en su pantalla" : "Mostrar a GeorgIA en su pantalla"}
+                      />
+                    )}
+                  </span>
                   <AvatarDe skin={skins[e]} />
                   <Button
                     variant="ghost"
