@@ -5,9 +5,9 @@
  * edita en Configuración → Agente IA.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BellRing, Bot, FileText, Loader2 } from "lucide-react";
+import { BellRing, Bot, FileText, Loader2, Send } from "lucide-react";
 import { useState } from "react";
-import { cambiarTickets, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, quitarAccesoAgente } from "@/lib/agenteRepos";
+import { cambiarClaude, cambiarTickets, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, quitarAccesoAgente } from "@/lib/agenteRepos";
 
 const CLAVE_ACCESO_AGENTE = ["agente-acceso"];
 
@@ -21,14 +21,15 @@ const claseChip = (on: boolean) =>
 export function PermisosIaChips({ email, disabled }: { email: string; disabled?: boolean }) {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: CLAVE_ACCESO_AGENTE, queryFn: leerAccesoAgente });
-  const [busy, setBusy] = useState<"agente" | "docs" | "tickets" | null>(null);
+  const [busy, setBusy] = useState<"agente" | "docs" | "tickets" | "claude" | null>(null);
   const [error, setError] = useState("");
 
   const agente = !!data?.emails.includes(email);
   const docs = !!data?.docs.includes(email);
   const tickets = !!data?.tickets.includes(email);
+  const claude = !!data?.claude.includes(email);
 
-  const run = async (k: "agente" | "docs" | "tickets", fn: () => Promise<void>) => {
+  const run = async (k: "agente" | "docs" | "tickets" | "claude", fn: () => Promise<void>) => {
     setBusy(k);
     setError("");
     try {
@@ -76,6 +77,16 @@ export function PermisosIaChips({ email, disabled }: { email: string; disabled?:
         >
           {busy === "tickets" ? <Loader2 className="h-3 w-3 animate-spin" /> : <BellRing className="h-3 w-3" />}
           Revisar tickets
+        </button>
+        <button
+          type="button"
+          disabled={disabled || busy !== null || !agente || !tickets}
+          className={claseChip(claude && tickets)}
+          onClick={() => void run("claude", () => cambiarClaude(email, !claude))}
+          title={!tickets ? "Primero prende Revisar tickets" : claude ? "Quitar permiso de mandar tickets a Claude" : "Dejarle mandar sus tickets a Claude Code"}
+        >
+          {busy === "claude" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+          Mandar a Claude
         </button>
       </div>
       {error && <p className="mt-2 text-[11px] text-destructive">{error}</p>}

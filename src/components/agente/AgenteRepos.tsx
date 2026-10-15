@@ -79,7 +79,7 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
     window.addEventListener("agente:visibilidad", alCambiar);
     return () => window.removeEventListener("agente:visibilidad", alCambiar);
   }, [email]);
-  const [permisos, setPermisos] = useState<PermisosAgente>({ agente: false, docs: false, tickets: false });
+  const [permisos, setPermisos] = useState<PermisosAgente>({ agente: false, docs: false, tickets: false, claude: false });
   const [abierto, setAbierto] = useState(false);
   const [pestana, setPestana] = useState<"chat" | "tickets" | "avatar">("chat");
   const acceso = permisos.agente;
@@ -358,6 +358,7 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
                 revisado={revisado}
                 onRefrescar={() => void revisarTickets(false)}
                 onTicketVisto={ticketVisto}
+                puedeMandarClaude={permisos.claude}
               />
             </>
           )}

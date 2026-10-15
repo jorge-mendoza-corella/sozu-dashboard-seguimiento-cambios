@@ -145,6 +145,8 @@ export interface PermisosAgente {
   docs: boolean;
   /** Revisa sus tickets del portal cada 15 min (requiere agente). */
   tickets: boolean;
+  /** Manda tickets a Claude Code y le contesta (requiere tickets). */
+  claude: boolean;
 }
 
 const listaDe = (v: unknown): string[] =>
@@ -156,7 +158,7 @@ const listaDe = (v: unknown): string[] =>
  * así que un error = sin nada).
  */
 export async function permisosAgente(email: string | null | undefined): Promise<PermisosAgente> {
-  const nada = { agente: false, docs: false, tickets: false };
+  const nada = { agente: false, docs: false, tickets: false, claude: false };
   if (!email) return nada;
   const esRoot = email === SUPERUSER_EMAIL;
   try {
@@ -169,15 +171,16 @@ export async function permisosAgente(email: string | null | undefined): Promise<
     setCorreosAvatar(d?.correosAvatar);
     setNombresAvatar(d?.nombresAvatar);
     const agente = esRoot || listaDe(d?.emails).includes(email);
-    return {
+    const p = {
       agente,
       docs: esRoot || listaDe(d?.docs).includes(email),
       // El root lo tiene prendido salvo que lo haya apagado.
       tickets: esRoot ? !listaDe(d?.ticketsApagados).includes(email) : agente && listaDe(d?.tickets).includes(email),
     };
+    return { ...p, claude: esRoot || (p.tickets && listaDe(d?.claude).includes(email)) };
   } catch {
     // Sin doc (o sin poder leerlo) el root conserva todo por default.
-    return esRoot ? { agente: true, docs: true, tickets: true } : nada;
+    return esRoot ? { agente: true, docs: true, tickets: true, claude: true } : nada;
   }
 }
 
@@ -187,6 +190,8 @@ export interface AccesoAgente {
   sinAgente: string[];
   docs: string[];
   tickets: string[];
+  /** Mandan tickets a Claude Code. */
+  claude: string[];
   ticketsApagados: string[];
 }
 
@@ -198,6 +203,7 @@ export async function leerAccesoAgente(): Promise<AccesoAgente> {
     sinAgente: listaDe(d?.sinAgente),
     docs: listaDe(d?.docs),
     tickets: listaDe(d?.tickets),
+    claude: listaDe(d?.claude),
     ticketsApagados: listaDe(d?.ticketsApagados),
   };
 }
@@ -211,6 +217,7 @@ export async function darAccesoAgente(email: string): Promise<void> {
 export async function quitarAccesoAgente(email: string): Promise<void> {
   await updateDoc(ACCESO(), {
     emails: arrayRemove(email), sinAgente: arrayRemove(email), docs: arrayRemove(email), tickets: arrayRemove(email),
+    claude: arrayRemove(email),
   });
 }
 
@@ -282,6 +289,11 @@ export async function cambiarTickets(email: string, activar: boolean): Promise<v
     return;
   }
   await setDoc(ACCESO(), { tickets: activar ? arrayUnion(email) : arrayRemove(email) }, { merge: true });
+}
+
+/** Mandar tickets a Claude Code (requiere Tickets). El root lo tiene siempre. */
+export async function cambiarClaude(email: string, permitir: boolean): Promise<void> {
+  await setDoc(ACCESO(), { claude: permitir ? arrayUnion(email) : arrayRemove(email) }, { merge: true });
 }
 
 export async function cambiarVerDocs(email: string, permitir: boolean): Promise<void> {
