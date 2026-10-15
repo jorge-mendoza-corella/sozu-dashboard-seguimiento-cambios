@@ -22,8 +22,8 @@ export const SKIN_DEFAULT: Skin = "abuelo";
 export const esSkin = (v: unknown): v is Skin => SKINS.some((s) => s.id === v);
 
 // ── Correo de cada avatar ───────────────────────────────────────────────────
-// Un avatar puede "ser" una persona: si es titular de la categoría de un
-// ticket, ese avatar es el que avisa y trabaja el ticket. Lo configura el root
+// Un avatar puede "ser" una persona: si esa persona levantó un ticket, ese
+// avatar es el que avisa y trabaja el ticket. Lo configura el root
 // en Configuración → GeorgIA (`agente_config/acceso.correosAvatar`); estos son
 // los de arranque. "" = sin correo.
 export const CORREOS_AVATAR_DEFAULT: Partial<Record<Skin, string>> = {
@@ -35,7 +35,7 @@ let correosAvatar: Partial<Record<Skin, string>> = { ...CORREOS_AVATAR_DEFAULT }
 
 // ── Store global de la apariencia ──────────────────────────────────────────
 // Tres capas, gana la primera que haya:
-//   1. la del ticket (el avatar del titular de la categoría, mientras toca),
+//   1. la del ticket (el avatar de quien lo levantó, mientras toca),
 //   2. la propia de quien está logueado (pestaña Avatar del panel),
 //   3. la general (la elige el root, es el default de todos).
 let skinGeneral: Skin = SKIN_DEFAULT;
@@ -73,19 +73,16 @@ export function setCorreosAvatar(guardados: Record<string, unknown> | undefined)
 
 const local = (e: string) => e.split("@")[0];
 /**
- * Avatar del primer titular que tenga uno. Mismo correo o mismo usuario antes
- * de la @ (en el portal hay quien está con @investimento.mx y aquí con @sozu.com).
+ * Avatar de la persona con ese correo. Mismo correo o mismo usuario antes de
+ * la @ (en el portal hay quien está con @investimento.mx y aquí con @sozu.com).
  */
-export function avatarDeTitulares(titulares: readonly string[] | undefined): Skin | null {
+export function avatarDeCorreo(correo: string | null | undefined): Skin | null {
+  if (!correo) return null;
+  const e = correo.trim().toLowerCase();
   const conCorreo = SKINS.filter((s) => correosAvatar[s.id]);
-  for (const t of titulares ?? []) {
-    const e = t.trim().toLowerCase();
-    const exacto = conCorreo.find((s) => correosAvatar[s.id] === e);
-    const mismoUsuario = conCorreo.find((s) => local(correosAvatar[s.id]!) === local(e));
-    const s = exacto ?? mismoUsuario;
-    if (s) return s.id;
-  }
-  return null;
+  const s = conCorreo.find((x) => correosAvatar[x.id] === e)
+    ?? conCorreo.find((x) => local(correosAvatar[x.id]!) === local(e));
+  return s?.id ?? null;
 }
 
 /** La que se ve: la del ticket, la propia o, si no, la general. */

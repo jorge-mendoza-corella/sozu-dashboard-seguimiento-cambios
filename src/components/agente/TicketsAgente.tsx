@@ -41,7 +41,7 @@ interface Props {
   /** Ticket cuyo diálogo de cierre hay que abrir (GeorgIA avisó que ya está en PRD). */
   cerrarAhora: string | null;
   onCerrarAtendido: () => void;
-  /** El ticket que se está viendo (para poner el avatar de su titular). */
+  /** El ticket que se está viendo (para poner el avatar de quien lo levantó). */
   onTicketVisto?: (t: TicketAgente | null) => void;
 }
 

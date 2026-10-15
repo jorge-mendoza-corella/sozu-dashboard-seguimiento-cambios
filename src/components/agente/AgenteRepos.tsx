@@ -26,7 +26,7 @@ import {
   type AdjuntoChat,
 } from "@/lib/agenteRepos";
 import { ElegirAvatar } from "./ElegirAvatar";
-import { avatarDeTitulares, setSkinTicket } from "./skinsDatos";
+import { avatarDeCorreo, setSkinTicket } from "./skinsDatos";
 import { AdjuntoEnMensaje, AdjuntosPendientes, BotonesAdjuntar } from "./Adjuntos";
 import { useAdjuntos } from "@/hooks/useAdjuntos";
 import { AgenteVolador, EVENTO_ALERTA_TICKETS, EVENTO_CLAUDE, type DetalleAlerta, type DetalleClaude } from "./AgenteVolador";
@@ -95,8 +95,8 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
   const abiertoRef = useRef(abierto);
   useEffect(() => { abiertoRef.current = abierto; }, [abierto]);
 
-  // Avatar del ticket: el titular de la categoría del primero (al revisar) o
-  // del que se está viendo (en la pestaña Tickets). Al salir de Tickets vuelve
+  // Avatar del ticket: el de quien levantó el primero (al revisar) o el que
+  // se está viendo (en la pestaña Tickets). Al salir de Tickets vuelve
   // el propio o el general, hasta la siguiente revisión.
   const enTickets = abierto && pestana === "tickets";
   const enTicketsRef = useRef(enTickets);
@@ -106,7 +106,7 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
   }, [enTickets]);
   useEffect(() => () => setSkinTicket(null), []);
   const ticketVisto = useCallback((t: TicketAgente | null) => {
-    if (enTicketsRef.current) setSkinTicket(t ? avatarDeTitulares(t.titulares) : null);
+    if (enTicketsRef.current) setSkinTicket(t ? avatarDeCorreo(t.creadorEmail) : null);
   }, []);
 
   const revisarTickets = useCallback(async (alertar: boolean) => {
@@ -115,8 +115,8 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
       const r = await misTickets();
       setTickets(r.tickets);
       setRevisado(r.revisado);
-      // Quien avisa es el avatar del titular del primer ticket (dentro de Tickets manda el que se ve).
-      if (!enTicketsRef.current) setSkinTicket(r.tickets.length ? avatarDeTitulares(r.tickets[0].titulares) : null);
+      // Quien avisa es el avatar de quien levantó el primer ticket (dentro de Tickets manda el que se ve).
+      if (!enTicketsRef.current) setSkinTicket(r.tickets.length ? avatarDeCorreo(r.tickets[0].creadorEmail) : null);
       setErrorTickets(null);
       // Con pendientes, el personaje aterriza y grita (si el panel no está abierto).
       if (alertar && r.tickets.length > 0 && !abiertoRef.current) {
