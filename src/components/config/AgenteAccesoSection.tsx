@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BellRing, Bot, FileText, Plane, Loader2, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { BellRing, Bot, FileText, Palette, Plane, Loader2, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,9 @@ import { setUserAgenteVolador, SUPERUSER_EMAIL } from "@/lib/firestoreUsers";
 import { useAuth } from "@/hooks/useAuth";
 import { ConfirmarApagarAgentito } from "@/components/agente/ConfirmarApagarAgentito";
 import { SelectorSkin } from "./SelectorSkin";
-import { cambiarTickets, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, quitarAccesoAgente } from "@/lib/agenteRepos";
+import { Personaje } from "@/components/agente/AgenteVolador";
+import { SKINS, useSkinGeneral, type Skin } from "@/components/agente/skinsDatos";
+import { cambiarTickets, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, leerSkinsPorPersona, quitarAccesoAgente } from "@/lib/agenteRepos";
 
 // ---------------------------------------------------------------------------
 // Acceso al agente de repos. Cada pregunta consume la API de Anthropic y el
@@ -52,6 +54,20 @@ function Interruptor({ activo, deshabilitado, onCambiar, etiqueta }: {
   );
 }
 
+/** Avatar que ve la persona (solo vista): el suyo o, si no eligió, el general. */
+function AvatarDe({ skin }: { skin: Skin | undefined }) {
+  const general = useSkinGeneral();
+  const s = skin ?? general;
+  const nombre = SKINS.find((x) => x.id === s)?.nombre ?? s;
+  const etiqueta = skin ? nombre : `General (${nombre})`;
+  return (
+    <span className="flex w-28 items-center justify-center gap-1" title={etiqueta}>
+      <span className="h-8 w-8 shrink-0"><Personaje pose="quieto" animo="feliz" skin={s} /></span>
+      <span className={cn("truncate text-[10px]", !skin && "text-muted-foreground")}>{skin ? nombre : "General"}</span>
+    </span>
+  );
+}
+
 export function AgenteAccesoSection() {
   const [acceso, setAcceso] = useState<{ emails: string[]; docs: string[]; tickets: string[]; ticketsApagados: string[] } | null>(null);
   const [nuevo, setNuevo] = useState("");
@@ -70,6 +86,9 @@ export function AgenteAccesoSection() {
 
   const recargar = () => leerAccesoAgente().then(setAcceso).catch(() => setAcceso({ emails: [], docs: [], tickets: [], ticketsApagados: [] }));
   useEffect(() => { void recargar(); }, []);
+  // Lo elige cada quien en su panel: aquí solo se muestra.
+  const [skins, setSkins] = useState<Record<string, Skin>>({});
+  useEffect(() => { leerSkinsPorPersona().then(setSkins).catch(() => setSkins({})); }, []);
 
   const run = async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
@@ -113,6 +132,7 @@ export function AgenteAccesoSection() {
             <span className="flex w-28 items-center justify-center gap-1"><FileText className="h-3 w-3" /> Ver docs</span>
             <span className="flex w-28 items-center justify-center gap-1"><BellRing className="h-3 w-3" /> Tickets</span>
             <span className="flex w-28 items-center justify-center gap-1"><Plane className="h-3 w-3" /> GeorgIA</span>
+            <span className="flex w-28 items-center justify-center gap-1"><Palette className="h-3 w-3" /> Avatar</span>
             <span className="w-9" />
           </div>
           <div className="flex items-center gap-2 border-b px-3 py-2">
@@ -147,6 +167,7 @@ export function AgenteAccesoSection() {
                 />
               )}
             </span>
+            <AvatarDe skin={skins[SUPERUSER_EMAIL]} />
             <Badge variant="secondary" className="w-9 justify-center px-0">Root</Badge>
           </div>
           {acceso === null ? (
@@ -183,6 +204,7 @@ export function AgenteAccesoSection() {
                     )}
                   </span>
                   <span className="w-28" aria-hidden />
+                  <AvatarDe skin={skins[e]} />
                   <Button
                     variant="ghost"
                     size="sm"

@@ -15,7 +15,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  ArrowLeft, BellRing, Bot, Check, MessageSquare, Copy, FileText, History, Loader2, Lock, MessageSquarePlus, Pencil, Pin, PinOff, Search, Send,
+  ArrowLeft, BellRing, Bot, Palette, Check, MessageSquare, Copy, FileText, History, Loader2, Lock, MessageSquarePlus, Pencil, Pin, PinOff, Search, Send,
   Square, Trash2, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -25,6 +25,7 @@ import {
   type ConversacionAgente, type DocumentoAgente, type HerramientaUsada, type MensajeAgente, type PermisosAgente,
   type AdjuntoChat,
 } from "@/lib/agenteRepos";
+import { ElegirAvatar } from "./ElegirAvatar";
 import { AdjuntoEnMensaje, AdjuntosPendientes, BotonesAdjuntar } from "./Adjuntos";
 import { useAdjuntos } from "@/hooks/useAdjuntos";
 import { AgenteVolador, EVENTO_ALERTA_TICKETS, EVENTO_CLAUDE, type DetalleAlerta, type DetalleClaude } from "./AgenteVolador";
@@ -79,7 +80,7 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
   }, [email]);
   const [permisos, setPermisos] = useState<PermisosAgente>({ agente: false, docs: false, tickets: false });
   const [abierto, setAbierto] = useState(false);
-  const [pestana, setPestana] = useState<"chat" | "tickets">("chat");
+  const [pestana, setPestana] = useState<"chat" | "tickets" | "avatar">("chat");
   const acceso = permisos.agente;
   // Vigía global: reacciona a los deploys de todos los repos, estén o no en pantalla.
   const { realUser } = useAuth();
@@ -292,34 +293,39 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
           )}
           aria-describedby={undefined}
         >
-          {permisos.tickets && (
-            <div className="flex h-10 shrink-0 items-center gap-1 border-b bg-muted/30 px-3" role="tablist">
-              {([
-                ["chat", "Chat", MessageSquare],
-                ["tickets", `Tickets${tickets ? ` (${tickets.length})` : ""}`, BellRing],
-              ] as const).map(([v, etiqueta, Icono]) => (
-                <button
-                  key={v}
-                  type="button"
-                  role="tab"
-                  aria-selected={pestana === v}
-                  onClick={() => (v === "tickets" ? irATickets() : setPestana("chat"))}
-                  className={cn(
-                    "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors",
-                    pestana === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                    v === "tickets" && !!tickets?.length && pestana !== v && "text-amber-700 dark:text-amber-300",
-                  )}
-                >
-                  <Icono className="h-3.5 w-3.5" />
-                  {etiqueta}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="flex h-10 shrink-0 items-center gap-1 border-b bg-muted/30 px-3" role="tablist">
+            {([
+              ["chat", "Chat", MessageSquare],
+              ...(permisos.tickets ? [["tickets", `Tickets${tickets ? ` (${tickets.length})` : ""}`, BellRing] as const] : []),
+              ["avatar", "Avatar", Palette],
+            ] as const).map(([v, etiqueta, Icono]) => (
+              <button
+                key={v}
+                type="button"
+                role="tab"
+                aria-selected={pestana === v}
+                onClick={() => (v === "tickets" ? irATickets() : setPestana(v))}
+                className={cn(
+                  "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors",
+                  pestana === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  v === "tickets" && !!tickets?.length && pestana !== v && "text-amber-700 dark:text-amber-300",
+                )}
+              >
+                <Icono className="h-3.5 w-3.5" />
+                {etiqueta}
+              </button>
+            ))}
+          </div>
           {/* El chat se queda montado al cambiar de pestaña: no pierde el hilo. */}
           <div className={cn("flex min-h-0 flex-1 flex-col", pestana !== "chat" && "hidden")}>
             <PanelAgente email={email} verDocs={permisos.docs} />
           </div>
+          {pestana === "avatar" && (
+            <>
+              <Dialog.Title className="sr-only">Tu avatar de GeorgIA</Dialog.Title>
+              <ElegirAvatar email={email} />
+            </>
+          )}
           {pestana === "tickets" && permisos.tickets && (
             <>
               <Dialog.Title className="sr-only">Tickets asignados</Dialog.Title>
