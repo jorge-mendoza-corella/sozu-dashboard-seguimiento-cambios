@@ -4,7 +4,7 @@
  */
 import { useSyncExternalStore } from "react";
 
-export type Skin = "cyborg" | "abuelo" | "heroe" | "chibi" | "cientifico" | "raton" | "travieso";
+export type Skin = "cyborg" | "abuelo" | "heroe" | "chibi" | "cientifico" | "raton" | "travieso" | "ramon";
 
 export const SKINS: { id: Skin; nombre: string; desc: string }[] = [
   { id: "abuelo", nombre: "Abuelo inventor", desc: "Canas, bigote blanco y sonrisa pícara" },
@@ -13,6 +13,7 @@ export const SKINS: { id: Skin; nombre: string; desc: string }[] = [
   { id: "cientifico", nombre: "Científico loco", desc: "Greña blanca, goggles puestos y bata" },
   { id: "raton", nombre: "Ratón clásico", desc: "Orejotas redondas, guantes blancos y short rojo" },
   { id: "travieso", nombre: "Niño travieso", desc: "Pelo en picos, piel amarilla y playera naranja" },
+  { id: "ramon", nombre: "Ramón", desc: "Barba corta, pelo hacia atrás y saco oscuro" },
   { id: "cyborg", nombre: "Cyborg (original)", desc: "Media cara de acero y brazo robótico" },
 ];
 export const SKIN_DEFAULT: Skin = "abuelo";
@@ -61,6 +62,11 @@ export const PALETA: Record<Skin, {
   travieso: {
     piel: ["#fde047", "#eab308"], camisa: ["#ea580c", "#f97316", "#c2410c"], iris: "#0f172a", ceja: "#a16207", pielSolida: "#d4a20a",
     pantalon: ["#1d4ed8", "#3b82f6", "#1e40af"], zapato: "#1e293b",
+  },
+  // Piel morena, saco carbón (la camisa gris clara la pone <Saco />) y pantalón de vestir.
+  ramon: {
+    piel: ["#dca57c", "#a86f49"], camisa: ["#1f2937", "#374151", "#111827"], iris: "#3f2a1d", ceja: "#111827", pielSolida: "#bb8058",
+    pantalon: ["#1e293b", "#334155", "#0f172a"], zapato: "#0c0a09",
   },
 };
 

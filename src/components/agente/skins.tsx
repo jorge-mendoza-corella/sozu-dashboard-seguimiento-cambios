@@ -10,6 +10,7 @@
  *   cientifico  greña blanca, goggles puestos y bata
  *   raton       ratón clásico de caricatura: orejotas, guantes y short rojo
  *   travieso    niño de pelo en picos y piel amarilla
+ *   ramon       Ramón: barba corta, pelo hacia atrás, saco oscuro y camisa gris
  *
  * La elegida vive en `agente_config/acceso.skin` (la cambia el root en
  * Configuración → GeorgIA) y se comparte por un store chico para que todo
@@ -81,7 +82,7 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
   const escala = skin === "chibi" ? "translate(49 31) scale(1.42) translate(-49 -31)" : undefined;
   const gogglesEnOjos = skin === "cientifico";
   // El ratón y el travieso no llevan goggles: se reconocen por la silueta.
-  const sinGoggles = skin === "raton" || skin === "travieso";
+  const sinGoggles = skin === "raton" || skin === "travieso" || skin === "ramon";
   const ojo =
     skin === "chibi" ? { rx: 7.4, ry: 8.6, iris: 5, pupila: 2.4, brillo: 1.7 }
     : skin === "raton" ? { rx: 5, ry: 9, iris: 3.4, pupila: 2.6, brillo: 1 }
@@ -116,6 +117,9 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
             </>
           ) : skin === "heroe" ? (
             <path d="M31 46 Q31 18 60 18 Q89 18 89 46 Q89 70 75 80 Q60 87 45 80 Q31 70 31 46Z" fill={piel} />
+          ) : skin === "ramon" ? (
+            // Cara más ancha y mandíbula cuadrada
+            <path d="M30 46 Q30 17 60 17 Q90 17 90 46 Q90 72 77 82 Q60 90 43 82 Q30 72 30 46Z" fill={piel} />
           ) : skin === "chibi" ? (
             <ellipse cx="60" cy="54" rx="32" ry="31" fill={piel} />
           ) : (
@@ -140,6 +144,14 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
             <>
               <path d="M29 44 Q27 14 58 12 Q90 10 90 40 Q82 22 64 24 Q52 26 46 22 Q38 30 33 46Z" fill="#111827" />
               <path d="M60 12 Q68 1 77 9 Q70 7 66 14Z" fill="#111827" />
+            </>
+          )}
+          {skin === "ramon" && (
+            <>
+              {/* Lados rebajados (fade) y arriba peinado hacia atrás */}
+              <path d="M30 50 Q29 34 36 28 L38 48 Z M90 48 Q91 33 84 27 L83 46 Z" fill="#111827" opacity="0.4" />
+              <path d="M32 42 Q29 14 60 10 Q91 12 88 40 Q85 26 73 24 Q60 21 47 25 Q37 29 34 42Z" fill="#111827" />
+              <path d="M42 22 Q56 13 74 17 M46 27 Q60 19 78 23 M52 15 Q66 10 80 15" fill="none" stroke="#374151" strokeWidth="1.3" strokeLinecap="round" />
             </>
           )}
           {skin === "chibi" && (
@@ -198,6 +210,8 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
             </>
           ) : skin === "travieso" ? (
             <path d="M63 60 Q78 57 79 64 Q78 70 63 68" fill={piel} stroke="#a16207" strokeWidth="1" />
+          ) : skin === "ramon" ? (
+            <path d="M61 56 Q64 64 66 67 Q63 70 58 68.5" stroke={p.pielSolida} strokeWidth="2" fill="none" strokeLinecap="round" />
           ) : skin === "heroe" ? (
             <path d="M61 57 Q64 65 62 67" stroke={p.pielSolida} strokeWidth="2" fill="none" strokeLinecap="round" />
           ) : (
@@ -210,9 +224,25 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
             </>
           )}
 
+          {/* Barba corta de candado que sigue la mandíbula (debajo de las bocas) */}
+          {skin === "ramon" && (
+            <>
+              <path d="M32 56 Q32 76 44 83 Q60 91 76 83 Q88 76 88 56 L85 58 Q84 72 74 77 Q67 80 62 77 Q57 80 50 77 Q40 72 35 58 Z" fill="#1f2937" opacity="0.6" />
+              <path d="M54 84 Q62 90 70 84 L68 80.5 Q62 83 56 80.5 Z" fill="#111827" opacity="0.75" />
+            </>
+          )}
+
           {/* Bocas (una por ánimo) */}
           <path className="pj-boca pj-boca--seria" d="M55 79.5 Q62 80.5 69 79.5" fill="none" stroke="#7c3a1d" strokeWidth="2.2" strokeLinecap="round" />
-          <path className="pj-boca pj-boca--feliz" d="M53 76.5 Q62 87 71 76.5" fill="none" stroke="#7c3a1d" strokeWidth="2.2" strokeLinecap="round" />
+          {skin === "ramon" ? (
+            // Sonrisa amplia con dientes
+            <g className="pj-boca pj-boca--feliz">
+              <path d="M52.5 76 Q62 88 71.5 76 Q62 79 52.5 76 Z" fill="#3b0f0a" />
+              <path d="M54.2 76.9 Q62 79.8 69.8 76.9 L69 79 Q62 81.6 55 79 Z" fill="#f8fafc" />
+            </g>
+          ) : (
+            <path className="pj-boca pj-boca--feliz" d="M53 76.5 Q62 87 71 76.5" fill="none" stroke="#7c3a1d" strokeWidth="2.2" strokeLinecap="round" />
+          )}
           <g className="pj-boca pj-boca--grito">
             <path d="M53.5 75 Q62 94 70.5 75 Q62 78.5 53.5 75 Z" fill="#3b0f0a" />
             <path d="M56.5 84.5 Q62 89 67.5 84.5 Q62 82 56.5 84.5 Z" fill="#e05a5a" />
@@ -232,6 +262,9 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
           {/* Bigote del abuelo (encima de la boca) */}
           {skin === "abuelo" && (
             <path d="M49 74 Q55 70 62 73.5 Q69 70 75 74 Q70 78.5 62 76 Q54 78.5 49 74 Z" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="0.7" />
+          )}
+          {skin === "ramon" && (
+            <path d="M50 74 Q56 70.5 62 72.5 Q68 70.5 74 74 Q69 75.6 62 74.6 Q55 75.6 50 74 Z" fill="#111827" opacity="0.85" />
           )}
           {skin === "heroe" && <path d="M56 86 Q60 88 64 86" stroke={p.pielSolida} strokeWidth="1.4" fill="none" />}
 
@@ -254,6 +287,23 @@ export function Bata() {
       <path d="M44 34 L48 46 L52 34" fill="none" stroke="#cbd5e1" strokeWidth="0.8" />
       <rect x="52.8" y="42" width="4.2" height="4.6" rx="0.6" fill="#f8fafc" stroke="#94a3b8" strokeWidth="0.4" />
       <path d="M54 41 L54 43.6 M55.8 41 L55.8 43.6" stroke="#3b82f6" strokeWidth="0.6" />
+    </>
+  );
+}
+
+/** Saco abierto sobre el torso: camisa gris clara en V, solapas y botón (Ramón). */
+export function Saco() {
+  return (
+    <>
+      {/* Camisa y cuello */}
+      <path d="M43.4 34 L48 52 L52.6 34 Q48 32.8 43.4 34 Z" fill="#d1d5db" />
+      <path d="M48 36 L48 52" stroke="#9ca3af" strokeWidth="0.4" />
+      <circle cx="48" cy="43" r="0.5" fill="#9ca3af" />
+      <path d="M43.4 34 L46.8 39.4 L48 35.4 Z M52.6 34 L49.2 39.4 L48 35.4 Z" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="0.3" />
+      {/* Solapas */}
+      <path d="M42.6 34.6 L47.6 52.4 L44.6 46 L40.2 42.4 L42 39.4 L40.4 37.8 Z" fill="#111827" />
+      <path d="M53.4 34.6 L48.4 52.4 L51.4 46 L55.8 42.4 L54 39.4 L55.6 37.8 Z" fill="#111827" />
+      <circle cx="48" cy="55.6" r="0.9" fill="#0b0f19" stroke="#4b5563" strokeWidth="0.3" />
     </>
   );
 }
