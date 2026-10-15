@@ -181,11 +181,21 @@ export async function permisosAgente(email: string | null | undefined): Promise<
   }
 }
 
+export interface AccesoAgente {
+  emails: string[];
+  /** Personas dadas de alta con GeorgIA apagada: siguen en la tabla, sin usarla. */
+  sinAgente: string[];
+  docs: string[];
+  tickets: string[];
+  ticketsApagados: string[];
+}
+
 /** Listas completas (solo el root puede leerlas). */
-export async function leerAccesoAgente(): Promise<{ emails: string[]; docs: string[]; tickets: string[]; ticketsApagados: string[] }> {
+export async function leerAccesoAgente(): Promise<AccesoAgente> {
   const d = (await getDoc(ACCESO())).data();
   return {
     emails: listaDe(d?.emails).sort(),
+    sinAgente: listaDe(d?.sinAgente),
     docs: listaDe(d?.docs),
     tickets: listaDe(d?.tickets),
     ticketsApagados: listaDe(d?.ticketsApagados),
@@ -193,12 +203,25 @@ export async function leerAccesoAgente(): Promise<{ emails: string[]; docs: stri
 }
 
 export async function darAccesoAgente(email: string): Promise<void> {
-  await setDoc(ACCESO(), { emails: arrayUnion(email.trim().toLowerCase()) }, { merge: true });
+  const e = email.trim().toLowerCase();
+  await setDoc(ACCESO(), { emails: arrayUnion(e), sinAgente: arrayRemove(e) }, { merge: true });
 }
 
-/** Quitar el agente quita también docs y tickets: sin agente no hay dónde verlos. */
+/** Quitar a la persona de la tabla: se va de todas las listas. */
 export async function quitarAccesoAgente(email: string): Promise<void> {
-  await updateDoc(ACCESO(), { emails: arrayRemove(email), docs: arrayRemove(email), tickets: arrayRemove(email) });
+  await updateDoc(ACCESO(), {
+    emails: arrayRemove(email), sinAgente: arrayRemove(email), docs: arrayRemove(email), tickets: arrayRemove(email),
+  });
+}
+
+/**
+ * Prende o apaga GeorgIA sin sacar a la persona de la tabla. Ver docs y
+ * Tickets se conservan, pero sin GeorgIA no aplican (ni el avatar se ve).
+ */
+export async function cambiarAgente(email: string, activar: boolean): Promise<void> {
+  await setDoc(ACCESO(), activar
+    ? { emails: arrayUnion(email), sinAgente: arrayRemove(email) }
+    : { emails: arrayRemove(email), sinAgente: arrayUnion(email) }, { merge: true });
 }
 
 /** Cambia la apariencia de GeorgIA para todos (solo el root puede escribir el doc). */
