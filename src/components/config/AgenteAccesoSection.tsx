@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BellRing, Bot, FileText, Palette, Plane, Loader2, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { BellRing, Bot, FileText, Palette, Loader2, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,7 @@ import { ConfirmarApagarAgentito } from "@/components/agente/ConfirmarApagarAgen
 import { SelectorSkin } from "./SelectorSkin";
 import { Personaje } from "@/components/agente/AgenteVolador";
 import { useNombresAvatar, useSkinGeneral, type Skin } from "@/components/agente/skinsDatos";
-import { cambiarTickets, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, leerSkinsPorPersona, quitarAccesoAgente } from "@/lib/agenteRepos";
+import { cambiarAgente, cambiarTickets, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, leerSkinsPorPersona, quitarAccesoAgente, type AccesoAgente } from "@/lib/agenteRepos";
 
 // ---------------------------------------------------------------------------
 // Acceso al agente de repos. Cada pregunta consume la API de Anthropic y el
@@ -54,14 +54,19 @@ function Interruptor({ activo, deshabilitado, onCambiar, etiqueta }: {
   );
 }
 
-/** Avatar que ve la persona (solo vista): el suyo o, si no eligió, el general. */
-function AvatarDe({ skin }: { skin: Skin | undefined }) {
+/**
+ * Columna Avatar: el interruptor de mostrar al avatar volando en su pantalla
+ * y la miniatura del que ve (el suyo o, si no eligió, el general). Sin
+ * GeorgIA no hay avatar: el interruptor queda apagado y bloqueado.
+ */
+function AvatarDe({ skin, children, apagado }: { skin: Skin | undefined; children: React.ReactNode; apagado?: boolean }) {
   const general = useSkinGeneral();
   const s = skin ?? general;
   const nombre = useNombresAvatar()(s);
   const etiqueta = skin ? nombre : `General (${nombre})`;
   return (
-    <span className="flex w-28 items-center justify-center gap-1" title={etiqueta}>
+    <span className={cn("flex w-44 items-center gap-1.5", apagado && "opacity-40")} title={etiqueta}>
+      <span className="flex w-10 justify-center">{children}</span>
       <span className="h-8 w-8 shrink-0"><Personaje pose="quieto" animo="feliz" skin={s} /></span>
       <span className={cn("truncate text-[10px]", !skin && "text-muted-foreground")}>{skin ? nombre : "General"}</span>
     </span>
@@ -69,7 +74,7 @@ function AvatarDe({ skin }: { skin: Skin | undefined }) {
 }
 
 export function AgenteAccesoSection() {
-  const [acceso, setAcceso] = useState<{ emails: string[]; docs: string[]; tickets: string[]; ticketsApagados: string[] } | null>(null);
+  const [acceso, setAcceso] = useState<AccesoAgente | null>(null);
   const [nuevo, setNuevo] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -84,7 +89,7 @@ export function AgenteAccesoSection() {
       setAgentitoVisible(visible);
     });
 
-  const recargar = () => leerAccesoAgente().then(setAcceso).catch(() => setAcceso({ emails: [], docs: [], tickets: [], ticketsApagados: [] }));
+  const recargar = () => leerAccesoAgente().then(setAcceso).catch(() => setAcceso({ emails: [], sinAgente: [], docs: [], tickets: [], ticketsApagados: [] }));
   useEffect(() => { void recargar(); }, []);
   // Lo elige cada quien en su panel: aquí solo se muestra.
   const [skins, setSkins] = useState<Record<string, Skin>>({});
@@ -92,7 +97,9 @@ export function AgenteAccesoSection() {
   // GeorgIA volando, por persona (users/{email}.agenteVolador; el root puede
   // escribir la ficha de los demás). null = sin ficha de usuario: no se toca.
   const [voladores, setVoladores] = useState<Record<string, boolean | null>>({});
-  const emailsAcceso = acceso?.emails.join(",") ?? "";
+  // Filas: con GeorgIA y con GeorgIA apagada.
+  const personas = acceso ? [...new Set([...acceso.emails, ...acceso.sinAgente])].filter((e) => e !== SUPERUSER_EMAIL).sort() : [];
+  const emailsAcceso = personas.join(",");
   useEffect(() => {
     const otros = emailsAcceso.split(",").filter((e) => e && e !== SUPERUSER_EMAIL);
     if (!otros.length) return;
@@ -131,7 +138,8 @@ export function AgenteAccesoSection() {
           <div>
             <h2 className="font-semibold">GeorgIA</h2>
             <p className="text-sm text-muted-foreground">
-              Quién puede usar a GeorgIA, el agente de repos (personaje volador, Alt+K), y quién puede además abrir la documentación que cita.
+              Quién puede usar a GeorgIA, el agente de repos (chat con Alt+K o con clic en su avatar), y quién puede además abrir la documentación que cita.
+              «Avatar» solo muestra u oculta al personaje que vuela por la pantalla: oculto, GeorgIA sigue en Alt+K. Sin GeorgIA no hay avatar.
               Responde con sozu-docs y el código de los repos que cada persona ya tiene asignados. Tope: 40 preguntas por
               hora por persona.
             </p>
@@ -145,8 +153,8 @@ export function AgenteAccesoSection() {
             <span className="flex-1">Persona</span>
             <span className="flex w-28 items-center justify-center gap-1"><FileText className="h-3 w-3" /> Ver docs</span>
             <span className="flex w-28 items-center justify-center gap-1"><BellRing className="h-3 w-3" /> Tickets</span>
-            <span className="flex w-28 items-center justify-center gap-1"><Plane className="h-3 w-3" /> GeorgIA</span>
-            <span className="flex w-28 items-center justify-center gap-1"><Palette className="h-3 w-3" /> Avatar</span>
+            <span className="flex w-28 items-center justify-center gap-1"><Bot className="h-3 w-3" /> GeorgIA</span>
+            <span className="flex w-44 items-center gap-1 pl-1"><Palette className="h-3 w-3" /> Avatar</span>
             <span className="w-9" />
           </div>
           <div className="flex items-center gap-2 border-b px-3 py-2">
@@ -168,7 +176,8 @@ export function AgenteAccesoSection() {
                 />
               )}
             </span>
-            <span className="flex w-28 justify-center">
+            <span className="flex w-28 justify-center"><Interruptor activo deshabilitado etiqueta="Root: siempre usa GeorgIA" /></span>
+            <AvatarDe skin={skins[SUPERUSER_EMAIL]}>
               {busy === "agentito" ? (
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               ) : (
@@ -177,17 +186,17 @@ export function AgenteAccesoSection() {
                   deshabilitado={busy !== null}
                   // Apagarlo pide confirmación (y él ruega); prenderlo es directo.
                   onCambiar={() => (agentito ? setConfirmando(true) : cambiarAgentito(true))}
-                  etiqueta={agentito ? "Esconder a GeorgIA" : "Volver a mostrar a GeorgIA"}
+                  etiqueta={agentito ? "Esconder mi avatar (GeorgIA sigue en Alt+K)" : "Volver a mostrar mi avatar"}
                 />
               )}
-            </span>
-            <AvatarDe skin={skins[SUPERUSER_EMAIL]} />
+            </AvatarDe>
             <Badge variant="secondary" className="w-9 justify-center px-0">Root</Badge>
           </div>
           {acceso === null ? (
             <div className="flex justify-center px-3 py-3"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
           ) : (
-            acceso.emails.filter((e) => e !== SUPERUSER_EMAIL).map((e) => {
+            personas.map((e) => {
+              const conAgente = acceso.emails.includes(e);
               const verDocs = acceso.docs.includes(e);
               const revisaTickets = acceso.tickets.includes(e);
               return (
@@ -198,8 +207,8 @@ export function AgenteAccesoSection() {
                       <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                     ) : (
                       <Interruptor
-                        activo={verDocs}
-                        deshabilitado={busy !== null}
+                        activo={verDocs && conAgente}
+                        deshabilitado={busy !== null || !conAgente}
                         onCambiar={() => void run(`docs:${e}`, () => cambiarVerDocs(e, !verDocs))}
                         etiqueta={verDocs ? "Quitar permiso para ver documentación" : "Dar permiso para ver documentación"}
                       />
@@ -210,14 +219,26 @@ export function AgenteAccesoSection() {
                       <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                     ) : (
                       <Interruptor
-                        activo={revisaTickets}
-                        deshabilitado={busy !== null}
+                        activo={revisaTickets && conAgente}
+                        deshabilitado={busy !== null || !conAgente}
                         onCambiar={() => void run(`tickets:${e}`, () => cambiarTickets(e, !revisaTickets))}
                         etiqueta={revisaTickets ? "Dejar de revisar sus tickets" : "Revisar sus tickets cada 15 min"}
                       />
                     )}
                   </span>
                   <span className="flex w-28 justify-center">
+                    {busy === `agente:${e}` ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : (
+                      <Interruptor
+                        activo={conAgente}
+                        deshabilitado={busy !== null}
+                        onCambiar={() => void run(`agente:${e}`, () => cambiarAgente(e, !conAgente))}
+                        etiqueta={conAgente ? "Quitarle GeorgIA (sigue en la lista)" : "Darle GeorgIA"}
+                      />
+                    )}
+                  </span>
+                  <AvatarDe skin={skins[e]} apagado={!conAgente}>
                     {busy === `volador:${e}` ? (
                       <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                     ) : voladores[e] === undefined ? (
@@ -226,24 +247,23 @@ export function AgenteAccesoSection() {
                       <span className="text-[10px] text-muted-foreground" title="No tiene ficha en Usuarios">—</span>
                     ) : (
                       <Interruptor
-                        activo={!!voladores[e]}
-                        deshabilitado={busy !== null}
+                        activo={!!voladores[e] && conAgente}
+                        deshabilitado={busy !== null || !conAgente}
                         onCambiar={() => void run(`volador:${e}`, async () => {
                           await setUserAgenteVolador(e, !voladores[e]);
                           setVoladores((v) => ({ ...v, [e]: !v[e] }));
                         })}
-                        etiqueta={voladores[e] ? "Esconder a GeorgIA en su pantalla" : "Mostrar a GeorgIA en su pantalla"}
+                        etiqueta={voladores[e] ? "Esconder su avatar (GeorgIA sigue en Alt+K)" : "Mostrar su avatar"}
                       />
                     )}
-                  </span>
-                  <AvatarDe skin={skins[e]} />
+                  </AvatarDe>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="w-9 px-0"
                     disabled={busy !== null}
                     onClick={() => void run(e, () => quitarAccesoAgente(e))}
-                    title="Quitar acceso a GeorgIA"
+                    title="Quitar de la lista"
                   >
                     {busy === e ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                   </Button>
