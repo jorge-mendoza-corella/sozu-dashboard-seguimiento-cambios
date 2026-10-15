@@ -33,7 +33,6 @@ interface ProjectMetrics {
 export function ResumenPage() {
   const { appUser } = useAuth();
   const isRoot = isRootAdmin(appUser);
-  const perms = resolvePermissions(appUser);
   const navigate = useNavigate();
 
   const { isLoading: loadingProjects } = useProjects();
@@ -114,8 +113,11 @@ export function ResumenPage() {
       const sts = projRepos
         .map((r) => statusByKey.get(`${r.owner}/${r.repo}`))
         .filter((s): s is RepoStatus => !!s);
+      // "Ver cambios de otros" puede cambiar por empresa o por repo.
+      const repoDe = new Map(projRepos.map((r) => [`${r.owner}/${r.repo}`, r.id]));
       const scopedPRs = (s: RepoStatus) =>
-        perms.viewOthers || !appUser?.githubLogin || isRoot
+        resolvePermissions(appUser, { clientId: p.clientId, repoId: repoDe.get(`${s.owner}/${s.repo}`) }).viewOthers
+          || !appUser?.githubLogin || isRoot
           ? s.openPRs
           : s.openPRs.filter((pr) => pr.author === appUser.githubLogin);
       const devAhead = (s: RepoStatus) => s.branches.find((b) => b.name === "dev")?.aheadOfMain ?? 0;
@@ -132,7 +134,7 @@ export function ResumenPage() {
       });
     }
     return m;
-  }, [projects, repos, statusByKey, perms.viewOthers, appUser?.githubLogin, isRoot]);
+  }, [projects, repos, statusByKey, appUser, isRoot]);
 
   // Tarjetas agrupadas por empresa, con el estado de cada una resumido en su
   // encabezado. El encabezado se calla cuando solo hay una empresa a la vista.

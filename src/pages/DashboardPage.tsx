@@ -70,7 +70,6 @@ export function DashboardPage() {
   const { appUser } = useAuth();
   const isViewer = appUser?.role === "viewer";
   const isRoot = isRootAdmin(appUser); // solo jorge gestiona proyectos/repos
-  const perms = resolvePermissions(appUser); // permisos CI/CD granulares del usuario
   const publishApps = useCanPublishApps(appUser); // publicar en tiendas: feature de pago del cliente
   const qc = useQueryClient();
 
@@ -633,12 +632,14 @@ export function DashboardPage() {
 
             {projects.map((p) => {
               const projectRepos = reposByProject.get(p.id) ?? [];
+              // Permisos con las excepciones de la empresa del proyecto (y de cada repo, en la tarjeta).
+              const permsP = resolvePermissions(appUser, { clientId: p.clientId });
               // Sub-pestaña "Deploy App": solo proyectos APP vinculados a Codemagic
               // y usuarios con el permiso buildApp. Además, publicar apps es un
               // costo extra que el cliente puede tener o no contratado.
               const publicacionContratada = publishApps.contratada(p.clientId);
               const showDeployTab =
-                !!p.isApp && !!p.codemagicAppId && isCodemagicConfigured && perms.buildApp &&
+                !!p.isApp && !!p.codemagicAppId && isCodemagicConfigured && permsP.buildApp &&
                 publishApps.puedePublicar(p.clientId);
               const view = showDeployTab ? projectView : "repos";
               return (
@@ -683,7 +684,7 @@ export function DashboardPage() {
                   )}
 
                   {view === "deploy" && showDeployTab ? (
-                    <AppBuildsPanel appId={p.codemagicAppId!} perms={perms} project={p} />
+                    <AppBuildsPanel appId={p.codemagicAppId!} perms={permsP} project={p} />
                   ) : projectRepos.length === 0 ? (
                     <div className="flex h-40 flex-col items-center justify-center gap-3 text-muted-foreground">
                       <p>Este proyecto no tiene repositorios.</p>
@@ -718,7 +719,8 @@ export function DashboardPage() {
                         statusByKey={statusByKey}
                         isLoading={isLoading}
                         isViewer={isViewer}
-                        perms={perms}
+                        perms={permsP}
+                        permsDeRepo={(repoId) => resolvePermissions(appUser, { clientId: p.clientId, repoId })}
                         canReorder={isRoot}
                         approver={approverByProject.get(p.id) ?? null}
                         codeOwnerAuths={codeOwnerAuths}
