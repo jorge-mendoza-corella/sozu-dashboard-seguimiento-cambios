@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { PermisosIaChips } from "@/components/agente/PermisosIaChips";
 import { MostrarGeorgIA } from "@/components/agente/MostrarGeorgIA";
+import { PermisosPorAlcance } from "@/components/users/PermisosPorAlcance";
 import { cn } from "@/lib/utils";
 import { validateGithubToken } from "@/lib/githubAuth";
 import { Button } from "@/components/ui/button";
@@ -1149,10 +1150,21 @@ export function UsersPage() {
                     <p className="mb-2 mt-4 flex items-center gap-1 text-xs font-medium text-muted-foreground">
                       <Shield className="h-3.5 w-3.5" /> Permisos CI/CD
                     </p>
-                    <PermissionChips
-                      value={resolvePermissions(u)}
+                    <PermisosPorAlcance
+                      user={u}
+                      defs={PERMISSION_DEFS}
+                      clients={visibleClients.filter((c) => userClients.includes(c.id))}
+                      projects={proyectosUsuario.filter((p) => (u.projectIds ?? proyectosUsuario.map((x) => x.id)).includes(p.id))}
+                      repos={repos}
                       disabled={busy === u.email || soloLectura}
-                      onToggle={(key) => handleTogglePermission(u, key)}
+                      onCambio={refresh}
+                      general={
+                        <PermissionChips
+                          value={resolvePermissions(u)}
+                          disabled={busy === u.email || soloLectura}
+                          onToggle={(key) => handleTogglePermission(u, key)}
+                        />
+                      }
                     />
                     {u.permissions === undefined && (
                       <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">

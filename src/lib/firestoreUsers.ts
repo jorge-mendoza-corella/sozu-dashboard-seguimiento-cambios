@@ -1,6 +1,6 @@
 import { db } from "./firebase";
 import {
-  doc, getDoc, setDoc, deleteDoc, collection, getDocs, serverTimestamp, query, where,
+  doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, FieldPath, collection, getDocs, serverTimestamp, query, where,
 } from "firebase/firestore";
 
 export const SUPERUSER_EMAIL = "jorge.mendoza@sozu.com";
@@ -82,6 +82,14 @@ export interface AppUser {
    */
   repoIds?: string[];
   permissions?: CicdPermissions; // undefined = legacy: admins todo, viewers nada
+  /**
+   * Excepciones a `permissions` por empresa y por repo (el más específico
+   * gana: repo > empresa > general). Solo se guardan las llaves que cambian;
+   * la que no está, hereda. De momento solo esconden botones del dashboard:
+   * lo que deja hacer el token personal lo decide GitHub.
+   */
+  permissionsByClient?: Record<string, Partial<CicdPermissions>>;
+  permissionsByRepo?: Record<string, Partial<CicdPermissions>>;
   githubToken?: string; // PAT personal de GitHub (obligatorio para operar; root exento)
   githubLogin?: string; // login de GitHub derivado del token (GET /user)
   githubTokenUpdatedAt?: unknown;
@@ -109,13 +117,23 @@ export interface AppUser {
 /**
  * Permisos efectivos: el root siempre tiene todo; usuarios sin campo `permissions`
  * conservan el comportamiento previo (Administrador = todo, Viewer = nada).
+ *
+ * Con `donde`, encima de los generales se aplican las excepciones de esa
+ * empresa y luego las de ese repo.
  */
-export function resolvePermissions(user: AppUser | null): CicdPermissions {
+export function resolvePermissions(user: AppUser | null, donde?: { clientId?: string | null; repoId?: string | null }): CicdPermissions {
   if (!user) return NO_PERMISSIONS;
   // Por ROL, no por correo: mientras el root ve el dashboard como otra persona
   // conserva su correo, y compararlo le devolvía todos los permisos —con eso la
   // simulación mostraba botones que esa persona no tiene—.
   if (isRootAdmin(user)) return ALL_PERMISSIONS;
+  const base = permisosGenerales(user);
+  const deEmpresa = donde?.clientId ? user.permissionsByClient?.[donde.clientId] : undefined;
+  const deRepo = donde?.repoId ? user.permissionsByRepo?.[donde.repoId] : undefined;
+  return { ...base, ...deEmpresa, ...deRepo };
+}
+
+function permisosGenerales(user: AppUser): CicdPermissions {
   if (user.permissions) return { ...NO_PERMISSIONS, ...user.permissions };
   // Sin permisos explícitos: los administradores (globales o de empresa) los
   // tienen todos dentro de lo que ven; quien solo opera, ninguno.
@@ -328,6 +346,22 @@ export async function setUserAgenteVolador(email: string, visible: boolean) {
 export async function setUserPermissions(email: string, permissions: CicdPermissions) {
   if (email === SUPERUSER_EMAIL) throw new Error("El superusuario raíz siempre tiene todos los permisos");
   await setDoc(doc(db, "users", email), { permissions }, { merge: true });
+}
+
+/**
+ * Excepción de un permiso para una empresa o un repo: `true`/`false` lo fija,
+ * `null` lo quita (vuelve a heredar).
+ */
+export async function setUserPermissionOverride(
+  email: string,
+  nivel: "client" | "repo",
+  id: string,
+  key: keyof CicdPermissions,
+  valor: boolean | null,
+) {
+  if (email === SUPERUSER_EMAIL) throw new Error("El superusuario raíz siempre tiene todos los permisos");
+  const campo = nivel === "client" ? "permissionsByClient" : "permissionsByRepo";
+  await updateDoc(doc(db, "users", email), new FieldPath(campo, id, key), valor === null ? deleteField() : valor);
 }
 
 export async function removeUser(email: string) {

@@ -77,5 +77,7 @@ export function applyImpersonation(
     // alguien con un repo asignado mostraba los seis del proyecto.
     repoIds: suplantado.repoIds ?? [],
     permissions: suplantado.permissions,
+    permissionsByClient: suplantado.permissionsByClient,
+    permissionsByRepo: suplantado.permissionsByRepo,
   };
 }

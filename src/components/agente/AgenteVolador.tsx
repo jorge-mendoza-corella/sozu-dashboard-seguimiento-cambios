@@ -21,7 +21,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./personaje.css";
-import { Antojos, Bata, BrazoHumano, CabezaCartoon, Saco } from "./skins";
+import { Antojos, Bata, BrazoHumano, CabezaCartoon, Saco, Vestido } from "./skins";
 import { PALETA, useSkinGeorgIA, type Skin } from "./skinsDatos";
 import {
   dondeFue, EVENTO_DEV_FALLO, EVENTO_DEV_OK, EVENTO_FALLO, EVENTO_FESTEJO, EVENTO_STORE, type DetalleFestejo, type DetalleStore,
@@ -1136,6 +1136,8 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
   const skinElegida = useSkinGeorgIA();
   const sk = skin ?? skinElegida;
   const pal = PALETA[sk];
+  // Vestido sin mangas: el brazo de atrás va con la piel.
+  const manga = pal.brazosDescubiertos ? `url(#pj-piel-${sk})` : `url(#pj-camisa-${sk})`;
   return (
     <svg
       viewBox="0 0 96 96"
@@ -1209,11 +1211,11 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         {/* Brazo de atrás: manga arremangada y mano */}
         <g className="pj-brazo">
           {/* Brazo (hombro → codo) */}
-          <path d="M35.4 38.6 C34.6 42.6 34.8 46.6 35.3 50.4 L40.5 50.4 C41 46.6 41.4 42.6 40.9 38.6 C39 37.2 37.2 37.2 35.4 38.6 Z" fill={`url(#pj-camisa-${sk})`} />
+          <path d="M35.4 38.6 C34.6 42.6 34.8 46.6 35.3 50.4 L40.5 50.4 C41 46.6 41.4 42.6 40.9 38.6 C39 37.2 37.2 37.2 35.4 38.6 Z" fill={manga} />
           <g className="pj-antebrazo-b">
-          <circle cx="37.9" cy="49.8" r="2.6" fill={`url(#pj-camisa-${sk})`} />
-          <path d="M35.4 49.6 C35.2 52.6 35.3 55 35.6 57.6 L40 57.6 C40.3 55 40.4 52.6 40.4 49.6 Z" fill={`url(#pj-camisa-${sk})`} />
-          <path d="M35.3 55.6 C37 56.6 39 56.6 40.3 55.6 L40.1 58.2 C38.6 59 37 59 35.6 58.2 Z" fill="#6b727c" />
+          <circle cx="37.9" cy="49.8" r="2.6" fill={manga} />
+          <path d="M35.4 49.6 C35.2 52.6 35.3 55 35.6 57.6 L40 57.6 C40.3 55 40.4 52.6 40.4 49.6 Z" fill={manga} />
+          <path d="M35.3 55.6 C37 56.6 39 56.6 40.3 55.6 L40.1 58.2 C38.6 59 37 59 35.6 58.2 Z" fill={pal.brazosDescubiertos ? manga : "#6b727c"} />
           <path d="M35.8 58.4 C35.2 61.2 36.4 63.4 38.2 63.4 C40 63.4 41 61.4 40.4 58.4 Z" fill={pal.mano ?? `url(#pj-piel-${sk})`} />
           </g>
         </g>
@@ -1246,22 +1248,30 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         <path d="M54 35 C57.6 42 57.6 52 55.4 60.2" fill="none" stroke="#4b5260" strokeWidth="0.5" opacity="0.5" />
         {/* Cuello de camisa */}
         <path d="M43.6 34 L48 39.6 L46.2 34.4 Z M52.4 34 L48 39.6 L49.8 34.4 Z" fill="#6b727c" />
-        <path d="M48 39.6 L48 60" stroke="#565d68" strokeWidth="0.6" />
+        {sk !== "licesita" && <path d="M48 39.6 L48 60" stroke="#565d68" strokeWidth="0.6" />}
         {/* Botones y emblema de engrane en el pecho (el saco de Ramón los tapa) */}
-        {sk !== "ramon" && [44, 49.5, 55].map((y) => <circle key={y} cx="48.9" cy={y} r="0.85" fill="#d4a446" />)}
-        {sk !== "ramon" && <g transform="translate(42.6 44.6)">
+        {!pal.sinEmblema && [44, 49.5, 55].map((y) => <circle key={y} cx="48.9" cy={y} r="0.85" fill="#d4a446" />)}
+        {!pal.sinEmblema && <g transform="translate(42.6 44.6)">
           <circle r="2.6" fill="url(#pj-laton)" />
           {[0, 45, 90, 135].map((a) => (
             <rect key={a} x="-0.7" y="-3.4" width="1.4" height="6.8" rx="0.4" fill="url(#pj-laton)" transform={`rotate(${a})`} />
           ))}
           <circle r="1.1" fill="#3f2a0b" />
         </g>}
-        {/* Cinturón con hebilla */}
-        <path d="M39.2 60 L56.8 60 L56.6 63.4 L39.4 63.4 Z" fill="#292018" />
-        <rect x="45.6" y="59.6" width="4.8" height="4.2" rx="1" fill="url(#pj-laton)" stroke="#5c3d0f" strokeWidth="0.4" />
+        {/* Cinturón con hebilla (el vestido lleva faja de su tela) */}
+        {sk === "licesita" ? (
+          <path d="M39.2 60 L56.8 60 L56.6 63.4 L39.4 63.4 Z" fill="#0b4a55" />
+        ) : (
+          <>
+            <path d="M39.2 60 L56.8 60 L56.6 63.4 L39.4 63.4 Z" fill="#292018" />
+            <rect x="45.6" y="59.6" width="4.8" height="4.2" rx="1" fill="url(#pj-laton)" stroke="#5c3d0f" strokeWidth="0.4" />
+          </>
+        )}
 
         {sk === "cientifico" && <Bata />}
         {sk === "ramon" && <Saco />}
+        {sk === "tomaso" && <Saco camisa="#f8fafc" cuello="#ffffff" solapa="#4b5563" boton="#1f2937" />}
+        {sk === "licesita" && <Vestido skin={sk} />}
         {sk === "cyborg" ? (
           <>
         {/* Cuello mecánico con cables */}
