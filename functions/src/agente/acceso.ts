@@ -14,6 +14,8 @@
  * `tickets` revisa cada 15 min los tickets del portal de sozu-admin asignados a
  * la persona (función `agenteTickets`). El root lo tiene prendido por default,
  * como todo lo demás; si lo apaga, queda en `ticketsApagados`.
+ * `claude` además puede mandar sus tickets a Claude Code (orquestador) y
+ * contestarle; requiere `tickets`. El root lo tiene siempre.
  */
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
@@ -30,9 +32,11 @@ export interface Usuario {
   verDocs: boolean;
   /** Revisa sus tickets del portal (lista `tickets`, requiere agente). */
   verTickets: boolean;
+  /** Manda tickets a Claude Code y le contesta (lista `claude`, requiere tickets). */
+  mandaClaude: boolean;
 }
 
-export type Permiso = "agente" | "docs" | "tickets";
+export type Permiso = "agente" | "docs" | "tickets" | "claude";
 
 /**
  * Mismo criterio que `esRootVerificado()` de las reglas: email verificado y
@@ -55,6 +59,7 @@ export async function verificarAcceso(req: CallableRequest, permiso: Permiso = "
   const verTickets = esRoot
     ? !lista(cfg.ticketsApagados).includes(email)
     : usaAgente && lista(cfg.tickets).includes(email);
+  const mandaClaude = esRoot || (verTickets && lista(cfg.claude).includes(email));
   if (permiso === "agente" && !usaAgente) {
     throw new HttpsError("permission-denied", "No tienes acceso al agente de repos.");
   }
@@ -64,8 +69,11 @@ export async function verificarAcceso(req: CallableRequest, permiso: Permiso = "
   if (permiso === "tickets" && !verTickets) {
     throw new HttpsError("permission-denied", "No tienes activada la revisión de tickets.");
   }
+  if (permiso === "claude" && !mandaClaude) {
+    throw new HttpsError("permission-denied", "No tienes permiso para mandar tickets a Claude.");
+  }
   const limite = Number(cfg.limitePorHora);
-  return { email, esRoot, verDocs, verTickets, limitePorHora: Number.isFinite(limite) && limite > 0 ? limite : LIMITE_HORA_DEFAULT };
+  return { email, esRoot, verDocs, verTickets, mandaClaude, limitePorHora: Number.isFinite(limite) && limite > 0 ? limite : LIMITE_HORA_DEFAULT };
 }
 
 /**

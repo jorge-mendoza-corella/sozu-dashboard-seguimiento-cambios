@@ -43,6 +43,8 @@ interface Props {
   onCerrarAtendido: () => void;
   /** El ticket que se está viendo (para poner el avatar de quien lo levantó). */
   onTicketVisto?: (t: TicketAgente | null) => void;
+  /** Permiso "Mandar a Claude": sin él, el .md se puede copiar pero no mandar. */
+  puedeMandarClaude: boolean;
 }
 
 const fecha = (iso: string) =>
@@ -61,15 +63,15 @@ const unicos = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string
  * Sin ticket abierto: si quien entra aún no conecta su cuenta de Claude, aquí
  * mismo puede hacerlo (no tiene que esperar a tener un ticket para eso).
  */
-function SinTicketElegido() {
+function SinTicketElegido({ puedeMandarClaude }: { puedeMandarClaude: boolean }) {
   const token = useTokenClaude();
-  if (token.data && !token.data.conectado) return <ConectarClaude className="m-1" />;
+  if (puedeMandarClaude && token.data && !token.data.conectado) return <ConectarClaude className="m-1" />;
   return <p className="py-10 text-center text-sm text-muted-foreground">Elige un ticket.</p>;
 }
 
 export function TicketsAgente({
   email, tickets, cargando, error, revisado, onRefrescar, cerrarAhora, onCerrarAtendido, responderAhora, onResponderAtendido,
-  onTicketVisto,
+  onTicketVisto, puedeMandarClaude,
 }: Props) {
   const [elegido, setElegido] = useState<string | null>(null);
   const [fPipeline, setFPipeline] = useState("");
@@ -222,9 +224,10 @@ export function TicketsAgente({
             onCerrar={() => setCerrando(actual)}
             enfocarRespuesta={actual.id === responderAhora}
             onRespuestaEnfocada={respuestaAtendida}
+            puedeMandarClaude={puedeMandarClaude}
           />
         ) : !cargando && !error && (
-          <SinTicketElegido />
+          <SinTicketElegido puedeMandarClaude={puedeMandarClaude} />
         )}
       </section>
       {dialogoCierre && (
@@ -264,7 +267,8 @@ const guardarBorrador = (id: string, v: string | null) => {
 /** Se guarda en Firestore cuando dejas de escribir por este tiempo. */
 const GUARDAR_MS = 1_000;
 
-function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuesta, onRespuestaEnfocada }: {
+function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuesta, onRespuestaEnfocada, puedeMandarClaude }: {
+  puedeMandarClaude: boolean;
   t: TicketAgente;
   email: string;
   enviado: TicketEnviado | null;
@@ -498,6 +502,8 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
               Los commits llevarán el trailer <code>Ticket-SOZU</code>: cuando su PR llegue a PRD, GeorgIA te avisa para cerrarlo.
             </p>
           </div>
+          {puedeMandarClaude ? (
+            <>
           <AvisoTokenClaude />
           {!token.data ? (
             token.isError
@@ -527,6 +533,12 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
             {errorMandar && <p className="w-full text-xs text-destructive">{errorMandar}</p>}
             <EstadoTokenClaude t={token.data!} />
           </div>
+          )}
+            </>
+          ) : (
+            <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+              No tienes permiso para mandar tickets a Claude. Puedes copiar el .md y trabajarlo a mano; pide el permiso «Mandar a Claude» al administrador.
+            </p>
           )}
         </Seccion>
       )}

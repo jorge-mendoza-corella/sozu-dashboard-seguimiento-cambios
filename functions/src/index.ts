@@ -341,7 +341,7 @@ export const agenteMandarAClaude = onCall<{ ticketId: string; md: string }>(
     cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
   },
   async (req) => {
-    const usuario = await verificarAcceso(req, "tickets");
+    const usuario = await verificarAcceso(req, "claude");
     const ticketId = String(req.data?.ticketId ?? "");
     const md = typeof req.data?.md === "string" ? req.data.md : "";
     if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
@@ -410,6 +410,10 @@ export const agenteClaudeToken = onCall<{ accion?: string; keyId?: string; cifra
   async (req) => {
     const usuario = await verificarAcceso(req, "tickets");
     const accion = req.data?.accion ?? "leer";
+    // Conectar o renovar el token solo tiene caso para quien manda a Claude.
+    if (accion !== "leer" && accion !== "desconectar" && !usuario.mandaClaude) {
+      throw new HttpsError("permission-denied", "No tienes permiso para mandar tickets a Claude.");
+    }
     const gh = () => new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
     try {
       if (accion === "leer") return await leerTokenClaude(usuario.email, usuario.esRoot);
@@ -445,7 +449,7 @@ export const agenteClaudeResponder = onCall<{ ticketId: string; texto: string; a
     cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
   },
   async (req) => {
-    const usuario = await verificarAcceso(req, "tickets");
+    const usuario = await verificarAcceso(req, "claude");
     const ticketId = String(req.data?.ticketId ?? "");
     if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
     const issue = await issueDelTicket(usuario.email, ticketId);

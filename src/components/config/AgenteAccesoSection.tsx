@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BellRing, Bot, FileText, Palette, Loader2, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { BellRing, Bot, FileText, Palette, Send, Loader2, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,7 @@ import { ConfirmarApagarAgentito } from "@/components/agente/ConfirmarApagarAgen
 import { SelectorSkin } from "./SelectorSkin";
 import { Personaje } from "@/components/agente/AgenteVolador";
 import { useNombresAvatar, useSkinGeneral, type Skin } from "@/components/agente/skinsDatos";
-import { cambiarAgente, cambiarTickets, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, leerSkinsPorPersona, quitarAccesoAgente, type AccesoAgente } from "@/lib/agenteRepos";
+import { cambiarAgente, cambiarClaude, cambiarTickets, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, leerSkinsPorPersona, quitarAccesoAgente, type AccesoAgente } from "@/lib/agenteRepos";
 
 // ---------------------------------------------------------------------------
 // Acceso al agente de repos. Cada pregunta consume la API de Anthropic y el
@@ -89,7 +89,7 @@ export function AgenteAccesoSection() {
       setAgentitoVisible(visible);
     });
 
-  const recargar = () => leerAccesoAgente().then(setAcceso).catch(() => setAcceso({ emails: [], sinAgente: [], docs: [], tickets: [], ticketsApagados: [] }));
+  const recargar = () => leerAccesoAgente().then(setAcceso).catch(() => setAcceso({ emails: [], sinAgente: [], docs: [], tickets: [], claude: [], ticketsApagados: [] }));
   useEffect(() => { void recargar(); }, []);
   // Lo elige cada quien en su panel: aquí solo se muestra.
   const [skins, setSkins] = useState<Record<string, Skin>>({});
@@ -153,6 +153,7 @@ export function AgenteAccesoSection() {
             <span className="flex-1">Persona</span>
             <span className="flex w-28 items-center justify-center gap-1"><FileText className="h-3 w-3" /> Ver docs</span>
             <span className="flex w-28 items-center justify-center gap-1"><BellRing className="h-3 w-3" /> Tickets</span>
+            <span className="flex w-28 items-center justify-center gap-1" title="Mandar tickets a Claude Code"><Send className="h-3 w-3" /> Claude</span>
             <span className="flex w-28 items-center justify-center gap-1"><Bot className="h-3 w-3" /> GeorgIA</span>
             <span className="flex w-44 items-center gap-1 pl-1"><Palette className="h-3 w-3" /> Avatar</span>
             <span className="w-9" />
@@ -176,6 +177,7 @@ export function AgenteAccesoSection() {
                 />
               )}
             </span>
+            <span className="flex w-28 justify-center"><Interruptor activo deshabilitado etiqueta="Root: siempre puede mandar a Claude" /></span>
             <span className="flex w-28 justify-center"><Interruptor activo deshabilitado etiqueta="Root: siempre usa GeorgIA" /></span>
             <AvatarDe skin={skins[SUPERUSER_EMAIL]}>
               {busy === "agentito" ? (
@@ -199,6 +201,7 @@ export function AgenteAccesoSection() {
               const conAgente = acceso.emails.includes(e);
               const verDocs = acceso.docs.includes(e);
               const revisaTickets = acceso.tickets.includes(e);
+              const mandaClaude = acceso.claude.includes(e);
               return (
                 <div key={e} className="flex items-center gap-2 border-b px-3 py-2 last:border-b-0">
                   <span className="flex-1 truncate">{e}</span>
@@ -223,6 +226,19 @@ export function AgenteAccesoSection() {
                         deshabilitado={busy !== null || !conAgente}
                         onCambiar={() => void run(`tickets:${e}`, () => cambiarTickets(e, !revisaTickets))}
                         etiqueta={revisaTickets ? "Dejar de revisar sus tickets" : "Revisar sus tickets cada 15 min"}
+                      />
+                    )}
+                  </span>
+                  <span className="flex w-28 justify-center">
+                    {busy === `claude:${e}` ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : (
+                      <Interruptor
+                        activo={mandaClaude && revisaTickets && conAgente}
+                        // Mandar a Claude sale de la pestaña Tickets: sin ella no hay desde dónde.
+                        deshabilitado={busy !== null || !conAgente || !revisaTickets}
+                        onCambiar={() => void run(`claude:${e}`, () => cambiarClaude(e, !mandaClaude))}
+                        etiqueta={!revisaTickets ? "Primero prende Tickets" : mandaClaude ? "Quitar permiso de mandar tickets a Claude" : "Dejarle mandar sus tickets a Claude"}
                       />
                     )}
                   </span>
