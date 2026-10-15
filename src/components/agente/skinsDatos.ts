@@ -21,13 +21,29 @@ export const SKINS: { id: Skin; nombre: string; desc: string }[] = [
 export const SKIN_DEFAULT: Skin = "abuelo";
 export const esSkin = (v: unknown): v is Skin => SKINS.some((s) => s.id === v);
 
+// ── Correo de cada avatar ───────────────────────────────────────────────────
+// Un avatar puede "ser" una persona: si es titular de la categoría de un
+// ticket, ese avatar es el que avisa y trabaja el ticket. Lo configura el root
+// en Configuración → GeorgIA (`agente_config/acceso.correosAvatar`); estos son
+// los de arranque. "" = sin correo.
+export const CORREOS_AVATAR_DEFAULT: Partial<Record<Skin, string>> = {
+  ramon: "joseramon.escobar@sozu.com",
+  tomaso: "tomas.peterson@sozu.com",
+  licesita: "luz.ochoa@sozu.com",
+};
+let correosAvatar: Partial<Record<Skin, string>> = { ...CORREOS_AVATAR_DEFAULT };
+
 // ── Store global de la apariencia ──────────────────────────────────────────
-// Dos capas: la general (la elige el root, es el default de todos) y la propia
-// de quien está logueado (pestaña Avatar del panel). Se ve la propia si hay.
+// Tres capas, gana la primera que haya:
+//   1. la del ticket (el avatar del titular de la categoría, mientras toca),
+//   2. la propia de quien está logueado (pestaña Avatar del panel),
+//   3. la general (la elige el root, es el default de todos).
 let skinGeneral: Skin = SKIN_DEFAULT;
 let skinPropio: Skin | null = null;
+let skinTicket: Skin | null = null;
+let version = 0;
 const oyentes = new Set<() => void>();
-const avisar = () => oyentes.forEach((f) => f());
+const avisar = () => { version++; oyentes.forEach((f) => f()); };
 const suscribir = (f: () => void) => { oyentes.add(f); return () => { oyentes.delete(f); }; };
 
 export function setSkinGeorgIA(s: Skin) {
@@ -41,15 +57,51 @@ export function setSkinPropio(s: Skin | null) {
   skinPropio = s;
   avisar();
 }
-/** La que se ve: la propia o, si no eligió, la general. */
+/** Avatar del ticket que toca; `null` = vuelve al propio o al general. */
+export function setSkinTicket(s: Skin | null) {
+  if (s === skinTicket) return;
+  skinTicket = s;
+  avisar();
+}
+/** Correos guardados (encima de los de arranque). */
+export function setCorreosAvatar(guardados: Record<string, unknown> | undefined) {
+  const n: Partial<Record<Skin, string>> = { ...CORREOS_AVATAR_DEFAULT };
+  for (const [k, v] of Object.entries(guardados ?? {})) if (esSkin(k) && typeof v === "string") n[k] = v.trim().toLowerCase();
+  correosAvatar = n;
+  avisar();
+}
+
+const local = (e: string) => e.split("@")[0];
+/**
+ * Avatar del primer titular que tenga uno. Mismo correo o mismo usuario antes
+ * de la @ (en el portal hay quien está con @investimento.mx y aquí con @sozu.com).
+ */
+export function avatarDeTitulares(titulares: readonly string[] | undefined): Skin | null {
+  const conCorreo = SKINS.filter((s) => correosAvatar[s.id]);
+  for (const t of titulares ?? []) {
+    const e = t.trim().toLowerCase();
+    const exacto = conCorreo.find((s) => correosAvatar[s.id] === e);
+    const mismoUsuario = conCorreo.find((s) => local(correosAvatar[s.id]!) === local(e));
+    const s = exacto ?? mismoUsuario;
+    if (s) return s.id;
+  }
+  return null;
+}
+
+/** La que se ve: la del ticket, la propia o, si no, la general. */
 export function useSkinGeorgIA(): Skin {
-  return useSyncExternalStore(suscribir, () => skinPropio ?? skinGeneral, () => skinPropio ?? skinGeneral);
+  const v = () => skinTicket ?? skinPropio ?? skinGeneral;
+  return useSyncExternalStore(suscribir, v, v);
 }
 export function useSkinGeneral(): Skin {
   return useSyncExternalStore(suscribir, () => skinGeneral, () => skinGeneral);
 }
 export function useSkinPropio(): Skin | null {
   return useSyncExternalStore(suscribir, () => skinPropio, () => skinPropio);
+}
+export function useCorreosAvatar(): Partial<Record<Skin, string>> {
+  useSyncExternalStore(suscribir, () => version, () => version);
+  return correosAvatar;
 }
 
 /** Colores por skin (los usan los gradientes, con id por skin para no chocar). */

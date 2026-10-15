@@ -52,6 +52,8 @@ export interface TicketAgente {
   etapa: string | null;
   pipeline: string | null;
   categoria: string | null;
+  /** Correos de los titulares (personas) de la categoría; puede faltar en respuestas viejas. */
+  titulares?: string[];
   proyecto: string | null;
   prioridad: string | null;
   abiertoPor: string | null;

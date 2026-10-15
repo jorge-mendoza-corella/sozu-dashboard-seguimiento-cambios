@@ -39,6 +39,12 @@ export interface TicketSalida {
   etapa: string | null;
   pipeline: string | null;
   categoria: string | null;
+  /**
+   * Correos de los titulares (personas) de la categoría, en el orden en que se
+   * dieron de alta. Los titulares por rol no entran. Con esto el panel elige
+   * qué avatar de GeorgIA avisa y trabaja el ticket.
+   */
+  titulares: string[];
   proyecto: string | null;
   prioridad: string | null;
   abiertoPor: string | null;
@@ -103,7 +109,7 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
     .select(
       `id, numero, nombre, descripcion, fecha_creacion, prioridad, solicitante, id_usuario_creador,
        id_usuario_propietario, id_entidad_relacionada,
-       id_pipeline, id_etapa,
+       id_pipeline, id_etapa, id_categoria,
        tickets_etapas(nombre, tipo_semantico), tickets_pipelines(nombre), tickets_categorias(nombre),
        proyectos(nombre), tickets_propietarios(id_usuario),
        tickets_adjuntos(nombre, tipo, url, activo), tickets_solicitantes(id_entidad_relacionada)`,
@@ -124,8 +130,26 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
     .slice(0, MAX_TICKETS);
   if (pendientes.length === 0) return [];
 
-  // Nombres de asignados y creadores en una sola consulta.
+  // Titulares (personas) de las categorías de estos tickets.
+  const categorias = [...new Set(pendientes.map((t: Fila) => t.id_categoria).filter((c: unknown) => c != null))];
+  const titularesPorCategoria = new Map<number, string[]>();
+  if (categorias.length) {
+    const { data: tits, error: e6 } = await sb
+      .from("tickets_categorias_usuarios")
+      .select("id_categoria, id_usuario")
+      .in("id_categoria", categorias)
+      .order("id", { ascending: true });
+    if (e6) throw e6;
+    for (const r of tits ?? []) {
+      const l = titularesPorCategoria.get(r.id_categoria) ?? [];
+      l.push(r.id_usuario);
+      titularesPorCategoria.set(r.id_categoria, l);
+    }
+  }
+
+  // Nombres de asignados, creadores y titulares en una sola consulta.
   const uids = new Set<string>();
+  for (const l of titularesPorCategoria.values()) for (const u of l) uids.add(u);
   for (const t of pendientes) {
     for (const p of t.tickets_propietarios ?? []) uids.add(p.id_usuario);
     if (t.id_usuario_propietario) uids.add(t.id_usuario_propietario);
@@ -189,6 +213,9 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
       etapa: uno<Fila>(t.tickets_etapas)?.nombre ?? null,
       pipeline: uno<Fila>(t.tickets_pipelines)?.nombre ?? null,
       categoria: uno<Fila>(t.tickets_categorias)?.nombre ?? null,
+      titulares: (titularesPorCategoria.get(t.id_categoria) ?? [])
+        .map((u) => porUid.get(u)?.email as string | undefined)
+        .filter((e): e is string => !!e),
       proyecto: uno<Fila>(t.proyectos)?.nombre ?? null,
       prioridad: t.prioridad && t.prioridad !== "sin" ? t.prioridad : null,
       abiertoPor,
