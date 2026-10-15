@@ -481,6 +481,20 @@ service cloud.firestore {
       allow write: if esRootVerificado();
     }
 
+    // Avatar que cada persona eligió para su GeorgIA (pestaña Avatar del panel).
+    // Sin doc, ve el general (`agente_config/acceso.skin`). El root los lista
+    // para la columna de Configuración → GeorgIA.
+    match /agente_skins/{email} {
+      allow read: if esRootVerificado()
+        || (request.auth != null && request.auth.token.email == email);
+      allow create, update: if request.auth != null
+        && request.auth.token.email == email
+        && request.resource.data.keys().hasOnly(['skin'])
+        && request.resource.data.skin is string
+        && request.resource.data.skin.size() <= 20;
+      allow delete: if request.auth != null && request.auth.token.email == email;
+    }
+
     // Investigación previa de cada ticket (repos/rutas/pasos). La escribía la función
     // `agenteAnalizarTicket` (retirada); queda como solo lectura en el panel.
     match /agente_tickets/{ticketId} {

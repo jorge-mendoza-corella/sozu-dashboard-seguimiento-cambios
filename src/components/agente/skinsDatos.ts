@@ -20,19 +20,34 @@ export const SKIN_DEFAULT: Skin = "abuelo";
 export const esSkin = (v: unknown): v is Skin => SKINS.some((s) => s.id === v);
 
 // ── Store global de la apariencia ──────────────────────────────────────────
-let skinActual: Skin = SKIN_DEFAULT;
+// Dos capas: la general (la elige el root, es el default de todos) y la propia
+// de quien está logueado (pestaña Avatar del panel). Se ve la propia si hay.
+let skinGeneral: Skin = SKIN_DEFAULT;
+let skinPropio: Skin | null = null;
 const oyentes = new Set<() => void>();
+const avisar = () => oyentes.forEach((f) => f());
+const suscribir = (f: () => void) => { oyentes.add(f); return () => { oyentes.delete(f); }; };
+
 export function setSkinGeorgIA(s: Skin) {
-  if (s === skinActual) return;
-  skinActual = s;
-  oyentes.forEach((f) => f());
+  if (s === skinGeneral) return;
+  skinGeneral = s;
+  avisar();
 }
+/** `null` = sin elegir: usa la general. */
+export function setSkinPropio(s: Skin | null) {
+  if (s === skinPropio) return;
+  skinPropio = s;
+  avisar();
+}
+/** La que se ve: la propia o, si no eligió, la general. */
 export function useSkinGeorgIA(): Skin {
-  return useSyncExternalStore(
-    (f) => { oyentes.add(f); return () => oyentes.delete(f); },
-    () => skinActual,
-    () => skinActual,
-  );
+  return useSyncExternalStore(suscribir, () => skinPropio ?? skinGeneral, () => skinPropio ?? skinGeneral);
+}
+export function useSkinGeneral(): Skin {
+  return useSyncExternalStore(suscribir, () => skinGeneral, () => skinGeneral);
+}
+export function useSkinPropio(): Skin | null {
+  return useSyncExternalStore(suscribir, () => skinPropio, () => skinPropio);
 }
 
 /** Colores por skin (los usan los gradientes, con id por skin para no chocar). */

@@ -1,13 +1,13 @@
-/** Elección de la apariencia de GeorgIA (Configuración → GeorgIA). */
+/** Apariencia general de GeorgIA (Configuración → GeorgIA): la que ve quien no eligió la suya. */
 import { useState } from "react";
 import { Check, Loader2, Palette } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Personaje } from "@/components/agente/AgenteVolador";
-import { SKINS, useSkinGeorgIA, type Skin } from "@/components/agente/skinsDatos";
+import { SKINS, useSkinGeneral, type Skin } from "@/components/agente/skinsDatos";
 import { cambiarSkin } from "@/lib/agenteRepos";
 
 export function SelectorSkin() {
-  const actual = useSkinGeorgIA();
+  const actual = useSkinGeneral();
   const [guardando, setGuardando] = useState<Skin | null>(null);
   const [error, setError] = useState("");
 
@@ -27,7 +27,7 @@ export function SelectorSkin() {
   return (
     <div>
       <p className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        <Palette className="h-3.5 w-3.5" /> Apariencia
+        <Palette className="h-3.5 w-3.5" /> Apariencia general
       </p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
         {SKINS.map((s) => {
@@ -52,7 +52,7 @@ export function SelectorSkin() {
           );
         })}
       </div>
-      <p className="mt-1.5 text-[11px] text-muted-foreground">La ven igual todas las personas que usan GeorgIA. Cambia al momento, sin recargar.</p>
+      <p className="mt-1.5 text-[11px] text-muted-foreground">Es la que ve quien no eligió la suya en la pestaña Avatar del panel de GeorgIA.</p>
       {error && <p className="mt-1 text-[11px] text-destructive">{error}</p>}
     </div>
   );

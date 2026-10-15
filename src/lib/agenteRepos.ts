@@ -16,7 +16,7 @@ import {
 } from "firebase/firestore";
 import { app, db } from "./firebase";
 import { SUPERUSER_EMAIL } from "./firestoreUsers";
-import { esSkin, setSkinGeorgIA, SKIN_DEFAULT, type Skin } from "@/components/agente/skinsDatos";
+import { esSkin, setSkinGeorgIA, setSkinPropio, SKIN_DEFAULT, type Skin } from "@/components/agente/skinsDatos";
 
 const functions = getFunctions(app, "us-central1");
 
@@ -160,8 +160,10 @@ export async function permisosAgente(email: string | null | undefined): Promise<
   if (!email) return nada;
   const esRoot = email === SUPERUSER_EMAIL;
   try {
+    // El avatar propio no depende del acceso: se lee aparte y sin bloquear.
+    void leerSkinPropio(email);
     const d = (await getDoc(ACCESO())).data();
-    // Apariencia elegida en Configuración → GeorgIA (la ven todos igual).
+    // Apariencia general de Configuración → GeorgIA (el default de todos).
     setSkinGeorgIA(esSkin(d?.skin) ? d.skin : SKIN_DEFAULT);
     const agente = esRoot || listaDe(d?.emails).includes(email);
     return {
@@ -200,6 +202,33 @@ export async function quitarAccesoAgente(email: string): Promise<void> {
 export async function cambiarSkin(skin: Skin): Promise<void> {
   await setDoc(ACCESO(), { skin }, { merge: true });
   setSkinGeorgIA(skin);
+}
+
+// ── Avatar propio (agente_skins/{email}) ────────────────────────────────────
+const SKIN_PROPIO = (email: string) => doc(db, "agente_skins", email);
+
+async function leerSkinPropio(email: string): Promise<void> {
+  try {
+    const s = (await getDoc(SKIN_PROPIO(email))).data()?.skin;
+    setSkinPropio(esSkin(s) ? s : null);
+  } catch {
+    setSkinPropio(null);
+  }
+}
+
+/** Avatar de quien está logueado; `null` vuelve al general. */
+export async function cambiarSkinPropio(email: string, skin: Skin | null): Promise<void> {
+  if (skin) await setDoc(SKIN_PROPIO(email), { skin });
+  else await deleteDoc(SKIN_PROPIO(email));
+  setSkinPropio(skin);
+}
+
+/** Avatar elegido por cada persona (solo el root puede listarlos). Sin entrada = usa el general. */
+export async function leerSkinsPorPersona(): Promise<Record<string, Skin>> {
+  const snap = await getDocs(collection(db, "agente_skins"));
+  const r: Record<string, Skin> = {};
+  snap.forEach((d) => { const s = d.data().skin; if (esSkin(s)) r[d.id] = s; });
+  return r;
 }
 
 export async function cambiarTickets(email: string, activar: boolean): Promise<void> {
