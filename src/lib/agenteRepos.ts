@@ -165,7 +165,7 @@ export async function permisosAgente(email: string | null | undefined): Promise<
     const d = (await getDoc(ACCESO())).data();
     // Apariencia general de Configuración → GeorgIA (el default de todos).
     setSkinGeorgIA(esSkin(d?.skin) ? d.skin : SKIN_DEFAULT);
-    // Correo de cada avatar (titulares de categoría de tickets).
+    // Correo de cada avatar (quien levanta el ticket).
     setCorreosAvatar(d?.correosAvatar);
     const agente = esRoot || listaDe(d?.emails).includes(email);
     return {

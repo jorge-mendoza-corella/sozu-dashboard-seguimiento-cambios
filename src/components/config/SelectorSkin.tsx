@@ -70,7 +70,7 @@ export function SelectorSkin() {
                 <span className="mt-1 text-xs font-semibold">{s.nombre}</span>
                 <span className="text-center text-[10px] leading-tight text-muted-foreground">{s.desc}</span>
               </button>
-              {/* Correo de la persona que es este avatar (titular de categorías de tickets). */}
+              {/* Correo de la persona que es este avatar (quien levanta tickets). */}
               <label className="flex items-center gap-1 rounded-md border px-1.5 focus-within:ring-2 focus-within:ring-ring">
                 {guardandoCorreo === s.id
                   ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
@@ -90,7 +90,7 @@ export function SelectorSkin() {
           );
         })}
       </div>
-      <p className="mt-1.5 text-[11px] text-muted-foreground">Es la que ve quien no eligió la suya en la pestaña Avatar del panel de GeorgIA. El correo dice qué persona es cada avatar: si es titular de la categoría de un ticket, ese avatar avisa y trabaja el ticket.</p>
+      <p className="mt-1.5 text-[11px] text-muted-foreground">Es la que ve quien no eligió la suya en la pestaña Avatar del panel de GeorgIA. El correo dice qué persona es cada avatar: si esa persona levantó un ticket, ese avatar avisa y trabaja el ticket.</p>
       {error && <p className="mt-1 text-[11px] text-destructive">{error}</p>}
     </div>
   );
