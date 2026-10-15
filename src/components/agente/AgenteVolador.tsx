@@ -21,7 +21,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./personaje.css";
-import { Antojos, Bata, BrazoHumano, CabezaCartoon } from "./skins";
+import { Antojos, Bata, BrazoHumano, CabezaCartoon, Saco } from "./skins";
 import { PALETA, useSkinGeorgIA, type Skin } from "./skinsDatos";
 import {
   dondeFue, EVENTO_DEV_FALLO, EVENTO_DEV_OK, EVENTO_FALLO, EVENTO_FESTEJO, EVENTO_STORE, type DetalleFestejo, type DetalleStore,
@@ -1247,20 +1247,21 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         {/* Cuello de camisa */}
         <path d="M43.6 34 L48 39.6 L46.2 34.4 Z M52.4 34 L48 39.6 L49.8 34.4 Z" fill="#6b727c" />
         <path d="M48 39.6 L48 60" stroke="#565d68" strokeWidth="0.6" />
-        {[44, 49.5, 55].map((y) => <circle key={y} cx="48.9" cy={y} r="0.85" fill="#d4a446" />)}
-        {/* Emblema de engrane en el pecho */}
-        <g transform="translate(42.6 44.6)">
+        {/* Botones y emblema de engrane en el pecho (el saco de Ramón los tapa) */}
+        {sk !== "ramon" && [44, 49.5, 55].map((y) => <circle key={y} cx="48.9" cy={y} r="0.85" fill="#d4a446" />)}
+        {sk !== "ramon" && <g transform="translate(42.6 44.6)">
           <circle r="2.6" fill="url(#pj-laton)" />
           {[0, 45, 90, 135].map((a) => (
             <rect key={a} x="-0.7" y="-3.4" width="1.4" height="6.8" rx="0.4" fill="url(#pj-laton)" transform={`rotate(${a})`} />
           ))}
           <circle r="1.1" fill="#3f2a0b" />
-        </g>
+        </g>}
         {/* Cinturón con hebilla */}
         <path d="M39.2 60 L56.8 60 L56.6 63.4 L39.4 63.4 Z" fill="#292018" />
         <rect x="45.6" y="59.6" width="4.8" height="4.2" rx="1" fill="url(#pj-laton)" stroke="#5c3d0f" strokeWidth="0.4" />
 
         {sk === "cientifico" && <Bata />}
+        {sk === "ramon" && <Saco />}
         {sk === "cyborg" ? (
           <>
         {/* Cuello mecánico con cables */}
