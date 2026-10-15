@@ -14,7 +14,7 @@ export const SKINS: { id: Skin; nombre: string; desc: string }[] = [
   { id: "raton", nombre: "Ratón clásico", desc: "Orejotas redondas, guantes blancos y short rojo" },
   { id: "travieso", nombre: "Niño travieso", desc: "Pelo en picos, piel amarilla y playera naranja" },
   { id: "ramon", nombre: "Ramón", desc: "Barba corta, pelo hacia atrás y saco oscuro" },
-  { id: "tomaso", nombre: "Tomaso", desc: "Lentes al aire, cara delgada y traje gris" },
+  { id: "tomaso", nombre: "Tomaso", desc: "Lentes al aire, sienes canosas y traje gris" },
   { id: "licesita", nombre: "Licesita", desc: "Pelo lacio oscuro, collar y vestido verde azulado" },
   { id: "cyborg", nombre: "Cyborg (original)", desc: "Media cara de acero y brazo robótico" },
 ];
@@ -93,7 +93,7 @@ export const PALETA: Record<Skin, {
   },
   // Piel clara, traje gris medio (la camisa blanca la pone <Saco />).
   tomaso: {
-    piel: ["#f6d2b4", "#d29f7c"], camisa: ["#6b7280", "#9ca3af", "#4b5563"], iris: "#3f2a1d", ceja: "#1f2937", pielSolida: "#e0ae8a",
+    piel: ["#f6d2b4", "#d29f7c"], camisa: ["#6b7280", "#9ca3af", "#4b5563"], iris: "#3f2a1d", ceja: "#4b5563", pielSolida: "#d49f7c",
     pantalon: ["#4b5563", "#6b7280", "#374151"], zapato: "#111827", sinEmblema: true,
   },
   // Vestido verde azulado sin mangas, largo (las piernas van del mismo tono).

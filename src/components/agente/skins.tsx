@@ -170,10 +170,10 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
           )}
           {skin === "tomaso" && (
             <>
-              {/* Pelo corto oscuro con entradas, lados más claros */}
-              <path d="M33 50 Q32 36 36 30 L37 50 Z M87 50 Q88 36 84 30 L83 50 Z" fill="#1f2937" opacity="0.35" />
-              <path d="M34 42 Q31 14 58 11 Q86 11 86 40 Q84 29 79 26 Q75 19 65 21 Q58 19 51 21 Q42 21 39 29 Q36 33 35.5 42Z" fill="#1f2937" />
-              <path d="M44 19 Q56 13 72 16" fill="none" stroke="#4b5563" strokeWidth="1.2" strokeLinecap="round" />
+              {/* Pelo corto entrecano: entradas marcadas y sienes canosas */}
+              <path d="M33 52 Q32 36 36 29 L38 50 Z M87 52 Q88 36 84 29 L82 50 Z" fill="#9ca3af" opacity="0.85" />
+              <path d="M35 40 Q32 14 58 11 Q86 11 85 38 Q83 30 79 28 Q76 21 66 23 Q59 22 52 23 Q43 23 40 31 Q37 34 36.5 40Z" fill="#374151" />
+              <path d="M44 19 Q56 13 72 16 M48 23 Q60 17 74 21 M41 27 Q44 22 49 21" fill="none" stroke="#9ca3af" strokeWidth="1.2" strokeLinecap="round" />
             </>
           )}
           {skin === "licesita" && (
@@ -260,6 +260,16 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
             <path d="M61 57 Q64 65 62 67" stroke={p.pielSolida} strokeWidth="2" fill="none" strokeLinecap="round" />
           ) : (
             <path d="M60 66 Q63 70 66 67" stroke={p.pielSolida} strokeWidth="1.8" fill="none" strokeLinecap="round" />
+          )}
+          {skin === "tomaso" && (
+            // Arrugas: frente, patas de gallo, ojeras, surcos nasolabiales y mejillas hundidas
+            <g fill="none" stroke={p.pielSolida} strokeLinecap="round" opacity="0.9">
+              <path d="M48 36 Q60 33.5 72 36 M50 40.5 Q60 38.4 70 40.5" strokeWidth="1.1" />
+              <path d="M38 53 L35 51.6 M38 56 L34.6 56 M38 59 L35 60.4 M86 53 L89 51.6 M86 56 L89.4 56 M86 59 L89 60.4" strokeWidth="0.9" />
+              <path d="M46 63 Q52 65.6 58 63.4 M66 63.4 Q72 65.6 78 63" strokeWidth="1" />
+              <path d="M56 66 Q51 72 53 79 M70 66 Q75 72 72 79" strokeWidth="1.3" />
+              <path d="M40 66 Q42 74 46 78 M84 66 Q82 74 78 78" strokeWidth="1" opacity="0.6" />
+            </g>
           )}
           {skin === "chibi" && (
             <>
