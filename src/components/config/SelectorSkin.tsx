@@ -3,14 +3,28 @@ import { useState } from "react";
 import { Check, Loader2, Mail, Palette } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Personaje } from "@/components/agente/AgenteVolador";
-import { SKINS, useCorreosAvatar, useSkinGeneral, type Skin } from "@/components/agente/skinsDatos";
-import { cambiarCorreoAvatar, cambiarSkin } from "@/lib/agenteRepos";
+import { SKINS, useCorreosAvatar, useNombresAvatar, useSkinGeneral, type Skin } from "@/components/agente/skinsDatos";
+import { cambiarCorreoAvatar, cambiarNombreAvatar, cambiarSkin } from "@/lib/agenteRepos";
 
 export function SelectorSkin() {
   const actual = useSkinGeneral();
   const [guardando, setGuardando] = useState<Skin | null>(null);
   const [error, setError] = useState("");
   const correos = useCorreosAvatar();
+  const nombreDe = useNombresAvatar();
+  const [nombreEditando, setNombreEditando] = useState<Partial<Record<Skin, string>>>({});
+  const guardarNombre = async (s: Skin) => {
+    const v = nombreEditando[s];
+    if (v === undefined) return;
+    setNombreEditando((e) => ({ ...e, [s]: undefined }));
+    if (v.trim() === nombreDe(s)) return;
+    setError("");
+    try {
+      await cambiarNombreAvatar(s, v);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar");
+    }
+  };
   const [editando, setEditando] = useState<Partial<Record<Skin, string>>>({});
   const [guardandoCorreo, setGuardandoCorreo] = useState<Skin | null>(null);
 
@@ -67,9 +81,20 @@ export function SelectorSkin() {
                 {sel && <Check className="absolute right-2 top-2 h-4 w-4 text-primary" />}
                 {guardando === s.id && <Loader2 className="absolute right-2 top-2 h-4 w-4 animate-spin text-muted-foreground" />}
                 <div className="h-24 w-24"><Personaje pose="quieto" animo="feliz" skin={s.id} /></div>
-                <span className="mt-1 text-xs font-semibold">{s.nombre}</span>
+                <span className="mt-1 text-xs font-semibold">{nombreDe(s.id)}</span>
                 <span className="text-center text-[10px] leading-tight text-muted-foreground">{s.desc}</span>
               </button>
+              {/* Nombre visible (vacío = el de fábrica) */}
+              <input
+                value={nombreEditando[s.id] ?? nombreDe(s.id)}
+                onChange={(e) => setNombreEditando((x) => ({ ...x, [s.id]: e.target.value }))}
+                onBlur={() => void guardarNombre(s.id)}
+                onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                maxLength={40}
+                placeholder={s.nombre}
+                aria-label={`Nombre del avatar ${s.nombre}`}
+                className="h-6 rounded-md border bg-transparent px-1.5 text-[10px] font-medium outline-none focus:ring-2 focus:ring-ring"
+              />
               {/* Correo de la persona que es este avatar (quien levanta tickets). */}
               <label className="flex items-center gap-1 rounded-md border px-1.5 focus-within:ring-2 focus-within:ring-ring">
                 {guardandoCorreo === s.id
@@ -82,7 +107,7 @@ export function SelectorSkin() {
                   onBlur={() => void guardarCorreo(s.id)}
                   onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
                   placeholder="correo (opcional)"
-                  aria-label={`Correo de ${s.nombre}`}
+                  aria-label={`Correo de ${nombreDe(s.id)}`}
                   className="h-6 min-w-0 flex-1 bg-transparent text-[10px] outline-none"
                 />
               </label>

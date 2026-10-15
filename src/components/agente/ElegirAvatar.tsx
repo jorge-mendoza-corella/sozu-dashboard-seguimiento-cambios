@@ -7,7 +7,7 @@ import { useState } from "react";
 import { Check, Loader2, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Personaje } from "./AgenteVolador";
-import { SKINS, useSkinGeneral, useSkinPropio, type Skin } from "./skinsDatos";
+import { SKINS, useNombresAvatar, useSkinGeneral, useSkinPropio, type Skin } from "./skinsDatos";
 import { cambiarSkinPropio } from "@/lib/agenteRepos";
 
 export function ElegirAvatar({ email }: { email: string }) {
@@ -29,7 +29,8 @@ export function ElegirAvatar({ email }: { email: string }) {
     }
   };
 
-  const nombreGeneral = SKINS.find((s) => s.id === general)?.nombre ?? general;
+  const nombreDe = useNombresAvatar();
+  const nombreGeneral = nombreDe(general);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-5">
@@ -57,7 +58,7 @@ export function ElegirAvatar({ email }: { email: string }) {
             deshabilitado={guardando !== null}
             onClick={() => void elegir(s.id)}
             skin={s.id}
-            nombre={s.nombre}
+            nombre={nombreDe(s.id)}
             desc={s.desc}
           />
         ))}

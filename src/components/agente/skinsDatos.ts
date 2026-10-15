@@ -4,7 +4,8 @@
  */
 import { useSyncExternalStore } from "react";
 
-export type Skin = "cyborg" | "abuelo" | "heroe" | "chibi" | "cientifico" | "raton" | "travieso" | "ramon" | "tomaso" | "licesita";
+export type Skin = "cyborg" | "abuelo" | "heroe" | "chibi" | "cientifico" | "raton" | "travieso" | "ramon" | "tomaso" | "licesita"
+  | "keity" | "abel" | "pablo" | "rodrigo" | "manuel";
 
 export const SKINS: { id: Skin; nombre: string; desc: string }[] = [
   { id: "abuelo", nombre: "Abuelo inventor", desc: "Canas, bigote blanco y sonrisa pícara" },
@@ -16,6 +17,11 @@ export const SKINS: { id: Skin; nombre: string; desc: string }[] = [
   { id: "ramon", nombre: "Ramón", desc: "Barba corta, pelo hacia atrás y saco oscuro" },
   { id: "tomaso", nombre: "Tomaso", desc: "Lentes al aire, sienes canosas y traje gris" },
   { id: "licesita", nombre: "Licesita", desc: "Pelo lacio oscuro, collar y vestido verde azulado" },
+  { id: "keity", nombre: "Keity", desc: "Pelo largo, lentes y blusa de lunares" },
+  { id: "abel", nombre: "Abel", desc: "Pelo hacia atrás, barba corta y camisa blanca" },
+  { id: "pablo", nombre: "Pablo", desc: "Barba entrecana y saco gris de cuadros" },
+  { id: "rodrigo", nombre: "Rodrigo", desc: "Copete, candado, traje azul y corbata" },
+  { id: "manuel", nombre: "Manuel", desc: "Pelo al ras, barba de días y todo de negro" },
   { id: "cyborg", nombre: "Cyborg (original)", desc: "Media cara de acero y brazo robótico" },
 ];
 export const SKIN_DEFAULT: Skin = "abuelo";
@@ -30,6 +36,11 @@ export const CORREOS_AVATAR_DEFAULT: Partial<Record<Skin, string>> = {
   ramon: "joseramon.escobar@sozu.com",
   tomaso: "tomas.peterson@sozu.com",
   licesita: "luz.ochoa@sozu.com",
+  keity: "keity.galindo@sozu.com",
+  abel: "abel.salazar@sozu.com",
+  pablo: "pablo.espinosa@sozu.com",
+  rodrigo: "rodrigo.terveen@sozu.com",
+  manuel: "manuel.nava@sozu.com",
 };
 let correosAvatar: Partial<Record<Skin, string>> = { ...CORREOS_AVATAR_DEFAULT };
 
@@ -69,6 +80,22 @@ export function setCorreosAvatar(guardados: Record<string, unknown> | undefined)
   for (const [k, v] of Object.entries(guardados ?? {})) if (esSkin(k) && typeof v === "string") n[k] = v.trim().toLowerCase();
   correosAvatar = n;
   avisar();
+}
+
+// Nombre visible de cada avatar (lo cambia el root; `acceso.nombresAvatar`).
+let nombresAvatar: Partial<Record<Skin, string>> = {};
+export function setNombresAvatar(guardados: Record<string, unknown> | undefined) {
+  const n: Partial<Record<Skin, string>> = {};
+  for (const [k, v] of Object.entries(guardados ?? {})) if (esSkin(k) && typeof v === "string" && v.trim()) n[k] = v.trim();
+  nombresAvatar = n;
+  avisar();
+}
+/** Nombre del avatar: el que puso el root o el del catálogo. */
+export const nombreAvatar = (s: Skin) => nombresAvatar[s] ?? SKINS.find((x) => x.id === s)?.nombre ?? s;
+/** Para que el componente se repinte cuando cambian nombres o correos. */
+export function useNombresAvatar(): (s: Skin) => string {
+  useSyncExternalStore(suscribir, () => version, () => version);
+  return nombreAvatar;
 }
 
 const local = (e: string) => e.split("@")[0];
@@ -121,6 +148,8 @@ export const PALETA: Record<Skin, {
   brazosDescubiertos?: boolean;
   /** Sin engrane ni botones de latón en el pecho (el saco o el vestido los tapan). */
   sinEmblema?: boolean;
+  /** Faja de tela en lugar del cinturón con hebilla (y sin la línea de botones). */
+  faja?: string;
 }> = {
   cyborg: { piel: ["#f0c4a0", "#c98c65"], camisa: ["#7d8591", "#9aa1ab", "#5c636e"], iris: "#3b5240", ceja: "#111827", pielSolida: "#d9a07a" },
   abuelo: { piel: ["#ffd9bd", "#e09b74"], camisa: ["#8b95a5", "#b8c1cd", "#717c8c"], iris: "#3f6212", ceja: "#e5e7eb", pielSolida: "#f2b993" },
@@ -148,7 +177,32 @@ export const PALETA: Record<Skin, {
   // Vestido verde azulado sin mangas, largo (las piernas van del mismo tono).
   licesita: {
     piel: ["#f3cba9", "#cf9874"], camisa: ["#0f5e6b", "#1a7f8e", "#0b4a55"], iris: "#2b1a12", ceja: "#1c1917", pielSolida: "#dfa985",
-    pantalon: ["#0f5e6b", "#1a7f8e", "#0b4a55"], zapato: "#1c1917", labios: "#b45a64", brazosDescubiertos: true, sinEmblema: true,
+    pantalon: ["#0f5e6b", "#1a7f8e", "#0b4a55"], zapato: "#1c1917", labios: "#b45a64", brazosDescubiertos: true, sinEmblema: true, faja: "#0b4a55",
+  },
+  // Blusa blanca de lunares (los pone <Blusa />), pantalón negro.
+  keity: {
+    piel: ["#ecbd98", "#c2875f"], camisa: ["#e5e7eb", "#ffffff", "#d1d5db"], iris: "#2b1a12", ceja: "#1c1917", pielSolida: "#d9a17b",
+    pantalon: ["#111827", "#1f2937", "#030712"], zapato: "#111827", labios: "#b91c1c", sinEmblema: true, faja: "#111827",
+  },
+  // Camisa blanca sola (cuello abierto: <Camisa />), pantalón azul marino.
+  abel: {
+    piel: ["#e8b48c", "#b57d55"], camisa: ["#e5e7eb", "#ffffff", "#d1d5db"], iris: "#2b1a12", ceja: "#1f2937", pielSolida: "#cf9a72",
+    pantalon: ["#1e293b", "#334155", "#0f172a"], zapato: "#3f2a1d", sinEmblema: true,
+  },
+  // Saco gris cálido de cuadros sobre camisa blanca.
+  pablo: {
+    piel: ["#f1c7a3", "#c8906b"], camisa: ["#78716c", "#a8a29e", "#57534e"], iris: "#3f2a1d", ceja: "#292524", pielSolida: "#dba27e",
+    pantalon: ["#44403c", "#57534e", "#292524"], zapato: "#1c1917", sinEmblema: true,
+  },
+  // Traje azul marino, camisa blanca y corbata.
+  rodrigo: {
+    piel: ["#f2c9a6", "#c99472"], camisa: ["#1e293b", "#334155", "#0f172a"], iris: "#3f2a1d", ceja: "#111827", pielSolida: "#d9a07c",
+    pantalon: ["#1e293b", "#334155", "#0f172a"], zapato: "#0c0a09", sinEmblema: true,
+  },
+  // Saco y camisa negros.
+  manuel: {
+    piel: ["#dba57d", "#a86d48"], camisa: ["#111827", "#1f2937", "#030712"], iris: "#1c1917", ceja: "#0c0a09", pielSolida: "#c28b62",
+    pantalon: ["#111827", "#1f2937", "#030712"], zapato: "#0c0a09", sinEmblema: true,
   },
 };
 

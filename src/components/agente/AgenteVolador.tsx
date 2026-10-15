@@ -21,7 +21,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./personaje.css";
-import { Antojos, Bata, BrazoHumano, CabezaCartoon, Saco, Vestido } from "./skins";
+import { Antojos, Bata, Blusa, BrazoHumano, CabezaCartoon, Camisa, Saco, Vestido } from "./skins";
 import { PALETA, useSkinGeorgIA, type Skin } from "./skinsDatos";
 import {
   dondeFue, EVENTO_DEV_FALLO, EVENTO_DEV_OK, EVENTO_FALLO, EVENTO_FESTEJO, EVENTO_STORE, type DetalleFestejo, type DetalleStore,
@@ -1248,7 +1248,7 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         <path d="M54 35 C57.6 42 57.6 52 55.4 60.2" fill="none" stroke="#4b5260" strokeWidth="0.5" opacity="0.5" />
         {/* Cuello de camisa */}
         <path d="M43.6 34 L48 39.6 L46.2 34.4 Z M52.4 34 L48 39.6 L49.8 34.4 Z" fill="#6b727c" />
-        {sk !== "licesita" && <path d="M48 39.6 L48 60" stroke="#565d68" strokeWidth="0.6" />}
+        {!pal.faja && <path d="M48 39.6 L48 60" stroke="#565d68" strokeWidth="0.6" />}
         {/* Botones y emblema de engrane en el pecho (el saco de Ramón los tapa) */}
         {!pal.sinEmblema && [44, 49.5, 55].map((y) => <circle key={y} cx="48.9" cy={y} r="0.85" fill="#d4a446" />)}
         {!pal.sinEmblema && <g transform="translate(42.6 44.6)">
@@ -1259,8 +1259,8 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
           <circle r="1.1" fill="#3f2a0b" />
         </g>}
         {/* Cinturón con hebilla (el vestido lleva faja de su tela) */}
-        {sk === "licesita" ? (
-          <path d="M39.2 60 L56.8 60 L56.6 63.4 L39.4 63.4 Z" fill="#0b4a55" />
+        {pal.faja ? (
+          <path d="M39.2 60 L56.8 60 L56.6 63.4 L39.4 63.4 Z" fill={pal.faja} />
         ) : (
           <>
             <path d="M39.2 60 L56.8 60 L56.6 63.4 L39.4 63.4 Z" fill="#292018" />
@@ -1272,6 +1272,11 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         {sk === "ramon" && <Saco />}
         {sk === "tomaso" && <Saco camisa="#f8fafc" cuello="#ffffff" solapa="#4b5563" boton="#1f2937" />}
         {sk === "licesita" && <Vestido skin={sk} />}
+        {sk === "keity" && <Blusa skin={sk} />}
+        {sk === "abel" && <Camisa skin={sk} />}
+        {sk === "pablo" && <Saco camisa="#f8fafc" cuello="#ffffff" solapa="#57534e" boton="#292524" />}
+        {sk === "rodrigo" && <Saco camisa="#f8fafc" cuello="#ffffff" solapa="#0f172a" boton="#0f172a" corbata="#1e3a8a" />}
+        {sk === "manuel" && <Saco camisa="#1f2937" cuello="#111827" solapa="#030712" boton="#111827" />}
         {sk === "cyborg" ? (
           <>
         {/* Cuello mecánico con cables */}
