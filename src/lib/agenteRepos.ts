@@ -16,7 +16,7 @@ import {
 } from "firebase/firestore";
 import { app, db } from "./firebase";
 import { SUPERUSER_EMAIL } from "./firestoreUsers";
-import { esSkin, setSkinGeorgIA, setSkinPropio, SKIN_DEFAULT, type Skin } from "@/components/agente/skinsDatos";
+import { esSkin, setCorreosAvatar, setSkinGeorgIA, setSkinPropio, SKIN_DEFAULT, type Skin } from "@/components/agente/skinsDatos";
 
 const functions = getFunctions(app, "us-central1");
 
@@ -165,6 +165,8 @@ export async function permisosAgente(email: string | null | undefined): Promise<
     const d = (await getDoc(ACCESO())).data();
     // Apariencia general de Configuración → GeorgIA (el default de todos).
     setSkinGeorgIA(esSkin(d?.skin) ? d.skin : SKIN_DEFAULT);
+    // Correo de cada avatar (titulares de categoría de tickets).
+    setCorreosAvatar(d?.correosAvatar);
     const agente = esRoot || listaDe(d?.emails).includes(email);
     return {
       agente,
@@ -229,6 +231,16 @@ export async function leerSkinsPorPersona(): Promise<Record<string, Skin>> {
   const r: Record<string, Skin> = {};
   snap.forEach((d) => { const s = d.data().skin; if (esSkin(s)) r[d.id] = s; });
   return r;
+}
+
+/** Correo de la persona que "es" un avatar ("" = ninguno). Solo el root escribe el doc. */
+export async function cambiarCorreoAvatar(skin: Skin, correo: string): Promise<void> {
+  const c = correo.trim().toLowerCase();
+  const d = (await getDoc(ACCESO())).data();
+  const actuales = (d?.correosAvatar ?? {}) as Record<string, unknown>;
+  const nuevos = { ...actuales, [skin]: c };
+  await setDoc(ACCESO(), { correosAvatar: nuevos }, { merge: true });
+  setCorreosAvatar(nuevos);
 }
 
 export async function cambiarTickets(email: string, activar: boolean): Promise<void> {

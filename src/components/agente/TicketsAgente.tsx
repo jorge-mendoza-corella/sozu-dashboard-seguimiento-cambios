@@ -41,6 +41,8 @@ interface Props {
   /** Ticket cuyo diálogo de cierre hay que abrir (GeorgIA avisó que ya está en PRD). */
   cerrarAhora: string | null;
   onCerrarAtendido: () => void;
+  /** El ticket que se está viendo (para poner el avatar de su titular). */
+  onTicketVisto?: (t: TicketAgente | null) => void;
 }
 
 const fecha = (iso: string) =>
@@ -67,6 +69,7 @@ function SinTicketElegido() {
 
 export function TicketsAgente({
   email, tickets, cargando, error, revisado, onRefrescar, cerrarAhora, onCerrarAtendido, responderAhora, onResponderAtendido,
+  onTicketVisto,
 }: Props) {
   const [elegido, setElegido] = useState<string | null>(null);
   const [fPipeline, setFPipeline] = useState("");
@@ -104,6 +107,7 @@ export function TicketsAgente({
   const pedidoPorGeorgia = responderAhora ?? cerrarAhora;
   const actual = (pedidoPorGeorgia && (tickets ?? []).find((t) => t.id === pedidoPorGeorgia))
     || filtrados.find((t) => t.id === elegido) || filtrados[0] || null;
+  useEffect(() => { onTicketVisto?.(actual); }, [actual, onTicketVisto]);
   const respuestaAtendida = useCallback(() => {
     if (responderAhora) setElegido(responderAhora);
     onResponderAtendido();
