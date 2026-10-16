@@ -1632,17 +1632,22 @@ export async function repoDespliegaDev(owner: string, repo: string): Promise<boo
     );
 
     let algunoFallo = false;
-    const textos = await Promise.all(
-      candidatos.map(async (w) => {
-        try {
-          const { data: archivo } = await octokit.repos.getContent({ owner, repo, path: w.path });
-          return "content" in archivo && archivo.content ? atob(archivo.content.replace(/\n/g, "")) : "";
-        } catch {
-          algunoFallo = true;
-          return "";
-        }
-      }),
-    );
+    // Se lee la versión de la rama por defecto y la de `dev`: un push usa el
+    // workflow de la rama empujada, así que si solo el de dev se dispara con
+    // dev (pasa mientras ese cambio no llega a main, p. ej. server-stp), dev sí
+    // despliega aunque main no lo diga.
+    const leer = async (path: string, ref?: string) => {
+      try {
+        const { data: archivo } = await octokit.repos.getContent({ owner, repo, path, ...(ref ? { ref } : {}) });
+        return "content" in archivo && archivo.content ? atob(archivo.content.replace(/\n/g, "")) : "";
+      } catch (e) {
+        // Sin rama dev (o sin el archivo en ella) es un "no", no un fallo.
+        if (ref && (e as { status?: number }).status === 404) return "";
+        algunoFallo = true;
+        return "";
+      }
+    };
+    const textos = (await Promise.all(candidatos.map((w) => Promise.all([leer(w.path), leer(w.path, "dev")])))).flat();
 
     const sirve = textos.some((t) => ramasQueDisparan(t).includes("dev"));
     // Si algún archivo no se pudo leer (rate limit, red) no se concluye "no
