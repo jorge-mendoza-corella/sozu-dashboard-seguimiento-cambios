@@ -337,6 +337,214 @@
   .agente-volador__claude-fallo em { animation: none; }
 }
 
+/* ── Arcade: juega, gana (marometas) o pierde (berrinche, patada, máquina rota) ── */
+/* Jugando: los dos brazos al frente machacando botones, inclinado hacia la pantalla. */
+[data-pose="arcade"] .pj-brazo-robot { animation: pj-machaca 170ms ease-in-out infinite alternate; }
+[data-pose="arcade"] .pj-brazo       { animation: pj-machaca-b 230ms ease-in-out infinite alternate; }
+[data-pose="arcade"] .pj-cabeza      { transform: rotate(7deg); }
+[data-pose="arcade"] .agente-volador__cuerpo { animation: pj-rebote 210ms ease-in-out infinite alternate; }
+@keyframes pj-machaca   { from { transform: rotate(-68deg); } to { transform: rotate(-84deg); } }
+@keyframes pj-machaca-b { from { transform: rotate(-52deg); } to { transform: rotate(-66deg); } }
+
+/* Ganó: mortales hacia atrás con los brazos arriba. */
+.agente-volador__sprite[data-pose="marometa"] { transform-origin: 50% 55%; animation: pj-marometa 950ms cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+[data-pose="marometa"] .pj-brazo-robot { transform: rotate(-165deg); }
+[data-pose="marometa"] .pj-brazo       { transform: rotate(150deg); }
+[data-pose="marometa"] .pj-pierna-a    { transform: rotate(-30deg); }
+[data-pose="marometa"] .pj-pierna-b    { transform: rotate(-36deg); }
+[data-pose="marometa"] .pj-rodilla-a   { transform: rotate(50deg); }
+[data-pose="marometa"] .pj-rodilla-b   { transform: rotate(56deg); }
+@keyframes pj-marometa {
+  0%   { transform: translateY(0) rotate(0deg) scale(1.06, 0.92); }
+  15%  { transform: translateY(-12%) rotate(0deg) scale(0.96, 1.05); }
+  55%  { transform: translateY(-58%) rotate(-200deg); }
+  85%  { transform: translateY(-8%) rotate(-360deg); }
+  100% { transform: translateY(0) rotate(-360deg) scale(1.05, 0.94); }
+}
+
+/* Perdió: pataleta con el puño en alto contra la máquina. */
+.agente-volador__sprite[data-pose="berrinche"] { transform-origin: 50% 100%; animation: pj-pataleta 250ms ease-in-out infinite alternate; }
+[data-pose="berrinche"] .pj-brazo-robot { animation: pj-puno 160ms ease-in-out infinite alternate; }
+[data-pose="berrinche"] .pj-brazo       { transform: rotate(30deg); }
+[data-pose="berrinche"] .pj-pierna-a    { animation: pj-pisoton 250ms ease-in-out infinite alternate; }
+[data-pose="berrinche"] .pj-rodilla-a   { animation: pj-rodilla 250ms ease-in-out infinite alternate; }
+@keyframes pj-pataleta { from { transform: rotate(-3deg); } to { transform: rotate(3deg) translateY(-3%); } }
+@keyframes pj-puno     { from { transform: rotate(-100deg); } to { transform: rotate(-128deg); } }
+@keyframes pj-pisoton  { from { transform: rotate(0deg); } to { transform: rotate(-32deg); } }
+
+/* La patada: toma vuelo, pierna de adelante a la máquina (impacto al ~45%). */
+.agente-volador__sprite[data-pose="patada"] { transform-origin: 50% 100%; transform: rotate(-8deg); }
+[data-pose="patada"] .pj-pierna-b  { animation: pj-patada 900ms cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+[data-pose="patada"] .pj-rodilla-b { animation: pj-patada-rodilla 900ms cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+[data-pose="patada"] .pj-brazo-robot { transform: rotate(45deg); }
+[data-pose="patada"] .pj-brazo       { transform: rotate(-40deg); }
+@keyframes pj-patada {
+  0%   { transform: rotate(0deg); }
+  30%  { transform: rotate(28deg); }
+  45%  { transform: rotate(-95deg); }
+  75%  { transform: rotate(-95deg); }
+  100% { transform: rotate(-10deg); }
+}
+@keyframes pj-patada-rodilla {
+  0%   { transform: rotate(0deg); }
+  30%  { transform: rotate(70deg); }
+  45%, 75% { transform: rotate(0deg); }
+  100% { transform: rotate(12deg); }
+}
+
+/* La máquina (portal fijo, junto a él; colores propios en claro y oscuro). */
+.agente-arcade {
+  position: fixed;
+  z-index: 29;
+  width: 54px;
+  height: 86px;
+  pointer-events: none;
+  border: 2px solid #1e1b4b;
+  border-radius: 7px 7px 3px 3px;
+  background: linear-gradient(90deg, #4c1d95 0%, #7c3aed 45%, #5b21b6 100%);
+  box-shadow: 0 6px 10px rgb(0 0 0 / 0.28);
+  transform-origin: 50% 100%;
+  animation: arcade-entra 280ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 400ms ease, transform 400ms ease;
+}
+.agente-arcade[data-saliendo], .agente-arcade[data-oculto] { opacity: 0; }
+.agente-arcade[data-saliendo] { transform: scale(0.9); }
+@keyframes arcade-entra { from { opacity: 0; transform: translateY(10px) scale(0.85); } }
+.agente-arcade__marquesina {
+  height: 12px;
+  border-radius: 4px 4px 0 0;
+  background: #facc15;
+  color: #1e1b4b;
+  font: 900 7px/12px ui-monospace, monospace;
+  letter-spacing: 0.12em;
+  text-align: center;
+  box-shadow: 0 0 8px rgb(250 204 21 / 0.7);
+}
+.agente-arcade__pantalla {
+  position: relative;
+  height: 28px;
+  margin: 4px 5px 0;
+  overflow: hidden;
+  border: 2px solid #0f0a2a;
+  border-radius: 3px;
+  background: #020617;
+  display: grid;
+  place-items: center;
+}
+.agente-arcade__pantalla b {
+  font: 900 7px/1 ui-monospace, monospace;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  animation: arcade-parpadea 420ms steps(2, jump-none) infinite;
+}
+.agente-arcade[data-fase="gana"] .agente-arcade__pantalla b { color: #4ade80; text-shadow: 0 0 4px #4ade80; }
+.agente-arcade[data-fase="pierde"] .agente-arcade__pantalla b,
+.agente-arcade[data-fase="patada"] .agente-arcade__pantalla b { color: #f87171; text-shadow: 0 0 4px #f87171; }
+.agente-arcade[data-fase="rota"] .agente-arcade__pantalla b { color: #e5e7eb; position: relative; z-index: 1; }
+@keyframes arcade-parpadea { 0% { opacity: 1; } 100% { opacity: 0.25; } }
+/* El "juego": una navecita que esquiva y un enemigo que baja. */
+.agente-arcade__juego {
+  position: absolute;
+  left: 8px;
+  bottom: 3px;
+  width: 4px;
+  height: 4px;
+  background: #22d3ee;
+  box-shadow: 4px 0 #22d3ee, 2px -2px #22d3ee, 14px -16px #f472b6, 18px -16px #f472b6, 16px -14px #f472b6;
+  animation: arcade-nave 900ms ease-in-out infinite alternate;
+}
+@keyframes arcade-nave { from { transform: translateX(0); } to { transform: translateX(22px); } }
+/* Rota: estática y la máquina chueca. */
+.agente-arcade[data-fase="rota"] { transform: rotate(-5deg); filter: saturate(0.6) brightness(0.85); animation: none; }
+.agente-arcade[data-fase="rota"] .agente-arcade__marquesina { background: #78716c; box-shadow: none; animation: arcade-parpadea 300ms steps(2, jump-none) infinite; }
+.agente-arcade[data-fase="rota"] .agente-arcade__pantalla {
+  background: repeating-linear-gradient(0deg, #6b7280 0 1px, #111827 1px 3px);
+  animation: arcade-estatica 120ms steps(3) infinite;
+}
+@keyframes arcade-estatica { 0% { background-position: 0 0; } 100% { background-position: 0 6px; } }
+.agente-arcade__panel {
+  position: relative;
+  height: 12px;
+  margin: 4px 3px 0;
+  border-radius: 2px;
+  background: #312e81;
+  transform: perspective(40px) rotateX(25deg);
+}
+.agente-arcade__palanca {
+  position: absolute;
+  left: 7px;
+  top: -4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #ef4444;
+  box-shadow: 2px 5px 0 -2px #111827;
+  transform-origin: 50% 100%;
+}
+.agente-arcade__boton {
+  position: absolute;
+  top: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: #22d3ee;
+}
+.agente-arcade__boton:nth-of-type(2) { left: 24px; }
+.agente-arcade__boton:nth-of-type(3) { left: 33px; background: #f472b6; }
+.agente-arcade[data-fase="jugando"] .agente-arcade__palanca { animation: arcade-palanca 230ms ease-in-out infinite alternate; }
+.agente-arcade[data-fase="jugando"] .agente-arcade__boton { animation: arcade-boton 170ms steps(2, jump-none) infinite; }
+@keyframes arcade-palanca { from { transform: rotate(-25deg); } to { transform: rotate(25deg); } }
+@keyframes arcade-boton { 0% { filter: brightness(1.6); } 100% { filter: brightness(0.7); } }
+.agente-arcade__ranura {
+  width: 10px;
+  height: 4px;
+  margin: 6px auto 0;
+  border-radius: 1px;
+  background: #fbbf24;
+  box-shadow: 0 0 0 2px #1e1b4b;
+}
+/* El golpe de la patada: se sacude y se ladea en el impacto. */
+.agente-arcade[data-fase="patada"] { animation: arcade-golpe 520ms cubic-bezier(0.23, 1, 0.32, 1) 380ms both; }
+@keyframes arcade-golpe {
+  0%   { transform: none; }
+  20%  { transform: translateX(6px) rotate(9deg); }
+  45%  { transform: translateX(-3px) rotate(-6deg); }
+  70%  { transform: translateX(2px) rotate(3deg); }
+  100% { transform: rotate(-5deg); }
+}
+.agente-arcade__humo { position: absolute; left: 50%; top: -6px; width: 0; height: 0; }
+.agente-arcade__humo em {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #6b7280;
+  opacity: 0;
+  animation: arcade-humo 1.6s ease-out infinite;
+}
+.agente-arcade__humo em:nth-child(1) { left: -10px; }
+.agente-arcade__humo em:nth-child(2) { left: -2px; animation-delay: 0.5s; background: #9ca3af; }
+.agente-arcade__humo em:nth-child(3) { left: 4px; animation-delay: 1s; }
+.agente-arcade[data-fase="patada"] .agente-arcade__humo em { animation-delay: 0.45s; }
+@keyframes arcade-humo {
+  0%   { opacity: 0.85; transform: translateY(0) scale(0.6); }
+  100% { opacity: 0; transform: translate(6px, -40px) scale(2); }
+}
+.agente-arcade__chispas i {
+  position: absolute;
+  font-style: normal;
+  font-size: 13px;
+  color: #facc15;
+  animation: pj-chispa 380ms steps(2, jump-none) infinite;
+}
+.agente-arcade__chispas i:nth-child(1) { left: -10px; top: 18px; }
+.agente-arcade__chispas i:nth-child(2) { right: -8px; top: 30px; animation-delay: 130ms; }
+.agente-arcade__chispas i:nth-child(3) { left: 20px; top: 44px; animation-delay: 260ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .agente-arcade, .agente-arcade * { animation: none !important; }
+}
+
 /* ── Estilos de vuelo (data-vuelo, solo en volar) ─────────────────────────── */
 /* Nado: crol en el aire — brazos en molino alternados y patada. */
 [data-pose="volar"][data-vuelo="nado"] .pj-brazo-robot { animation: pj-crol 1.5s linear infinite; }
