@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from "react";
 import { Personaje, type Animo } from "./AgenteVolador";
+import { useNombresAvatar, useSkinGeorgIA } from "./skinsDatos";
 import "./personaje.css";
 
 type Estilo = "zoom" | "ojos" | "gota" | "shoujo" | "shock";
@@ -32,6 +33,7 @@ export function GeorgIAPensando({ pendientes }: { pendientes: number }) {
     return () => clearInterval(t);
   }, []);
   const p = pendientes === 0 ? SIN_TICKETS : PENSAMIENTOS[i];
+  const nombre = useNombresAvatar()(useSkinGeorgIA());
 
   return (
     <div className="border-t p-2.5" aria-hidden>
@@ -47,6 +49,7 @@ export function GeorgIAPensando({ pendientes }: { pendientes: number }) {
           <Personaje pose="quieto" animo={p.animo} />
         </div>
         {p.estilo === "gota" && <span className="agente-manga__gota">💧</span>}
+        <span className="agente-manga__nombre">{nombre}</span>
         <span className="agente-manga__texto">{p.texto}</span>
       </div>
     </div>
