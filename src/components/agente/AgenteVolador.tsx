@@ -22,7 +22,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./personaje.css";
 import { Antojos, Bata, Blusa, BrazoHumano, CabezaCartoon, Camisa, Saco, Vestido } from "./skins";
-import { PALETA, useSkinGeorgIA, type Skin } from "./skinsDatos";
+import { PALETA, useNombresAvatar, useSkinGeorgIA, type Skin } from "./skinsDatos";
 import {
   dondeFue, EVENTO_DEV_FALLO, EVENTO_DEV_OK, EVENTO_FALLO, EVENTO_FESTEJO, EVENTO_STORE, type DetalleFestejo, type DetalleStore,
 } from "@/lib/festejoDeploy";
@@ -339,6 +339,8 @@ interface Props {
 
 const TAM = 80;
 const MARGEN = 8;
+/** Espacio bajo los pies para el gafete con el nombre del avatar. */
+const GAFETE = 20;
 /** Alto del header sticky: no vuela por encima de la navegación. */
 const TECHO = 64;
 const VEL_VUELO: [number, number] = [150, 230];
@@ -355,6 +357,9 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "quieto" : "volar",
   );
   const [pausaLocal, setPausaLocal] = useState(false);
+  // El avatar cambia según el ticket (quien lo levantó) o la elección de cada quien: el gafete dice quién es.
+  const skin = useSkinGeorgIA();
+  const nombre = useNombresAvatar()(skin);
   const [animo, setAnimo] = useState<Animo>("feliz");
   const [dialogo, setDialogo] = useState<Dialogo | null>(null);
   const [letrero, setLetrero] = useState<Letrero | null>(null);
@@ -372,7 +377,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     const el = raiz.current;
     if (!el) return;
     const reducido = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const piso = () => window.innerHeight - TAM - MARGEN;
+    const piso = () => window.innerHeight - TAM - MARGEN - GAFETE;
     const derecha = () => window.innerWidth - TAM - MARGEN;
 
     if (reducido) {
@@ -1024,7 +1029,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       ref={raiz}
       type="button"
       className="agente-volador z-30"
-      aria-label="Abrir a GeorgIA (Alt+K)"
+      aria-label={`Abrir a GeorgIA, como ${nombre} (Alt+K)`}
       aria-keyshortcuts="Alt+K"
       data-pausa={pausaLocal || undefined}
       // Con el panel abierto se esconde (sigue montado: al cerrar reaparece donde iba).
@@ -1115,6 +1120,8 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           <Personaje pose={pose} animo={animo} snack={snack} vuelo={vuelo} />
         </div>
       </div>
+      {/* Fuera de la orientación: no se voltea ni gira con el personaje. La key lo re-anima al cambiar. */}
+      <span key={skin} className="agente-volador__gafete" aria-hidden>{nombre}</span>
     </button>
   );
 }

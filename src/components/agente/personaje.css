@@ -601,6 +601,37 @@
   .agente-volador:hover .agente-volador__sprite { scale: 1.06; }
 }
 
+/* Gafete con el nombre del avatar, colgado bajo los pies. Al cambiar de avatar
+   entra con un pop para que se note quién llegó. */
+.agente-volador__gafete {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 2px);
+  translate: -50% 0;
+  max-width: 128px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid hsl(var(--border));
+  border-top: 3px solid #7c3aed;
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18);
+  pointer-events: none;
+  transform-origin: 50% 0;
+  animation: pj-gafete-entra 320ms var(--ease-out);
+}
+@keyframes pj-gafete-entra {
+  0% { opacity: 0; transform: translateY(-4px) scale(0.85); }
+  60% { opacity: 1; transform: scale(1.08); }
+}
+.agente-volador[data-oculto] .agente-volador__gafete { animation: none; }
+
 /* Movimiento reducido: el personaje se queda parado; nada de piernas ni capa.
    El ojo sigue latiendo (es solo opacidad). */
 @media (prefers-reduced-motion: reduce) {
@@ -609,7 +640,7 @@
   .agente-volador__orientacion { animation: none !important; transition: none !important; }
   .pj-ojo-robot { animation: pj-ojo 1.8s ease-in-out infinite alternate !important; }
   .pj-ceja, .pj-boca, .pj-ojo-cerrado, .pj-parpado, .pj-lagrimas, .pj-snack { transition: opacity 120ms ease !important; }
-  .agente-volador__dialogo { animation: none !important; }
+  .agente-volador__dialogo, .agente-volador__gafete { animation: none !important; }
   .agente-volador__dialogo[data-tipo="zzz"] i { animation: none !important; opacity: 1; }
   .agente-volador__nube, .agente-volador__nube i, .agente-volador__letrero-linea { animation: none !important; }
 }
