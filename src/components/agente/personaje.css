@@ -606,7 +606,7 @@
 .agente-volador__gafete {
   position: absolute;
   left: 50%;
-  top: calc(100% + 2px);
+  top: calc(100% - 6px);
   translate: -50% 0;
   max-width: 128px;
   overflow: hidden;

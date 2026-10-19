@@ -339,8 +339,8 @@ interface Props {
 
 const TAM = 80;
 const MARGEN = 8;
-/** Espacio bajo los pies para el gafete con el nombre del avatar. */
-const GAFETE = 20;
+/** Espacio bajo los pies para el gafete, con holgura: en algunas pantallas el borde inferior del viewport queda tapado. */
+const GAFETE = 28;
 /** Alto del header sticky: no vuela por encima de la navegación. */
 const TECHO = 64;
 const VEL_VUELO: [number, number] = [150, 230];
