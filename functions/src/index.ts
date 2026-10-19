@@ -20,7 +20,7 @@ import { consumirCupo, reposPermitidos, verificarAcceso } from "./agente/acceso.
 import { docPorRuta, indiceDocs, limpiarRuta, obtenerCorpus } from "./agente/docs.js";
 import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.js";
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
-import { cerrarTicket, clienteSupabase, ticketsAsignados } from "./agente/tickets.js";
+import { cerrarTicket, clienteSupabase, ticketsAsignados, tomarTicket } from "./agente/tickets.js";
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
 import { issueDelTicket, responderAClaude, seguimientoClaude, type AdjuntoRespuesta } from "./agente/claude.js";
 import { abrirSubida } from "./agente/adjuntos.js";
@@ -347,17 +347,25 @@ export const agenteMandarAClaude = onCall<{ ticketId: string; md: string }>(
     if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
     if (!md.trim()) throw new HttpsError("invalid-argument", "El .md del ticket viene vacío.");
     await exigirTokenClaude(usuario.email, usuario.esRoot);
-    const tickets = await ticketsAsignados(clienteSupabase(SUPABASE_SERVICE_KEY.value()), usuario.email);
+    const sb = clienteSupabase(SUPABASE_SERVICE_KEY.value());
+    const tickets = await ticketsAsignados(sb, usuario.email);
     const t = tickets.find((x) => x.id === ticketId);
     if (!t) throw new HttpsError("not-found", "Ese ticket no está entre tus pendientes.");
     const repos = await reposPermitidos(usuario);
+    let issue;
     try {
       const gh = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
-      return await mandarAClaude(gh, usuario.email, t, md, repos, secretDe(usuario.email, usuario.esRoot));
+      issue = await mandarAClaude(gh, usuario.email, t, md, repos, secretDe(usuario.email, usuario.esRoot));
     } catch (e) {
       console.error("[agenteMandarAClaude]", e);
       throw new HttpsError("unavailable", `No se pudo abrir el issue en ${ORQUESTADOR.owner}/${ORQUESTADOR.repo}.`);
     }
+    // Mandarlo es tomarlo («Yo trabajo el ticket»): pasa a En atención y deja de verse para
+    // los demás asignados. El issue ya está abierto: si falla, no se tumba el envío.
+    const nombre = (t.asignados.find((a) => a.soyYo)?.nombre ?? "").split(" ")[0] || usuario.email;
+    await tomarTicket(sb, usuario.email, Number(ticketId), `${nombre} estará atendiendo el ticket con Claude Code.`)
+      .catch((e) => console.error("[agenteMandarAClaude] tomar ticket", e));
+    return issue;
   },
 );
 

@@ -23,7 +23,10 @@ export const SUPABASE_URL = "https://tzmhgfjmddkfyffkkmto.supabase.co";
 const urlTicket = (numero: number) => `https://admin.sozu.com/admin/portal-tickets/todos?ticket=${numero}`;
 /** Solo los pipelines de Sistemas ("SOZU - Sistemas Soporte técnico", "… Nuevos Features", …). */
 const PIPELINE_SISTEMAS = /sozu\s*-?\s*sistemas/i;
-/** Etapas que le tocan a quien atiende; las demás (en atención, detenido…) no se muestran. */
+/**
+ * Etapas que le tocan a quien atiende; las demás (detenido…) no se muestran. La de
+ * atención solo se le muestra a quien lo trabaja (ver `atendidoPor`).
+ */
 const ETAPAS_VISIBLES = ["nuevo", "en revision", "en lista de espera"];
 const ORDEN_PRIORIDAD: Record<string, number> = { alta: 0, media: 1, baja: 2 };
 const MAX_TICKETS = 80;
@@ -46,6 +49,8 @@ export interface TicketSalida {
   abiertoPor: string | null;
   abiertoEn: string;
   asignados: { nombre: string; email: string | null; soyYo: boolean }[];
+  /** Lo tomó quien pregunta («Yo trabajo el ticket» o «Mandar a Claude»): ya no es un pendiente por avisar. */
+  loAtiendoYo: boolean;
   evidencias: { nombre: string; tipo: "imagen" | "audio" | "video" | "documento" | "otro"; url: string | null }[];
   url: string | null;
 }
@@ -59,6 +64,59 @@ const tipoEvidencia = (t: string | null): TicketSalida["evidencias"][number]["ti
 export const sinAcentos = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
 const uno = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? v[0] ?? null : v ?? null);
+
+interface EtapaPortal {
+  id: number;
+  nombre: string;
+  orden: number;
+  tipo_semantico: string | null;
+  cerrada: boolean | null;
+}
+
+const TIPOS_TERMINALES = new Set(["resuelta", "cerrada", "descartada"]);
+const NOMBRE_TERMINAL = /resuelt|cerrad|conclu|finaliz|no proced|cancelad|rechazad|desist/i;
+const esTerminal = (e: EtapaPortal) =>
+  !!e.cerrada || (e.tipo_semantico ? TIPOS_TERMINALES.has(e.tipo_semantico) : NOMBRE_TERMINAL.test(e.nombre));
+
+/**
+ * Etapa a la que pasa un ticket cuando alguien lo toma, igual que el portal
+ * (sozu-admin, portal-tickets/estado.ts → etapaAtencion): «En atención» si el
+ * pipeline la tiene; si no, «En proceso» o la primera etapa de trabajo.
+ */
+function etapaAtencion(etapas: EtapaPortal[]): EtapaPortal | undefined {
+  const vivas = etapas.filter((e) => !esTerminal(e)).sort((a, b) => a.orden - b.orden);
+  return (
+    vivas.find((e) => sinAcentos(e.nombre).includes("atencion")) ??
+    vivas.find((e) => sinAcentos(e.nombre).includes("en proceso")) ??
+    vivas.find((e) => e.tipo_semantico === "en_proceso") ??
+    vivas[1]
+  );
+}
+
+/** Quién trabaja el ticket: su único propietario, si está en la etapa de atención (como el portal). */
+function atendidoPor(propietarios: string[], idEtapa: number, etapas: EtapaPortal[]): string | null {
+  if (propietarios.length !== 1) return null;
+  return etapaAtencion(etapas)?.id === idEtapa ? propietarios[0] : null;
+}
+
+async function etapasPorPipeline(sb: SupabaseClient, pipelines: number[]): Promise<Map<number, EtapaPortal[]>> {
+  const por = new Map<number, EtapaPortal[]>();
+  if (pipelines.length === 0) return por;
+  const { data, error } = await sb
+    .from("tickets_etapas")
+    .select("id, nombre, orden, tipo_semantico, cerrada, id_pipeline")
+    .in("id_pipeline", pipelines)
+    .eq("activo", true);
+  if (error) throw error;
+  for (const e of data ?? []) por.set(e.id_pipeline, [...(por.get(e.id_pipeline) ?? []), e]);
+  return por;
+}
+
+const propietariosDe = (t: Fila): string[] => {
+  const ids = new Set<string>((t.tickets_propietarios ?? []).map((p: Fila) => p.id_usuario));
+  if (t.id_usuario_propietario) ids.add(t.id_usuario_propietario);
+  return [...ids];
+};
 
 export function clienteSupabase(serviceKey: string): SupabaseClient {
   return createClient(SUPABASE_URL, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -115,11 +173,14 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
     .order("fecha_creacion", { ascending: false });
   if (e4) throw e4;
 
-  // Pipelines de Sistemas y etapas Nuevo / En revisión / En lista de espera. Orden: prioridad
+  // Pipelines de Sistemas y etapas Nuevo / En revisión / En lista de espera, más los que
+  // atiendo yo (los que atiende otro ya no me tienen de propietario). Orden: prioridad
   // (alta → media → baja → sin) y, dentro de cada una, el más antiguo primero.
-  const pendientes = (filas ?? [])
-    .filter((t: Fila) => PIPELINE_SISTEMAS.test(uno<Fila>(t.tickets_pipelines)?.nombre ?? ""))
-    .filter((t: Fila) => ETAPAS_VISIBLES.includes(sinAcentos(uno<Fila>(t.tickets_etapas)?.nombre ?? "")))
+  const deSistemas = (filas ?? []).filter((t: Fila) => PIPELINE_SISTEMAS.test(uno<Fila>(t.tickets_pipelines)?.nombre ?? ""));
+  const etapas = await etapasPorPipeline(sb, [...new Set<number>(deSistemas.map((t: Fila) => t.id_pipeline))]);
+  const loAtiendo = (t: Fila) => atendidoPor(propietariosDe(t), t.id_etapa, etapas.get(t.id_pipeline) ?? []) === uid;
+  const pendientes = deSistemas
+    .filter((t: Fila) => ETAPAS_VISIBLES.includes(sinAcentos(uno<Fila>(t.tickets_etapas)?.nombre ?? "")) || loAtiendo(t))
     .sort((a: Fila, b: Fila) =>
       (ORDEN_PRIORIDAD[a.prioridad] ?? 3) - (ORDEN_PRIORIDAD[b.prioridad] ?? 3) ||
       Date.parse(a.fecha_creacion) - Date.parse(b.fecha_creacion))
@@ -160,9 +221,7 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
   }
 
   return pendientes.map((t: Fila): TicketSalida => {
-    const asignadosUids = new Set<string>((t.tickets_propietarios ?? []).map((p: Fila) => p.id_usuario));
-    if (t.id_usuario_propietario) asignadosUids.add(t.id_usuario_propietario);
-    const asignados = [...asignadosUids]
+    const asignados = propietariosDe(t)
       .map((id) => {
         const u = porUid.get(id);
         return { nombre: u?.nombre ?? "Usuario sin nombre", email: u?.email ?? null, soyYo: id === uid };
@@ -197,12 +256,59 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
       abiertoPor,
       abiertoEn: t.fecha_creacion,
       asignados,
+      loAtiendoYo: loAtiendo(t),
       evidencias: (t.tickets_adjuntos ?? [])
         .filter((a: Fila) => a.activo !== false)
         .map((a: Fila) => ({ nombre: a.nombre ?? "archivo", tipo: tipoEvidencia(a.tipo), url: a.url ?? null })),
       url: urlTicket(t.numero),
     };
   });
+}
+
+/**
+ * «Yo trabajo el ticket» como lo hace el portal (tickets-store.tsx → tomarTicket):
+ * quien lo toma queda como único propietario (sale de los pendientes de los demás
+ * asignados), el ticket pasa a la etapa de atención y queda la nota de
+ * seguimiento. Lo usa «Mandar a Claude». Si otra persona ya lo atiende, no se le
+ * quita; si ya lo atiendo yo, no hace nada.
+ */
+export async function tomarTicket(sb: SupabaseClient, email: string, idTicket: number, nota: string): Promise<void> {
+  const yo = await usuarioPortal(sb, email);
+  if (!yo) throw new Error("sin_usuario_portal");
+  const uid: string = yo.auth_user_id;
+
+  const { data: t, error: e2 } = await sb
+    .from("tickets")
+    .select("id, id_pipeline, id_etapa, id_usuario_propietario, activo, tickets_propietarios(id_usuario)")
+    .eq("id", idTicket)
+    .maybeSingle();
+  if (e2) throw e2;
+  if (!t || !t.activo) throw new Error("no_existe");
+  const etapas = (await etapasPorPipeline(sb, [t.id_pipeline])).get(t.id_pipeline) ?? [];
+  const otro = atendidoPor(propietariosDe(t), t.id_etapa, etapas);
+  if (otro === uid) return;
+  if (otro) throw new Error("lo_atiende_otro");
+  const destino = etapaAtencion(etapas);
+
+  const { error: e3 } = await sb.from("tickets_propietarios").delete().eq("id_ticket", idTicket);
+  if (e3) throw e3;
+  const { error: e4 } = await sb.from("tickets_propietarios").insert({ id_ticket: idTicket, id_usuario: uid });
+  if (e4) throw e4;
+  const cambiaEtapa = !!destino && destino.id !== t.id_etapa;
+  const { error: e5 } = await sb
+    .from("tickets")
+    .update({ id_usuario_propietario: uid, ...(cambiaEtapa ? { id_etapa: destino.id, fecha_cierre: null } : {}) })
+    .eq("id", idTicket);
+  if (e5) throw e5;
+  const actividad: Record<string, unknown>[] = [];
+  if (cambiaEtapa)
+    actividad.push({
+      id_ticket: idTicket, texto: `Etapa actualizada a "${destino.nombre}".`, tipo: "cambio_estado",
+      id_usuario_autor: uid, visible_cliente: false, id_etapa_origen: t.id_etapa, id_etapa_destino: destino.id,
+    });
+  actividad.push({ id_ticket: idTicket, texto: nota, tipo: "nota", id_usuario_autor: uid, visible_cliente: false });
+  const { error: e6 } = await sb.from("tickets_actividad").insert(actividad);
+  if (e6) throw e6;
 }
 
 /**

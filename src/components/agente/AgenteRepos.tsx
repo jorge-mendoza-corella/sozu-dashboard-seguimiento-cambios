@@ -118,10 +118,12 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
       // Quien avisa es el avatar de quien levantó el primer ticket (dentro de Tickets manda el que se ve).
       if (!enTicketsRef.current) setSkinTicket(r.tickets.length ? avatarDeCorreo(r.tickets[0].creadorEmail) : null);
       setErrorTickets(null);
-      // Con pendientes, el personaje aterriza y grita (si el panel no está abierto).
-      if (alertar && r.tickets.length > 0 && !abiertoRef.current) {
+      // Con pendientes, el personaje aterriza y grita (si el panel no está abierto). Los que ya
+      // atiende (p. ej. mandados a Claude) siguen en la lista, pero no son para avisar.
+      const porAtender = r.tickets.filter((t) => !t.loAtiendoYo).length;
+      if (alertar && porAtender > 0 && !abiertoRef.current) {
         window.dispatchEvent(new CustomEvent<DetalleAlerta>(EVENTO_ALERTA_TICKETS, {
-          detail: { gritos: gritosDeTickets(r.tickets.length, nombreDeEmail(email)) },
+          detail: { gritos: gritosDeTickets(porAtender, nombreDeEmail(email)) },
         }));
       }
     } catch (e) {

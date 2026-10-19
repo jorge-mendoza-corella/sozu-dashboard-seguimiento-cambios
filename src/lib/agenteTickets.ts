@@ -59,6 +59,8 @@ export interface TicketAgente {
   abiertoPor: string | null;
   abiertoEn: string;
   asignados: PersonaTicket[];
+  /** Lo atiende quien pregunta («Yo trabajo el ticket» o «Mandar a Claude»); falta en respuestas viejas. */
+  loAtiendoYo?: boolean;
   evidencias: EvidenciaTicket[];
   /** Enlace directo al ticket en el portal (requiere sesión en el admin). */
   url: string | null;
