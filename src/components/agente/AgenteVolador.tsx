@@ -53,7 +53,7 @@ const CLAUDE_OK_MS = 9000;
 const CLAUDE_FALLO_MS = 9000;
 const CLAUDE_PREGUNTA_MS = 45_000;
 /** Escenas que no se interrumpen entre sí (la siguiente espera en la cola). */
-const ESCENAS: Pose[] = ["festejo", "llorar", "brinco", "victoria", "pregunta", "chispazo"];
+const ESCENAS: Pose[] = ["festejo", "llorar", "brinco", "victoria", "pregunta", "chispazo", "arcade", "marometa", "berrinche", "patada"];
 
 const COLORES_CONFETI = ["#f59e0b", "#ef4444", "#22d3ee", "#a855f7", "#22c55e", "#facc15", "#3b82f6", "#ec4899"];
 
@@ -100,7 +100,7 @@ function lanzarConfeti(tipo: "colores" | "android" | "ios" = "colores") {
 }
 
 type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta" | "llorar" | "brinco"
-  | "victoria" | "pregunta" | "chispazo";
+  | "victoria" | "pregunta" | "chispazo" | "arcade" | "marometa" | "berrinche" | "patada";
 export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando" | "relajado" | "comiendo" | "sorbiendo" | "lamiendo";
 /** Cómo vuela: puño al frente, nadando de crol, o boca arriba con las manos en la nuca. */
 export type EstiloVuelo = "superman" | "nado" | "relax";
@@ -194,7 +194,7 @@ const FRASES_CLAUDE_FALLO = [
   () => "¡Chispas! Hay que ver el log",
 ];
 
-/** Lo que dice según lo que hace. Groserías de oficina mexicana: leves, nada de insultos. */
+/** Lo que dice según lo que hace. Groserías de oficina mexicana: leves, nada de insultos (salvo el arcade). */
 const FRASES = {
   volar: [
     "¡Wiiiii!", "¡Yujuuu!", "¡Ahí voy, cabrones!", "¡Al infinito… y a prod!", "¡Más rápido que un hotfix!",
@@ -327,12 +327,67 @@ const FRASES_DEPLOY = [
   (r: string) => `¡${r} en vivo y ni un error!`,
   (r: string) => `¡Viernes de deploy y ${r} ni tembló!`,
 ];
+/**
+ * Arcade: de vez en cuando, al terminar de caminar, aparece una maquinita junto
+ * a él y se pone a jugar. Gana -> marometas y gritos. Pierde -> le mienta la
+ * madre a la máquina, la patea, la máquina echa humo y truena, y se desquita
+ * con quien está logueado. Aquí sí hay insultos: es la gracia de la escena.
+ */
+type FaseMaquina = "jugando" | "gana" | "pierde" | "patada" | "rota";
+type Maquina = { id: number; x: number; y: number; fase: FaseMaquina; saliendo?: boolean };
+const ARCADE_JUGAR_MS: [number, number] = [7000, 10_000];
+const ARCADE_GANA_MS = 6000;
+const ARCADE_BERRINCHE_MS = 4800;
+const ARCADE_PATADA_MS = 900;
+const ARCADE_ENCABRONADO_MS = 7000;
+/** Cada cuánto le dan ganas de jugar (la primera vez, más pronto). */
+const ARCADE_CADA_MS: [number, number] = [120_000, 240_000];
+/** Para probar la escena desde la consola: `dispatchEvent(new CustomEvent("agente:arcade", { detail: { gana: false } }))`. */
+export const EVENTO_ARCADE = "agente:arcade";
+const MAQUINA_ANCHO = 54;
+const MAQUINA_ALTO = 86;
+/** Dónde quedan los pies dentro del cuadro de 80px (el sprite pisa al 92%). */
+const PIES = 74;
+const FRASES_ARCADE = {
+  empezar: [
+    "¡Una retita y regreso a trabajar!", "¡Hoy sí rompo el récord!", "Nomás una fichita…",
+    "¡Récord mundial, ahí te voy!", "Shhh… nadie le diga al jefe",
+  ],
+  jugando: [
+    "¡Dale, dale, dale!", "¡Brinca, pendejo, brinca!", "¡Ese jefe es mío!", "¡Combo, combo, combo!",
+    "¡Uy, casi!", "¡No me distraigan!", "Arriba, arriba, abajo, abajo…", "¡Esquiva, esquiva!",
+  ],
+  gana: [
+    "¡A HUEVO, GANÉ!", "¡Soy el puto amo del arcade!", "¡Récord mundial, cabrones!", "¡Nadie me para!",
+    "¡Toma, maquinita, de rodillas!", "¡Al salón de la fama, perros!", "¡GAME OVER pa' ti, máquina!",
+  ],
+  madre: [
+    "¡Chinga tu madre, maquinita!", "¡Tu pinche madre, me hiciste trampa!", "¡Me robaste la ficha, rata!",
+    "¡Ese botón no sirve, a la verga!", "¡Máquina tramposa, hija de tu…!", "¡Tu madre es una tostadora!",
+    "¡Pinche joystick chueco de mierda!",
+  ],
+  patada: ["¡Toma, pinche máquina!", "¡Pa' que aprendas, cabrona!", "¡Ahí te va tu patadón!"],
+  rota: ["¡Y encima se descompuso!", "¡Ahora humea, no mames!", "¡Ya ni sirves pa' chatarra!"],
+  usuario: [
+    (n: string) => `¡${n}, tú me echaste la sal, cabrón!`,
+    (n: string) => `¿Y tú qué me ves, ${n}? ¡Ponte a jalar!`,
+    (n: string) => `¡${n}, pinche salado, ya la descompusiste!`,
+    (n: string) => `¡Esto es tu culpa, ${n}! ¡Tú la conectaste!`,
+    (n: string) => `¡${n}, me debes una ficha y una máquina!`,
+    (n: string) => `¡No te rías, ${n}, que te pateo a ti también!`,
+    (n: string) => `¡${n}, tu pinche wifi me hizo perder!`,
+    (n: string) => `¡Lárgate a tus tickets, ${n}, pendejo!`,
+  ],
+} as const;
+
 const signoAzar = () => (Math.random() < 0.5 ? -1 : 1) as 1 | -1;
 const una = <T,>(l: readonly T[]): T => l[Math.floor(Math.random() * l.length)];
 
 interface Props {
   /** El chat está abierto: el personaje se queda quieto donde está. */
   pausado: boolean;
+  /** Nombre de quien está logueado (para que el personaje se desquite con él). */
+  nombreUsuario: string;
   /** `motivo` = "tickets" si se le dio clic mientras gritaba la alerta. */
   onClick: (motivo: "chat" | "tickets") => void;
 }
@@ -348,7 +403,7 @@ const VEL_CAMINAR = 48;
 
 const azar = (a: number, b: number) => a + Math.random() * (b - a);
 
-export function AgenteVolador({ pausado, onClick }: Props) {
+export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
   const raiz = useRef<HTMLButtonElement>(null);
   const orientacion = useRef<HTMLDivElement>(null);
   const inclinacion = useRef<HTMLDivElement>(null);
@@ -366,7 +421,12 @@ export function AgenteVolador({ pausado, onClick }: Props) {
   const [snack, setSnack] = useState<Snack | null>(null);
   const [vuelo, setVuelo] = useState<EstiloVuelo>("superman");
   const [manga, setManga] = useState<Manga | null>(null);
+  const [maquina, setMaquina] = useState<Maquina | null>(null);
   const pausaRef = useRef(false);
+  const nombreRef = useRef(nombreUsuario);
+  useEffect(() => {
+    nombreRef.current = nombreUsuario;
+  }, [nombreUsuario]);
   /** Hay alerta de tickets activa (el clic abre la pestaña de tickets y la apaga). */
   const alertaRef = useRef<{ apagar: () => void } | null>(null);
   useEffect(() => {
@@ -519,6 +579,50 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       setManga({ ...v, id: idManga, x: s.x, y: s.y });
     };
     let heladoHasta = 0;
+
+    // Arcade (ver FRASES_ARCADE): la máquina vive aparte del personaje (portal fijo).
+    let proximoArcade = performance.now() + azar(60_000, 120_000);
+    let arcade: { gana: boolean; encabronado: boolean } | null = null;
+    /** Resultado forzado por EVENTO_ARCADE (pruebas). */
+    let arcadeForzado: boolean | null = null;
+    let idMaquina = 0;
+    let quitarMaquina: ReturnType<typeof setTimeout> | undefined;
+    const faseMaquina = (fase: FaseMaquina) => setMaquina((m) => (m ? { ...m, fase } : m));
+    /** Se pone a jugar si cabe la máquina enfrente (hacia donde haya lugar). */
+    const empezarArcade = (ahora: number): boolean => {
+      const cabeDer = s.x + 56 + MAQUINA_ANCHO <= window.innerWidth - MARGEN;
+      const cabeIzq = s.x - 30 >= MARGEN;
+      if (!cabeDer && !cabeIzq) return false;
+      s.dir = (cabeDer && (!cabeIzq || Math.random() < 0.5) ? 1 : -1) as 1 | -1;
+      s.y = piso();
+      arcade = { gana: arcadeForzado ?? Math.random() < 0.5, encabronado: false };
+      arcadeForzado = null;
+      clearTimeout(quitarMaquina);
+      idMaquina += 1;
+      setMaquina({
+        id: idMaquina,
+        x: s.dir === 1 ? s.x + 56 : s.x - 30,
+        y: piso() + PIES - MAQUINA_ALTO,
+        fase: "jugando",
+      });
+      cambiarPose("arcade", azar(...ARCADE_JUGAR_MS));
+      ponerAnimo("serio");
+      decir(una(FRASES_ARCADE.empezar), "habla", 2400);
+      proximaFrase = ahora + 3200;
+      return true;
+    };
+    const terminarArcade = () => {
+      const rota = !!arcade && !arcade.gana;
+      arcade = null;
+      // Rota se queda humeando un rato después de que él se va.
+      quitarMaquina = setTimeout(() => {
+        setMaquina((m) => (m ? { ...m, saliendo: true } : m));
+        quitarMaquina = setTimeout(() => setMaquina(null), 400);
+      }, rota ? 3500 : 300);
+      ponerAnimo(rota ? "serio" : "feliz");
+      cambiarPose("agachar", 200);
+      s.siguiente = "despegar";
+    };
 
     let poseActual: Pose = "volar";
     const cambiarPose = (p: Pose, durMs = 0) => {
@@ -837,6 +941,66 @@ export function AgenteVolador({ pausado, onClick }: Props) {
           }
           break;
         }
+        case "arcade": {
+          // Machacando botones; al final, gana o pierde.
+          if (!finDialogo && ahora >= proximaFrase) {
+            decir(una(FRASES_ARCADE.jugando), Math.random() < 0.4 ? "grito" : "habla", 1900);
+            proximaFrase = ahora + azar(2600, 3800);
+          }
+          if (fin) {
+            if (arcade?.gana) {
+              cambiarPose("marometa", ARCADE_GANA_MS);
+              faseMaquina("gana");
+              decir(una(FRASES_ARCADE.gana), "grito", 2200);
+            } else {
+              cambiarPose("berrinche", ARCADE_BERRINCHE_MS);
+              faseMaquina("pierde");
+              decir(una(FRASES_ARCADE.madre), "grito", 2200);
+            }
+            ponerAnimo("grito");
+            proximaFrase = ahora + 2400;
+          }
+          break;
+        }
+        case "marometa": {
+          if (!finDialogo && ahora >= proximaFrase) {
+            decir(una(FRASES_ARCADE.gana), "grito", 2000);
+            proximaFrase = ahora + 2300;
+          }
+          if (fin) terminarArcade();
+          break;
+        }
+        case "berrinche": {
+          // Primero contra la máquina; ya rota, contra quien está logueado.
+          if (!finDialogo && ahora >= proximaFrase) {
+            const n = nombreRef.current || "tú";
+            const texto = !arcade?.encabronado
+              ? una(FRASES_ARCADE.madre)
+              : Math.random() < 0.25 ? una(FRASES_ARCADE.rota) : una(FRASES_ARCADE.usuario)(n);
+            decir(texto, "grito", 2300);
+            proximaFrase = ahora + 2500;
+          }
+          if (fin) {
+            if (arcade && !arcade.encabronado) {
+              cambiarPose("patada", ARCADE_PATADA_MS);
+              faseMaquina("patada");
+              decir(una(FRASES_ARCADE.patada), "grito", 1400);
+              proximaFrase = ahora + ARCADE_PATADA_MS + 200;
+            } else terminarArcade();
+          }
+          break;
+        }
+        case "patada": {
+          if (fin) {
+            if (arcade) arcade.encabronado = true;
+            faseMaquina("rota");
+            cambiarPose("berrinche", ARCADE_ENCABRONADO_MS);
+            ponerAnimo("grito");
+            finDialogo = 0;
+            proximaFrase = ahora + 300;
+          }
+          break;
+        }
         case "agachar": {
           if (fin) {
             if (s.siguiente === "caminar") {
@@ -854,6 +1018,10 @@ export function AgenteVolador({ pausado, onClick }: Props) {
             s.dir = (s.dir * -1) as 1 | -1;
           }
           if (fin) {
+            if (ahora >= proximoArcade && (proximoArcade === 0 || Math.random() < 0.6) && empezarArcade(ahora)) {
+              proximoArcade = ahora + azar(...ARCADE_CADA_MS);
+              break;
+            }
             if (Math.random() < 0.4) cambiarPose("quieto", azar(7000, 13000));
             else {
               cambiarPose("agachar", 180);
@@ -890,7 +1058,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       if (finDialogo && ahora >= finDialogo) {
         finDialogo = 0;
         setDialogo(null);
-        if (animoActual === "grito" && s.pose !== "alerta") ponerAnimo("feliz");
+        if (animoActual === "grito" && s.pose !== "alerta" && !arcade) ponerAnimo("feliz");
       }
       if (!finDialogo && ahora >= proximaFrase && s.pose !== "alerta" && !ESCENAS.includes(s.pose)) {
         if (s.pose === "volar" && snackActual === "helado") {
@@ -995,6 +1163,15 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       alertaRef.current = { apagar: () => { s.cortarEscena = true; } };
     };
     window.addEventListener(EVENTO_CLAUDE, alClaude);
+    // Juega en cuanto vuelva a pisar el suelo y termine de caminar.
+    const alArcade = (e: Event) => {
+      const g = (e as CustomEvent<{ gana?: boolean }>).detail?.gana;
+      arcadeForzado = typeof g === "boolean" ? g : null;
+      proximoArcade = 0;
+      s.ganasDeAterrizar = 0;
+      if (s.pose === "caminar") s.hasta = performance.now();
+    };
+    window.addEventListener(EVENTO_ARCADE, alArcade);
 
     frame = requestAnimationFrame(paso);
     const alRedimensionar = () => {
@@ -1004,6 +1181,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
     window.addEventListener("resize", alRedimensionar);
     return () => {
       clearTimeout(quitarLetrero);
+      clearTimeout(quitarMaquina);
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", alRedimensionar);
       window.removeEventListener(EVENTO_FESTEJO, alFestejo);
@@ -1013,6 +1191,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
       window.removeEventListener(EVENTO_STORE, alStore);
       window.removeEventListener(EVENTO_ALERTA_TICKETS, alAlerta);
       window.removeEventListener(EVENTO_CLAUDE, alClaude);
+      window.removeEventListener(EVENTO_ARCADE, alArcade);
     };
   }, []);
 
@@ -1085,6 +1264,37 @@ export function AgenteVolador({ pausado, onClick }: Props) {
             {manga.estilo === "gota" && <span className="agente-manga__gota">💧</span>}
             <span className="agente-manga__nombre">{nombre}</span>
             <span className="agente-manga__texto">{manga.texto}</span>
+          </div>,
+          document.body,
+        )}
+      {maquina &&
+        createPortal(
+          <div
+            key={maquina.id}
+            className="agente-arcade"
+            data-fase={maquina.fase}
+            data-saliendo={maquina.saliendo || undefined}
+            data-oculto={pausado || undefined}
+            aria-hidden
+            style={{ left: maquina.x, top: maquina.y }}
+          >
+            <div className="agente-arcade__marquesina">ARCADE</div>
+            <div className="agente-arcade__pantalla">
+              {maquina.fase === "jugando" && <i className="agente-arcade__juego" />}
+              {maquina.fase === "gana" && <b>YOU WIN</b>}
+              {(maquina.fase === "pierde" || maquina.fase === "patada") && <b>GAME OVER</b>}
+              {maquina.fase === "rota" && <b>ERROR</b>}
+            </div>
+            <div className="agente-arcade__panel">
+              <i className="agente-arcade__palanca" />
+              <i className="agente-arcade__boton" />
+              <i className="agente-arcade__boton" />
+            </div>
+            <div className="agente-arcade__ranura" />
+            {(maquina.fase === "patada" || maquina.fase === "rota") && (
+              <div className="agente-arcade__humo"><em /><em /><em /></div>
+            )}
+            {maquina.fase === "rota" && <div className="agente-arcade__chispas"><i>⚡</i><i>✦</i><i>⚡</i></div>}
           </div>,
           document.body,
         )}
