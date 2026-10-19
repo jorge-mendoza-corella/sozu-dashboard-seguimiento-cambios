@@ -1083,6 +1083,7 @@ export function AgenteVolador({ pausado, onClick }: Props) {
               <Personaje pose="quieto" animo={manga.animo} snack={manga.snack ?? null} />
             </div>
             {manga.estilo === "gota" && <span className="agente-manga__gota">💧</span>}
+            <span className="agente-manga__nombre">{nombre}</span>
             <span className="agente-manga__texto">{manga.texto}</span>
           </div>,
           document.body,
