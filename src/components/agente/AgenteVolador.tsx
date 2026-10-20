@@ -22,8 +22,8 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./personaje.css";
 import { Antojos, Bata, Blusa, BrazoHumano, CabezaCartoon, Camisa, Saco, Vestido } from "./skins";
-import { PALETA, useNombresAvatar, useSkinGeorgIA, type Skin } from "./skinsDatos";
-import { ANCHO_UTILERIA, ARRIBA_UTILERIA, type TipoUtileria, type Utileria } from "./escenasDatos";
+import { nombreAvatar, PALETA, SKINS, useCorreosAvatar, useNombresAvatar, useSkinGeorgIA, type Skin } from "./skinsDatos";
+import { ANCHO_UTILERIA, ARRIBA_UTILERIA, partidoDeHoy, partidoEnVivo, PARTIDOS_SELECCION, type TipoUtileria, type Utileria } from "./escenasDatos";
 import { UtileriaEscena } from "./escenasExtra";
 import {
   dondeFue, EVENTO_DEV_FALLO, EVENTO_DEV_OK, EVENTO_FALLO, EVENTO_FESTEJO, EVENTO_PRD_INICIO, EVENTO_STORE, type DetalleFestejo, type DetalleStore,
@@ -105,7 +105,8 @@ function lanzarConfeti(tipo: "colores" | "android" | "ios" = "colores") {
 type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta" | "llorar" | "brinco"
   | "victoria" | "pregunta" | "chispazo" | "arcade" | "marometa" | "berrinche" | "patada"
   | "pescar" | "jalar" | "presume" | "perseguir" | "coraje" | "rumbo" | "cafe" | "celular" | "susto" | "pensar"
-  | "rezar" | "sentado" | "cabeceo" | "teclear" | "jalarpelo" | "senal" | "cubrirse" | "comer" | "enchilado";
+  | "rezar" | "sentado" | "cabeceo" | "teclear" | "jalarpelo" | "senal" | "cubrirse" | "comer" | "enchilado"
+  | "explicar" | "encoger" | "forcejeo" | "tropiezo" | "abanicar" | "arrastrar" | "pegar" | "porra";
 export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando" | "relajado" | "comiendo" | "sorbiendo" | "lamiendo";
 /** Cómo vuela: puño al frente, nadando de crol, o boca arriba con las manos en la nuca. */
 export type EstiloVuelo = "superman" | "nado" | "relax";
@@ -484,8 +485,21 @@ const FRASES_CAFE = {
  * que llega por evento cuando arranca un deploy a PRD en viernes en la tarde
  * o en fin de semana.
  */
-type Extra = "elotero" | "junta" | "stack" | "wifi" | "campamento";
-const EXTRAS: Extra[] = ["elotero", "junta", "stack", "wifi", "campamento"];
+type Extra = "elotero" | "junta" | "stack" | "wifi" | "campamento"
+  | "pato" | "review" | "tanda" | "merge" | "derrame" | "nube" | "becario" | "lunes" | "futbol" | "pinata";
+const EXTRAS: Extra[] = [
+  "elotero", "junta", "stack", "wifi", "campamento", "pato", "review", "tanda", "merge", "derrame", "nube", "becario", "lunes", "futbol", "pinata",
+];
+/** Las que solo salen ciertos días (el resto, siempre). */
+const DISPONIBLE: Partial<Record<Extra, () => boolean>> = {
+  lunes: () => { const d = new Date(); return d.getDay() === 1 && d.getHours() < 12; },
+  futbol: () => !!partidoDeHoy(),
+};
+/** Cada cuánto, si no es la general: el día del partido, seguido. */
+const CADA_EXTRA: Partial<Record<Extra, () => [number, number]>> = {
+  futbol: () => (partidoEnVivo() ? [90_000, 180_000] : [600_000, 900_000]),
+  lunes: () => [1_200_000, 2_400_000],
+};
 /** Para probarlas: `dispatchEvent(new CustomEvent("agente:escena", { detail: { escena: "campamento" } }))` (o "viernes"). */
 export const EVENTO_ESCENA = "agente:escena";
 const EXTRA_CADA_MS: [number, number] = [240_000, 480_000];
@@ -513,6 +527,38 @@ const FRASES_GUION = {
   stackCrisis: ["¿Y ahora cómo programo?", "¡Me voy a tener que leer la documentación!", "¡NO SÉ HACER NADA SOLO!"],
   stackSolo: ["…¿for o while?", "¿Qué es un for?", "…console.log('ayuda')"],
   stackFin: ["Oye GeorgIA… ah no, soy yo 😐", "¿Y si le pregunto a Claude?"],
+  patoExplica: [
+    "Mira, patito: el bug es que…", "…entonces el useEffect se llama dos veces…", "…y la variable llega undefined porque…",
+    "…y el await está adentro del forEach…",
+  ],
+  patoFoco: ["¡¡YA SÉ QUÉ ES!!", "¡¡ERA EL AWAIT, NO MAMES!!"],
+  patoGracias: ["¡Gracias, patito! Eres el mejor senior", "¡Otro bug resuelto por el pato!"],
+  review: ["A ver qué dice el review…", "…okay…", "¿Nit otra vez?", "¡Es un espacio, carnal!", "Me siento chiquito…"],
+  reviewFin: ["¿Changes requested? Snif…", "Y yo que lo iba a mergear hoy…"],
+  tanda: ["¡Llegó el día de la tanda, raza!", "Ahora sí, a juntar la lana"],
+  tandaCuenta: ["Mil… dos mil… tres mil…", "¿Quién no ha pagado?", "Este billete está roto, ¿eh?"],
+  tandaHuye: ["¡Se fue con todo!", "¡Era para mis vacaciones!", "¡Nunca más hago tanda!", "¡Bloquéenlo en el Slack!"],
+  merge: ["¡Suelta mi capa, versión de HEAD!", "<<<<<<< HEAD", "¡Mi cambio va primero!", "¡Yo llegué antes!"],
+  mergeSepara: ["¿Los dos? …¡ah, pues sí!", "Ok, ok… aceptamos ambos"],
+  mergeOk: ["¡Merge exitoso!", "¡Cero conflictos, a huevo!"],
+  derrame: ["Un cafecito pa' la laptop… digo, pa' mí", "Con cuidadito…"],
+  derrameCae: ["¡Ay, ay, AY!", "¡Nooo!"],
+  derrameChispa: ["¡¡LA LAPTOP!!", "¡¡MIS COMMITS!!"],
+  derrameAbanica: ["¡Sóplale, sóplale!", "¡No te mueras, tenía todo sin commit!", "¿Arroz? ¿Alguien tiene arroz?"],
+  nube: ["¡Nos mudamos a la nube, raza!", "Adiós, servidores físicos…", "¡Qué moderno, qué escalable!"],
+  nubeFactura: ["¡¿48 MIL DÓLARES?!", "¡¿Quién dejó prendidas las instancias?!"],
+  nubeCae: ["¡Me lleva! ¡Regresamos on-premise!", "¡AAAAAH!"],
+  becario: ["¿Y tú quién eres?", "¿Me estás copiando?"],
+  becarioCorre: ["¡Ni se te ocurra tocar eso!", "¡No, no, por ahí no!"],
+  becarioTumba: ["¡¡TUMBASTE PROD!!", "¡¿Quién contrató a este becario?!", "¡Rollback, rollback!", "¡Que alguien llame a Infra!"],
+  lunes: ["Luuuunes…", "No me hablen hasta el tercer café", "¿Ya es viernes?", "Cinco minutitos más…"],
+  futbolPrevia: ["¡No me agenden juntas!", "¡Ya compré las chelas!", "¡Este año sí!"],
+  futbolVivo: ["¡Pásala, pásala!", "¡Ese árbitro está comprado!", "¡Tírale, tírale!", "¡Ándale, cabrones!"],
+  futbolGol: ["¡GOOOOOOL DE MÉXICO!", "¡Cielito lindo, a huevo!", "¡GOL, GOL, GOOOL!"],
+  futbolFalla: ["¡¿CÓMO LA FALLAS?!", "¡Mi abuelita la mete!", "Jugamos como nunca, perdimos como siempre…"],
+  pinata: ["¡Dale, dale, dale, no pierdas el tino!", "¿Dónde está? ¡Ahí voy!"],
+  pinataGolpe: ["¡Uno!", "¡Dos!", "¡¡TRES!!"],
+  pinataRota: ["¡Tickets cerrados, raza!", "¡Agarren los suyos!", "¡Puro ✅!"],
   wifiLag: ["¿Por… qué… va… todo… lento…?", "Se… me… congeló… todo…"],
   wifiSenal: ["¡Ven, señal, ven!", "Una rayita… dos…", "¡Más arriba!", "Si me muevo se va…"],
   wifiOk: ["¡Ya agarró, a huevo!", "¡Tres rayitas, no mames!"],
@@ -578,7 +624,19 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
   const [calzones, setCalzones] = useState(false);
   /** Wi-Fi caído: gris y trabado. */
   const [lag, setLag] = useState(false);
-  const [enMano, setEnMano] = useState<"elote" | null>(null);
+  const [enMano, setEnMano] = useState<"elote" | "cafe" | "termo" | "bandera" | "palo" | null>(null);
+  /** Encima de la cabeza o la cara: el foco de la idea o la venda de la piñata. */
+  const [extra, setExtra] = useState<"foco" | "venda" | null>(null);
+  // Avatares que son usuarios (con correo): los socios de la tanda.
+  const correosAvatar = useCorreosAvatar();
+  const usuariosRef = useRef<{ skin: Skin; nombre: string }[]>([]);
+  useEffect(() => {
+    usuariosRef.current = SKINS.filter((x) => correosAvatar[x.id]).map((x) => ({ skin: x.id, nombre: nombreAvatar(x.id) }));
+  }, [correosAvatar]);
+  const skinRef = useRef(skin);
+  useEffect(() => {
+    skinRef.current = skin;
+  }, [skin]);
   /** El pez que se escapa lo mueve el loop directo (como al personaje), sin re-render por frame. */
   const pezRef = useRef<HTMLDivElement>(null);
   /** Lo último que se pintó de la pesca, para que el loop sepa qué presa salió y dónde está la caja. */
@@ -820,6 +878,8 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       cada?: number;
       al?: () => void;
       mover?: (dt: number, ahora: number) => boolean;
+      /** Se queda en el aire (la nube): no lo baja al piso. */
+      aire?: boolean;
     };
     let guion: { pasos: PasoGuion[]; i: number; hasta: number; prox: number; fin?: () => void } | null = null;
     let quitarUtileria: ReturnType<typeof setTimeout> | undefined;
@@ -827,6 +887,9 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
     let idUtileria = 0;
     let actor: { x: number; y: number; dir: 1 | -1 } | null = null;
     const proxExtra = Object.fromEntries(EXTRAS.map((e) => [e, performance.now() + azar(180_000, 420_000)])) as Record<Extra, number>;
+    // El lunes en la mañana y el día del partido, de entrada.
+    proxExtra.lunes = performance.now() + azar(20_000, 60_000);
+    proxExtra.futbol = performance.now() + azar(30_000, 90_000);
     let extraForzada: Extra | null = null;
     const enEscena = () => ESCENAS.includes(s.pose) || !!guion;
     const pintarActor = () => {
@@ -855,7 +918,10 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
      * Arranca un guion. Con `tipo`, pone la utilería enfrente de él (hacia donde
      * quepa, o hacia `dir`); sin lugar, no arranca.
      */
-    const empezarGuion = (ahora: number, pasos: PasoGuion[], tipo: TipoUtileria | null, op: { dir?: 1 | -1; fin?: () => void } = {}): boolean => {
+    const empezarGuion = (
+      ahora: number, pasos: PasoGuion[], tipo: TipoUtileria | null,
+      op: { dir?: 1 | -1; fin?: () => void; datos?: Partial<Utileria> } = {},
+    ): boolean => {
       if (tipo) {
         const ancho = ANCHO_UTILERIA[tipo];
         const cabeDer = s.x + ancho <= window.innerWidth - MARGEN;
@@ -873,6 +939,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           y: piso() - ARRIBA_UTILERIA,
           dir: s.dir,
           fase: pasos[0].fase ?? "",
+          ...op.datos,
         });
       }
       actor = null;
@@ -897,7 +964,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       if (!guion) return;
       const p = guion.pasos[guion.i];
       // Todo pasa en el piso: si venía volando, baja.
-      if (s.y < piso()) s.y = Math.min(piso(), s.y + 520 * dt);
+      if (!p.aire && s.y < piso()) s.y = Math.min(piso(), s.y + 520 * dt);
       const listo = p.mover ? p.mover(dt, ahora) : false;
       pintarActor();
       if (p.frases && !finDialogo && ahora >= guion.prox) {
@@ -1035,8 +1102,139 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
         fin: () => { clearTimeout(quitarCalzones); quitarCalzones = setTimeout(() => setCalzones(false), 5000); },
       });
     };
+    const limpiar = () => { setEnMano(null); setExtra(null); };
+
+    const escenaPato = (ahora: number): boolean => empezarGuion(ahora, [
+      { pose: "explicar", ms: 6000, fase: "escucha", animo: "serio", decir: unaF(FRASES_GUION.patoExplica), tipo: "habla", frases: unaF(FRASES_GUION.patoExplica), cada: 2100 },
+      { pose: "brinco", ms: 2300, fase: "escucha", animo: "grito", al: () => setExtra("foco"), decir: unaF(FRASES_GUION.patoFoco) },
+      { pose: "cafe", ms: 2800, fase: "nada", animo: "feliz", al: () => setExtra(null), decir: unaF(FRASES_GUION.patoGracias), tipo: "habla" },
+    ], "pato", { fin: limpiar });
+
+    const escenaReview = (ahora: number): boolean => empezarGuion(ahora, [
+      { pose: "encoger", ms: 7000, fase: "review", animo: "serio", decir: () => FRASES_GUION.review[0], tipo: "habla", frases: unaF(FRASES_GUION.review.slice(1)), cada: 1900 },
+      { pose: "encoger", ms: 2600, fase: "rechazado", animo: "llorando", decir: unaF(FRASES_GUION.reviewFin), tipo: "habla" },
+    ], "review");
+
+    const escenaTanda = (ahora: number): boolean => {
+      const socios = usuariosRef.current.filter((a) => a.skin !== skinRef.current).slice(0, 4);
+      if (!socios.length) return false;
+      const cobrador = socios[socios.length - 1].nombre;
+      return empezarGuion(ahora, [
+        { pose: "cafe", ms: 3200, fase: "junta", animo: "feliz", decir: unaF(FRASES_GUION.tanda), tipo: "habla" },
+        { pose: "comer", ms: 4200, fase: "cuenta", animo: "feliz", frases: unaF(FRASES_GUION.tandaCuenta), cada: 1600 },
+        { pose: "susto", ms: 2000, fase: "huye", animo: "grito", decir: () => `¡${cobrador}, regresa con la tanda!` },
+        { pose: "jalarpelo", ms: 3600, fase: "huye", animo: "grito", frases: unaF(FRASES_GUION.tandaHuye), tipoFrases: "grito", cada: 1700 },
+      ], "tanda", { datos: { avatares: socios } });
+    };
+
+    const escenaMerge = (ahora: number): boolean => empezarGuion(ahora, [
+      { pose: "forcejeo", ms: 5200, fase: "pelea", animo: "grito", decir: () => FRASES_GUION.merge[0], frases: unaF(FRASES_GUION.merge), tipoFrases: "grito", cada: 1700 },
+      { pose: "susto", ms: 2800, fase: "separa", animo: "serio", decir: unaF(FRASES_GUION.mergeSepara), tipo: "habla" },
+      { pose: "brinco", ms: 2000, fase: "merged", animo: "feliz", decir: unaF(FRASES_GUION.mergeOk) },
+    ], "merge");
+
+    const escenaDerrame = (ahora: number): boolean => empezarGuion(ahora, [
+      { pose: "cafe", ms: 2600, fase: "listo", animo: "feliz", al: () => setEnMano("cafe"), decir: unaF(FRASES_GUION.derrame), tipo: "habla" },
+      { pose: "tropiezo", ms: 1200, fase: "tropieza", animo: "grito", al: () => setEnMano(null), decir: unaF(FRASES_GUION.derrameCae) },
+      { pose: "susto", ms: 1700, fase: "chispas", animo: "grito", decir: unaF(FRASES_GUION.derrameChispa) },
+      { pose: "abanicar", ms: 4400, fase: "abanica", animo: "grito", frases: unaF(FRASES_GUION.derrameAbanica), tipoFrases: "grito", cada: 1700 },
+    ], "derrame", { fin: limpiar });
+
+    const escenaNube = (ahora: number): boolean => {
+      const sigue = () => { if (actor) { actor.x = s.x - 15; actor.y = s.y + 60; } };
+      return empezarGuion(ahora, [
+        {
+          pose: "cafe", ms: 2200, fase: "sube", animo: "feliz", decir: () => FRASES_GUION.nube[0], tipo: "grito",
+          al: () => {
+            actor = { x: s.x - 15, y: s.y + 60, dir: 1 };
+            setUtileria((u) => (u ? { ...u, actor: { ...actor! } } : u));
+          },
+        },
+        {
+          pose: "porra", fase: "sube", animo: "feliz", aire: true, frases: unaF(FRASES_GUION.nube.slice(1)), cada: 2200,
+          mover: (dt) => { s.y = Math.max(piso() - 150, s.y - 45 * dt); sigue(); return s.y <= piso() - 150; },
+        },
+        { pose: "susto", ms: 2400, fase: "factura", animo: "grito", aire: true, decir: unaF(FRASES_GUION.nubeFactura), mover: () => { sigue(); return false; } },
+        {
+          pose: "tropiezo", fase: "cae", animo: "grito", aire: true, decir: unaF(FRASES_GUION.nubeCae),
+          mover: (dt) => { s.y = Math.min(piso(), s.y + 320 * dt); return s.y >= piso(); },
+        },
+        { pose: "agachar", ms: 500, fase: "cae", animo: "llorando" },
+      ], "nube");
+    };
+
+    const escenaBecario = (ahora: number): boolean => {
+      const ANCHO_BECARIO = 56;
+      let rackX = 0;
+      return empezarGuion(ahora, [
+        {
+          pose: "cafe", ms: 2500, fase: "llega", animo: "serio", decir: () => FRASES_GUION.becario[0], tipo: "habla",
+          al: () => {
+            // El rack queda adelante (x local 120 de la caja); el becario, detrás de él.
+            const caja = ANCHO_UTILERIA.becario;
+            const x0 = s.dir === 1 ? s.x : s.x + TAM - caja;
+            rackX = s.dir === 1 ? x0 + 120 : x0 + caja - 120 - 34;
+            actor = { x: s.dir === 1 ? s.x - ANCHO_BECARIO + 6 : s.x + TAM - 6, y: piso() + 74 - 52, dir: s.dir };
+            setUtileria((u) => (u ? { ...u, actor: { ...actor! } } : u));
+          },
+        },
+        { pose: "brinco", ms: 2300, fase: "imita-brinco", animo: "serio", decir: () => FRASES_GUION.becario[1], tipo: "habla" },
+        {
+          pose: "alerta", fase: "corre", animo: "grito", decir: unaF(FRASES_GUION.becarioCorre),
+          mover: (dt) => {
+            if (!actor) return true;
+            actor.x += 130 * dt * s.dir;
+            return s.dir === 1 ? actor.x + ANCHO_BECARIO - 14 >= rackX : actor.x + 14 <= rackX + 34;
+          },
+        },
+        { pose: "susto", ms: 1000, fase: "tropieza", animo: "grito" },
+        { pose: "jalarpelo", ms: 4200, fase: "cae", animo: "grito", decir: () => FRASES_GUION.becarioTumba[0], frases: unaF(FRASES_GUION.becarioTumba.slice(1)), tipoFrases: "grito", cada: 1700 },
+      ], "becario");
+    };
+
+    const escenaLunes = (ahora: number): boolean => empezarGuion(ahora, [
+      {
+        pose: "arrastrar", ms: 5000, animo: "aburrido", al: () => setEnMano("termo"), decir: () => FRASES_GUION.lunes[0], tipo: "habla",
+        frases: unaF(FRASES_GUION.lunes.slice(1)), cada: 2200,
+        mover: (dt) => { s.x = Math.max(MARGEN, Math.min(derecha(), s.x + 22 * dt * s.dir)); return false; },
+      },
+      { pose: "cafe", ms: 5000, animo: "dormido", frases: () => "Z z z", tipoFrases: "zzz", cada: 1800 },
+    ], null, { fin: limpiar });
+
+    const escenaFutbol = (ahora: number): boolean => {
+      const p = partidoEnVivo() ?? partidoDeHoy() ?? PARTIDOS_SELECCION.find((x) => Date.parse(x.inicio) > Date.now()) ?? PARTIDOS_SELECCION[0];
+      if (!p) return false;
+      const partido = { rival: p.rival, bandera: p.bandera, local: p.local };
+      const hora = new Date(p.inicio).toLocaleTimeString("es-MX", { hour: "numeric", minute: "2-digit" });
+      // Antes del silbatazo (el mismo día), avisa; durante el partido (o forzado), lo vive.
+      const previa = !!partidoDeHoy() && !partidoEnVivo();
+      const pasos: PasoGuion[] = previa
+        ? [{
+          pose: "porra", ms: 5000, fase: "previa", animo: "feliz", al: () => setEnMano("bandera"),
+          decir: () => `¡Hoy juega México contra ${p.rival} a las ${hora}!`, frases: unaF(FRASES_GUION.futbolPrevia), cada: 2400,
+        }]
+        : [
+          { pose: "porra", ms: 3400, fase: "partido", animo: "grito", al: () => setEnMano("bandera"), decir: () => "¡Vamos, México!" },
+          { pose: "porra", ms: 4200, fase: "partido", animo: "grito", frases: unaF(FRASES_GUION.futbolVivo), tipoFrases: "grito", cada: 1600 },
+          Math.random() < 0.5
+            ? { pose: "brinco", ms: 3600, fase: "gol", animo: "grito", decir: () => FRASES_GUION.futbolGol[0], frases: unaF(FRASES_GUION.futbolGol), tipoFrases: "grito", cada: 1500 }
+            : { pose: "jalarpelo", ms: 3600, fase: "partido", animo: "grito", decir: () => FRASES_GUION.futbolFalla[0], frases: unaF(FRASES_GUION.futbolFalla.slice(1)), tipoFrases: "grito", cada: 1700 },
+        ];
+      return empezarGuion(ahora, pasos, "futbol", { fin: limpiar, datos: { partido } });
+    };
+
+    const escenaPinata = (ahora: number): boolean => empezarGuion(ahora, [
+      { pose: "cafe", ms: 2400, fase: "cuelga", animo: "feliz", al: () => { setEnMano("palo"); setExtra("venda"); }, decir: () => FRASES_GUION.pinata[0], tipo: "habla" },
+      { pose: "pegar", ms: 1800, fase: "cuelga", animo: "grito", decir: () => FRASES_GUION.pinataGolpe[0] },
+      { pose: "pegar", ms: 1800, fase: "cuelga", animo: "grito", decir: () => `${FRASES_GUION.pinata[1]} ${FRASES_GUION.pinataGolpe[1]}` },
+      { pose: "pegar", ms: 1300, fase: "rota", animo: "grito", decir: () => FRASES_GUION.pinataGolpe[2] },
+      { pose: "brinco", ms: 3000, fase: "rota", animo: "feliz", al: () => setExtra(null), decir: unaF(FRASES_GUION.pinataRota), frases: unaF(FRASES_GUION.pinataRota), tipoFrases: "grito", cada: 1500 },
+    ], "pinata", { fin: limpiar });
+
     const ESCENA_EXTRA: Record<Extra, (ahora: number) => boolean> = {
       elotero: escenaElotero, junta: escenaJunta, stack: escenaStack, wifi: escenaWifi, campamento: escenaCampamento,
+      pato: escenaPato, review: escenaReview, tanda: escenaTanda, merge: escenaMerge, derrame: escenaDerrame, nube: escenaNube,
+      becario: escenaBecario, lunes: escenaLunes, futbol: escenaFutbol, pinata: escenaPinata,
     };
 
     // Café (ver FRASES_CAFE).
@@ -1667,7 +1865,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           if (fin) {
             // Lo forzado (eventos de prueba) primero; luego arcade o pesca, si ya toca.
             if (extraForzada && ESCENA_EXTRA[extraForzada](ahora)) {
-              proxExtra[extraForzada] = ahora + azar(...EXTRA_CADA_MS);
+              proxExtra[extraForzada] = ahora + azar(...(CADA_EXTRA[extraForzada]?.() ?? EXTRA_CADA_MS));
               extraForzada = null;
               break;
             }
@@ -1691,10 +1889,10 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
               proximoCafe = ahora + azar(...CAFE_CADA_MS);
               break;
             }
-            const tocan = EXTRAS.filter((e) => ahora >= proxExtra[e]);
+            const tocan = EXTRAS.filter((e) => ahora >= proxExtra[e] && (DISPONIBLE[e]?.() ?? true));
             if (tocan.length && Math.random() < 0.6) {
               const e = una(tocan);
-              proxExtra[e] = ahora + azar(...EXTRA_CADA_MS);
+              proxExtra[e] = ahora + azar(...(CADA_EXTRA[e]?.() ?? EXTRA_CADA_MS));
               if (ESCENA_EXTRA[e](ahora)) break;
             }
             if (Math.random() < 0.4) cambiarPose("quieto", azar(7000, 13000));
@@ -1992,7 +2190,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           </div>,
           document.body,
         )}
-      {utileria && createPortal(<UtileriaEscena u={utileria} pausado={pausado} actorRef={actorRef} />, document.body)}
+      {utileria && createPortal(<UtileriaEscena u={utileria} pausado={pausado} actorRef={actorRef} Muneco={Personaje} />, document.body)}
       {cafe &&
         createPortal(
           <>
@@ -2170,6 +2368,13 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
         <div ref={inclinacion} className="agente-volador__inclinacion">
           <Personaje pose={pose === "rumbo" ? "caminar" : pose} animo={animo} snack={snack} vuelo={vuelo} calzones={calzones} />
           {enMano === "elote" && <span className="agente-volador__elote" aria-hidden>🌽</span>}
+          {enMano && enMano !== "elote" && (
+            <span className="agente-volador__mano" data-item={enMano} aria-hidden>
+              {enMano === "cafe" ? "☕" : enMano === "termo" ? "🥤" : enMano === "bandera" ? "🇲🇽" : "🏏"}
+            </span>
+          )}
+          {extra === "foco" && <span className="agente-volador__foco" aria-hidden>💡</span>}
+          {extra === "venda" && <span className="agente-volador__venda" aria-hidden />}
           {pose === "enchilado" && <span className="agente-volador__orejas" aria-hidden><i>💨</i><i>💨</i></span>}
           {(cafe?.fase === "app" || cafe?.fase === "bug") && (
             <span className="agente-volador__cel" data-bug={cafe.fase === "bug" || undefined} aria-hidden />
