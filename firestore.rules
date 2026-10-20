@@ -481,6 +481,13 @@ service cloud.firestore {
       allow write: if esRootVerificado();
     }
 
+    // Calendario de la Selección (escena del fut de GeorgIA). Lo escribe el sync
+    // mensual (`seleccion-partidos-sync.yml`, cuenta de servicio); datos públicos.
+    match /agente_partidos/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // Avatar que cada persona eligió para su GeorgIA (pestaña Avatar del panel).
     // Sin doc, ve el general (`agente_config/acceso.skin`). El root los lista
     // para la columna de Configuración → GeorgIA.
