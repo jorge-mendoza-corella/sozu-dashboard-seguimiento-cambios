@@ -10,12 +10,22 @@
  * es el "actor": va aparte y lo mueve el loop por `ref`, sin re-render.
  */
 import type { Ref } from "react";
+import type { Personaje } from "./AgenteVolador";
 import { ANCHO_UTILERIA, type Utileria } from "./escenasDatos";
 
 /** Pies del personaje dentro de la caja (30 arriba + 74 del sprite). */
 const PISO = 104;
 
-export function UtileriaEscena({ u, pausado, actorRef }: { u: Utileria; pausado: boolean; actorRef: Ref<HTMLDivElement> }) {
+/**
+ * `Muneco`: el Personaje (se pasa por prop para no importar AgenteVolador en
+ * runtime): los clones del merge conflict, el becario y los avatares de la tanda.
+ */
+export function UtileriaEscena({ u, pausado, actorRef, Muneco }: {
+  u: Utileria;
+  pausado: boolean;
+  actorRef: Ref<HTMLDivElement>;
+  Muneco: typeof Personaje;
+}) {
   const ancho = ANCHO_UTILERIA[u.tipo];
   return (
     <>
@@ -34,6 +44,14 @@ export function UtileriaEscena({ u, pausado, actorRef }: { u: Utileria; pausado:
         {(u.tipo === "junta" || u.tipo === "stack") && <MesaLaptop tipo={u.tipo} fase={u.fase} />}
         {u.tipo === "wifi" && <Wifi fase={u.fase} />}
         {u.tipo === "campamento" && <Campamento fase={u.fase} />}
+        {u.tipo === "pato" && <Pato fase={u.fase} />}
+        {u.tipo === "review" && <Review fase={u.fase} />}
+        {u.tipo === "tanda" && <Tanda fase={u.fase} avatares={u.avatares ?? []} Muneco={Muneco} />}
+        {u.tipo === "merge" && <Merge fase={u.fase} Muneco={Muneco} />}
+        {u.tipo === "derrame" && <Derrame fase={u.fase} />}
+        {u.tipo === "becario" && <Servidor fase={u.fase} />}
+        {u.tipo === "futbol" && <Futbol fase={u.fase} partido={u.partido} />}
+        {u.tipo === "pinata" && <Pinata fase={u.fase} />}
       </div>
       {u.actor && (
         <div
@@ -47,10 +65,18 @@ export function UtileriaEscena({ u, pausado, actorRef }: { u: Utileria; pausado:
           style={{ transform: `translate3d(${u.actor.x}px, ${u.actor.y}px, 0)` }}
         >
           <div className="agente-actor__cuerpo" style={{ transform: `scaleX(${u.actor.dir})` }}>
-            {u.tipo === "elotero" ? <CarritoElotes /> : <Oso conCobija={u.fase === "huye" || u.fase === "cubrirse"} />}
+            {u.tipo === "elotero" ? <CarritoElotes />
+              : u.tipo === "nube" ? <Nube fase={u.fase} />
+              : u.tipo === "becario" ? (
+                <div className="agente-actor__becario">
+                  <Muneco pose={u.fase === "tropieza" || u.fase === "cae" ? "tropiezo" : u.fase === "imita-brinco" ? "brinco" : "caminar"} skin="chibi" animo={u.fase === "cae" ? "llorando" : "feliz"} />
+                </div>
+              )
+              : <Oso conCobija={u.fase === "huye" || u.fase === "cubrirse"} />}
           </div>
           {/* Fuera del cuerpo (que se voltea): así el letrero se lee en las dos direcciones. */}
           {u.tipo === "elotero" && <span className="agente-actor__letrero">ELOTES</span>}
+          {u.tipo === "becario" && <span className="agente-actor__gafete">BECARIO</span>}
           {u.tipo === "elotero" && u.fase === "llega" && <span className="agente-actor__grito">🎺 ¡Elotes, esquites!</span>}
         </div>
       )}
@@ -208,5 +234,164 @@ function Oso({ conCobija }: { conCobija: boolean }) {
         </g>
       )}
     </svg>
+  );
+}
+
+/** Patito de hule en el piso; se le prende la cara de "de nada" al final. */
+function Pato({ fase }: { fase: string }) {
+  return (
+    <>
+      <svg viewBox={`0 0 130 ${PISO + 6}`} width="130" height={PISO + 6}>
+        <ellipse cx="104" cy="103" rx="16" ry="2.5" fill="#000" opacity="0.12" />
+        <path d="M90 92 Q88 104 104 104 Q122 104 120 92 Q118 84 106 86 Z" fill="#facc15" stroke="#ca8a04" strokeWidth="1.2" />
+        <circle cx="96" cy="82" r="9" fill="#facc15" stroke="#ca8a04" strokeWidth="1.2" />
+        <path d="M88 83 L81 85 L88 87 Z" fill="#f97316" />
+        <circle cx="93" cy="80" r="1.6" fill="#111827" />
+        {fase === "nada" && <path d="M90 76 l5 1" stroke="#111827" strokeWidth="1" />}
+      </svg>
+      {fase === "nada" && <span className="agente-util__texto agente-util__globito" style={{ left: 70, top: 46 }}>…de nada 🦆</span>}
+    </>
+  );
+}
+
+/** Code review: la lupa encima y la lista de comentarios que no se acaba. */
+function Review({ fase }: { fase: string }) {
+  const comentarios = ["nit: espacios", "nit: nombre", "¿por qué?", "nit: coma", "esto no escala", "nit: typo", "¿y los tests?", "changes requested ❌"];
+  return (
+    <>
+      <span className="agente-util__lupa">🔍</span>
+      <div className="agente-util__texto agente-util__review" data-fase={fase}>
+        <b>Review · PR #482</b>
+        {comentarios.map((c, i) => <span key={c} style={{ animationDelay: `${i * 0.7}s` }}>💬 {c}</span>)}
+      </div>
+    </>
+  );
+}
+
+/** La tanda: los avatares del equipo en fila con billetes; el último se va corriendo con todo. */
+function Tanda({ fase, avatares, Muneco }: { fase: string; avatares: { skin: import("./skinsDatos").Skin; nombre: string }[]; Muneco: typeof Personaje }) {
+  return (
+    <>
+      {avatares.map((a, i) => {
+        const huye = fase === "huye" && i === avatares.length - 1;
+        return (
+          <div key={a.skin} className="agente-util__socio" data-huye={huye || undefined} style={{ left: 92 + i * 50 }}>
+            <div className="agente-util__socio-cuerpo">
+              <Muneco pose={huye ? "perseguir" : fase === "cuenta" ? "comer" : "cafe"} skin={a.skin} animo={huye ? "grito" : "feliz"} />
+            </div>
+            <span className="agente-util__texto agente-util__socio-nombre">{a.nombre}</span>
+            {(fase === "cuenta" || huye) && <span className="agente-util__billete">💵</span>}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/** Merge conflict: su clon le jala la capa; luego cae un tercero a separarlos. */
+function Merge({ fase, Muneco }: { fase: string; Muneco: typeof Personaje }) {
+  return (
+    <>
+      <div className="agente-util__clon" data-fase={fase}>
+        <Muneco pose={fase === "separa" ? "susto" : "forcejeo"} animo="grito" />
+        <span className="agente-util__texto agente-util__etiqueta">HEAD</span>
+      </div>
+      <span className="agente-util__texto agente-util__etiqueta agente-util__etiqueta--yo">dev</span>
+      {fase === "separa" && (
+        <div className="agente-util__clon agente-util__clon--arbitro">
+          <Muneco pose="alerta" animo="grito" />
+          <span className="agente-util__texto agente-util__globito" style={{ left: -30, top: -26 }}>¡Acepten los dos cambios!</span>
+        </div>
+      )}
+      {fase === "separa" && <span className="agente-util__polvo">💥</span>}
+    </>
+  );
+}
+
+/** Laptop en el piso; con el café encima chispea y echa humo. */
+function Derrame({ fase }: { fase: string }) {
+  const mojada = fase === "chispas" || fase === "abanica";
+  return (
+    <>
+      <svg viewBox={`0 0 150 ${PISO + 6}`} width="150" height={PISO + 6}>
+        <rect x="96" y="100" width="40" height="4" rx="1" fill="#475569" />
+        <path d="M98 100 L104 80 L138 80 L132 100 Z" fill="#334155" />
+        <path d="M101 98 L106 82 L135 82 L130 98 Z" fill={mojada ? "#1e293b" : "#60a5fa"} />
+        {mojada && <ellipse cx="112" cy="102" rx="16" ry="2.5" fill="#78350f" opacity="0.85" />}
+      </svg>
+      {fase === "tropieza" && <span className="agente-util__taza-vuela">☕</span>}
+      {mojada && <span className="agente-util__chispas"><i>⚡</i><i>💥</i><i>⚡</i></span>}
+      {mojada && <span className="agente-util__humo"><em /><em /></span>}
+    </>
+  );
+}
+
+/** Nube con cajas de mudanza (va con él, como actor); se desinfla con la factura. */
+function Nube({ fase }: { fase: string }) {
+  return (
+    <div className="agente-actor__nube" data-fase={fase}>
+      <svg viewBox="0 0 110 40" width="110" height="40">
+        <path d="M14 34 Q2 34 4 24 Q6 14 18 16 Q22 4 38 6 Q48 -2 62 6 Q76 0 84 12 Q100 10 104 22 Q110 34 96 34 Z" fill="#f8fafc" stroke="#94a3b8" strokeWidth="1.5" />
+      </svg>
+      <span className="agente-actor__cajas">📦📦</span>
+      {(fase === "factura" || fase === "cae") && <span className="agente-actor__factura">🧾 AWS: $48,320 USD</span>}
+    </div>
+  );
+}
+
+/** Rack de servidores que el becario tumba. */
+function Servidor({ fase }: { fase: string }) {
+  return (
+    <div className="agente-util__rack" data-fase={fase}>
+      <svg viewBox="0 0 34 70" width="34" height="70">
+        <rect x="1" y="1" width="32" height="68" rx="2" fill="#1f2937" stroke="#0f172a" strokeWidth="1.5" />
+        {[6, 18, 30, 42, 54].map((y) => (
+          <g key={y}>
+            <rect x="4" y={y} width="26" height="9" rx="1" fill="#374151" />
+            <circle className="agente-util__led" cx="9" cy={y + 4.5} r="1.4" fill="#22c55e" />
+            <circle cx="14" cy={y + 4.5} r="1.4" fill="#38bdf8" />
+          </g>
+        ))}
+      </svg>
+      <span className="agente-util__texto agente-util__rack-letrero">PROD</span>
+      {fase === "cae" && <span className="agente-util__chispas"><i>⚡</i><i>💥</i><i>⚡</i></span>}
+    </div>
+  );
+}
+
+/** Tele con el partido y su banderita. */
+function Futbol({ fase, partido }: { fase: string; partido?: { rival: string; bandera: string; local: boolean } }) {
+  const rival = partido ? `${partido.bandera} ${partido.rival.slice(0, 3).toUpperCase()}` : "🇯🇲 JAM";
+  const marcador = partido?.local === false ? `${rival} vs 🇲🇽 MÉX` : `🇲🇽 MÉX vs ${rival}`;
+  return (
+    <>
+      <svg viewBox={`0 0 160 ${PISO + 6}`} width="160" height={PISO + 6}>
+        <path d="M118 104 L122 86 M138 104 L134 86" stroke="#57534e" strokeWidth="3" strokeLinecap="round" />
+        <rect x="98" y="54" width="60" height="34" rx="3" fill="#111827" />
+        <rect x="102" y="58" width="52" height="26" fill={fase === "gol" ? "#16a34a" : "#15803d"} />
+        <circle cx="128" cy="71" r="6" fill="none" stroke="#f0fdf4" strokeWidth="1" />
+        <path d="M128 58 V84" stroke="#f0fdf4" strokeWidth="1" />
+      </svg>
+      <span className="agente-util__texto agente-util__marcador" data-fase={fase}>
+        <i className="agente-util__envivo" /> {fase === "gol" ? "¡GOOOL! 🇲🇽" : marcador}
+      </span>
+    </>
+  );
+}
+
+/** Piñata de bug colgando; al romperse llueven tickets cerrados. */
+function Pinata({ fase }: { fase: string }) {
+  return (
+    <>
+      <div className="agente-util__pinata" data-fase={fase}>
+        <span className="agente-util__cuerda" />
+        <span className="agente-util__bicho">🐛</span>
+      </div>
+      {fase === "rota" && (
+        <span className="agente-util__dulces">
+          {["🎫", "✅", "🎫", "🍬", "✅", "🎫", "🍭"].map((d, i) => <i key={i} style={{ left: 70 + i * 9, animationDelay: `${i * 0.06}s` }}>{d}</i>)}
+        </span>
+      )}
+    </>
   );
 }
