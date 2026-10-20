@@ -545,6 +545,127 @@
   .agente-arcade, .agente-arcade * { animation: none !important; }
 }
 
+/* ── Pesca: tickets y PRs del charco; a veces un pez que se le escapa ─────────── */
+/* Esperando: los dos brazos al frente con la caña, mirando la boya. */
+[data-pose="pescar"] .pj-brazo-robot { transform: rotate(-60deg); }
+[data-pose="pescar"] .pj-brazo       { transform: rotate(-48deg); }
+[data-pose="pescar"] .pj-cabeza      { animation: pj-pesca-mira 3s ease-in-out infinite; }
+[data-pose="pescar"] .agente-volador__cuerpo { animation: pj-respira 2.4s ease-in-out infinite alternate; }
+@keyframes pj-pesca-mira { 0%, 100% { transform: rotate(6deg); } 50% { transform: rotate(2deg); } }
+/* Jalar: se echa para atrás con los brazos arriba. */
+.agente-volador__sprite[data-pose="jalar"] { transform-origin: 50% 100%; animation: pj-jalon 1000ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+[data-pose="jalar"] .pj-brazo-robot { transform: rotate(-140deg); }
+[data-pose="jalar"] .pj-brazo       { transform: rotate(-120deg); }
+[data-pose="jalar"] .pj-pierna-b    { transform: rotate(-18deg); }
+@keyframes pj-jalon { 0% { transform: rotate(0deg); } 30% { transform: rotate(-14deg); } 100% { transform: rotate(-6deg); } }
+/* Presume lo que sacó: brazos arriba y brinquitos. */
+.agente-volador__sprite[data-pose="presume"] { animation: pj-victoria 520ms cubic-bezier(0.23, 1, 0.32, 1) infinite alternate; }
+[data-pose="presume"] .pj-brazo-robot { transform: rotate(-168deg); }
+[data-pose="presume"] .pj-brazo       { transform: rotate(155deg); }
+/* Persigue al pez: corre inclinado, el doble de rápido que caminando. */
+.agente-volador__sprite[data-pose="perseguir"] { transform-origin: 50% 100%; transform: rotate(9deg); }
+[data-pose="perseguir"] .pj-pierna-a    { animation: pj-paso 260ms ease-in-out infinite alternate; }
+[data-pose="perseguir"] .pj-pierna-b    { animation: pj-paso 260ms ease-in-out infinite alternate-reverse; }
+[data-pose="perseguir"] .pj-rodilla-a   { animation: pj-rodilla 260ms ease-in-out infinite alternate; }
+[data-pose="perseguir"] .pj-rodilla-b   { animation: pj-rodilla 260ms ease-in-out infinite alternate-reverse; }
+[data-pose="perseguir"] .pj-brazo-robot { animation: pj-agarra 260ms ease-in-out infinite alternate; }
+[data-pose="perseguir"] .pj-brazo       { animation: pj-paso 260ms ease-in-out infinite alternate; }
+[data-pose="perseguir"] .agente-volador__cuerpo { animation: pj-rebote 130ms ease-in-out infinite alternate; }
+[data-pose="perseguir"] .pj-capa        { animation: pj-capa 300ms ease-in-out infinite alternate; }
+@keyframes pj-agarra { from { transform: rotate(-70deg); } to { transform: rotate(-100deg); } }
+/* Se le fue: la misma pataleta del arcade. */
+.agente-volador__sprite[data-pose="coraje"] { transform-origin: 50% 100%; animation: pj-pataleta 250ms ease-in-out infinite alternate; }
+[data-pose="coraje"] .pj-brazo-robot { animation: pj-puno 160ms ease-in-out infinite alternate; }
+[data-pose="coraje"] .pj-brazo       { transform: rotate(30deg); }
+[data-pose="coraje"] .pj-pierna-a    { animation: pj-pisoton 250ms ease-in-out infinite alternate; }
+[data-pose="coraje"] .pj-rodilla-a   { animation: pj-rodilla 250ms ease-in-out infinite alternate; }
+
+/* Charco, caña y sedal (portal fijo; dibujado mirando a la derecha). */
+.agente-pesca {
+  position: fixed;
+  z-index: 29;
+  width: 190px;
+  height: 110px;
+  pointer-events: none;
+  animation: arcade-entra 280ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 400ms ease;
+}
+.agente-pesca[data-dir="-1"] { transform: scaleX(-1); }
+.agente-pesca[data-dir="-1"] .agente-pesca__tarjeta { transform: scaleX(-1); }
+.agente-pesca[data-saliendo], .agente-pesca[data-oculto] { opacity: 0; }
+.agente-pesca[data-fase="persecucion"] { opacity: 0; }
+.agente-pesca svg { position: absolute; inset: 0; overflow: visible; }
+.agente-pesca__charco { fill: #38bdf8; stroke: #0284c7; stroke-width: 1.5; opacity: 0.85; }
+.agente-pesca__onda { fill: none; stroke: #e0f2fe; stroke-width: 1; transform-box: fill-box; transform-origin: center; animation: pesca-onda 2.2s ease-out infinite; }
+.agente-pesca__onda--2 { animation-delay: 1.1s; }
+@keyframes pesca-onda { from { transform: scale(0.6); opacity: 0.9; } to { transform: scale(3.6); opacity: 0; } }
+.agente-pesca__cana line { stroke: #78350f; stroke-width: 2.5; stroke-linecap: round; }
+.agente-pesca__cana circle { fill: #94a3b8; stroke: #475569; stroke-width: 1; }
+.agente-pesca__cana { transform-box: view-box; transform-origin: 62px 74px; transition: transform 300ms cubic-bezier(0.23, 1, 0.32, 1); }
+.agente-pesca[data-fase="jalando"] .agente-pesca__cana,
+.agente-pesca[data-fase="presume"] .agente-pesca__cana { transform: rotate(-28deg); }
+.agente-pesca__sedal path { fill: none; stroke: #334155; stroke-width: 0.8; }
+.agente-pesca__boya { animation: pesca-boya 1.4s ease-in-out infinite alternate; }
+@keyframes pesca-boya { from { transform: translateY(0); } to { transform: translateY(1.5px); } }
+/* Al jalar el sedal y la boya salen con la presa; en presume ya no están. */
+.agente-pesca[data-fase="jalando"] .agente-pesca__sedal { animation: pesca-pica 300ms ease-in both; }
+.agente-pesca[data-fase="presume"] .agente-pesca__sedal { opacity: 0; }
+@keyframes pesca-pica { 0% { transform: translateY(0); } 60% { transform: translateY(4px); } 100% { transform: translateY(-6px); opacity: 0; } }
+
+/* La presa: sale del charco en arco (X lineal afuera, Y con gravedad adentro). */
+.agente-pesca__presa {
+  position: absolute;
+  left: 0;
+  top: 0;
+  --x0: 128px; --y0: 92px; --x1: 26px; --y1: -6px;
+  animation: pesca-x 700ms linear 250ms both;
+}
+.agente-pesca__presa[data-tipo="pez"] { --x1: -14px; --y1: 92px; }
+.agente-pesca__presa[data-tipo="pez"][data-adelante] { --x1: 176px; }
+.agente-pesca__arco { animation: pesca-y 700ms linear 250ms both; }
+@keyframes pesca-x { from { transform: translateX(var(--x0)); } to { transform: translateX(var(--x1)); } }
+@keyframes pesca-y {
+  0%   { transform: translateY(var(--y0)); animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1); }
+  45%  { transform: translateY(-34px); animation-timing-function: cubic-bezier(0.6, 0, 0.8, 0.3); }
+  100% { transform: translateY(var(--y1)); }
+}
+.agente-pesca__tarjeta {
+  width: 30px;
+  padding: 2px 0 3px;
+  border: 1.5px solid #1e293b;
+  border-radius: 3px;
+  background: #fef08a;
+  color: #1e293b;
+  font: 800 8px/1.1 ui-monospace, monospace;
+  text-align: center;
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.25);
+}
+.agente-pesca__tarjeta small { display: block; font-size: 5px; letter-spacing: 0.08em; }
+.agente-pesca__presa[data-tipo="pr"] .agente-pesca__tarjeta { background: #ddd6fe; border-color: #4c1d95; color: #4c1d95; }
+.agente-pesca__presa[data-tipo="pez"] .agente-pesca__arco svg { display: block; animation: pez-coletea 180ms ease-in-out infinite alternate; }
+
+/* El pez que se escapa: lo mueve el loop; aquí solo brinca y colea. */
+.agente-pez {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 29;
+  width: 28px;
+  height: 16px;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+  transition: opacity 200ms ease;
+}
+.agente-pez[data-oculto] { opacity: 0; }
+.agente-pez__brinco { animation: pez-brinco 300ms cubic-bezier(0.3, 0, 0.7, 1) infinite alternate; }
+.agente-pez__brinco svg { display: block; animation: pez-coletea 150ms ease-in-out infinite alternate; }
+@keyframes pez-brinco { from { transform: translateY(0) rotate(8deg); } to { transform: translateY(-22px) rotate(-12deg); } }
+@keyframes pez-coletea { from { transform: scaleY(1) skewX(-6deg); } to { transform: scaleY(0.9) skewX(8deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .agente-pesca, .agente-pesca *, .agente-pez, .agente-pez * { animation: none !important; }
+}
+
 /* ── Estilos de vuelo (data-vuelo, solo en volar) ─────────────────────────── */
 /* Nado: crol en el aire — brazos en molino alternados y patada. */
 [data-pose="volar"][data-vuelo="nado"] .pj-brazo-robot { animation: pj-crol 1.5s linear infinite; }
