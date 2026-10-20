@@ -54,16 +54,17 @@ export function Antojos() {
 }
 
 /** Brazo del frente de carne y hueso (mismas articulaciones que el robótico: hombro 58,39 · codo 58.1,51.6). */
-export function BrazoHumano({ skin }: { skin: Skin }) {
-  const manga = skin === "cientifico" ? "url(#pj-bata)"
-    : PALETA[skin].brazosDescubiertos ? `url(#pj-piel-${skin})` : `url(#pj-camisa-${skin})`;
+/** `desnudo`: sin manga (el oso se llevó la cobija y anda en calzones). */
+export function BrazoHumano({ skin, desnudo = false }: { skin: Skin; desnudo?: boolean }) {
+  const descubierto = desnudo || PALETA[skin].brazosDescubiertos;
+  const manga = descubierto ? `url(#pj-piel-${skin})` : skin === "cientifico" ? "url(#pj-bata)" : `url(#pj-camisa-${skin})`;
   return (
     <g className="pj-brazo-robot">
       <path d="M55.2 38.6 C54.6 42.6 54.8 46.6 55.3 51 L60.9 51 C61.4 46.6 61.6 42.6 61 38.6 C59 36.8 57 36.8 55.2 38.6 Z" fill={manga} />
       <g className="pj-antebrazo">
         <circle cx="58.1" cy="51.4" r="2.9" fill={manga} />
         <path d="M55.4 51.2 C55.1 54.4 55.2 57.6 55.6 60.6 L60.6 60.6 C61 57.6 61.1 54.4 60.8 51.2 Z" fill={manga} />
-        <path d="M55.4 58.6 C57.2 59.6 59.2 59.6 60.8 58.6 L60.6 61.2 C59 62 57.2 62 55.6 61.2 Z" fill={PALETA[skin].brazosDescubiertos ? manga : "#6b727c"} />
+        <path d="M55.4 58.6 C57.2 59.6 59.2 59.6 60.8 58.6 L60.6 61.2 C59 62 57.2 62 55.6 61.2 Z" fill={descubierto ? manga : "#6b727c"} />
         {/* Mano */}
         <path d="M55.2 61.2 C54.6 64.4 55.6 67.4 58.2 67.6 C60.8 67.8 61.8 65 61.2 61.2 Z" fill={PALETA[skin].mano ?? `url(#pj-piel-${skin})`} />
         <path d="M55.4 62.4 C54.2 63 54 64.6 55 65.4" fill="none" stroke={PALETA[skin].mano ? "#cbd5e1" : PALETA[skin].pielSolida} strokeWidth="1.3" strokeLinecap="round" />

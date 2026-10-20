@@ -33,6 +33,12 @@ export interface DetalleStore {
   app: string;
 }
 
+/**
+ * Arrancó un deploy a PRD (run de main en curso, nuevo). GeorgIA decide si es
+ * viernes en la tarde para ponerse a rezar. Mismo `detail` que el festejo.
+ */
+export const EVENTO_PRD_INICIO = "agente:prd-inicio";
+
 /** Un deploy a PRD trajo commits de tickets pasados a Claude: ya se pueden cerrar. */
 export const EVENTO_TICKETS_LISTOS = "agente:tickets-listos";
 
@@ -56,6 +62,8 @@ export function dondeFue(d: DetalleFestejo): string {
 
 /** Último deploy terminado visto por repo y rama (`owner/repo:rama` → runId). Vive la sesión. */
 const vistos = new Map<string, number>();
+/** Último deploy a PRD en curso visto por repo (`owner/repo` → runId; 0 = ninguno). */
+const arranques = new Map<string, number>();
 /** Un deploy que terminó hace más de esto no es noticia (pestaña dormida, etc.). */
 const FRESCO_MS = 15 * 60_000;
 
@@ -98,6 +106,17 @@ export function revisarDeploys(
     if (!silencio) window.dispatchEvent(new CustomEvent<DetalleFestejo>(evento, { detail: detalle }));
     window.dispatchEvent(new CustomEvent<DetalleBrillo>(EVENTO_BRILLO, { detail: { owner, repo, tipo: resultado } }));
     out.push({ rama, resultado, sha: ultimo.headSha ?? null });
+  }
+  // Deploy a PRD que acaba de arrancar. Lo que ya corría al cargar es el punto de partida.
+  const clave = `${owner}/${repo}`;
+  const enCurso = runs.find((r) => r.headBranch === "main" && r.status !== "completed" && r.runId);
+  const previo = arranques.get(clave);
+  arranques.set(clave, enCurso?.runId ?? 0);
+  if (enCurso && previo !== undefined && previo !== enCurso.runId && !silencio) {
+    const arranco = Date.parse(enCurso.createdAt);
+    if (!Number.isFinite(arranco) || Date.now() - arranco < FRESCO_MS) {
+      window.dispatchEvent(new CustomEvent<DetalleFestejo>(EVENTO_PRD_INICIO, { detail: detalle }));
+    }
   }
   return out;
 }

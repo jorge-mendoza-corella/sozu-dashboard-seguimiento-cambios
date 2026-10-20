@@ -23,8 +23,10 @@ import { createPortal } from "react-dom";
 import "./personaje.css";
 import { Antojos, Bata, Blusa, BrazoHumano, CabezaCartoon, Camisa, Saco, Vestido } from "./skins";
 import { PALETA, useNombresAvatar, useSkinGeorgIA, type Skin } from "./skinsDatos";
+import { ANCHO_UTILERIA, ARRIBA_UTILERIA, type TipoUtileria, type Utileria } from "./escenasDatos";
+import { UtileriaEscena } from "./escenasExtra";
 import {
-  dondeFue, EVENTO_DEV_FALLO, EVENTO_DEV_OK, EVENTO_FALLO, EVENTO_FESTEJO, EVENTO_STORE, type DetalleFestejo, type DetalleStore,
+  dondeFue, EVENTO_DEV_FALLO, EVENTO_DEV_OK, EVENTO_FALLO, EVENTO_FESTEJO, EVENTO_PRD_INICIO, EVENTO_STORE, type DetalleFestejo, type DetalleStore,
 } from "@/lib/festejoDeploy";
 
 /** Alerta de tickets pendientes: el personaje aterriza, se para y grita. */
@@ -102,7 +104,8 @@ function lanzarConfeti(tipo: "colores" | "android" | "ios" = "colores") {
 
 type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta" | "llorar" | "brinco"
   | "victoria" | "pregunta" | "chispazo" | "arcade" | "marometa" | "berrinche" | "patada"
-  | "pescar" | "jalar" | "presume" | "perseguir" | "coraje" | "rumbo" | "cafe" | "celular" | "susto" | "pensar";
+  | "pescar" | "jalar" | "presume" | "perseguir" | "coraje" | "rumbo" | "cafe" | "celular" | "susto" | "pensar"
+  | "rezar" | "sentado" | "cabeceo" | "teclear" | "jalarpelo" | "senal" | "cubrirse" | "comer" | "enchilado";
 export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando" | "relajado" | "comiendo" | "sorbiendo" | "lamiendo";
 /** Cómo vuela: puño al frente, nadando de crol, o boca arriba con las manos en la nuca. */
 export type EstiloVuelo = "superman" | "nado" | "relax";
@@ -164,7 +167,7 @@ const VIÑETAS_STORE: Viñeta[] = [
 export type Snack = "pizza" | "refresco" | "helado";
 /** Letrero fijo arriba al centro durante el festejo o el llanto. */
 type Letrero = {
-  tipo: "exito" | "fallo" | "dev" | "dev-fallo" | "store" | "claude" | "claude-pregunta" | "claude-fallo";
+  tipo: "exito" | "fallo" | "dev" | "dev-fallo" | "store" | "claude" | "claude-pregunta" | "claude-fallo" | "viernes";
   titulo: string;
   linea: string;
   id: number;
@@ -474,6 +477,56 @@ const FRASES_CAFE = {
   ],
 };
 
+/**
+ * Escenas con guion (utilería en escenasExtra.tsx): una lista de pasos, cada
+ * uno con su pose, duración, frases y lo que muestra la utilería. Las arranca
+ * el loop al terminar de caminar (como el arcade), salvo el viernes de deploy,
+ * que llega por evento cuando arranca un deploy a PRD en viernes en la tarde
+ * o en fin de semana.
+ */
+type Extra = "elotero" | "junta" | "stack" | "wifi" | "campamento";
+const EXTRAS: Extra[] = ["elotero", "junta", "stack", "wifi", "campamento"];
+/** Para probarlas: `dispatchEvent(new CustomEvent("agente:escena", { detail: { escena: "campamento" } }))` (o "viernes"). */
+export const EVENTO_ESCENA = "agente:escena";
+const EXTRA_CADA_MS: [number, number] = [240_000, 480_000];
+/** Viernes después de las 5 pm o fin de semana: deployar es pecado. */
+const esViernesTarde = (d = new Date()) => d.getDay() === 6 || d.getDay() === 0 || (d.getDay() === 5 && d.getHours() >= 17);
+const FRASES_VIERNES = {
+  rezo: [
+    (r: string) => `San Rollback, que no truene ${r}…`, () => "Prometo escribir tests, lo juro", () => "Diosito, que pase el CI",
+    () => "Ave María purísima, sin conflictos", () => "Si sale bien, dejo de hacer push a main", (r: string) => `Virgencita, cuida a ${r}`,
+  ],
+  ok: [(r: string) => `¡MILAGRO! ${r} pasó en viernes`, () => "¡San Rollback nos escuchó!", () => "¡Gracias, Diosito, no lo vuelvo a hacer!"],
+  fallo: [(r: string) => `¡LES DIJE! ${r} en viernes, no`, () => "¡En viernes no se deploya, chingao!", () => "San Rollback nos abandonó…"],
+};
+const FRASES_GUION = {
+  eloteroLlega: ["¿Eso es…? ¡El elotero!", "¡Escucho la trompetita!"],
+  eloteroPide: ["¡Uno con todo, mayonesa y chile del que pica!", "¡Un esquite grande con todo, jefe!"],
+  eloteroCome: ["Ñam… ñam…", "Está buenísimo…", "Mmm, con limoncito"],
+  enchilado: ["¡¡AGUA, AGUA, AGUA!!", "¡ME ENCHILÉ, CABRÓN!", "¡Siento la lengua en el sol!", "¡¿Qué chile era ese?!"],
+  junta: ["Bueno, ¿sí se escucha? …ok, empiecen", "Junta de 1 h 30… pudo ser un correo"],
+  juntaDuerme: ["Z z z", "…mjm… sí… zzz", "Zzz… deploy… zzz"],
+  juntaDespierta: ["¡Sí, sí, de acuerdo, totalmente!", "¡Claro! …exacto, lo que dijo él"],
+  juntaFin: ["…¿de qué estábamos hablando?", "¿Ya se acabó? ¿Me perdí de algo?"],
+  stackLee: ["A ver… ¿cómo se centra un div?", "Nomás copio esta respuesta…"],
+  stackCae: ["¡¿QUÉ?! ¡¿Stack Overflow caído?!", "¡No, no, no! ¡Stack Overflow no!"],
+  stackCrisis: ["¿Y ahora cómo programo?", "¡Me voy a tener que leer la documentación!", "¡NO SÉ HACER NADA SOLO!"],
+  stackSolo: ["…¿for o while?", "¿Qué es un for?", "…console.log('ayuda')"],
+  stackFin: ["Oye GeorgIA… ah no, soy yo 😐", "¿Y si le pregunto a Claude?"],
+  wifiLag: ["¿Por… qué… va… todo… lento…?", "Se… me… congeló… todo…"],
+  wifiSenal: ["¡Ven, señal, ven!", "Una rayita… dos…", "¡Más arriba!", "Si me muevo se va…"],
+  wifiOk: ["¡Ya agarró, a huevo!", "¡Tres rayitas, no mames!"],
+  fogata: ["Ahh… qué paz, sin tickets ni deploys", "Esto sí es vida: cero Slack"],
+  oso: ["¿Eh…? ¿Qué es ese ruido?", "…¿quién anda ahí?"],
+  osoRoba: ["¡¡OIGA, MI COBIJA!!", "¡¿Qué hace, oso cabrón?!"],
+  osoPersigue: ["¡Regrésamela, oso cabrón!", "¡Era de Liverpool!", "¡Hace un frío del carajo!", "¡Párate, ratero peludo!"],
+  osoCubre: ["¡No me vean, no me vean!", "…ni modo, en calzones", "¡Esto no sale del dashboard!", "¡Qué oso! …literal"],
+};
+
+/** En viernes en la tarde (o fin de semana), el resultado del deploy se festeja como milagro o se reclama. */
+const fraseDeploy = (r: string) => (esViernesTarde() && Math.random() < 0.6 ? una(FRASES_VIERNES.ok)(r) : una(FRASES_DEPLOY)(r));
+const fraseFallo = (r: string) => (esViernesTarde() && Math.random() < 0.6 ? una(FRASES_VIERNES.fallo)(r) : una(FRASES_FALLO)(r));
+
 const signoAzar = () => (Math.random() < 0.5 ? -1 : 1) as 1 | -1;
 const una = <T,>(l: readonly T[]): T => l[Math.floor(Math.random() * l.length)];
 
@@ -518,6 +571,14 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
   const [maquina, setMaquina] = useState<Maquina | null>(null);
   const [pesca, setPesca] = useState<Pesca | null>(null);
   const [cafe, setCafe] = useState<Cafe | null>(null);
+  const [utileria, setUtileria] = useState<Utileria | null>(null);
+  /** El elotero o el oso: lo mueve el loop directo. */
+  const actorRef = useRef<HTMLDivElement>(null);
+  /** El oso se llevó la cobija: anda en calzones. */
+  const [calzones, setCalzones] = useState(false);
+  /** Wi-Fi caído: gris y trabado. */
+  const [lag, setLag] = useState(false);
+  const [enMano, setEnMano] = useState<"elote" | null>(null);
   /** El pez que se escapa lo mueve el loop directo (como al personaje), sin re-render por frame. */
   const pezRef = useRef<HTMLDivElement>(null);
   /** Lo último que se pintó de la pesca, para que el loop sepa qué presa salió y dónde está la caja. */
@@ -608,7 +669,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       siguiente: "despegar" as Pose, // qué sigue después de agacharse
       // Deploys por reaccionar (llegan por evento): festejo o llanto, en fila.
       festejos: [] as (DetalleFestejo & {
-        tipo: Letrero["tipo"] | "dev-ok" | "dev-fallo" | "store-ok" | "store-fallo" | "claude-ok";
+        tipo: Letrero["tipo"] | "dev-ok" | "dev-fallo" | "store-ok" | "store-fallo" | "claude-ok" | "viernes";
         store?: DetalleStore;
         claude?: DetalleClaude;
       })[],
@@ -745,6 +806,239 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       proximaFrase = ahora + 3000;
       return true;
     };
+    // ── Escenas con guion ─────────────────────────────────────────────────────
+    type PasoGuion = {
+      pose: Pose;
+      /** Sin `ms`, el paso dura hasta que `mover` diga que ya terminó. */
+      ms?: number;
+      fase?: string;
+      animo?: Animo;
+      decir?: () => string;
+      tipo?: Dialogo["tipo"];
+      frases?: () => string;
+      tipoFrases?: Dialogo["tipo"];
+      cada?: number;
+      al?: () => void;
+      mover?: (dt: number, ahora: number) => boolean;
+    };
+    let guion: { pasos: PasoGuion[]; i: number; hasta: number; prox: number; fin?: () => void } | null = null;
+    let quitarUtileria: ReturnType<typeof setTimeout> | undefined;
+    let quitarCalzones: ReturnType<typeof setTimeout> | undefined;
+    let idUtileria = 0;
+    let actor: { x: number; y: number; dir: 1 | -1 } | null = null;
+    const proxExtra = Object.fromEntries(EXTRAS.map((e) => [e, performance.now() + azar(180_000, 420_000)])) as Record<Extra, number>;
+    let extraForzada: Extra | null = null;
+    const enEscena = () => ESCENAS.includes(s.pose) || !!guion;
+    const pintarActor = () => {
+      if (actor && actorRef.current) {
+        actorRef.current.style.transform = `translate3d(${actor.x.toFixed(1)}px, ${actor.y}px, 0)`;
+        const cuerpo = actorRef.current.firstElementChild as HTMLElement | null;
+        if (cuerpo) cuerpo.style.transform = `scaleX(${actor.dir})`;
+      }
+    };
+    const faseUtileria = (fase: string) => setUtileria((u) => (u ? { ...u, fase } : u));
+    const iniciarPaso = (ahora: number) => {
+      if (!guion) return;
+      const p = guion.pasos[guion.i];
+      cambiarPose(p.pose);
+      guion.hasta = p.ms ? ahora + p.ms : Infinity;
+      if (p.fase) faseUtileria(p.fase);
+      if (p.animo) ponerAnimo(p.animo);
+      p.al?.();
+      if (p.decir) {
+        finDialogo = 0;
+        decir(p.decir(), p.tipo ?? "grito", 2400);
+      }
+      guion.prox = ahora + (p.decir ? 2700 : 600);
+    };
+    /**
+     * Arranca un guion. Con `tipo`, pone la utilería enfrente de él (hacia donde
+     * quepa, o hacia `dir`); sin lugar, no arranca.
+     */
+    const empezarGuion = (ahora: number, pasos: PasoGuion[], tipo: TipoUtileria | null, op: { dir?: 1 | -1; fin?: () => void } = {}): boolean => {
+      if (tipo) {
+        const ancho = ANCHO_UTILERIA[tipo];
+        const cabeDer = s.x + ancho <= window.innerWidth - MARGEN;
+        const cabeIzq = s.x + TAM - ancho >= MARGEN;
+        if (!cabeDer && !cabeIzq) return false;
+        s.dir = op.dir ?? ((cabeDer && (!cabeIzq || Math.random() < 0.5) ? 1 : -1) as 1 | -1);
+        if (s.dir === 1 && !cabeDer) s.dir = -1;
+        if (s.dir === -1 && !cabeIzq) s.dir = 1;
+        clearTimeout(quitarUtileria);
+        idUtileria += 1;
+        setUtileria({
+          id: idUtileria,
+          tipo,
+          x: s.dir === 1 ? s.x : s.x + TAM - ancho,
+          y: piso() - ARRIBA_UTILERIA,
+          dir: s.dir,
+          fase: pasos[0].fase ?? "",
+        });
+      }
+      actor = null;
+      guion = { pasos, i: 0, hasta: 0, prox: 0, fin: op.fin };
+      iniciarPaso(ahora);
+      return true;
+    };
+    const terminarGuion = () => {
+      const fin = guion?.fin;
+      guion = null;
+      actor = null;
+      quitarUtileria = setTimeout(() => {
+        setUtileria((u) => (u ? { ...u, saliendo: true } : u));
+        quitarUtileria = setTimeout(() => setUtileria(null), 400);
+      }, 250);
+      fin?.();
+      ponerAnimo("serio");
+      cambiarPose("agachar", 200);
+      s.siguiente = "despegar";
+    };
+    const correrGuion = (ahora: number, dt: number) => {
+      if (!guion) return;
+      const p = guion.pasos[guion.i];
+      // Todo pasa en el piso: si venía volando, baja.
+      if (s.y < piso()) s.y = Math.min(piso(), s.y + 520 * dt);
+      const listo = p.mover ? p.mover(dt, ahora) : false;
+      pintarActor();
+      if (p.frases && !finDialogo && ahora >= guion.prox) {
+        decir(p.frases(), p.tipoFrases ?? "habla", 2200);
+        guion.prox = ahora + (p.cada ?? 3000);
+      }
+      if (listo || ahora >= guion.hasta) {
+        guion.i += 1;
+        if (guion.i >= guion.pasos.length) terminarGuion();
+        else iniciarPaso(ahora);
+      }
+    };
+    const unaF = (l: readonly string[]) => () => una(l);
+
+    const escenaViernes = (ahora: number, repo: string): boolean => {
+      idLetrero += 1;
+      setLetrero({ tipo: "viernes", id: idLetrero, titulo: `🕯️ Deploy a PRD en ${new Date().getDay() === 5 ? "viernes" : "fin de semana"} · ${repo}`, linea: una(FRASES_VIERNES.rezo)(repo) });
+      const pasos: PasoGuion[] = [{
+        pose: "rezar", ms: 15_000, fase: "rezar", animo: "serio",
+        frases: () => {
+          const linea = una(FRASES_VIERNES.rezo)(repo);
+          setLetrero((l) => (l && l.tipo === "viernes" ? { ...l, linea } : l));
+          return linea;
+        },
+        cada: 3200,
+      }];
+      // Con lugar, la veladora enfrente; si no, reza igual.
+      return empezarGuion(ahora, pasos, "veladora", { fin: soltarLetrero }) || empezarGuion(ahora, pasos, null, { fin: soltarLetrero });
+    };
+
+    const escenaElotero = (ahora: number): boolean => {
+      const W = window.innerWidth;
+      const dir = (s.x + TAM / 2 < W / 2 ? 1 : -1) as 1 | -1;
+      const ANCHO_CARRITO = 70;
+      const alto = piso() + 74 - 66;
+      const desde = dir === 1 ? Math.min(W + 10, s.x + TAM + 450) : Math.max(-ANCHO_CARRITO - 10, s.x - 450 - ANCHO_CARRITO);
+      const hasta = dir === 1 ? s.x + TAM - 6 : s.x + 6 - ANCHO_CARRITO;
+      if (Math.abs(desde - hasta) < 120) return false;
+      const pasos: PasoGuion[] = [
+        {
+          pose: "cafe", fase: "llega", animo: "feliz", decir: unaF(FRASES_GUION.eloteroLlega), tipo: "habla",
+          al: () => {
+            actor = { x: desde, y: alto, dir: (-dir) as 1 | -1 };
+            setUtileria((u) => (u ? { ...u, actor: { ...actor! } } : u));
+          },
+          mover: (dt) => {
+            if (!actor) return true;
+            actor.x += 120 * dt * -dir;
+            return dir === 1 ? actor.x <= hasta : actor.x >= hasta;
+          },
+        },
+        { pose: "brinco", ms: 1900, fase: "para", decir: unaF(FRASES_GUION.eloteroPide) },
+        { pose: "comer", ms: 3600, fase: "comer", animo: "comiendo", al: () => setEnMano("elote"), frases: unaF(FRASES_GUION.eloteroCome), cada: 1800 },
+        {
+          pose: "enchilado", ms: 3400, fase: "enchilado", animo: "grito", decir: unaF(FRASES_GUION.enchilado),
+          frases: unaF(FRASES_GUION.enchilado), tipoFrases: "grito", cada: 1400,
+        },
+      ];
+      return empezarGuion(ahora, pasos, "elotero", { dir, fin: () => setEnMano(null) });
+    };
+
+    const escenaJunta = (ahora: number): boolean => empezarGuion(ahora, [
+      { pose: "sentado", ms: 3400, fase: "junta", animo: "aburrido", decir: unaF(FRASES_GUION.junta), tipo: "habla" },
+      { pose: "cabeceo", ms: 6500, fase: "junta", animo: "dormido", frases: unaF(FRASES_GUION.juntaDuerme), tipoFrases: "zzz", cada: 2300 },
+      { pose: "cabeceo", ms: 1600, fase: "pregunta", animo: "dormido" },
+      { pose: "susto", ms: 2600, fase: "pregunta", animo: "grito", decir: unaF(FRASES_GUION.juntaDespierta) },
+      { pose: "sentado", ms: 2600, fase: "junta", animo: "serio", decir: unaF(FRASES_GUION.juntaFin), tipo: "habla" },
+    ], "junta");
+
+    const escenaStack = (ahora: number): boolean => empezarGuion(ahora, [
+      { pose: "teclear", ms: 3600, fase: "lee", animo: "serio", decir: unaF(FRASES_GUION.stackLee), tipo: "habla" },
+      { pose: "susto", ms: 1900, fase: "caido", animo: "grito", decir: unaF(FRASES_GUION.stackCae) },
+      { pose: "jalarpelo", ms: 4400, fase: "caido", animo: "grito", frases: unaF(FRASES_GUION.stackCrisis), tipoFrases: "grito", cada: 1900 },
+      { pose: "teclear", ms: 3600, fase: "caido", animo: "serio", frases: unaF(FRASES_GUION.stackSolo), cada: 1700 },
+      { pose: "pregunta", ms: 3200, fase: "caido", animo: "serio", decir: unaF(FRASES_GUION.stackFin), tipo: "habla" },
+    ], "stack");
+
+    const escenaWifi = (ahora: number): boolean => empezarGuion(ahora, [
+      { pose: "cafe", ms: 4200, fase: "lag", animo: "aburrido", al: () => setLag(true), decir: unaF(FRASES_GUION.wifiLag), tipo: "habla" },
+      { pose: "senal", ms: 4800, fase: "senal", animo: "grito", al: () => setLag(false), frases: unaF(FRASES_GUION.wifiSenal), tipoFrases: "grito", cada: 1700 },
+      { pose: "brinco", ms: 1900, fase: "conecta", animo: "feliz", decir: unaF(FRASES_GUION.wifiOk) },
+    ], "wifi", { fin: () => setLag(false) });
+
+    const escenaCampamento = (ahora: number): boolean => {
+      const ANCHO_OSO = 76;
+      const altoOso = piso() + 74 - 50;
+      let avisado = false;
+      const pasos: PasoGuion[] = [
+        { pose: "sentado", ms: 4200, fase: "fogata", animo: "relajado", decir: unaF(FRASES_GUION.fogata), tipo: "habla" },
+        { pose: "cabeceo", ms: 3600, fase: "dormir", animo: "dormido", frases: () => "Z z z", tipoFrases: "zzz", cada: 2000 },
+        {
+          pose: "cabeceo", fase: "llega-oso", animo: "dormido",
+          al: () => {
+            // Sale de más allá de la tienda y camina hacia él.
+            const W = window.innerWidth;
+            actor = s.dir === 1
+              ? { x: Math.min(W + 10, s.x + 330), y: altoOso, dir: -1 }
+              : { x: Math.max(-ANCHO_OSO - 10, s.x + TAM - 330 - ANCHO_OSO), y: altoOso, dir: 1 };
+            setUtileria((u) => (u ? { ...u, actor: { ...actor! } } : u));
+          },
+          mover: (dt) => {
+            if (!actor) return true;
+            actor.x += 70 * dt * actor.dir;
+            const meta = s.dir === 1 ? s.x + 46 : s.x + TAM - 46 - ANCHO_OSO;
+            const falta = Math.abs(actor.x - meta);
+            if (!avisado && falta < 160) {
+              avisado = true;
+              finDialogo = 0;
+              ponerAnimo("serio");
+              decir(una(FRASES_GUION.oso), "habla", 2200);
+            }
+            return s.dir === 1 ? actor.x <= meta : actor.x >= meta;
+          },
+        },
+        {
+          pose: "susto", ms: 1400, fase: "huye", animo: "grito", decir: unaF(FRASES_GUION.osoRoba),
+          al: () => {
+            setCalzones(true);
+            if (actor) actor.dir = s.dir;
+          },
+        },
+        {
+          pose: "perseguir", fase: "huye", animo: "grito", frases: unaF(FRASES_GUION.osoPersigue), tipoFrases: "grito", cada: 1600,
+          mover: (dt) => {
+            if (!actor) return true;
+            actor.x += 205 * dt * actor.dir;
+            s.x = Math.max(MARGEN, Math.min(derecha(), s.x + VEL_PERSEGUIR * dt * s.dir));
+            return actor.x < -ANCHO_OSO - 20 || actor.x > window.innerWidth + 20;
+          },
+        },
+        { pose: "cubrirse", ms: 4000, fase: "cubrirse", animo: "llorando", frases: unaF(FRASES_GUION.osoCubre), tipoFrases: "grito", cada: 1900 },
+      ];
+      return empezarGuion(ahora, pasos, "campamento", {
+        // Se va volando en calzones un rato, y luego aparece vestido otra vez.
+        fin: () => { clearTimeout(quitarCalzones); quitarCalzones = setTimeout(() => setCalzones(false), 5000); },
+      });
+    };
+    const ESCENA_EXTRA: Record<Extra, (ahora: number) => boolean> = {
+      elotero: escenaElotero, junta: escenaJunta, stack: escenaStack, wifi: escenaWifi, campamento: escenaCampamento,
+    };
+
     // Café (ver FRASES_CAFE).
     let proximoCafe = performance.now() + azar(120_000, 240_000);
     let enCafe = false;
@@ -854,7 +1148,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       if (pausaRef.current) return;
 
       // Festejo pendiente: interrumpe lo que esté haciendo.
-      if (s.festejos.length && !ESCENAS.includes(s.pose)) {
+      if (s.festejos.length && !enEscena()) {
         const d = s.festejos.shift()!;
         escenaStore = d.store ?? null;
         escenaClaude = d.claude ?? null;
@@ -897,6 +1191,10 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
             setLetrero({ tipo: "fallo", id: idLetrero, titulo: `❌ Falló el envío a ${st.destino} · ${st.app}`, linea: una(FRASES_STORE_FALLO)(st.destino) });
           }
           proximaFrase = ahora + 2200;
+        } else if (d.tipo === "viernes") {
+          finDialogo = 0;
+          setDialogo(null);
+          escenaViernes(ahora, d.repo);
         } else if (d.tipo === "dev-ok" || d.tipo === "dev-fallo") {
           // Dev: brinco en el lugar (o puchero), con su globo; sin letrero ni confeti.
           // Letrero fijo (como PRD, pero azul y más corto): el globo se movía con él y no se leía.
@@ -925,18 +1223,18 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           cambiarPose("festejo", FESTEJO_MS);
           ponerAnimo("grito");
           lanzarConfeti();
-          setLetrero({ tipo: "exito", id: idLetrero, titulo: `✅ Deploy exitoso a PRD · ${dondeFue(d)}`, linea: una(FRASES_DEPLOY)(d.repo) });
+          setLetrero({ tipo: "exito", id: idLetrero, titulo: `✅ Deploy exitoso a PRD · ${dondeFue(d)}`, linea: fraseDeploy(d.repo) });
         } else {
           cambiarPose("llorar", LLANTO_MS);
           ponerAnimo("llorando");
-          setLetrero({ tipo: "fallo", id: idLetrero, titulo: `❌ Falló el deploy a PRD · ${dondeFue(d)}`, linea: una(FRASES_FALLO)(d.repo) });
+          setLetrero({ tipo: "fallo", id: idLetrero, titulo: `❌ Falló el deploy a PRD · ${dondeFue(d)}`, linea: fraseFallo(d.repo) });
         }
         proximaFrase = ahora + 2200;
         }
       }
 
       // Alerta de tickets: baja al piso y se queda gritando (el festejo manda más).
-      if (s.alertaGritos.length && s.pose !== "alerta" && !ESCENAS.includes(s.pose)) {
+      if (s.alertaGritos.length && s.pose !== "alerta" && !enEscena()) {
         cambiarPose("alerta");
         ponerAnimo("grito");
         s.alertaHasta = ahora + ALERTA_MS;
@@ -963,7 +1261,8 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
 
       const fin = s.hasta && ahora >= s.hasta;
 
-      switch (s.pose) {
+      if (guion) correrGuion(ahora, dt);
+      else switch (s.pose) {
         case "volar":
         case "despegar":
         case "girar": {
@@ -1052,7 +1351,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           s.y += (ty - s.y) * Math.min(1, dt * 6);
           s.dir = (Math.sin(s.festejoTheta) > 0 ? -1 : 1) as 1 | -1;
           if (ahora >= proximaFrase) {
-            const linea = escenaStore ? una(FRASES_STORE_OK)(escenaStore.destino) : una(FRASES_DEPLOY)(s.festejoRepo);
+            const linea = escenaStore ? una(FRASES_STORE_OK)(escenaStore.destino) : fraseDeploy(s.festejoRepo);
             setLetrero((l) => (l ? { ...l, linea } : l));
             proximaFrase = ahora + 3200;
           }
@@ -1069,7 +1368,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           // Cae al piso donde esté, se arrodilla y llora.
           if (s.y < piso()) s.y = Math.min(piso(), s.y + 480 * dt);
           if (ahora >= proximaFrase) {
-            const linea = escenaStore ? una(FRASES_STORE_FALLO)(escenaStore.destino) : una(FRASES_FALLO)(s.festejoRepo);
+            const linea = escenaStore ? una(FRASES_STORE_FALLO)(escenaStore.destino) : fraseFallo(s.festejoRepo);
             setLetrero((l) => (l ? { ...l, linea } : l));
             proximaFrase = ahora + 3200;
           }
@@ -1367,6 +1666,11 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           }
           if (fin) {
             // Lo forzado (eventos de prueba) primero; luego arcade o pesca, si ya toca.
+            if (extraForzada && ESCENA_EXTRA[extraForzada](ahora)) {
+              proxExtra[extraForzada] = ahora + azar(...EXTRA_CADA_MS);
+              extraForzada = null;
+              break;
+            }
             if (proximoCafe === 0 && empezarCafe(ahora)) {
               proximoCafe = ahora + azar(...CAFE_CADA_MS);
               break;
@@ -1386,6 +1690,12 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
             if (ahora >= proximoCafe && Math.random() < 0.6 && empezarCafe(ahora)) {
               proximoCafe = ahora + azar(...CAFE_CADA_MS);
               break;
+            }
+            const tocan = EXTRAS.filter((e) => ahora >= proxExtra[e]);
+            if (tocan.length && Math.random() < 0.6) {
+              const e = una(tocan);
+              proxExtra[e] = ahora + azar(...EXTRA_CADA_MS);
+              if (ESCENA_EXTRA[e](ahora)) break;
             }
             if (Math.random() < 0.4) cambiarPose("quieto", azar(7000, 13000));
             else {
@@ -1423,9 +1733,9 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       if (finDialogo && ahora >= finDialogo) {
         finDialogo = 0;
         setDialogo(null);
-        if (animoActual === "grito" && s.pose !== "alerta" && !arcade && !pescaJs && !enCafe) ponerAnimo("feliz");
+        if (animoActual === "grito" && s.pose !== "alerta" && !arcade && !pescaJs && !enCafe && !guion) ponerAnimo("feliz");
       }
-      if (!finDialogo && ahora >= proximaFrase && s.pose !== "alerta" && !ESCENAS.includes(s.pose)) {
+      if (!finDialogo && ahora >= proximaFrase && s.pose !== "alerta" && !enEscena()) {
         if (s.pose === "volar" && snackActual === "helado") {
           // Con helado no grita: lo disfruta.
           if (Math.random() < 0.5) decir(una(FRASES.helado), "habla", 2400);
@@ -1485,10 +1795,11 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       // debajo del personaje cuando va pegado al techo.
       // Junto a la maquinita, el charco o el kiosco, el globo se abre hacia el otro
       // lado para no taparlos (mira hacia el objeto: "der" lo abre a la izquierda).
-      const conObjeto = arcade || pescaJs || (enCafe && s.pose !== "rumbo");
-      const borde = conObjeto
-        ? (s.dir === 1 ? "der" : "izq")
-        : s.x < 110 ? "izq" : s.x > window.innerWidth - TAM - 110 ? "der" : "";
+      const conObjeto = arcade || pescaJs || (enCafe && s.pose !== "rumbo")
+        || (guion && s.pose !== "perseguir" && s.pose !== "brinco");
+      const orilla = s.x < 110 ? "izq" : s.x > window.innerWidth - TAM - 110 ? "der" : "";
+      // Pegado a la orilla manda la orilla (si no, el globo se sale de la pantalla).
+      const borde = conObjeto && !orilla ? (s.dir === 1 ? "der" : "izq") : orilla;
       const arriba = s.y < TECHO + 70 ? "1" : "";
       if (el.dataset.borde !== borde) el.dataset.borde = borde;
       if (el.dataset.arriba !== arriba) el.dataset.arriba = arriba;
@@ -1557,6 +1868,25 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       if (s.pose === "caminar") s.hasta = performance.now();
     };
     window.addEventListener(EVENTO_CAFE, alCafe);
+    // Arrancó un deploy a PRD: en viernes en la tarde, a rezarle a San Rollback.
+    const alPrdInicio = (e: Event) => {
+      const d = (e as CustomEvent<DetalleFestejo & { forzar?: boolean }>).detail;
+      if (!d || (!esViernesTarde() && !d.forzar)) return;
+      s.festejos.push({ ...d, tipo: "viernes" });
+    };
+    window.addEventListener(EVENTO_PRD_INICIO, alPrdInicio);
+    const alEscena = (e: Event) => {
+      const esc = (e as CustomEvent<{ escena?: string }>).detail?.escena;
+      if (esc === "viernes") {
+        s.festejos.push({ repo: "sozu-admin", tipo: "viernes" });
+        return;
+      }
+      if (!EXTRAS.includes(esc as Extra)) return;
+      extraForzada = esc as Extra;
+      s.ganasDeAterrizar = 0;
+      if (s.pose === "caminar") s.hasta = performance.now();
+    };
+    window.addEventListener(EVENTO_ESCENA, alEscena);
 
     frame = requestAnimationFrame(paso);
     const alRedimensionar = () => {
@@ -1569,6 +1899,8 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       clearTimeout(quitarMaquina);
       clearTimeout(quitarPesca);
       clearTimeout(quitarCafe);
+      clearTimeout(quitarUtileria);
+      clearTimeout(quitarCalzones);
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", alRedimensionar);
       window.removeEventListener(EVENTO_FESTEJO, alFestejo);
@@ -1581,6 +1913,8 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       window.removeEventListener(EVENTO_ARCADE, alArcade);
       window.removeEventListener(EVENTO_PESCA, alPesca);
       window.removeEventListener(EVENTO_CAFE, alCafe);
+      window.removeEventListener(EVENTO_PRD_INICIO, alPrdInicio);
+      window.removeEventListener(EVENTO_ESCENA, alEscena);
     };
   }, []);
 
@@ -1600,6 +1934,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       aria-label={`Abrir a GeorgIA, como ${nombre} (Alt+K)`}
       aria-keyshortcuts="Alt+K"
       data-pausa={pausaLocal || undefined}
+      data-lag={lag || undefined}
       // Con el panel abierto se esconde (sigue montado: al cerrar reaparece donde iba).
       data-oculto={pausado || undefined}
       aria-hidden={pausado || undefined}
@@ -1657,6 +1992,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           </div>,
           document.body,
         )}
+      {utileria && createPortal(<UtileriaEscena u={utileria} pausado={pausado} actorRef={actorRef} />, document.body)}
       {cafe &&
         createPortal(
           <>
@@ -1832,7 +2168,9 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       <span className="agente-volador__globo">GeorgIA · Alt+K</span>
       <div ref={orientacion} className="agente-volador__orientacion">
         <div ref={inclinacion} className="agente-volador__inclinacion">
-          <Personaje pose={pose === "rumbo" ? "caminar" : pose} animo={animo} snack={snack} vuelo={vuelo} />
+          <Personaje pose={pose === "rumbo" ? "caminar" : pose} animo={animo} snack={snack} vuelo={vuelo} calzones={calzones} />
+          {enMano === "elote" && <span className="agente-volador__elote" aria-hidden>🌽</span>}
+          {pose === "enchilado" && <span className="agente-volador__orejas" aria-hidden><i>💨</i><i>💨</i></span>}
           {(cafe?.fase === "app" || cafe?.fase === "bug") && (
             <span className="agente-volador__cel" data-bug={cafe.fase === "bug" || undefined} aria-hidden />
           )}
@@ -1970,19 +2308,23 @@ function Pez() {
  * curvas. Las articulaciones (hombros 38/58,39 · codo 58.1,51.6 · caderas
  * 45/52,63 · capa 48,37) están fijas: personaje.css gira sobre ellas.
  */
-export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superman", skin }: {
+export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superman", skin, calzones = false }: {
   pose: Pose;
   animo?: Animo;
   snack?: Snack | null;
   vuelo?: EstiloVuelo;
   /** Por omisión, la elegida en Configuración → GeorgIA. */
   skin?: Skin;
+  /** Sin ropa, en calzones de corazones y descalzo (escena del oso). */
+  calzones?: boolean;
 }) {
   const skinElegida = useSkinGeorgIA();
   const sk = skin ?? skinElegida;
   const pal = PALETA[sk];
   // Vestido sin mangas: el brazo de atrás va con la piel.
-  const manga = pal.brazosDescubiertos ? `url(#pj-piel-${sk})` : `url(#pj-camisa-${sk})`;
+  const manga = calzones || pal.brazosDescubiertos ? `url(#pj-piel-${sk})` : `url(#pj-camisa-${sk})`;
+  const jean = calzones ? `url(#pj-piel-${sk})` : `url(#pj-jean-${sk})`;
+  const piel = `url(#pj-piel-${sk})`;
   return (
     <svg
       viewBox="0 0 96 96"
@@ -2060,7 +2402,7 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
           <g className="pj-antebrazo-b">
           <circle cx="37.9" cy="49.8" r="2.6" fill={manga} />
           <path d="M35.4 49.6 C35.2 52.6 35.3 55 35.6 57.6 L40 57.6 C40.3 55 40.4 52.6 40.4 49.6 Z" fill={manga} />
-          <path d="M35.3 55.6 C37 56.6 39 56.6 40.3 55.6 L40.1 58.2 C38.6 59 37 59 35.6 58.2 Z" fill={pal.brazosDescubiertos ? manga : "#6b727c"} />
+          <path d="M35.3 55.6 C37 56.6 39 56.6 40.3 55.6 L40.1 58.2 C38.6 59 37 59 35.6 58.2 Z" fill={calzones || pal.brazosDescubiertos ? manga : "#6b727c"} />
           <path d="M35.8 58.4 C35.2 61.2 36.4 63.4 38.2 63.4 C40 63.4 41 61.4 40.4 58.4 Z" fill={pal.mano ?? `url(#pj-piel-${sk})`} />
           </g>
         </g>
@@ -2068,28 +2410,40 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         {/* Pierna de atrás */}
         <g className="pj-pierna-a">
           {/* Muslo */}
-          <path d="M41.4 63 C40.9 67 41.1 71 41.7 74.8 L47.7 74.8 C48.4 71 48.9 67 48.8 63 Z" fill={`url(#pj-jean-${sk})`} />
+          <path d="M41.4 63 C40.9 67 41.1 71 41.7 74.8 L47.7 74.8 C48.4 71 48.9 67 48.8 63 Z" fill={jean} />
           <g className="pj-rodilla-a">
             {/* Espinilla + bota (gira sobre la rodilla) */}
-            <ellipse cx="44.7" cy="74.4" rx="3.1" ry="1.9" fill={`url(#pj-jean-${sk})`} />
-            <path d="M41.9 74.2 C41.8 78 42 81 42.4 84 L47.2 84 C47.6 81 47.8 78 47.6 74.2 Z" fill={`url(#pj-jean-${sk})`} />
-            <path d="M42.2 83.2 C41.8 86 41.6 88.4 42.4 89.6 L49.8 89.6 C50.6 88.2 49.4 86.6 47.6 85.8 L47.4 83.2 Z" fill={pal.zapato ?? "#1c1917"} />
+            <ellipse cx="44.7" cy="74.4" rx="3.1" ry="1.9" fill={jean} />
+            <path d="M41.9 74.2 C41.8 78 42 81 42.4 84 L47.2 84 C47.6 81 47.8 78 47.6 74.2 Z" fill={jean} />
+            <path d="M42.2 83.2 C41.8 86 41.6 88.4 42.4 89.6 L49.8 89.6 C50.6 88.2 49.4 86.6 47.6 85.8 L47.4 83.2 Z" fill={calzones ? piel : pal.zapato ?? "#1c1917"} />
             <path d="M42.3 85 L47.5 85" stroke="#c99a3b" strokeWidth="0.6" />
           </g>
         </g>
         {/* Pierna de adelante */}
         <g className="pj-pierna-b">
-          <path d="M48.4 63 C47.9 67 48.1 71 48.7 74.8 L54.7 74.8 C55.4 71 55.9 67 55.8 63 Z" fill={`url(#pj-jean-${sk})`} />
+          <path d="M48.4 63 C47.9 67 48.1 71 48.7 74.8 L54.7 74.8 C55.4 71 55.9 67 55.8 63 Z" fill={jean} />
           <g className="pj-rodilla-b">
-            <ellipse cx="51.7" cy="74.4" rx="3.1" ry="1.9" fill={`url(#pj-jean-${sk})`} />
-            <path d="M48.9 74.2 C48.8 78 49 81 49.4 84 L54.2 84 C54.6 81 54.8 78 54.6 74.2 Z" fill={`url(#pj-jean-${sk})`} />
-            <path d="M49.2 83.2 C48.8 86 48.6 88.4 49.4 89.6 L56.8 89.6 C57.6 88.2 56.4 86.6 54.6 85.8 L54.4 83.2 Z" fill={pal.zapato ?? "#292524"} />
+            <ellipse cx="51.7" cy="74.4" rx="3.1" ry="1.9" fill={jean} />
+            <path d="M48.9 74.2 C48.8 78 49 81 49.4 84 L54.2 84 C54.6 81 54.8 78 54.6 74.2 Z" fill={jean} />
+            <path d="M49.2 83.2 C48.8 86 48.6 88.4 49.4 89.6 L56.8 89.6 C57.6 88.2 56.4 86.6 54.6 85.8 L54.4 83.2 Z" fill={calzones ? piel : pal.zapato ?? "#292524"} />
             <path d="M49.3 85 L54.5 85" stroke="#c99a3b" strokeWidth="0.6" />
           </g>
         </g>
 
         {/* Torso en V: hombros anchos, cintura angosta */}
-        <path d="M36.2 37.4 C37.2 34.6 42 33.2 48 33.2 C54 33.2 58.8 34.6 59.8 37.4 C61 44.4 59.2 52.4 56.6 60.4 L39.4 60.4 C36.8 52.4 35 44.4 36.2 37.4 Z" fill={`url(#pj-camisa-${sk})`} />
+        <path d="M36.2 37.4 C37.2 34.6 42 33.2 48 33.2 C54 33.2 58.8 34.6 59.8 37.4 C61 44.4 59.2 52.4 56.6 60.4 L39.4 60.4 C36.8 52.4 35 44.4 36.2 37.4 Z" fill={calzones ? piel : `url(#pj-camisa-${sk})`} />
+        {calzones ? (
+          <>
+            {/* Ombligo, pancita y calzones de corazones */}
+            <path d="M44 46 C46 47 50 47 52 46" fill="none" stroke={pal.pielSolida} strokeWidth="0.6" opacity="0.7" />
+            <circle cx="48" cy="54" r="0.6" fill="#7c2d12" opacity="0.6" />
+            <path d="M39 58.6 L57 58.6 L57.6 69.4 L49.2 69.4 L48 65.6 L46.8 69.4 L38.4 69.4 Z" fill="#f8fafc" stroke="#94a3b8" strokeWidth="0.5" />
+            {[[42, 62], [52, 61.4], [47.6, 60.4], [41.4, 66.8], [54.4, 66.4]].map(([x, y]) => (
+              <path key={`${x}${y}`} d={`M${x} ${y + 0.8} l-1 -1 a0.6 0.6 0 0 1 1 -0.7 a0.6 0.6 0 0 1 1 0.7 z`} fill="#ef4444" />
+            ))}
+          </>
+        ) : (
+          <>
         <path d="M54 35 C57.6 42 57.6 52 55.4 60.2" fill="none" stroke="#4b5260" strokeWidth="0.5" opacity="0.5" />
         {/* Cuello de camisa */}
         <path d="M43.6 34 L48 39.6 L46.2 34.4 Z M52.4 34 L48 39.6 L49.8 34.4 Z" fill="#6b727c" />
@@ -2122,6 +2476,8 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         {sk === "pablo" && <Saco camisa="#f8fafc" cuello="#ffffff" solapa="#57534e" boton="#292524" />}
         {sk === "rodrigo" && <Saco camisa="#f8fafc" cuello="#ffffff" solapa="#0f172a" boton="#0f172a" corbata="#1e3a8a" />}
         {sk === "manuel" && <Saco camisa="#1f2937" cuello="#111827" solapa="#030712" boton="#111827" />}
+          </>
+        )}
         {sk === "cyborg" ? (
           <>
         {/* Cuello mecánico con cables */}
@@ -2212,7 +2568,7 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         </g>
           </>
         ) : (
-          <BrazoHumano skin={sk} />
+          <BrazoHumano skin={sk} desnudo={calzones} />
         )}
       </g>
     </svg>
