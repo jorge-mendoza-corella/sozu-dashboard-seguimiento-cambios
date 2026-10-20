@@ -838,6 +838,239 @@
   .agente-volador__cel, .agente-cafe, .agente-cafe *, .agente-cafe__app, .agente-cafe__app *, .agente-cafe__piensa, .agente-cafe__piensa * { animation: none !important; }
 }
 
+/* ── Escenas con guion (escenasExtra.tsx) ──────────────────────────────────── */
+/* Rezar (viernes de deploy): hincado, manos juntas, cabeza agachada. */
+.agente-volador__sprite[data-pose="rezar"] { transform: translateY(12px); }
+[data-pose="rezar"] .pj-rodilla-a, [data-pose="rezar"] .pj-rodilla-b { transform: rotate(88deg); }
+[data-pose="rezar"] .pj-brazo-robot { transform: rotate(-62deg); }
+[data-pose="rezar"] .pj-antebrazo   { transform: rotate(-78deg); }
+[data-pose="rezar"] .pj-brazo       { transform: rotate(-52deg); }
+[data-pose="rezar"] .pj-antebrazo-b { transform: rotate(-70deg); }
+[data-pose="rezar"] .pj-cabeza      { animation: pj-reza 2.2s ease-in-out infinite alternate; }
+@keyframes pj-reza { from { transform: rotate(8deg); } to { transform: rotate(14deg); } }
+/* Sentado (silla de la junta, junto a la fogata): muslos al frente, espinillas abajo. */
+[data-pose="sentado"] .pj-pierna-a, [data-pose="sentado"] .pj-pierna-b,
+[data-pose="cabeceo"] .pj-pierna-a, [data-pose="cabeceo"] .pj-pierna-b,
+[data-pose="teclear"] .pj-pierna-a, [data-pose="teclear"] .pj-pierna-b { transform: rotate(-84deg); }
+[data-pose="sentado"] .pj-rodilla-a, [data-pose="sentado"] .pj-rodilla-b,
+[data-pose="cabeceo"] .pj-rodilla-a, [data-pose="cabeceo"] .pj-rodilla-b,
+[data-pose="teclear"] .pj-rodilla-a, [data-pose="teclear"] .pj-rodilla-b { transform: rotate(84deg); }
+[data-pose="sentado"] .pj-brazo-robot, [data-pose="cabeceo"] .pj-brazo-robot { transform: rotate(-28deg); }
+[data-pose="sentado"] .pj-antebrazo, [data-pose="cabeceo"] .pj-antebrazo { transform: rotate(-40deg); }
+[data-pose="sentado"] .pj-brazo, [data-pose="cabeceo"] .pj-brazo { transform: rotate(-20deg); }
+[data-pose="sentado"] .agente-volador__cuerpo { animation: pj-respira 2.4s ease-in-out infinite alternate; }
+/* Cabeceo: se le va la cabeza de sueño y la levanta de golpe. */
+[data-pose="cabeceo"] .pj-cabeza { animation: pj-cabeceo 2.2s cubic-bezier(0.6, 0, 0.9, 0.4) infinite; }
+@keyframes pj-cabeceo { 0%, 10% { transform: rotate(0deg); } 85% { transform: rotate(26deg); } 92% { transform: rotate(-4deg); } 100% { transform: rotate(0deg); } }
+/* Teclear: sentado, machacando el teclado. */
+[data-pose="teclear"] .pj-brazo-robot { animation: pj-machaca 150ms ease-in-out infinite alternate; }
+[data-pose="teclear"] .pj-brazo       { animation: pj-machaca-b 190ms ease-in-out infinite alternate; }
+[data-pose="teclear"] .pj-cabeza      { transform: rotate(6deg); }
+/* Jalarse los pelos: manos a la cabeza y pataleta. */
+.agente-volador__sprite[data-pose="jalarpelo"] { transform-origin: 50% 100%; animation: pj-pataleta 220ms ease-in-out infinite alternate; }
+[data-pose="jalarpelo"] .pj-brazo-robot { animation: pj-jala 200ms ease-in-out infinite alternate; }
+[data-pose="jalarpelo"] .pj-antebrazo   { transform: rotate(-70deg); }
+[data-pose="jalarpelo"] .pj-brazo       { transform: rotate(150deg); }
+[data-pose="jalarpelo"] .pj-antebrazo-b { transform: rotate(60deg); }
+@keyframes pj-jala { from { transform: rotate(-150deg); } to { transform: rotate(-165deg); } }
+/* Señal: arriba de la silla con el brazo en alto. */
+.agente-volador__sprite[data-pose="senal"] { transform: translateY(-22px); }
+.agente-volador:has(.agente-volador__sprite[data-pose="senal"]) .agente-volador__dialogo { bottom: calc(100% + 28px); }
+[data-pose="senal"] .pj-brazo-robot { animation: pj-agita 500ms ease-in-out infinite alternate; }
+[data-pose="senal"] .pj-brazo       { transform: rotate(30deg); }
+[data-pose="senal"] .pj-cabeza      { transform: rotate(-12deg); }
+/* Cubrirse (en calzones): manos al frente, rodillas juntas, tiritando. */
+.agente-volador__sprite[data-pose="cubrirse"] { animation: pj-tirita 90ms linear infinite; }
+[data-pose="cubrirse"] .pj-brazo-robot { transform: rotate(-22deg); }
+[data-pose="cubrirse"] .pj-antebrazo   { transform: rotate(-58deg); }
+[data-pose="cubrirse"] .pj-brazo       { transform: rotate(-18deg); }
+[data-pose="cubrirse"] .pj-antebrazo-b { transform: rotate(-52deg); }
+[data-pose="cubrirse"] .pj-pierna-a    { transform: rotate(5deg); }
+[data-pose="cubrirse"] .pj-pierna-b    { transform: rotate(-5deg); }
+[data-pose="cubrirse"] .pj-cabeza      { transform: rotate(8deg); }
+@keyframes pj-tirita { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(1px); } }
+/* Comer: el elote a la boca. */
+[data-pose="comer"] .pj-brazo-robot { transform: rotate(-12deg); }
+[data-pose="comer"] .pj-antebrazo   { transform: rotate(-150deg); }
+[data-pose="comer"] .agente-volador__cuerpo { animation: pj-respira 1.2s ease-in-out infinite alternate; }
+/* Enchilado: rojo, temblando, agitando los brazos y echando humo por las orejas. */
+.agente-volador__sprite[data-pose="enchilado"] { animation: pj-sacude 110ms linear infinite; }
+[data-pose="enchilado"] .pj-cabeza { filter: sepia(1) saturate(5) hue-rotate(-35deg) brightness(0.95); }
+[data-pose="enchilado"] .pj-brazo-robot { animation: pj-agita 180ms ease-in-out infinite alternate; }
+[data-pose="enchilado"] .pj-brazo       { animation: pj-pump-b 200ms ease-in-out infinite alternate; }
+.agente-volador__elote {
+  position: absolute;
+  left: 44px;
+  top: 16px;
+  font-size: 13px;
+  transform: rotate(-35deg);
+  pointer-events: none;
+}
+.agente-volador__orejas i {
+  position: absolute;
+  top: 6px;
+  font-style: normal;
+  font-size: 12px;
+  animation: pj-orejas 600ms ease-out infinite;
+}
+.agente-volador__orejas i:nth-child(1) { left: 26px; transform: scaleX(-1); }
+.agente-volador__orejas i:nth-child(2) { left: 58px; animation-delay: 300ms; }
+@keyframes pj-orejas { from { opacity: 1; translate: 0 0; } to { opacity: 0; translate: 0 -12px; } }
+/* Wi-Fi caído: gris y trabado a saltos. */
+.agente-volador[data-lag] .agente-volador__sprite { filter: grayscale(1) opacity(0.75); animation: pj-lag 1.1s steps(1) infinite; }
+.agente-volador[data-lag] .agente-volador__sprite * { animation-play-state: paused !important; }
+@keyframes pj-lag {
+  0%  { transform: translate(0, 0); }
+  25% { transform: translate(3px, -1px); }
+  50% { transform: translate(-2px, 0) skewX(5deg); }
+  75% { transform: translate(1px, 1px); }
+}
+
+/* Letrero del viernes de deploy: veladora morada. */
+.agente-volador__letrero[data-tipo="viernes"] {
+  color: #4c1d95;
+  background: #f5f3ff;
+  border-color: #a855f7;
+}
+
+/* La caja de la utilería (portal fijo; mirando a la derecha, se voltea si mira a la izquierda). */
+.agente-util {
+  position: fixed;
+  z-index: 29;
+  height: 110px;
+  pointer-events: none;
+  animation: arcade-entra 280ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 400ms ease;
+}
+.agente-util[data-dir="-1"] { transform: scaleX(-1); }
+.agente-util[data-dir="-1"] .agente-util__texto { transform: scaleX(-1); }
+.agente-util[data-saliendo], .agente-util[data-oculto] { opacity: 0; }
+.agente-util svg { position: absolute; inset: 0; overflow: visible; }
+.agente-util__flama { transform-box: fill-box; transform-origin: 50% 100%; animation: util-flama 380ms ease-in-out infinite alternate; }
+@keyframes util-flama { from { transform: scaleY(1) skewX(-3deg); } to { transform: scaleY(1.15) skewX(4deg); } }
+.agente-util__aura { transform-box: fill-box; transform-origin: center; animation: util-aura 1.6s ease-in-out infinite alternate; }
+@keyframes util-aura { from { transform: scale(0.85); opacity: 0.25; } to { transform: scale(1.1); opacity: 0.45; } }
+.agente-util__texto--veladora {
+  position: absolute;
+  left: 76px;
+  top: 48px;
+  width: 50px;
+  font: 900 6px/1 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-align: center;
+  color: #6d28d9;
+}
+.agente-util__brillo { animation: arcade-parpadea 900ms steps(2, jump-none) infinite; }
+/* Pantalla de la laptop, en grande arriba de la mesa. */
+.agente-util__pantalla {
+  position: absolute;
+  left: 62px;
+  top: -40px;
+  width: 104px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 3px solid #0f172a;
+  border-radius: 6px;
+  background: #f8fafc;
+  box-shadow: 3px 3px 0 #0f172a;
+}
+.agente-util__pantalla::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 100%;
+  width: 3px;
+  height: 46px;
+  background: repeating-linear-gradient(#0f172a 0 3px, transparent 3px 6px);
+}
+.agente-util__pantalla-contenido { display: grid; gap: 3px; place-items: center; padding: 2px 4px; font: 600 8px/1.2 ui-sans-serif, system-ui, sans-serif; color: #0f172a; text-align: center; }
+.agente-util__pantalla-contenido b { font-size: 9px; }
+.agente-util__pantalla[data-tipo="stack"][data-fase="lee"] b { color: #f48024; }
+.agente-util__pantalla[data-tipo="stack"][data-fase="caido"] { background: #fee2e2; animation: pj-sacude 140ms linear 3; }
+.agente-util__pantalla[data-tipo="stack"][data-fase="caido"] b { color: #b91c1c; }
+.agente-util__caras { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px 6px; font-size: 12px; line-height: 1; }
+.agente-util__pantalla[data-fase="pregunta"] { animation: pj-sacude 140ms linear infinite; background: #fef9c3; }
+.agente-util__pantalla[data-fase="pregunta"] small { font-weight: 800; color: #b91c1c; }
+/* Wi-Fi: rayitas de señal y el letrerito. */
+.agente-util__wifi {
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  padding: 2px 7px;
+  border: 1.5px solid #334155;
+  border-radius: 9999px;
+  background: #fff;
+  font: 700 9px/1.3 ui-sans-serif, system-ui, sans-serif;
+  color: #334155;
+}
+/* Arriba de la silla: el letrerito sube por encima del globo de diálogo (que también sube). */
+.agente-util__wifi[data-fase="senal"] { top: -80px; }
+.agente-util__wifi[data-fase="conecta"] { top: -80px; color: #15803d; border-color: #16a34a; }
+.agente-util__barras { display: inline-flex; align-items: flex-end; gap: 1px; height: 9px; }
+.agente-util__barras i { width: 2.5px; background: #cbd5e1; border-radius: 1px; }
+.agente-util__barras i:nth-child(1) { height: 3px; }
+.agente-util__barras i:nth-child(2) { height: 6px; }
+.agente-util__barras i:nth-child(3) { height: 9px; }
+.agente-util__wifi[data-fase="lag"] .agente-util__barras i:nth-child(1) { background: #ef4444; animation: arcade-parpadea 500ms steps(2, jump-none) infinite; }
+.agente-util__wifi[data-fase="senal"] .agente-util__barras i { animation: util-barra 1.5s steps(1) infinite; }
+.agente-util__wifi[data-fase="senal"] .agente-util__barras i:nth-child(2) { animation-delay: 0.4s; }
+.agente-util__wifi[data-fase="senal"] .agente-util__barras i:nth-child(3) { animation-delay: 0.8s; }
+@keyframes util-barra { 0% { background: #cbd5e1; } 50% { background: #f59e0b; } }
+.agente-util__wifi[data-fase="conecta"] .agente-util__barras i { background: #16a34a; }
+
+/* El que camina (elotero, oso): lo mueve el loop. */
+.agente-actor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 29;
+  pointer-events: none;
+  transition: opacity 400ms ease;
+}
+.agente-actor[data-saliendo], .agente-actor[data-oculto] { opacity: 0; }
+.agente-actor__cuerpo svg { display: block; overflow: visible; }
+.agente-actor[data-tipo="elotero"] .agente-actor__cuerpo { animation: pj-rebote 180ms ease-in-out infinite alternate; }
+.agente-actor[data-tipo="elotero"][data-fase="para"] .agente-actor__cuerpo,
+.agente-actor[data-tipo="elotero"][data-fase="comer"] .agente-actor__cuerpo,
+.agente-actor[data-tipo="elotero"][data-fase="enchilado"] .agente-actor__cuerpo { animation: none; }
+.agente-actor__letrero {
+  position: absolute;
+  left: 50%;
+  top: 41px;
+  translate: -50% 0;
+  font: 900 8px/1 ui-sans-serif, system-ui, sans-serif;
+  color: #b45309;
+}
+.agente-actor__grito {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  translate: -50% 0;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border: 1.5px solid #b45309;
+  border-radius: 12px;
+  background: #fef3c7;
+  color: #7f1d1d;
+  font: 800 11px/1.2 ui-sans-serif, system-ui, sans-serif;
+  animation: pj-globo-entra 160ms ease-out, pj-grito 300ms ease-in-out 160ms infinite alternate;
+}
+.agente-actor[data-tipo="campamento"] .agente-actor__patas { animation: util-pata 320ms ease-in-out infinite alternate; }
+.agente-actor[data-tipo="campamento"] .agente-actor__patas--2 { animation-direction: alternate-reverse; }
+.agente-actor[data-tipo="campamento"][data-fase="huye"] .agente-actor__patas { animation-duration: 140ms; }
+.agente-actor[data-tipo="campamento"][data-fase="huye"] .agente-actor__cuerpo { animation: pj-rebote 140ms ease-in-out infinite alternate; }
+@keyframes util-pata { from { transform: translateY(0) skewX(-12deg); } to { transform: translateY(-2px) skewX(12deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .agente-util, .agente-util *, .agente-actor, .agente-actor *, .agente-volador__orejas i { animation: none !important; }
+}
+
 /* ── Estilos de vuelo (data-vuelo, solo en volar) ─────────────────────────── */
 /* Nado: crol en el aire — brazos en molino alternados y patada. */
 [data-pose="volar"][data-vuelo="nado"] .pj-brazo-robot { animation: pj-crol 1.5s linear infinite; }
