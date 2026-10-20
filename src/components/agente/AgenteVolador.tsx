@@ -54,7 +54,7 @@ const CLAUDE_FALLO_MS = 9000;
 const CLAUDE_PREGUNTA_MS = 45_000;
 /** Escenas que no se interrumpen entre sí (la siguiente espera en la cola). */
 const ESCENAS: Pose[] = ["festejo", "llorar", "brinco", "victoria", "pregunta", "chispazo", "arcade", "marometa", "berrinche", "patada",
-  "pescar", "jalar", "presume", "perseguir", "coraje"];
+  "pescar", "jalar", "presume", "perseguir", "coraje", "rumbo", "cafe", "celular", "susto", "pensar"];
 
 const COLORES_CONFETI = ["#f59e0b", "#ef4444", "#22d3ee", "#a855f7", "#22c55e", "#facc15", "#3b82f6", "#ec4899"];
 
@@ -102,7 +102,7 @@ function lanzarConfeti(tipo: "colores" | "android" | "ios" = "colores") {
 
 type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta" | "llorar" | "brinco"
   | "victoria" | "pregunta" | "chispazo" | "arcade" | "marometa" | "berrinche" | "patada"
-  | "pescar" | "jalar" | "presume" | "perseguir" | "coraje";
+  | "pescar" | "jalar" | "presume" | "perseguir" | "coraje" | "rumbo" | "cafe" | "celular" | "susto" | "pensar";
 export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando" | "relajado" | "comiendo" | "sorbiendo" | "lamiendo";
 /** Cómo vuela: puño al frente, nadando de crol, o boca arriba con las manos en la nuca. */
 export type EstiloVuelo = "superman" | "nado" | "relax";
@@ -441,6 +441,39 @@ const FRASES_PESCA = {
   ],
 };
 
+/**
+ * Café: al terminar de caminar, a veces aparece un kiosquito de MONÓCOLO
+ * (café de especialidad de Guadalajara, monocolo.mx; sus colores: espresso,
+ * crema y dorado). Se va a chingar un cafecito, pide por la app (viñeta del
+ * celular), le brota un bug cabrón en la pantalla y se imagina a Toñito
+ * echando la weba, dando un rol en su moto (globo de pensamiento).
+ */
+type FaseCafe = "rumbo" | "llega" | "app" | "bug" | "tonito";
+/** `x`,`y`: el kiosco; `pj`: dónde quedó parado el personaje (para la viñeta y el globo). */
+type Cafe = { id: number; x: number; y: number; fase: FaseCafe; pj: { x: number; y: number }; saliendo?: boolean };
+/** Para probarla: `dispatchEvent(new CustomEvent("agente:cafe"))`. */
+export const EVENTO_CAFE = "agente:cafe";
+/** Kiosco: ancho de su dibujo y lo que sobresale arriba del personaje. */
+const CAFE_ANCHO = 88;
+const CAFE_ARRIBA = 30;
+/** Aparece lejos, del lado contrario, y él camina hasta allá (no más de esto). */
+const CAFE_LEJOS = 420;
+const CAFE_MS: Record<Exclude<FaseCafe, "rumbo">, number> = { llega: 1800, app: 4200, bug: 2800, tonito: 6500 };
+const CAFE_CADA_MS: [number, number] = [180_000, 360_000];
+const FRASES_CAFE = {
+  rumbo: ["¡Me voy a ir a chingar un cafecito!", "Ya estuvo, un cafecito o me muero", "¡Monócolo, ahí te voy!"],
+  llega: ["¡Quiubo! …mejor lo pido en la app", "Huele a gloria aquí", "A ver el menú…"],
+  app: [
+    "Un latte de avena… extra shot", "Pidiendo por la app, como la gente decente", "Un cold brew pa' aguantar el deploy",
+    "Con puntos me sale gratis, ¿no?",
+  ],
+  bug: ["¡¿Qué?! ¡Un bug cabrón!", "¡No mames, un bug en la app!", "¡Me lleva la…! ¡Un bug!"],
+  tonito: [
+    "¡Mta madre! ¿Ese Toñito qué estará haciendo?", "¿Y el Toñito? Seguro echando la weba…",
+    "¡Toñooo! ¿Dónde andas, cabrón?", "Ese Toñito ha de andar dando el rol…",
+  ],
+};
+
 const signoAzar = () => (Math.random() < 0.5 ? -1 : 1) as 1 | -1;
 const una = <T,>(l: readonly T[]): T => l[Math.floor(Math.random() * l.length)];
 
@@ -484,6 +517,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
   const [manga, setManga] = useState<Manga | null>(null);
   const [maquina, setMaquina] = useState<Maquina | null>(null);
   const [pesca, setPesca] = useState<Pesca | null>(null);
+  const [cafe, setCafe] = useState<Cafe | null>(null);
   /** El pez que se escapa lo mueve el loop directo (como al personaje), sin re-render por frame. */
   const pezRef = useRef<HTMLDivElement>(null);
   /** Lo último que se pintó de la pesca, para que el loop sepa qué presa salió y dónde está la caja. */
@@ -711,6 +745,50 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       proximaFrase = ahora + 3000;
       return true;
     };
+    // Café (ver FRASES_CAFE).
+    let proximoCafe = performance.now() + azar(120_000, 240_000);
+    let enCafe = false;
+    /** A dónde camina para quedar junto al kiosco. */
+    let metaCafe = 0;
+    let rumboDesde = 0;
+    let idCafe = 0;
+    let quitarCafe: ReturnType<typeof setTimeout> | undefined;
+    const faseCafe = (fase: FaseCafe) => setCafe((c) => (c ? { ...c, fase } : c));
+    const empezarCafe = (ahora: number): boolean => {
+      // El kiosco sale del lado con más pantalla, lejos de él, y él camina hasta allá.
+      const W = window.innerWidth;
+      const dir = (s.x + TAM / 2 < W / 2 ? 1 : -1) as 1 | -1;
+      const kx = dir === 1
+        ? Math.min(W - MARGEN - CAFE_ANCHO, s.x + TAM + CAFE_LEJOS - CAFE_ANCHO)
+        : Math.max(MARGEN, s.x - CAFE_LEJOS);
+      // Queda parado junto al mostrador: el cuerpo del kiosco va de x+8 a x+80.
+      const meta = dir === 1 ? kx - 58 : kx + CAFE_ANCHO - 22;
+      if (Math.abs(meta - s.x) < 120) return false;
+      s.dir = dir;
+      s.y = piso();
+      enCafe = true;
+      metaCafe = meta;
+      rumboDesde = ahora;
+      clearTimeout(quitarCafe);
+      idCafe += 1;
+      setCafe({ id: idCafe, x: kx, y: piso() - CAFE_ARRIBA, fase: "rumbo", pj: { x: meta, y: s.y } });
+      cambiarPose("rumbo");
+      ponerAnimo("feliz");
+      decir(una(FRASES_CAFE.rumbo), "grito", 2600);
+      proximaFrase = ahora + 3200;
+      return true;
+    };
+    const terminarCafe = () => {
+      enCafe = false;
+      quitarCafe = setTimeout(() => {
+        setCafe((c) => (c ? { ...c, saliendo: true } : c));
+        quitarCafe = setTimeout(() => setCafe(null), 400);
+      }, 300);
+      ponerAnimo("serio");
+      cambiarPose("agachar", 200);
+      s.siguiente = "despegar";
+    };
+
     const terminarPesca = () => {
       pescaJs = null;
       quitarPesca = setTimeout(() => {
@@ -1209,6 +1287,68 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           if (fin) terminarPesca();
           break;
         }
+        case "rumbo": {
+          // Camina (con ganas) hasta el kiosco.
+          s.x += VEL_CAMINAR * 1.8 * dt * s.dir;
+          const llego = s.dir === 1 ? s.x >= metaCafe : s.x <= metaCafe;
+          if (llego || ahora - rumboDesde > 14_000) {
+            s.x = metaCafe;
+            setCafe((c) => (c ? { ...c, fase: "llega", pj: { x: s.x, y: s.y } } : c));
+            cambiarPose("cafe", CAFE_MS.llega);
+            finDialogo = 0;
+            decir(una(FRASES_CAFE.llega), "habla", 1800);
+            proximaFrase = ahora + CAFE_MS.llega;
+          } else if (!finDialogo && ahora >= proximaFrase) {
+            decir(una(FRASES_CAFE.rumbo), "habla", 2000);
+            proximaFrase = ahora + 3500;
+          }
+          break;
+        }
+        case "cafe": {
+          // Llegó al kiosco; saca el celular y pide por la app.
+          if (fin) {
+            faseCafe("app");
+            cambiarPose("celular", CAFE_MS.app);
+            ponerAnimo("serio");
+            decir(una(FRASES_CAFE.app), "habla", 2600);
+            proximaFrase = ahora + 2800;
+          }
+          break;
+        }
+        case "celular": {
+          if (!finDialogo && ahora >= proximaFrase) {
+            decir(una(FRASES_CAFE.app), "habla", 2000);
+            proximaFrase = ahora + 3000;
+          }
+          if (fin) {
+            faseCafe("bug");
+            cambiarPose("susto", CAFE_MS.bug);
+            ponerAnimo("grito");
+            finDialogo = 0;
+            decir(una(FRASES_CAFE.bug), "grito", 2400);
+            proximaFrase = ahora + CAFE_MS.bug;
+          }
+          break;
+        }
+        case "susto": {
+          if (fin) {
+            faseCafe("tonito");
+            cambiarPose("pensar", CAFE_MS.tonito);
+            ponerAnimo("serio");
+            finDialogo = 0;
+            decir(una(FRASES_CAFE.tonito), "grito", 3000);
+            proximaFrase = ahora + 3300;
+          }
+          break;
+        }
+        case "pensar": {
+          if (!finDialogo && ahora >= proximaFrase) {
+            decir(una(FRASES_CAFE.tonito), "habla", 2600);
+            proximaFrase = ahora + 4000;
+          }
+          if (fin) terminarCafe();
+          break;
+        }
         case "agachar": {
           if (fin) {
             if (s.siguiente === "caminar") {
@@ -1227,6 +1367,10 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           }
           if (fin) {
             // Lo forzado (eventos de prueba) primero; luego arcade o pesca, si ya toca.
+            if (proximoCafe === 0 && empezarCafe(ahora)) {
+              proximoCafe = ahora + azar(...CAFE_CADA_MS);
+              break;
+            }
             if (proximaPesca === 0 && empezarPesca(ahora, pezForzado)) {
               proximaPesca = ahora + azar(...PESCA_CADA_MS);
               break;
@@ -1237,6 +1381,10 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
             }
             if (ahora >= proximaPesca && Math.random() < 0.6 && empezarPesca(ahora, false)) {
               proximaPesca = ahora + azar(...PESCA_CADA_MS);
+              break;
+            }
+            if (ahora >= proximoCafe && Math.random() < 0.6 && empezarCafe(ahora)) {
+              proximoCafe = ahora + azar(...CAFE_CADA_MS);
               break;
             }
             if (Math.random() < 0.4) cambiarPose("quieto", azar(7000, 13000));
@@ -1275,7 +1423,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       if (finDialogo && ahora >= finDialogo) {
         finDialogo = 0;
         setDialogo(null);
-        if (animoActual === "grito" && s.pose !== "alerta" && !arcade && !pescaJs) ponerAnimo("feliz");
+        if (animoActual === "grito" && s.pose !== "alerta" && !arcade && !pescaJs && !enCafe) ponerAnimo("feliz");
       }
       if (!finDialogo && ahora >= proximaFrase && s.pose !== "alerta" && !ESCENAS.includes(s.pose)) {
         if (s.pose === "volar" && snackActual === "helado") {
@@ -1335,7 +1483,12 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       el.style.transform = `translate3d(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px, 0)`;
       // El globo se acomoda para no salirse: hacia adentro en las orillas y
       // debajo del personaje cuando va pegado al techo.
-      const borde = s.x < 110 ? "izq" : s.x > window.innerWidth - TAM - 110 ? "der" : "";
+      // Junto a la maquinita, el charco o el kiosco, el globo se abre hacia el otro
+      // lado para no taparlos (mira hacia el objeto: "der" lo abre a la izquierda).
+      const conObjeto = arcade || pescaJs || (enCafe && s.pose !== "rumbo");
+      const borde = conObjeto
+        ? (s.dir === 1 ? "der" : "izq")
+        : s.x < 110 ? "izq" : s.x > window.innerWidth - TAM - 110 ? "der" : "";
       const arriba = s.y < TECHO + 70 ? "1" : "";
       if (el.dataset.borde !== borde) el.dataset.borde = borde;
       if (el.dataset.arriba !== arriba) el.dataset.arriba = arriba;
@@ -1397,6 +1550,13 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       if (s.pose === "caminar") s.hasta = performance.now();
     };
     window.addEventListener(EVENTO_PESCA, alPesca);
+    // Café en cuanto vuelva a pisar el suelo y termine de caminar.
+    const alCafe = () => {
+      proximoCafe = 0;
+      s.ganasDeAterrizar = 0;
+      if (s.pose === "caminar") s.hasta = performance.now();
+    };
+    window.addEventListener(EVENTO_CAFE, alCafe);
 
     frame = requestAnimationFrame(paso);
     const alRedimensionar = () => {
@@ -1408,6 +1568,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       clearTimeout(quitarLetrero);
       clearTimeout(quitarMaquina);
       clearTimeout(quitarPesca);
+      clearTimeout(quitarCafe);
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", alRedimensionar);
       window.removeEventListener(EVENTO_FESTEJO, alFestejo);
@@ -1419,6 +1580,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       window.removeEventListener(EVENTO_CLAUDE, alClaude);
       window.removeEventListener(EVENTO_ARCADE, alArcade);
       window.removeEventListener(EVENTO_PESCA, alPesca);
+      window.removeEventListener(EVENTO_CAFE, alCafe);
     };
   }, []);
 
@@ -1475,7 +1637,8 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
             aria-hidden
             style={{
               left: Math.min(Math.max(8, manga.x - 70), window.innerWidth - 248),
-              top: manga.y > 230 ? manga.y - 200 : manga.y + 96,
+              // Arriba del globo de diálogo (no encima de él); pegado al techo, abajo.
+              top: manga.y > 290 ? manga.y - 262 : manga.y + 100,
             }}
           >
             {manga.estilo === "zoom" && <div className="agente-manga__lineas" />}
@@ -1492,6 +1655,58 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
             <span className="agente-manga__nombre">{nombre}</span>
             <span className="agente-manga__texto">{manga.texto}</span>
           </div>,
+          document.body,
+        )}
+      {cafe &&
+        createPortal(
+          <>
+            <div
+              key={cafe.id}
+              className="agente-cafe"
+              data-fase={cafe.fase}
+              data-saliendo={cafe.saliendo || undefined}
+              data-oculto={pausado || undefined}
+              aria-hidden
+              style={{ left: cafe.x, top: cafe.y }}
+            >
+              <KioscoMonocolo />
+              <div className="agente-cafe__letrero">MONÓCOLO</div>
+            </div>
+            {/* Viñeta del celular: la app de Monócolo y, de repente, el bug. */}
+            {(cafe.fase === "app" || cafe.fase === "bug") && !cafe.saliendo && (
+              <div
+                key={cafe.fase}
+                className="agente-manga agente-cafe__vineta"
+                data-estilo={cafe.fase === "bug" ? "shock" : "gota"}
+                data-oculto={pausado || undefined}
+                aria-hidden
+                style={{
+                  left: Math.min(Math.max(8, cafe.pj.x - 80), window.innerWidth - 248),
+                  top: Math.max(8, cafe.pj.y - 262),
+                }}
+              >
+                {cafe.fase === "bug" && <div className="agente-manga__rayo" />}
+                <AppMonocolo bug={cafe.fase === "bug"} />
+                <span className="agente-manga__texto">{cafe.fase === "bug" ? "¡¡UN BUG CABRÓN!!" : "Pidiendo mi cafecito ☕"}</span>
+              </div>
+            )}
+            {/* Globo de pensamiento: Toñito echando la weba en su moto. */}
+            {cafe.fase === "tonito" && !cafe.saliendo && (
+              <div
+                className="agente-cafe__piensa"
+                data-oculto={pausado || undefined}
+                aria-hidden
+                style={{
+                  left: Math.min(Math.max(8, cafe.pj.x - 70), window.innerWidth - 228),
+                  top: Math.max(8, cafe.pj.y - 240),
+                }}
+              >
+                <div className="agente-cafe__nube"><Tonito /></div>
+                <i className="agente-cafe__burbuja" />
+                <i className="agente-cafe__burbuja agente-cafe__burbuja--2" />
+              </div>
+            )}
+          </>,
           document.body,
         )}
       {pesca &&
@@ -1617,12 +1832,122 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       <span className="agente-volador__globo">GeorgIA · Alt+K</span>
       <div ref={orientacion} className="agente-volador__orientacion">
         <div ref={inclinacion} className="agente-volador__inclinacion">
-          <Personaje pose={pose} animo={animo} snack={snack} vuelo={vuelo} />
+          <Personaje pose={pose === "rumbo" ? "caminar" : pose} animo={animo} snack={snack} vuelo={vuelo} />
+          {(cafe?.fase === "app" || cafe?.fase === "bug") && (
+            <span className="agente-volador__cel" data-bug={cafe.fase === "bug" || undefined} aria-hidden />
+          )}
         </div>
       </div>
       {/* Fuera de la orientación: no se voltea ni gira con el personaje. La key lo re-anima al cambiar. */}
       <span key={skin} className="agente-volador__gafete" aria-hidden>{nombre}</span>
     </button>
+  );
+}
+
+/** Kiosco de MONÓCOLO (espresso, crema y dorado), en la caja de la escena del café. */
+function KioscoMonocolo() {
+  return (
+    <svg viewBox={`92 0 ${CAFE_ANCHO} ${CAFE_ARRIBA + TAM}`} width={CAFE_ANCHO} height={CAFE_ARRIBA + TAM}>
+      {/* Toldo a rayas con orilla de ondas. */}
+      <rect x="96" y="22" width="80" height="12" fill="#EDE8DF" stroke="#2C2118" strokeWidth="1.5" />
+      {[0, 1, 2, 3, 4].map((i) => <rect key={i} x={96 + i * 16} y="22" width="8" height="12" fill="#2C2118" />)}
+      <path
+        d={`M96 34 ${"q4 6 8 0 ".repeat(10)}`}
+        fill="#EDE8DF"
+        stroke="#2C2118"
+        strokeWidth="1.5"
+      />
+      {/* Cuerpo, ventanilla y mostrador. */}
+      <rect x="100" y="40" width="72" height="64" fill="#EDE8DF" stroke="#2C2118" strokeWidth="1.5" />
+      <rect x="106" y="46" width="60" height="26" rx="2" fill="#2C2118" />
+      <rect x="96" y="72" width="80" height="6" fill="#B89B6E" stroke="#2C2118" strokeWidth="1.2" />
+      <rect x="106" y="80" width="60" height="22" fill="#d8d0c4" stroke="#2C2118" strokeWidth="1" />
+      {/* Vasito con vapor en el mostrador. */}
+      <path d="M146 62 l2 10 h8 l2 -10z" fill="#f7f4ef" stroke="#2C2118" strokeWidth="1" />
+      <rect x="146" y="60" width="12" height="3" rx="1" fill="#2C2118" />
+      <path className="agente-cafe__vapor" d="M150 57 q-2 -3 0 -6 q2 -3 0 -6" fill="none" stroke="#f7f4ef" strokeWidth="1.2" strokeLinecap="round" />
+      <path className="agente-cafe__vapor agente-cafe__vapor--2" d="M155 57 q-2 -3 0 -6 q2 -3 0 -6" fill="none" stroke="#f7f4ef" strokeWidth="1.2" strokeLinecap="round" />
+      {/* Barista: solo la silueta en la ventanilla. */}
+      <circle cx="122" cy="58" r="6" fill="#B89B6E" />
+      <rect x="114" y="64" width="16" height="8" rx="3" fill="#B89B6E" />
+    </svg>
+  );
+}
+
+/** Pantalla del celular en la viñeta: la app de Monócolo y, con `bug`, el bicho que la truena. */
+function AppMonocolo({ bug }: { bug: boolean }) {
+  return (
+    <div className="agente-cafe__app" data-bug={bug || undefined}>
+      <div className="agente-cafe__app-barra">MONÓCOLO</div>
+      <div className="agente-cafe__app-cuerpo">
+        <div className="agente-cafe__app-item"><span>Latte de avena</span><b>$68</b></div>
+        <div className="agente-cafe__app-item"><span>Cold brew</span><b>$62</b></div>
+        <div className="agente-cafe__app-boton">{bug ? "ERROR 500" : "Pedir ahora"}</div>
+      </div>
+      {bug && <span className="agente-cafe__bicho">🐛</span>}
+    </div>
+  );
+}
+
+/** Lo que se imagina: Toñito (panzón) echando la weba, dando el rol en su chopper. */
+function Tonito() {
+  return (
+    <svg viewBox="0 -8 170 100" width="170" height="100">
+      <circle cx="12" cy="2" r="7" fill="#fde047" />
+      <g className="agente-cafe__camino">
+        <line x1="-20" y1="86" x2="190" y2="86" stroke="#94a3b8" strokeWidth="2" strokeDasharray="12 10" />
+      </g>
+      {/* Líneas de velocidad y humo del escape */}
+      <g className="agente-cafe__velocidad" stroke="#cbd5e1" strokeWidth="1.5" strokeLinecap="round">
+        <line x1="2" y1="40" x2="16" y2="40" />
+        <line x1="6" y1="50" x2="22" y2="50" />
+        <line x1="0" y1="60" x2="12" y2="60" />
+      </g>
+      <g className="agente-cafe__moto">
+        <circle className="agente-cafe__humo" cx="14" cy="74" r="4" fill="#9ca3af" />
+        <circle className="agente-cafe__humo agente-cafe__humo--2" cx="10" cy="72" r="3" fill="#cbd5e1" />
+        {/* Llantas: la de atrás gorda; rines cromados */}
+        <circle cx="42" cy="72" r="14" fill="#111827" />
+        <circle cx="42" cy="72" r="7" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="1.5" />
+        <circle cx="132" cy="74" r="12" fill="#111827" />
+        <circle cx="132" cy="74" r="6" fill="#e5e7eb" stroke="#9ca3af" strokeWidth="1.5" />
+        {/* Escapes dobles cromados */}
+        <path d="M70 70 L20 74" stroke="#d1d5db" strokeWidth="4" strokeLinecap="round" />
+        <path d="M72 76 L22 79" stroke="#e5e7eb" strokeWidth="3.5" strokeLinecap="round" />
+        {/* Salpicadera, chasis y horquilla larga de chopper */}
+        <path d="M26 64 Q42 52 58 62" fill="none" stroke="#b91c1c" strokeWidth="4" strokeLinecap="round" />
+        <path d="M42 72 L60 58 L96 58" fill="none" stroke="#374151" strokeWidth="3.5" strokeLinejoin="round" />
+        <path d="M108 44 L132 74" stroke="#e5e7eb" strokeWidth="4.5" strokeLinecap="round" />
+        {/* Motor V-twin con aletas */}
+        <path d="M64 70 L68 52 L78 52 L76 70z" fill="#9ca3af" stroke="#4b5563" strokeWidth="1.2" />
+        <path d="M76 70 L84 52 L94 54 L86 70z" fill="#9ca3af" stroke="#4b5563" strokeWidth="1.2" />
+        <path d="M67 56 h10 M66 60 h10 M83 57 h9 M82 61 h9" stroke="#4b5563" strokeWidth="1" />
+        {/* Tanque negro con flamas */}
+        <path d="M74 50 Q80 38 98 40 Q110 42 108 50z" fill="#111827" />
+        <path d="M80 48 Q84 42 88 46 Q90 40 95 44 Q98 41 102 46 L104 49z" fill="#f97316" />
+        <path d="M84 49 Q87 45 90 48 Q93 44 97 48 L99 49z" fill="#facc15" />
+        {/* Asiento bajo de piel */}
+        <path d="M48 52 Q58 46 74 50 L72 56 H52z" fill="#78350f" />
+        {/* Manubrio alto (ape hanger) y faro con luz */}
+        <path d="M106 44 L110 24 L102 22" stroke="#111827" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        <path d="M118 46 L170 36 L170 60z" fill="#fef9c3" opacity="0.6" />
+        <circle cx="116" cy="48" r="4.5" fill="#fde68a" stroke="#9ca3af" strokeWidth="1.5" />
+        {/* Toñito: panzón, gorra al revés, lentes oscuros y bigote, una mano en la nuca */}
+        <path d="M58 50 L80 62 L92 66" stroke="#1e3a8a" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        <ellipse cx="60" cy="36" rx="15" ry="16" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="1.5" />
+        <ellipse cx="66" cy="42" rx="10" ry="9" fill="#f1f5f9" />
+        <path d="M66 30 Q88 26 103 23" stroke="#e0a77a" strokeWidth="5.5" strokeLinecap="round" fill="none" />
+        <path d="M54 26 Q44 18 52 8" stroke="#e0a77a" strokeWidth="5.5" strokeLinecap="round" fill="none" />
+        <circle cx="62" cy="13" r="10.5" fill="#e0a77a" />
+        <path d="M54 19 q8 6 16 0" stroke="#c98a5e" strokeWidth="1.5" fill="none" />
+        <path d="M52 9 Q60 0 72 6 L76 8 L52 11z" fill="#dc2626" />
+        <path d="M50 10 h-6" stroke="#dc2626" strokeWidth="3" strokeLinecap="round" />
+        <rect x="60" y="10" width="13" height="4" rx="2" fill="#0f172a" />
+        <path d="M62 17 q4 -2 9 0" stroke="#3f2a1d" strokeWidth="2" strokeLinecap="round" fill="none" />
+      </g>
+      <text className="agente-cafe__notas" x="82" y="12" fontSize="12">♪</text>
+      <text x="104" y="6" fontSize="10" fontWeight="800" fill="#2C2118">Toñito 🏍️</text>
+    </svg>
   );
 }
 

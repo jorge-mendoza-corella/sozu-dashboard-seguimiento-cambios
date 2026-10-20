@@ -37,6 +37,7 @@
   transition: transform 180ms var(--ease-out);
 }
 .agente-volador__inclinacion {
+  position: relative;
   width: 100%;
   height: 100%;
 }
@@ -664,6 +665,177 @@
 
 @media (prefers-reduced-motion: reduce) {
   .agente-pesca, .agente-pesca *, .agente-pez, .agente-pez * { animation: none !important; }
+}
+
+/* ── Café MONÓCOLO: pide por la app, le sale un bug y piensa en Toñito ─────── */
+[data-pose="cafe"] .agente-volador__cuerpo { animation: pj-respira 2.4s ease-in-out infinite alternate; }
+[data-pose="cafe"] .pj-brazo-robot { transform: rotate(-20deg); }
+[data-pose="cafe"] .pj-cabeza      { transform: rotate(-4deg); }
+/* Celular: antebrazo arriba con el teléfono frente a la cara, mirando la pantalla. */
+[data-pose="celular"] .pj-brazo-robot { transform: rotate(-38deg); }
+[data-pose="celular"] .pj-antebrazo   { transform: rotate(-100deg); }
+[data-pose="celular"] .pj-cabeza      { transform: rotate(9deg); }
+[data-pose="celular"] .agente-volador__cuerpo { animation: pj-respira 2.4s ease-in-out infinite alternate; }
+/* Susto: brazos arriba y temblando. */
+.agente-volador__sprite[data-pose="susto"] { animation: pj-sacude 110ms linear infinite; }
+[data-pose="susto"] .pj-brazo-robot { transform: rotate(-160deg); }
+[data-pose="susto"] .pj-brazo       { transform: rotate(150deg); }
+/* Pensar: puño en la barbilla, mirando para arriba (al globo). */
+[data-pose="pensar"] .pj-brazo-robot { transform: rotate(-12deg); }
+[data-pose="pensar"] .pj-antebrazo   { transform: rotate(-150deg); }
+[data-pose="pensar"] .pj-cabeza      { transform: rotate(-10deg); }
+[data-pose="pensar"] .agente-volador__cuerpo { animation: pj-respira 2.4s ease-in-out infinite alternate; }
+
+.agente-cafe {
+  position: fixed;
+  z-index: 29;
+  width: 88px;
+  height: 110px;
+  pointer-events: none;
+  animation: arcade-entra 280ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 400ms ease;
+}
+.agente-cafe[data-saliendo], .agente-cafe[data-oculto] { opacity: 0; }
+.agente-cafe svg { position: absolute; inset: 0; overflow: visible; }
+/* Al frente del mostrador (abajo): arriba lo taparía el globo de diálogo. */
+.agente-cafe__letrero {
+  position: absolute;
+  left: 14px;
+  top: 84px;
+  width: 60px;
+  padding: 2px 0;
+  border: 1.5px solid #B89B6E;
+  border-radius: 2px;
+  background: #2C2118;
+  color: #EDE8DF;
+  font: 600 7px/1.2 "Work Sans", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+.agente-cafe__vapor { animation: cafe-vapor 1.8s ease-in-out infinite; }
+.agente-cafe__vapor--2 { animation-delay: 0.9s; }
+@keyframes cafe-vapor { 0% { opacity: 0; transform: translateY(2px); } 40% { opacity: 0.9; } 100% { opacity: 0; transform: translateY(-6px); } }
+/* El celular en la mano, frente a la cara (va dentro del personaje: se voltea con él). */
+.agente-volador__cel {
+  position: absolute;
+  left: 54px;
+  top: 30px;
+  width: 8px;
+  height: 13px;
+  border: 1.5px solid #0f172a;
+  border-radius: 2px;
+  background: #EDE8DF;
+  box-shadow: inset 0 3px 0 #2C2118;
+}
+.agente-volador__cel[data-bug] { background: #fecaca; animation: pj-sacude 110ms linear infinite; }
+
+/* Viñeta con la pantalla de la app (marco de manga existente). */
+.agente-cafe__vineta { display: grid; place-items: center; }
+.agente-cafe__vineta[data-oculto] { opacity: 0; }
+.agente-cafe__app {
+  position: relative;
+  width: 104px;
+  height: 140px;
+  margin-top: -16px;
+  border: 4px solid #0f172a;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #EDE8DF;
+  font-family: "Figtree", ui-sans-serif, system-ui, sans-serif;
+  color: #2C2118;
+  transform: rotate(-4deg);
+}
+.agente-cafe__app-barra {
+  padding: 8px 0 6px;
+  background: #2C2118;
+  color: #EDE8DF;
+  font: 600 9px/1 "Work Sans", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.2em;
+  text-align: center;
+}
+.agente-cafe__app-cuerpo { display: grid; gap: 5px; padding: 8px 7px; }
+.agente-cafe__app-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 5px;
+  border-radius: 5px;
+  background: #f7f4ef;
+  font-size: 8px;
+}
+.agente-cafe__app-item b { color: #B89B6E; }
+.agente-cafe__app-boton {
+  margin-top: 6px;
+  padding: 5px 0;
+  border-radius: 9999px;
+  background: #B89B6E;
+  color: #2C2118;
+  font-size: 8px;
+  font-weight: 700;
+  text-align: center;
+}
+.agente-cafe__app[data-bug] { animation: cafe-glitch 160ms steps(2, jump-none) infinite; }
+.agente-cafe__app[data-bug] .agente-cafe__app-cuerpo { filter: hue-rotate(160deg) saturate(2); }
+.agente-cafe__app[data-bug] .agente-cafe__app-boton { background: #c0392b; color: #fff; }
+@keyframes cafe-glitch {
+  0%   { transform: rotate(-4deg) translate(0, 0); clip-path: inset(0 0 0 0); }
+  100% { transform: rotate(-3deg) translate(2px, -1px); clip-path: inset(8% 0 4% 0); }
+}
+.agente-cafe__bicho {
+  position: absolute;
+  left: 30%;
+  top: 30%;
+  font-size: 46px;
+  animation: cafe-bicho 900ms cubic-bezier(0.23, 1, 0.32, 1) both, cafe-patitas 160ms ease-in-out 900ms infinite alternate;
+}
+@keyframes cafe-bicho { from { transform: scale(0.2) rotate(-40deg); opacity: 0; } to { transform: scale(1) rotate(10deg); opacity: 1; } }
+@keyframes cafe-patitas { from { transform: rotate(4deg) translateX(-2px); } to { transform: rotate(16deg) translateX(3px); } }
+
+/* Globo de pensamiento con Toñito: nube y burbujitas hacia la cabeza. */
+.agente-cafe__piensa {
+  position: fixed;
+  /* Debajo del personaje y su globo de diálogo (z-30): no le tapa el texto. */
+  z-index: 28;
+  width: 230px;
+  height: 170px;
+  pointer-events: none;
+  animation: manga-entra 320ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.agente-cafe__piensa[data-oculto] { opacity: 0; }
+.agente-cafe__nube {
+  position: absolute;
+  inset: 0 0 46px 0;
+  display: grid;
+  place-items: center;
+  border: 3px solid #2C2118;
+  border-radius: 48% 52% 46% 54% / 58% 54% 46% 42%;
+  background: #fff;
+  box-shadow: 4px 4px 0 #2C2118;
+}
+.agente-cafe__burbuja {
+  position: absolute;
+  left: 74px;
+  bottom: 22px;
+  width: 16px;
+  height: 16px;
+  border: 3px solid #2C2118;
+  border-radius: 9999px;
+  background: #fff;
+}
+.agente-cafe__burbuja--2 { left: 82px; bottom: 2px; width: 9px; height: 9px; }
+.agente-cafe__moto { animation: cafe-moto 600ms ease-in-out infinite alternate; }
+@keyframes cafe-moto { from { transform: translateY(0) rotate(-1deg); } to { transform: translateY(-2px) rotate(1deg); } }
+.agente-cafe__camino { animation: cafe-camino 500ms linear infinite; }
+@keyframes cafe-camino { from { transform: translateX(0); } to { transform: translateX(-22px); } }
+.agente-cafe__velocidad { animation: cafe-velocidad 400ms linear infinite; }
+@keyframes cafe-velocidad { from { transform: translateX(4px); opacity: 1; } to { transform: translateX(-8px); opacity: 0.2; } }
+.agente-cafe__humo { animation: cafe-humo 700ms ease-out infinite; }
+.agente-cafe__humo--2 { animation-delay: 350ms; }
+@keyframes cafe-humo { from { transform: translate(0, 0) scale(0.6); opacity: 0.9; } to { transform: translate(-12px, -6px) scale(1.8); opacity: 0; } }
+.agente-cafe__notas { fill: #7c3aed; animation: cafe-notas 1.4s ease-in-out infinite; }
+@keyframes cafe-notas { 0% { opacity: 0; transform: translate(0, 4px); } 50% { opacity: 1; } 100% { opacity: 0; transform: translate(6px, -6px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .agente-volador__cel, .agente-cafe, .agente-cafe *, .agente-cafe__app, .agente-cafe__app *, .agente-cafe__piensa, .agente-cafe__piensa * { animation: none !important; }
 }
 
 /* ── Estilos de vuelo (data-vuelo, solo en volar) ─────────────────────────── */
