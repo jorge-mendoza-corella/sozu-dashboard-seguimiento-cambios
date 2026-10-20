@@ -53,7 +53,8 @@ const CLAUDE_OK_MS = 9000;
 const CLAUDE_FALLO_MS = 9000;
 const CLAUDE_PREGUNTA_MS = 45_000;
 /** Escenas que no se interrumpen entre sí (la siguiente espera en la cola). */
-const ESCENAS: Pose[] = ["festejo", "llorar", "brinco", "victoria", "pregunta", "chispazo", "arcade", "marometa", "berrinche", "patada"];
+const ESCENAS: Pose[] = ["festejo", "llorar", "brinco", "victoria", "pregunta", "chispazo", "arcade", "marometa", "berrinche", "patada",
+  "pescar", "jalar", "presume", "perseguir", "coraje"];
 
 const COLORES_CONFETI = ["#f59e0b", "#ef4444", "#22d3ee", "#a855f7", "#22c55e", "#facc15", "#3b82f6", "#ec4899"];
 
@@ -100,7 +101,8 @@ function lanzarConfeti(tipo: "colores" | "android" | "ios" = "colores") {
 }
 
 type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | "festejo" | "alerta" | "llorar" | "brinco"
-  | "victoria" | "pregunta" | "chispazo" | "arcade" | "marometa" | "berrinche" | "patada";
+  | "victoria" | "pregunta" | "chispazo" | "arcade" | "marometa" | "berrinche" | "patada"
+  | "pescar" | "jalar" | "presume" | "perseguir" | "coraje";
 export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando" | "relajado" | "comiendo" | "sorbiendo" | "lamiendo";
 /** Cómo vuela: puño al frente, nadando de crol, o boca arriba con las manos en la nuca. */
 export type EstiloVuelo = "superman" | "nado" | "relax";
@@ -380,6 +382,65 @@ const FRASES_ARCADE = {
   ],
 } as const;
 
+/**
+ * Pesca: al terminar de caminar, a veces aparece un charquito enfrente y se
+ * pone a pescar (1 a 3 lances). Saca tickets y PRs y los presume; de vez en
+ * cuando un pez escurridizo que cae al suelo, se le escapa brincando y lo
+ * persigue sin alcanzarlo. El charco, la caña y lo que saca van en un portal
+ * fijo dibujado como si mirara a la derecha (se voltea entero si mira a la izquierda).
+ */
+/** `adelante`: el pez cae pasando el charco (si no, detrás de él). */
+type Presa = { tipo: "ticket" | "pr" | "pez"; num: number; adelante?: boolean };
+type FasePesca = "esperando" | "jalando" | "presume" | "persecucion";
+type Pesca = {
+  id: number; x: number; y: number; dir: 1 | -1; fase: FasePesca; presa: Presa | null; lance: number;
+  /** Dónde arranca el pez que se escapa (luego lo mueve el loop). */
+  pez?: { x: number; y: number; dir: 1 | -1 };
+  saliendo?: boolean;
+};
+/** Para probarla: `dispatchEvent(new CustomEvent("agente:pesca", { detail: { pez: true } }))`. */
+export const EVENTO_PESCA = "agente:pesca";
+/** Caja del dibujo: el personaje ocupa 0-80 y el charco queda adelante. */
+const PESCA_ANCHO = 190;
+/** Lo que sobra arriba del personaje para la punta de la caña. */
+const PESCA_ARRIBA = 30;
+const PESCA_ESPERA_MS: [number, number] = [3500, 7000];
+const PESCA_JALAR_MS = 1000;
+const PESCA_PRESUME_MS = 3200;
+const PESCA_CORAJE_MS = 3600;
+const PESCA_CADA_MS: [number, number] = [150_000, 300_000];
+const VEL_PERSEGUIR = 150;
+const VEL_PEZ = 190;
+const FRASES_PESCA = {
+  empezar: [
+    "Ahorita vengo, voy a pescar bugs", "A ver qué pica hoy…", "Pesca de viernes, la mejor",
+    "Shhh, que se espantan los PRs",
+  ],
+  esperando: [
+    "Shhh…", "Pícale, pícale…", "Aquí salen puros tickets, ya verás", "…¿y si pica un hotfix?",
+    "Zzz… ¡no, no estoy dormido!", "Este charco huele a legacy",
+  ],
+  pica: ["¡Picó, picó!", "¡Ya cayó uno!", "¡Está pesado, cabrón!"],
+  ticket: [
+    (n: number) => `¡Un ticket #${n}! …lo devuelvo al agua`,
+    (n: number) => `¿#${n}? Ese ni es mío`,
+    (n: number) => `¡Ticket #${n}, alta prioridad, a huevo!`,
+    (n: number) => `#${n}… otro que era para ayer`,
+  ],
+  pr: [
+    (n: number) => `¡PR #${n}! ¿Quién lo aprueba?`,
+    (n: number) => `¡PR #${n} con conflictos, no mames!`,
+    (n: number) => `PR #${n}… sin tests, al agua`,
+    (n: number) => `¡PR #${n} directo a main!`,
+  ],
+  escapa: ["¡Ey, ey, EY! ¡Se escapa!", "¡Regresa, pinche pez!", "¡No, no, no, no!"],
+  persigue: ["¡Ven acá, cabrón!", "¡Pinche pez escurridizo!", "¡No corras, que te frío!", "¡Tengo hambre, regresa!", "¡Agárrenlo!"],
+  seFue: [
+    "¡Se me peló el cabrón!", "Ni modo… hoy cenamos tickets", "¡Ese pez es más rápido que el CI!",
+    "La próxima te agarro, maldito", "¡Pinche pez, me las vas a pagar!",
+  ],
+};
+
 const signoAzar = () => (Math.random() < 0.5 ? -1 : 1) as 1 | -1;
 const una = <T,>(l: readonly T[]): T => l[Math.floor(Math.random() * l.length)];
 
@@ -422,6 +483,14 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
   const [vuelo, setVuelo] = useState<EstiloVuelo>("superman");
   const [manga, setManga] = useState<Manga | null>(null);
   const [maquina, setMaquina] = useState<Maquina | null>(null);
+  const [pesca, setPesca] = useState<Pesca | null>(null);
+  /** El pez que se escapa lo mueve el loop directo (como al personaje), sin re-render por frame. */
+  const pezRef = useRef<HTMLDivElement>(null);
+  /** Lo último que se pintó de la pesca, para que el loop sepa qué presa salió y dónde está la caja. */
+  const pescaRef = useRef<Pesca | null>(null);
+  useEffect(() => {
+    pescaRef.current = pesca;
+  }, [pesca]);
   const pausaRef = useRef(false);
   const nombreRef = useRef(nombreUsuario);
   useEffect(() => {
@@ -611,6 +680,48 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       proximaFrase = ahora + 3200;
       return true;
     };
+    // Pesca (ver FRASES_PESCA).
+    let proximaPesca = performance.now() + azar(90_000, 180_000);
+    let pezForzado = false;
+    let pescaJs: { lances: number; n: number; forzarPez: boolean; pez: { x: number; y: number; dir: 1 | -1 } | null } | null = null;
+    let idPesca = 0;
+    let quitarPesca: ReturnType<typeof setTimeout> | undefined;
+    const cambiarPesca = (c: Partial<Pesca>) => setPesca((p) => (p ? { ...p, ...c } : p));
+    const empezarPesca = (ahora: number, forzarPez: boolean): boolean => {
+      const cabeDer = s.x + PESCA_ANCHO <= window.innerWidth - MARGEN;
+      const cabeIzq = s.x + TAM - PESCA_ANCHO >= MARGEN;
+      if (!cabeDer && !cabeIzq) return false;
+      s.dir = (cabeDer && (!cabeIzq || Math.random() < 0.5) ? 1 : -1) as 1 | -1;
+      s.y = piso();
+      pescaJs = { lances: 1 + Math.floor(Math.random() * 3), n: 0, forzarPez, pez: null };
+      clearTimeout(quitarPesca);
+      idPesca += 1;
+      setPesca({
+        id: idPesca,
+        x: s.dir === 1 ? s.x : s.x + TAM - PESCA_ANCHO,
+        y: piso() - PESCA_ARRIBA,
+        dir: s.dir,
+        fase: "esperando",
+        presa: null,
+        lance: 0,
+      });
+      cambiarPose("pescar", azar(...PESCA_ESPERA_MS));
+      ponerAnimo("relajado");
+      decir(una(FRASES_PESCA.empezar), "habla", 2400);
+      proximaFrase = ahora + 3000;
+      return true;
+    };
+    const terminarPesca = () => {
+      pescaJs = null;
+      quitarPesca = setTimeout(() => {
+        setPesca((p) => (p ? { ...p, saliendo: true } : p));
+        quitarPesca = setTimeout(() => setPesca(null), 400);
+      }, 200);
+      ponerAnimo("serio");
+      cambiarPose("agachar", 200);
+      s.siguiente = "despegar";
+    };
+
     const terminarArcade = () => {
       const rota = !!arcade && !arcade.gana;
       arcade = null;
@@ -1001,6 +1112,103 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           }
           break;
         }
+        case "pescar": {
+          // Esperando a que pique; al final, jala.
+          if (!finDialogo && ahora >= proximaFrase) {
+            if (Math.random() < 0.6) decir(una(FRASES_PESCA.esperando), "habla", 2200);
+            proximaFrase = ahora + azar(3000, 4500);
+          }
+          if (fin && pescaJs) {
+            const ultimo = pescaJs.n + 1 >= pescaJs.lances;
+            const esPez = (pescaJs.forzarPez && pescaJs.n === 0) || (Math.random() < (ultimo ? 0.35 : 0.2));
+            // El pez sale hacia donde haya más pantalla, para que la persecución luzca.
+            const caja = pescaRef.current;
+            const izq = caja ? caja.x : 0;
+            const der = caja ? window.innerWidth - (caja.x + PESCA_ANCHO) : 0;
+            const presa: Presa = esPez
+              ? { tipo: "pez", num: 0, adelante: s.dir === 1 ? der > izq : izq > der }
+              : Math.random() < 0.5
+                ? { tipo: "ticket", num: 1200 + Math.floor(Math.random() * 250) }
+                : { tipo: "pr", num: 100 + Math.floor(Math.random() * 450) };
+            if (esPez) pescaJs.lances = pescaJs.n + 1; // tras el pez ya no hay más lances
+            cambiarPesca({ fase: "jalando", presa, lance: pescaJs.n });
+            cambiarPose("jalar", PESCA_JALAR_MS);
+            ponerAnimo("grito");
+            decir(una(FRASES_PESCA.pica), "grito", 1400);
+            proximaFrase = ahora + PESCA_JALAR_MS + 300;
+          }
+          break;
+        }
+        case "jalar": {
+          if (fin && pescaJs) {
+            const presa = pescaRef.current?.presa;
+            if (presa?.tipo === "pez") {
+              // Cae al suelo (detrás de él o pasando el charco) y sale brincando.
+              const caja = pescaRef.current!;
+              const atras = !presa.adelante;
+              const dirPez = (atras ? -caja.dir : caja.dir) as 1 | -1;
+              // Detrás: x local -14..14 de la caja (espejo si mira a la izquierda); adelante: pasando el charco.
+              const local = atras ? -14 : PESCA_ANCHO - 14;
+              pescaJs.pez = {
+                x: caja.dir === 1 ? caja.x + local : caja.x + PESCA_ANCHO - local - 28,
+                y: piso() + PIES - 14,
+                dir: dirPez,
+              };
+              cambiarPesca({ fase: "persecucion", presa: null, pez: { ...pescaJs.pez } });
+              s.dir = dirPez;
+              cambiarPose("perseguir");
+              decir(una(FRASES_PESCA.escapa), "grito", 1800);
+              proximaFrase = ahora + 2000;
+            } else if (presa) {
+              cambiarPesca({ fase: "presume" });
+              cambiarPose("presume", PESCA_PRESUME_MS);
+              ponerAnimo("feliz");
+              decir(una(presa.tipo === "ticket" ? FRASES_PESCA.ticket : FRASES_PESCA.pr)(presa.num), "grito", 2600);
+              proximaFrase = ahora + PESCA_PRESUME_MS;
+            } else terminarPesca();
+          }
+          break;
+        }
+        case "presume": {
+          if (fin && pescaJs) {
+            pescaJs.n += 1;
+            if (pescaJs.n < pescaJs.lances) {
+              cambiarPesca({ fase: "esperando", presa: null });
+              cambiarPose("pescar", azar(...PESCA_ESPERA_MS));
+              ponerAnimo("relajado");
+            } else terminarPesca();
+          }
+          break;
+        }
+        case "perseguir": {
+          // El pez siempre va más rápido: se sale de la pantalla y él se queda con el coraje.
+          const pez = pescaJs?.pez;
+          if (!pez) { terminarPesca(); break; }
+          pez.x += VEL_PEZ * dt * pez.dir;
+          s.x = Math.max(MARGEN, Math.min(derecha(), s.x + VEL_PERSEGUIR * dt * s.dir));
+          if (pezRef.current) pezRef.current.style.transform = `translate3d(${pez.x.toFixed(1)}px, ${pez.y}px, 0) scaleX(${pez.dir})`;
+          if (!finDialogo && ahora >= proximaFrase) {
+            decir(una(FRASES_PESCA.persigue), "grito", 1500);
+            proximaFrase = ahora + 1800;
+          }
+          if (pez.x < -60 || pez.x > window.innerWidth + 20) {
+            pescaJs!.pez = null;
+            setPesca(null);
+            cambiarPose("coraje", PESCA_CORAJE_MS);
+            ponerAnimo("grito");
+            finDialogo = 0;
+            proximaFrase = ahora;
+          }
+          break;
+        }
+        case "coraje": {
+          if (!finDialogo && ahora >= proximaFrase) {
+            decir(una(FRASES_PESCA.seFue), "grito", 2200);
+            proximaFrase = ahora + 2400;
+          }
+          if (fin) terminarPesca();
+          break;
+        }
         case "agachar": {
           if (fin) {
             if (s.siguiente === "caminar") {
@@ -1018,8 +1226,17 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
             s.dir = (s.dir * -1) as 1 | -1;
           }
           if (fin) {
+            // Lo forzado (eventos de prueba) primero; luego arcade o pesca, si ya toca.
+            if (proximaPesca === 0 && empezarPesca(ahora, pezForzado)) {
+              proximaPesca = ahora + azar(...PESCA_CADA_MS);
+              break;
+            }
             if (ahora >= proximoArcade && (proximoArcade === 0 || Math.random() < 0.6) && empezarArcade(ahora)) {
               proximoArcade = ahora + azar(...ARCADE_CADA_MS);
+              break;
+            }
+            if (ahora >= proximaPesca && Math.random() < 0.6 && empezarPesca(ahora, false)) {
+              proximaPesca = ahora + azar(...PESCA_CADA_MS);
               break;
             }
             if (Math.random() < 0.4) cambiarPose("quieto", azar(7000, 13000));
@@ -1058,7 +1275,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       if (finDialogo && ahora >= finDialogo) {
         finDialogo = 0;
         setDialogo(null);
-        if (animoActual === "grito" && s.pose !== "alerta" && !arcade) ponerAnimo("feliz");
+        if (animoActual === "grito" && s.pose !== "alerta" && !arcade && !pescaJs) ponerAnimo("feliz");
       }
       if (!finDialogo && ahora >= proximaFrase && s.pose !== "alerta" && !ESCENAS.includes(s.pose)) {
         if (s.pose === "volar" && snackActual === "helado") {
@@ -1172,6 +1389,14 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       if (s.pose === "caminar") s.hasta = performance.now();
     };
     window.addEventListener(EVENTO_ARCADE, alArcade);
+    // Pesca en cuanto vuelva a pisar el suelo y termine de caminar.
+    const alPesca = (e: Event) => {
+      pezForzado = (e as CustomEvent<{ pez?: boolean }>).detail?.pez === true;
+      proximaPesca = 0;
+      s.ganasDeAterrizar = 0;
+      if (s.pose === "caminar") s.hasta = performance.now();
+    };
+    window.addEventListener(EVENTO_PESCA, alPesca);
 
     frame = requestAnimationFrame(paso);
     const alRedimensionar = () => {
@@ -1182,6 +1407,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
     return () => {
       clearTimeout(quitarLetrero);
       clearTimeout(quitarMaquina);
+      clearTimeout(quitarPesca);
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", alRedimensionar);
       window.removeEventListener(EVENTO_FESTEJO, alFestejo);
@@ -1192,6 +1418,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       window.removeEventListener(EVENTO_ALERTA_TICKETS, alAlerta);
       window.removeEventListener(EVENTO_CLAUDE, alClaude);
       window.removeEventListener(EVENTO_ARCADE, alArcade);
+      window.removeEventListener(EVENTO_PESCA, alPesca);
     };
   }, []);
 
@@ -1267,6 +1494,68 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           </div>,
           document.body,
         )}
+      {pesca &&
+        createPortal(
+          <div
+            key={pesca.id}
+            className="agente-pesca"
+            data-fase={pesca.fase}
+            data-dir={pesca.dir}
+            data-saliendo={pesca.saliendo || undefined}
+            data-oculto={pausado || undefined}
+            aria-hidden
+            style={{ left: pesca.x, top: pesca.y }}
+          >
+            <svg viewBox={`0 0 ${PESCA_ANCHO} ${PESCA_ARRIBA + TAM}`} width={PESCA_ANCHO} height={PESCA_ARRIBA + TAM}>
+              <ellipse className="agente-pesca__charco" cx="140" cy="104" rx="44" ry="7" />
+              <ellipse className="agente-pesca__onda" cx="140" cy="104" rx="10" ry="2" />
+              <ellipse className="agente-pesca__onda agente-pesca__onda--2" cx="140" cy="104" rx="10" ry="2" />
+              <g className="agente-pesca__cana">
+                <line x1="62" y1="74" x2="124" y2="22" />
+                <circle cx="68" cy="69" r="3" />
+              </g>
+              <g className="agente-pesca__sedal">
+                <path d="M124 22 Q 136 60 140 99" />
+                <g className="agente-pesca__boya">
+                  <circle cx="140" cy="100" r="3.2" fill="#f8fafc" />
+                  <path d="M136.8 100 a3.2 3.2 0 0 1 6.4 0z" fill="#ef4444" />
+                </g>
+              </g>
+            </svg>
+            {pesca.presa && (pesca.fase === "jalando" || pesca.fase === "presume") && (
+              <div
+                key={pesca.lance}
+                className="agente-pesca__presa"
+                data-tipo={pesca.presa.tipo}
+                data-adelante={pesca.presa.adelante || undefined}
+              >
+                <div className="agente-pesca__arco">
+                  {pesca.presa.tipo === "pez" ? (
+                    <Pez />
+                  ) : (
+                    <div className="agente-pesca__tarjeta">
+                      <small>{pesca.presa.tipo === "ticket" ? "TICKET" : "PR"}</small>#{pesca.presa.num}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>,
+          document.body,
+        )}
+      {pesca?.fase === "persecucion" &&
+        createPortal(
+          <div
+            ref={pezRef}
+            className="agente-pez"
+            data-oculto={pausado || undefined}
+            aria-hidden
+            style={pesca.pez ? { transform: `translate3d(${pesca.pez.x}px, ${pesca.pez.y}px, 0) scaleX(${pesca.pez.dir})` } : undefined}
+          >
+            <div className="agente-pez__brinco"><Pez /></div>
+          </div>,
+          document.body,
+        )}
       {maquina &&
         createPortal(
           <div
@@ -1334,6 +1623,19 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       {/* Fuera de la orientación: no se voltea ni gira con el personaje. La key lo re-anima al cambiar. */}
       <span key={skin} className="agente-volador__gafete" aria-hidden>{nombre}</span>
     </button>
+  );
+}
+
+/** Pez escurridizo, mirando a la derecha. */
+function Pez() {
+  return (
+    <svg viewBox="0 0 28 16" width="28" height="16">
+      <path d="M2 8 L-0 2 L7 6z M2 8 L0 14 L7 10z" fill="#ea580c" />
+      <ellipse cx="15" cy="8" rx="11" ry="6" fill="#fb923c" />
+      <path d="M12 3 Q15 0 19 3" fill="#ea580c" />
+      <circle cx="21" cy="6.5" r="1.6" fill="#0f172a" />
+      <path d="M25 9 q-1.5 1 -3 0.6" stroke="#9a3412" strokeWidth="0.8" fill="none" />
+    </svg>
   );
 }
 
