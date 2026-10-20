@@ -23,7 +23,8 @@ import { createPortal } from "react-dom";
 import "./personaje.css";
 import { Antojos, Bata, Blusa, BrazoHumano, CabezaCartoon, Camisa, Saco, Vestido } from "./skins";
 import { nombreAvatar, PALETA, SKINS, useCorreosAvatar, useNombresAvatar, useSkinGeorgIA, type Skin } from "./skinsDatos";
-import { ANCHO_UTILERIA, ARRIBA_UTILERIA, partidoDeHoy, partidoEnVivo, PARTIDOS_SELECCION, type TipoUtileria, type Utileria } from "./escenasDatos";
+import { ANCHO_UTILERIA, ARRIBA_UTILERIA, partidoDeHoy, partidoEnVivo, partidosSeleccion, setPartidosSeleccion, type TipoUtileria, type Utileria } from "./escenasDatos";
+import { cargarPartidosSeleccion } from "@/lib/agenteRepos";
 import { UtileriaEscena } from "./escenasExtra";
 import {
   dondeFue, EVENTO_DEV_FALLO, EVENTO_DEV_OK, EVENTO_FALLO, EVENTO_FESTEJO, EVENTO_PRD_INICIO, EVENTO_STORE, type DetalleFestejo, type DetalleStore,
@@ -645,6 +646,10 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
     pescaRef.current = pesca;
   }, [pesca]);
   const pausaRef = useRef(false);
+  // Calendario de la Selección (lo deja el sync mensual en Firestore).
+  useEffect(() => {
+    cargarPartidosSeleccion().then(setPartidosSeleccion).catch(() => {});
+  }, []);
   const nombreRef = useRef(nombreUsuario);
   useEffect(() => {
     nombreRef.current = nombreUsuario;
@@ -1202,7 +1207,9 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
     ], null, { fin: limpiar });
 
     const escenaFutbol = (ahora: number): boolean => {
-      const p = partidoEnVivo() ?? partidoDeHoy() ?? PARTIDOS_SELECCION.find((x) => Date.parse(x.inicio) > Date.now()) ?? PARTIDOS_SELECCION[0];
+      // Forzada sin partido hoy: el próximo (o, sin calendario, uno de muestra).
+      const p = partidoEnVivo() ?? partidoDeHoy() ?? partidosSeleccion().find((x) => Date.parse(x.inicio) > Date.now())
+        ?? { inicio: new Date().toISOString(), rival: "Jamaica", bandera: "🇯🇲", local: true, torneo: "Amistoso" };
       if (!p) return false;
       const partido = { rival: p.rival, bandera: p.bandera, local: p.local };
       const hora = new Date(p.inicio).toLocaleTimeString("es-MX", { hour: "numeric", minute: "2-digit" });

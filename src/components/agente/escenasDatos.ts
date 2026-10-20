@@ -43,18 +43,18 @@ export const ANCHO_UTILERIA: Record<TipoUtileria, number> = {
   pinata: 140,
 };
 
+export type PartidoSeleccion = { inicio: string; rival: string; bandera: string; local: boolean; torneo: string; sede?: string | null };
 /**
- * Partidos de la Selección Mexicana (varonil mayor), hora del centro de México.
- * Fuente: miseleccion.mx/calendario (consultado el 2026-10-20). Agregar aquí los
- * que vayan saliendo: el día del partido GeorgIA anda de verde.
+ * Partidos de la Selección Mexicana (varonil mayor). Los llena el sync mensual
+ * (ci/seleccion_partidos_sync.py → Firestore `agente_partidos/seleccion`) y el
+ * panel los carga al abrir (cargarPartidosSeleccion en lib/agenteRepos.ts).
  */
-export const PARTIDOS_SELECCION: { inicio: string; rival: string; bandera: string; local: boolean; torneo: string }[] = [
-  { inicio: "2026-11-14T19:00:00-06:00", rival: "Jamaica", bandera: "🇯🇲", local: false, torneo: "Liga de Naciones" },
-  { inicio: "2026-11-17T20:30:00-06:00", rival: "Jamaica", bandera: "🇯🇲", local: true, torneo: "Liga de Naciones" },
-];
+let partidos: PartidoSeleccion[] = [];
+export const setPartidosSeleccion = (lista: PartidoSeleccion[]) => { partidos = lista; };
+export const partidosSeleccion = () => partidos;
 /** El partido de hoy (en la zona del navegador), si hay. */
 export function partidoDeHoy(ahora = new Date()) {
-  return PARTIDOS_SELECCION.find((p) => new Date(p.inicio).toDateString() === ahora.toDateString()) ?? null;
+  return partidos.find((p) => new Date(p.inicio).toDateString() === ahora.toDateString()) ?? null;
 }
 /** Se está jugando (del silbatazo a dos horas después). */
 export function partidoEnVivo(ahora = new Date()) {

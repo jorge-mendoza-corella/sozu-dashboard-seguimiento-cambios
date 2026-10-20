@@ -17,6 +17,7 @@ import {
 import { app, db } from "./firebase";
 import { SUPERUSER_EMAIL } from "./firestoreUsers";
 import { esSkin, setCorreosAvatar, setNombresAvatar, setSkinGeorgIA, setSkinPropio, SKIN_DEFAULT, type Skin } from "@/components/agente/skinsDatos";
+import type { PartidoSeleccion } from "@/components/agente/escenasDatos";
 
 const functions = getFunctions(app, "us-central1");
 
@@ -361,4 +362,12 @@ export async function borrarConversacion(id: string): Promise<void> {
   const mensajes = await getDocs(collection(db, "agente_conversaciones", id, "mensajes"));
   await Promise.all(mensajes.docs.map((m) => deleteDoc(m.ref)));
   await deleteDoc(doc(CONVERSACIONES(), id));
+}
+
+/** Partidos de la Selección que dejó el sync mensual (`agente_partidos/seleccion.raw`). */
+export async function cargarPartidosSeleccion(): Promise<PartidoSeleccion[]> {
+  const raw = (await getDoc(doc(db, "agente_partidos", "seleccion"))).data()?.raw;
+  if (typeof raw !== "string") return [];
+  const lista = JSON.parse(raw);
+  return Array.isArray(lista) ? lista : [];
 }
