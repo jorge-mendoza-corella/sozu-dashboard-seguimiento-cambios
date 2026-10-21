@@ -21,6 +21,7 @@ import { DeployProgressBar, RelojDeploy } from "@/components/DeployProgressBar";
 import { DeployDevControl } from "@/components/DeployDevControl";
 import type { AvisosDelProyecto } from "@/hooks/useAvisos";
 import { FrontInfoBar } from "./FrontInfoBar";
+import { AportesRepo } from "./AportesRepo";
 import type { FrontVersion } from "@/lib/frontVersions";
 import type { BranchInfo, RepoStatus } from "@/lib/github";
 import { createPR, getAutoDeployDev, sinDeploysDevSaltados, hasFailingDeploy, deployEnCurso, getBranchCommitAuthors, getPendingReleasePRs, repoDespliegaDev, mismoCommit, type ApproverAuth, type PRWithCommits } from "@/lib/github";
@@ -486,6 +487,8 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
       )}
 
       <CardHeader className="pb-3">
+        {/* Quién lleva más commits; al clic, el detalle de PRs y commits por persona. */}
+        <AportesRepo owner={status.owner} repo={status.repo} selfLogin={canViewOthers ? null : selfLogin} myLogin={myLogin} />
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             {isCIRunning
