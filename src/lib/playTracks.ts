@@ -280,6 +280,9 @@ export function playChannels(doc: PlayTracksDoc | null | undefined): PlayChannel
  */
 export function playEnCamino(doc: PlayTracksDoc | null | undefined): string | null {
   const [, revision] = playChannels(doc);
+  // Sin la ficha pública, el número de la card ya ES lo enviado: marcarlo además
+  // "en revisión" decía dos cosas de la misma versión (1.2.4 · ⏱1.2.4).
+  if (!doc?.storeVersion && revision.version === playPublishedVersion(doc)?.version) return null;
   return revision.version;
 }
 
