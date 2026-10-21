@@ -137,6 +137,7 @@ def write_tracks_doc(
     error: str | None,
     version_publica: str | None = None,
     descargas_publicas: str | None = None,
+    conservar_ficha: bool = False,
 ) -> None:
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     # `raw` guarda el JSON tal cual: el front lo parsea. Evita mapear estructuras
@@ -156,6 +157,12 @@ def write_tracks_doc(
             "error": {"stringValue": error} if error else {"nullValue": None},
         }
     }
+    # Si la ficha no se pudo leer esta vez, se queda lo de la corrida anterior:
+    # escribir null borraba la versión publicada y la card mostraba lo enviado
+    # como si siguiera "en revisión" hasta la siguiente corrida buena.
+    if conservar_ficha:
+        del body["fields"]["storeVersion"]
+        del body["fields"]["storeDownloads"]
     mask = "".join(f"&updateMask.fieldPaths={k}" for k in body["fields"])
     url = f"{FS_BASE}/playTracks/{quote(pkg, safe='')}?{mask.lstrip('&')}"
     r = requests.patch(url, headers=fs_headers(token), json=body, timeout=30)
@@ -229,6 +236,10 @@ def store_version(pkg: str) -> tuple[str | None, str | None, str | None]:
         return None, None, f"La ficha pública de Play respondió {r.status_code}"
     version = VERSION_EN_FICHA.search(r.text)
     descargas = DESCARGAS_EN_FICHA.search(r.text)
+    # Ni versión ni descargas: Play sirvió otra página (consentimiento, versión
+    # ligera, límite de peticiones). No es que la ficha esté vacía; es que no se leyó.
+    if not version and not descargas:
+        return None, None, "La ficha pública de Play no trajo versión ni descargas (Play sirvió otra página)"
     return (
         version.group(1) if version else None,
         descargas.group(1).strip() if descargas else None,
@@ -286,9 +297,10 @@ def main() -> None:
         tracks, error = fetch_tracks(play_token, pkg, sa.get("client_email", "?"))
         publica, descargas, aviso = store_version(pkg)
         if aviso:
-            print(f"· {pkg}: {aviso}")
-        print(f"· {pkg}: la ficha pública sirve {publica or '—'} · descargas {descargas or '—'}")
-        write_tracks_doc(fs_token, pkg, project_id, tracks, error, publica, descargas)
+            print(f"· {pkg}: {aviso} · se conserva lo de la corrida anterior")
+        else:
+            print(f"· {pkg}: la ficha pública sirve {publica or '—'} · descargas {descargas or '—'}")
+        write_tracks_doc(fs_token, pkg, project_id, tracks, error, publica, descargas, conservar_ficha=bool(aviso))
         if error:
             print(f"⚠ {pkg}: {error}")
         else:
