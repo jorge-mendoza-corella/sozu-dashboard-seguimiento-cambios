@@ -244,3 +244,14 @@
 }
 @keyframes reloj-flota { from { transform: translateY(0); } to { transform: translateY(-6px); } }
 @media (prefers-reduced-motion: reduce) { .reloj-flotante svg { animation: none; } }
+
+/* "Contenido" de un PR a main con 10+ PRs acumulados: el botón parpadea en
+   azul (su mismo color, de claro a fuerte) para que se note de reojo. */
+@keyframes parpadea-azul {
+  0%, 100% { background-color: rgb(224 231 255); color: rgb(67 56 202); border-color: rgb(165 180 252); box-shadow: none; }
+  50% { background-color: rgb(79 70 229); color: #fff; border-color: rgb(67 56 202); box-shadow: 0 0 0 3px rgb(99 102 241 / 0.35); }
+}
+.boton-contenido:has([data-mucho]) { animation: parpadea-azul 1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .boton-contenido:has([data-mucho]) { animation: none; background-color: rgb(79 70 229); color: #fff; }
+}

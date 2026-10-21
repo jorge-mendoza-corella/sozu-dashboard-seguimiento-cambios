@@ -201,6 +201,8 @@ export interface PullRequest {
   title: string;
   state: string;
   head: string;
+  /** Último commit de la rama del PR: cambia cada vez que el PR recibe algo nuevo. */
+  headSha?: string;
   base: string;
   url: string;
   createdAt: string;
@@ -853,6 +855,7 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
           title: pr.title,
           state: pr.state,
           head: pr.head.ref,
+          headSha: pr.head.sha,
           base: pr.base.ref,
           url: pr.html_url,
           createdAt: pr.created_at,
