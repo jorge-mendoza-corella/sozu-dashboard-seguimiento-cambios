@@ -1178,14 +1178,17 @@ export interface AporteAutor {
   prs: number;
 }
 
+/** Autor de cada PR (por número): no cambia, así que no se vuelve a pedir. */
+const autorDePR = new Map<string, string>();
+
 /**
- * Quién lleva cuántos commits y PRs en el repo en los últimos `dias`: commits
- * de `dev` (o de la rama por defecto si no hay dev) sin contar merges ni bots,
- * y PRs abiertos en el periodo sin contar los de release (dev → main), que son
- * de quien mergea, no de quien hizo el trabajo.
+ * Quién lleva cuántos commits y PRs que YA LLEGARON A PRD desde `desde`: los
+ * PRs a main mergeados en el periodo. Un release (dev → main) cuenta por los
+ * PRs de dev que trae (su autor real, con `<!-- pr_author -->`) y por sus
+ * commits; un PR directo a main (hotfix), por sí mismo. Sin merges, sin bots y
+ * sin commits de test (`test:`, `test(...)`, `tests:`).
  */
-export async function getAportesPorAutor(owner: string, repo: string, dias: number): Promise<AporteAutor[]> {
-  const desde = new Date(Date.now() - dias * 86_400_000);
+export async function getAportesPorAutor(owner: string, repo: string, desde: Date): Promise<AporteAutor[]> {
   const porAutor = new Map<string, AporteAutor>();
   const de = (login: string) => {
     const k = login.toLowerCase();
@@ -1194,28 +1197,48 @@ export async function getAportesPorAutor(owner: string, repo: string, dias: numb
     return a;
   };
   const esBot = (login: string) => /\[bot\]$|^github-actions|^dependabot/i.test(login);
+  const esTest = (msg: string) => /^tests?(\([^)]*\))?!?:/i.test(msg.trim());
+  const autor = async (num: number): Promise<string> => {
+    const k = `${owner}/${repo}#${num}`;
+    const hit = autorDePR.get(k);
+    if (hit !== undefined) return hit;
+    const { data } = await octokit.pulls.get({ owner, repo, pull_number: num });
+    const login = (data.body ?? "").match(/<!-- pr_author: ([\w.-]+) -->/)?.[1] ?? data.user?.login ?? "";
+    autorDePR.set(k, login);
+    return login;
+  };
 
-  const listar = (sha?: string) =>
-    octokit.paginate(octokit.repos.listCommits, { owner, repo, sha, since: desde.toISOString(), per_page: 100 });
-  const commits = await listar("dev").catch(() => listar());
-  for (const c of commits) {
-    if ((c.parents?.length ?? 1) > 1) continue;
-    const login = c.author?.login ?? c.commit.author?.name ?? "";
-    if (login && !esBot(login)) de(login).commits += 1;
-  }
-
-  // Los PRs vienen del más nuevo al más viejo: se para en cuanto sale del periodo.
+  // PRs a main mergeados en el periodo (vienen por fecha de actualización: se para al salir).
+  const aMain: { number: number; head: string; login: string }[] = [];
   for (let page = 1; page <= 10; page++) {
-    const { data } = await octokit.pulls.list({ owner, repo, state: "all", sort: "created", direction: "desc", per_page: 100, page });
-    let fuera = false;
+    const { data } = await octokit.pulls.list({ owner, repo, state: "closed", base: "main", sort: "updated", direction: "desc", per_page: 100, page });
     for (const pr of data) {
-      if (new Date(pr.created_at) < desde) { fuera = true; break; }
-      if (pr.head.ref === "dev" && pr.base.ref === "main") continue;
-      const login = (pr.body ?? "").match(/<!-- pr_author: ([\w.-]+) -->/)?.[1] ?? pr.user?.login ?? "";
-      if (login && !esBot(login)) de(login).prs += 1;
+      if (pr.merged_at && new Date(pr.merged_at) >= desde) {
+        const login = (pr.body ?? "").match(/<!-- pr_author: ([\w.-]+) -->/)?.[1] ?? pr.user?.login ?? "";
+        aMain.push({ number: pr.number, head: pr.head.ref, login });
+      }
     }
-    if (fuera || data.length < 100) break;
+    if (data.length < 100 || new Date(data[data.length - 1].updated_at) < desde) break;
   }
+
+  const vistos = new Set<string>();
+  const prsDev = new Set<number>();
+  for (const pr of aMain) {
+    const commits = await octokit.paginate(octokit.pulls.listCommits, { owner, repo, pull_number: pr.number, per_page: 100 });
+    for (const c of commits) {
+      const msg = c.commit.message.split("\n")[0];
+      const m = msg.match(/^Merge pull request #(\d+)/);
+      if (m) { prsDev.add(Number(m[1])); continue; }
+      if ((c.parents?.length ?? 1) > 1 || vistos.has(c.sha) || esTest(msg)) continue;
+      vistos.add(c.sha);
+      const login = c.author?.login ?? c.commit.author?.name ?? "";
+      if (login && !esBot(login)) de(login).commits += 1;
+    }
+    // Un PR directo a main (no release) es en sí mismo un PR que llegó a PRD.
+    if (pr.head !== "dev" && pr.login && !esBot(pr.login)) de(pr.login).prs += 1;
+  }
+  const autores = await Promise.all([...prsDev].map((n) => autor(n).catch(() => "")));
+  for (const login of autores) if (login && !esBot(login)) de(login).prs += 1;
 
   return [...porAutor.values()].sort((a, b) => b.commits - a.commits || b.prs - a.prs);
 }
