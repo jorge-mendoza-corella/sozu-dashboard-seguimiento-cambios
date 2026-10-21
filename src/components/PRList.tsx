@@ -44,8 +44,8 @@ interface Props {
 const PRS_ACUMULADOS = 10;
 
 /**
- * "(PRs/commits)" junto a "Contenido", sin abrir el panel. Parpadea en ámbar
- * cuando el release junta PRS_ACUMULADOS o más.
+ * "(PRs/commits)" junto a "Contenido", sin abrir el panel. Cuando el release
+ * junta PRS_ACUMULADOS o más, el botón parpadea en azul.
  */
 function ResumenRelease({ owner, repo, prNumber }: { owner: string; repo: string; prNumber: number }) {
   const { data } = useQuery({
@@ -59,10 +59,9 @@ function ResumenRelease({ owner, repo, prNumber }: { owner: string; repo: string
     <span
       title={`${data.prs} PR${data.prs !== 1 ? "s" : ""} de dev y ${data.commits} commit${data.commits !== 1 ? "s" : ""}` +
         (mucho ? `\nYa son ${PRS_ACUMULADOS} o más PRs acumulados: conviene sacar el release.` : "")}
-      className={cn(
-        "font-mono tabular-nums",
-        mucho && "animate-pulse rounded bg-amber-400 px-1 font-bold text-amber-950 dark:bg-amber-500",
-      )}
+      // El botón entero parpadea en azul (ver .boton-contenido en index.css).
+      data-mucho={mucho || undefined}
+      className={cn("font-mono tabular-nums", mucho && "font-bold")}
     >
       ({data.prs}/{data.commits})
     </span>
@@ -419,7 +418,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                     onClick={() => togglePanel(pr.number, "content")}
                     title="Ver qué PRs y commits incluye este release"
                     className={cn(
-                      "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border",
+                      "boton-contenido flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors border",
                       "bg-indigo-100 text-indigo-700 border-indigo-300 hover:bg-indigo-200",
                       "dark:bg-indigo-900/40 dark:text-indigo-300 dark:border-indigo-700/60 dark:hover:bg-indigo-900/60",
                       isContentOpen && "ring-1 ring-current",
