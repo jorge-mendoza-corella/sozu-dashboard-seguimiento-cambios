@@ -47,9 +47,11 @@ const PRS_ACUMULADOS = 10;
  * "(PRs/commits)" junto a "Contenido", sin abrir el panel. Cuando el release
  * junta PRS_ACUMULADOS o más, el botón parpadea en azul.
  */
-function ResumenRelease({ owner, repo, prNumber }: { owner: string; repo: string; prNumber: number }) {
+function ResumenRelease({ owner, repo, prNumber, headSha }: { owner: string; repo: string; prNumber: number; headSha?: string }) {
   const { data } = useQuery({
-    queryKey: ["release-resumen", owner, repo, prNumber],
+    // Con el sha en la llave, el conteo se rehace en cuanto el release recibe un
+    // PR nuevo: antes se quedaba con el de hace 5 min (decía 4/4 con 5/6 adentro).
+    queryKey: ["release-resumen", owner, repo, prNumber, headSha],
     queryFn: () => getReleaseResumen(owner, repo, prNumber),
     staleTime: 5 * 60_000,
   });
@@ -426,7 +428,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                   >
                     <GitCommit className="h-2.5 w-2.5" />
                     Contenido
-                    <ResumenRelease owner={owner} repo={repo} prNumber={pr.number} />
+                    <ResumenRelease owner={owner} repo={repo} prNumber={pr.number} headSha={pr.headSha} />
                   </button>
                 )}
                 {isDev && !pr.draft && (
