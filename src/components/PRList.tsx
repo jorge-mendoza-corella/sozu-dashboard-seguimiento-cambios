@@ -7,7 +7,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { PullRequest, PRWithCommits } from "@/lib/github";
-import { submitReview, mergePR, mergeWithBypass, closePR, getMergedDevPRsForRelease, type ApproverAuth } from "@/lib/github";
+import { submitReview, mergePR, mergeWithBypass, closePR, getMergedDevPRsForRelease, getReleaseResumen, type ApproverAuth } from "@/lib/github";
+import { useQuery } from "@tanstack/react-query";
 import { NO_PERMISSIONS, type CicdPermissions } from "@/lib/firestoreUsers";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 
@@ -37,6 +38,35 @@ interface Props {
   selfLogin?: string | null;
   /** Login de quien está logueado (aunque vea todo): sus PRs se resaltan. */
   myLogin?: string | null;
+}
+
+/** Con esta acumulación de PRs en un release, el conteo parpadea: ya es mucho junto. */
+const PRS_ACUMULADOS = 10;
+
+/**
+ * "(PRs/commits)" junto a "Contenido", sin abrir el panel. Parpadea en ámbar
+ * cuando el release junta PRS_ACUMULADOS o más.
+ */
+function ResumenRelease({ owner, repo, prNumber }: { owner: string; repo: string; prNumber: number }) {
+  const { data } = useQuery({
+    queryKey: ["release-resumen", owner, repo, prNumber],
+    queryFn: () => getReleaseResumen(owner, repo, prNumber),
+    staleTime: 5 * 60_000,
+  });
+  if (!data) return null;
+  const mucho = data.prs >= PRS_ACUMULADOS;
+  return (
+    <span
+      title={`${data.prs} PR${data.prs !== 1 ? "s" : ""} de dev y ${data.commits} commit${data.commits !== 1 ? "s" : ""}` +
+        (mucho ? `\nYa son ${PRS_ACUMULADOS} o más PRs acumulados: conviene sacar el release.` : "")}
+      className={cn(
+        "font-mono tabular-nums",
+        mucho && "animate-pulse rounded bg-amber-400 px-1 font-bold text-amber-950 dark:bg-amber-500",
+      )}
+    >
+      ({data.prs}/{data.commits})
+    </span>
+  );
 }
 
 /** Pastilla para el login de quien está logueado. */
@@ -397,6 +427,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                   >
                     <GitCommit className="h-2.5 w-2.5" />
                     Contenido
+                    <ResumenRelease owner={owner} repo={repo} prNumber={pr.number} />
                   </button>
                 )}
                 {isDev && !pr.draft && (

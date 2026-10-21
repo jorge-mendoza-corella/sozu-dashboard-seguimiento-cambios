@@ -1152,6 +1152,71 @@ export async function getMergedDevPRsForRelease(
   return results.sort((a, b) => a.mergedAt.localeCompare(b.mergedAt));
 }
 
+/**
+ * Cuánto trae un PR a main sin abrirlo: PRs de dev que incluye (sus merge
+ * commits) y commits propios (los que no son merge). Una o dos llamadas; el
+ * detalle completo sigue siendo getMergedDevPRsForRelease.
+ */
+export async function getReleaseResumen(owner: string, repo: string, prNumber: number): Promise<{ prs: number; commits: number }> {
+  const commits = await octokit.paginate(octokit.pulls.listCommits, { owner, repo, pull_number: prNumber, per_page: 100 });
+  const prs = new Set<number>();
+  let propios = 0;
+  for (const c of commits) {
+    const m = c.commit.message.match(/^Merge pull request #(\d+)/);
+    if (m) prs.add(Number(m[1]));
+    else if ((c.parents?.length ?? 1) <= 1) propios += 1;
+  }
+  return { prs: prs.size, commits: propios };
+}
+
+export interface AporteAutor {
+  login: string;
+  commits: number;
+  prs: number;
+}
+
+/**
+ * Quién lleva cuántos commits y PRs en el repo en los últimos `dias`: commits
+ * de `dev` (o de la rama por defecto si no hay dev) sin contar merges ni bots,
+ * y PRs abiertos en el periodo sin contar los de release (dev → main), que son
+ * de quien mergea, no de quien hizo el trabajo.
+ */
+export async function getAportesPorAutor(owner: string, repo: string, dias: number): Promise<AporteAutor[]> {
+  const desde = new Date(Date.now() - dias * 86_400_000);
+  const porAutor = new Map<string, AporteAutor>();
+  const de = (login: string) => {
+    const k = login.toLowerCase();
+    let a = porAutor.get(k);
+    if (!a) porAutor.set(k, (a = { login, commits: 0, prs: 0 }));
+    return a;
+  };
+  const esBot = (login: string) => /\[bot\]$|^github-actions|^dependabot/i.test(login);
+
+  const listar = (sha?: string) =>
+    octokit.paginate(octokit.repos.listCommits, { owner, repo, sha, since: desde.toISOString(), per_page: 100 });
+  const commits = await listar("dev").catch(() => listar());
+  for (const c of commits) {
+    if ((c.parents?.length ?? 1) > 1) continue;
+    const login = c.author?.login ?? c.commit.author?.name ?? "";
+    if (login && !esBot(login)) de(login).commits += 1;
+  }
+
+  // Los PRs vienen del más nuevo al más viejo: se para en cuanto sale del periodo.
+  for (let page = 1; page <= 10; page++) {
+    const { data } = await octokit.pulls.list({ owner, repo, state: "all", sort: "created", direction: "desc", per_page: 100, page });
+    let fuera = false;
+    for (const pr of data) {
+      if (new Date(pr.created_at) < desde) { fuera = true; break; }
+      if (pr.head.ref === "dev" && pr.base.ref === "main") continue;
+      const login = (pr.body ?? "").match(/<!-- pr_author: ([\w.-]+) -->/)?.[1] ?? pr.user?.login ?? "";
+      if (login && !esBot(login)) de(login).prs += 1;
+    }
+    if (fuera || data.length < 100) break;
+  }
+
+  return [...porAutor.values()].sort((a, b) => b.commits - a.commits || b.prs - a.prs);
+}
+
 /** Dado el headSha de un deploy, devuelve los PRs y commits incluidos. */
 export async function getDeployPRChain(
   owner: string,
