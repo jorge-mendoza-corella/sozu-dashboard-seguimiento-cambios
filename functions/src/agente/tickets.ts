@@ -21,10 +21,19 @@ import { getFirestore } from "firebase-admin/firestore";
 export const SUPABASE_URL = "https://tzmhgfjmddkfyffkkmto.supabase.co";
 /** Enlace directo (sozu-admin abre Mis tickets → pipeline → folio → detalle con ?ticket=). */
 const urlTicket = (numero: number) => `https://admin.sozu.com/admin/portal-tickets/todos?ticket=${numero}`;
-/** Solo los pipelines de Sistemas ("SOZU - Sistemas Soporte técnico", "… Nuevos Features", …). */
+/** Pipelines de Sistemas ("SOZU - Sistemas Soporte técnico", "… Nuevos Features", …): la regla de antes. */
 const PIPELINE_SISTEMAS = /sozu\s*-?\s*sistemas/i;
 /**
- * Etapas que le tocan a quien atiende; las demás (detenido…) no se muestran. La de
+ * Pipelines que le tocan a GeorgIA: los que tienen prendido «Mostrar el asistente
+ * al levantar un ticket» (`tickets_pipelines.mostrar_asistente`). Misma regla que
+ * el portal (sozu-admin, plantilla-sistemas.ts → muestraAsistente): si la columna
+ * aún no existe, los de Sistemas por nombre.
+ */
+const pipelineConAsistente = (p: Fila | null): boolean =>
+  typeof p?.mostrar_asistente === "boolean" ? p.mostrar_asistente : PIPELINE_SISTEMAS.test(p?.nombre ?? "");
+/**
+ * Etapas que le tocan a quien atiende (más la de entrada de cualquier pipeline:
+ * `tipo_semantico` abierta); las demás (detenido…) no se muestran. La de
  * atención solo se le muestra a quien lo trabaja (ver `atendidoPor`).
  */
 const ETAPAS_VISIBLES = ["nuevo", "en revision", "en lista de espera"];
@@ -164,7 +173,7 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
       `id, numero, nombre, descripcion, fecha_creacion, prioridad, solicitante, id_usuario_creador,
        id_usuario_propietario, id_entidad_relacionada,
        id_pipeline, id_etapa,
-       tickets_etapas(nombre, tipo_semantico), tickets_pipelines(nombre), tickets_categorias(nombre),
+       tickets_etapas(nombre, tipo_semantico), tickets_pipelines(*), tickets_categorias(nombre),
        proyectos(nombre), tickets_propietarios(id_usuario),
        tickets_adjuntos(nombre, tipo, url, activo), tickets_solicitantes(id_entidad_relacionada)`,
     )
@@ -173,14 +182,17 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
     .order("fecha_creacion", { ascending: false });
   if (e4) throw e4;
 
-  // Pipelines de Sistemas y etapas Nuevo / En revisión / En lista de espera, más los que
+  // Pipelines con asistente y etapas Nuevo / En revisión / En lista de espera, más los que
   // atiendo yo (los que atiende otro ya no me tienen de propietario). Orden: prioridad
   // (alta → media → baja → sin) y, dentro de cada una, el más antiguo primero.
-  const deSistemas = (filas ?? []).filter((t: Fila) => PIPELINE_SISTEMAS.test(uno<Fila>(t.tickets_pipelines)?.nombre ?? ""));
-  const etapas = await etapasPorPipeline(sb, [...new Set<number>(deSistemas.map((t: Fila) => t.id_pipeline))]);
+  const conAsistente = (filas ?? []).filter((t: Fila) => pipelineConAsistente(uno<Fila>(t.tickets_pipelines)));
+  const etapas = await etapasPorPipeline(sb, [...new Set<number>(conAsistente.map((t: Fila) => t.id_pipeline))]);
   const loAtiendo = (t: Fila) => atendidoPor(propietariosDe(t), t.id_etapa, etapas.get(t.id_pipeline) ?? []) === uid;
-  const pendientes = deSistemas
-    .filter((t: Fila) => ETAPAS_VISIBLES.includes(sinAcentos(uno<Fila>(t.tickets_etapas)?.nombre ?? "")) || loAtiendo(t))
+  const pendientes = conAsistente
+    .filter((t: Fila) => {
+      const etapa = uno<Fila>(t.tickets_etapas);
+      return ETAPAS_VISIBLES.includes(sinAcentos(etapa?.nombre ?? "")) || etapa?.tipo_semantico === "abierta" || loAtiendo(t);
+    })
     .sort((a: Fila, b: Fila) =>
       (ORDEN_PRIORIDAD[a.prioridad] ?? 3) - (ORDEN_PRIORIDAD[b.prioridad] ?? 3) ||
       Date.parse(a.fecha_creacion) - Date.parse(b.fecha_creacion))
@@ -315,7 +327,7 @@ export async function tomarTicket(sb: SupabaseClient, email: string, idTicket: n
  * Cierra un ticket como lo haría el portal (tickets-store.tsx → moverEtapa):
  * nota de seguimiento, etapa "resuelta" del mismo pipeline con fecha_cierre, y
  * el registro `cambio_estado` con origen/destino. Solo si el ticket está asignado
- * a quien cierra y es de un pipeline de Sistemas. Autor = el usuario del portal
+ * a quien cierra y es de un pipeline con asistente. Autor = el usuario del portal
  * con ese email (queda a su nombre, no a nombre de un robot).
  */
 export async function cerrarTicket(sb: SupabaseClient, email: string, idTicket: number, nota: string): Promise<{ etapa: string }> {
@@ -325,14 +337,14 @@ export async function cerrarTicket(sb: SupabaseClient, email: string, idTicket: 
 
   const { data: t, error: e2 } = await sb
     .from("tickets")
-    .select("id, id_pipeline, id_etapa, id_usuario_propietario, activo, tickets_pipelines(nombre), tickets_propietarios(id_usuario)")
+    .select("id, id_pipeline, id_etapa, id_usuario_propietario, activo, tickets_pipelines(*), tickets_propietarios(id_usuario)")
     .eq("id", idTicket)
     .maybeSingle();
   if (e2) throw e2;
   if (!t || !t.activo) throw new Error("no_existe");
   const propietarios = ((t.tickets_propietarios ?? []) as Fila[]).map((p) => p.id_usuario);
   if (!propietarios.includes(uid) && t.id_usuario_propietario !== uid) throw new Error("no_es_tuyo");
-  if (!PIPELINE_SISTEMAS.test(uno<Fila>(t.tickets_pipelines)?.nombre ?? "")) throw new Error("pipeline_no_permitido");
+  if (!pipelineConAsistente(uno<Fila>(t.tickets_pipelines))) throw new Error("pipeline_no_permitido");
 
   const { data: destino, error: e3 } = await sb
     .from("tickets_etapas")
