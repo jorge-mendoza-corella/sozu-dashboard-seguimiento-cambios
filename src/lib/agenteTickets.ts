@@ -3,8 +3,9 @@
  *
  * Los entrega la Cloud Function `agenteTickets` (lee Supabase del lado del
  * servidor, valida el permiso "Revisar tickets" y filtra por el email de la
- * sesión). Solo pipelines de Sistemas y etapas Nuevo / En revisión / En lista
- * de espera, ordenados por prioridad y antigüedad.
+ * sesión). Solo pipelines con «Mostrar el asistente al levantar un ticket»
+ * prendido y etapas Nuevo / En revisión / En lista de espera (o la de entrada
+ * del pipeline), ordenados por prioridad y antigüedad.
  *
  * Flujo completo:
  *   1. "Mandar a Claude" (`agenteMandarAClaude`) abre un issue con el .md en el

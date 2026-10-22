@@ -1,7 +1,7 @@
 /**
  * Pestaña "Tickets" del panel de GeorgIA: los tickets pendientes del portal de
- * sozu-admin asignados a quien está logueado (pipelines de Sistemas; Nuevo, En
- * revisión, En lista de espera; por prioridad y antigüedad).
+ * sozu-admin asignados a quien está logueado (pipelines con «Mostrar el asistente»
+ * prendido; Nuevo, En revisión, En lista de espera; por prioridad y antigüedad).
  *
  * A la izquierda la lista con filtros; a la derecha el detalle: datos, evidencias,
  * el .md para Claude Code (editable) con "Mandar a Claude" (abre un issue en el

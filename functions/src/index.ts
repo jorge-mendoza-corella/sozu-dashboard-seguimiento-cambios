@@ -571,7 +571,7 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string }>(
       const conocidos: Record<string, string> = {
         no_es_tuyo: "Ese ticket no está asignado a ti.",
         no_existe: "Ese ticket ya no existe.",
-        pipeline_no_permitido: "Solo se cierran tickets de los pipelines de Sistemas.",
+        pipeline_no_permitido: "Solo se cierran tickets de los pipelines con el asistente prendido.",
         sin_etapa_resuelta: "El pipeline de ese ticket no tiene etapa de resuelto.",
         sin_usuario_portal: "Tu correo no tiene usuario en el portal de tickets.",
       };
