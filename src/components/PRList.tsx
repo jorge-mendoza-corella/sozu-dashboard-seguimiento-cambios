@@ -307,9 +307,10 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                   {/* Autor y reviewers */}
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     {/* Los autores del CÓDIGO, y aparte quién abrió el PR
-                        cuando no son la misma persona: los PRs creados desde el
-                        dashboard salen a nombre de quien aprieta el botón, y
-                        este chip hacía parecer que los cambios eran suyos. */}
+                        (siempre, aunque también tenga commits): los PRs creados
+                        desde el dashboard salen a nombre de quien aprieta el
+                        botón, y mezclarlo con los autores hacía parecer que los
+                        cambios eran suyos. */}
                     {pr.authors.length > 0 && (
                       <span
                         className="flex items-center gap-0.5 text-[10px] text-muted-foreground"
@@ -326,10 +327,12 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                         ))}
                       </span>
                     )}
-                    {pr.author && !pr.authors.includes(pr.author) && (
+                    {pr.author && (
                       <span
                         className="flex items-center gap-0.5 text-[10px] text-muted-foreground/70"
-                        title={`@${pr.author} abrió el PR, pero los cambios son de ${pr.authors.map((a) => "@" + a).join(", ")}`}
+                        title={pr.authors.length === 0 || (pr.authors.length === 1 && pr.authors[0] === pr.author)
+                          ? `@${pr.author} abrió el PR`
+                          : `@${pr.author} abrió el PR; los cambios son de ${pr.authors.map((a) => "@" + a).join(", ")}`}
                       >
                         <GitPullRequest className="h-2.5 w-2.5" />
                         <span className="font-mono">abrió <span className={cn(esMio(pr.author) && MIO_CLASS)}>{pr.author}</span></span>
