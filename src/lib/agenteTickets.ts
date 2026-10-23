@@ -264,6 +264,22 @@ export async function seguimientoClaude(ticketId: string, forzarPrs = false): Pr
   return (await llamarSeguimiento({ ticketId, forzarPrs })).data;
 }
 
+/**
+ * Consulta de react-query del seguimiento: la usan el renglón y el detalle del
+ * ticket y el orden de la lista, así que comparten caché y sondeo (más seguido
+ * mientras Claude está en cola o trabajando).
+ */
+export const consultaSeguimiento = (ticketId: string) => ({
+  queryKey: ["claude-seguimiento", ticketId],
+  queryFn: () => seguimientoClaude(ticketId),
+  refetchInterval: (query: { state: { data?: SeguimientoClaude } }) => {
+    const e = query.state.data?.estado;
+    return e === "en_cola" || e === "trabajando" ? 15_000 : 60_000;
+  },
+  refetchIntervalInBackground: false,
+  retry: 1,
+});
+
 /** Contesta a Claude (comentario con @claude en el issue: arranca otra corrida). */
 export async function responderAClaude(ticketId: string, texto: string, adjuntos: AdjuntoRespuesta[] = []): Promise<void> {
   await llamarResponder({ ticketId, texto, adjuntos });

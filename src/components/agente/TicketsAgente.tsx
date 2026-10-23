@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import { useQueries } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -24,7 +25,7 @@ import { AvisoTokenClaude, ConectarClaude, EstadoTokenClaude } from "./AvisoToke
 import { useTokenClaude } from "@/hooks/useTokenClaude";
 import { BarraClaudeMini, EstadoClaudeMini, SeguimientoClaude } from "./SeguimientoClaude";
 import {
-  analisisGuardado, cerrarTicketPortal, esSoloFecha, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
+  analisisGuardado, avancePrs, cerrarTicketPortal, consultaSeguimiento, esSoloFecha, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
   type AnalisisTicket, type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
 
@@ -95,14 +96,33 @@ export function TicketsAgente({
     if (cerrarAhora) onCerrarAtendido();
   };
 
+  // Mismo seguimiento que leen los renglones (misma caché): no agrega llamadas.
+  const conIssue = useMemo(
+    () => (tickets ?? []).filter((t) => enviados.some((e) => e.ticketId === t.id && e.issue && !e.listo)),
+    [tickets, enviados],
+  );
+  const seguimientos = useQueries({ queries: conIssue.map((t) => consultaSeguimiento(t.id)) });
+  const clavePrs = seguimientos
+    .map((q, i) => (q.data?.estado === "terminado" && avancePrs(q.data.prs).total > 0 ? conIssue[i].id : ""))
+    .join(",");
+  const conPrs = useMemo(() => {
+    const ids = new Set(clavePrs.split(",").filter(Boolean));
+    for (const e of enviados) if (e.listo) ids.add(e.ticketId);
+    return ids;
+  }, [clavePrs, enviados]);
+
   const filtrados = useMemo(() => {
     const q = sinAcentos(fTexto.trim());
     return (tickets ?? []).filter((t) =>
       (!fPipeline || t.pipeline === fPipeline) &&
       (!fEtapa || t.etapa === fEtapa) &&
       (!fPrioridad || (fPrioridad === "sin" ? !t.prioridad : t.prioridad === fPrioridad)) &&
-      (!q || sinAcentos(`${t.folio} ${t.titulo} ${t.abiertoPor ?? ""} ${t.descripcion}`).includes(q)));
-  }, [tickets, fPipeline, fEtapa, fPrioridad, fTexto]);
+      (!q || sinAcentos(`${t.folio} ${t.titulo} ${t.abiertoPor ?? ""} ${t.descripcion}`).includes(q)))
+      // Arriba queda siempre trabajo: los que ya tienen sus PRs (Claude terminó y
+      // solo falta revisarlos/desplegarlos, o ya están en PRD) bajan al final.
+      // sort es estable: dentro de cada grupo se respeta el orden que trae la lista.
+      .sort((a, b) => Number(conPrs.has(a.id)) - Number(conPrs.has(b.id)));
+  }, [tickets, fPipeline, fEtapa, fPrioridad, fTexto, conPrs]);
 
   // Lo que pide GeorgIA (contestar o cerrar) manda sobre lo elegido a mano. Se
   // busca en todos los tickets, no solo en los filtrados: un filtro no lo esconde.
