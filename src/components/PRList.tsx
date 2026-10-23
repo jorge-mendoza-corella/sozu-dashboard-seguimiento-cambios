@@ -303,14 +303,25 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                     </span>
                     <span className="text-muted-foreground">·</span>
                     <span className="text-muted-foreground">{formatDistanceToNow(pr.createdAt)}</span>
+                    {/* Quién abrió el PR, siempre y junto a la rama: aunque
+                        también tenga commits, va aparte de los autores (los PRs
+                        creados desde el dashboard salen a nombre de quien
+                        aprieta el botón). */}
+                    {pr.author && (
+                      <span
+                        className="flex items-center gap-1 text-muted-foreground"
+                        title={pr.authors.length === 0 || (pr.authors.length === 1 && pr.authors[0] === pr.author)
+                          ? `@${pr.author} abrió el PR`
+                          : `@${pr.author} abrió el PR; los cambios son de ${pr.authors.map((a) => "@" + a).join(", ")}`}
+                      >
+                        <span>·</span>
+                        <span>abrió <span className={cn("font-mono", esMio(pr.author) && MIO_CLASS)}>{pr.author}</span></span>
+                      </span>
+                    )}
                   </div>
-                  {/* Autor y reviewers */}
+                  {/* Autores y reviewers */}
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    {/* Los autores del CÓDIGO, y aparte quién abrió el PR
-                        (siempre, aunque también tenga commits): los PRs creados
-                        desde el dashboard salen a nombre de quien aprieta el
-                        botón, y mezclarlo con los autores hacía parecer que los
-                        cambios eran suyos. */}
+                    {/* Los autores del CÓDIGO (quién abrió el PR va arriba, junto a la rama). */}
                     {pr.authors.length > 0 && (
                       <span
                         className="flex items-center gap-0.5 text-[10px] text-muted-foreground"
@@ -325,17 +336,6 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                             {i < pr.authors.length - 1 && ", "}
                           </span>
                         ))}
-                      </span>
-                    )}
-                    {pr.author && (
-                      <span
-                        className="flex items-center gap-0.5 text-[10px] text-muted-foreground/70"
-                        title={pr.authors.length === 0 || (pr.authors.length === 1 && pr.authors[0] === pr.author)
-                          ? `@${pr.author} abrió el PR`
-                          : `@${pr.author} abrió el PR; los cambios son de ${pr.authors.map((a) => "@" + a).join(", ")}`}
-                      >
-                        <GitPullRequest className="h-2.5 w-2.5" />
-                        <span className="font-mono">abrió <span className={cn(esMio(pr.author) && MIO_CLASS)}>{pr.author}</span></span>
                       </span>
                     )}
                     {pr.requestedReviewers.length > 0 && (

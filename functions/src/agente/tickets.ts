@@ -18,6 +18,18 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getFirestore } from "firebase-admin/firestore";
 
+/**
+ * `tickets.fecha_creacion` es `timestamp without time zone` con default
+ * CURRENT_TIMESTAMP: guarda la hora UTC pero llega sin zona
+ * ("2026-10-23T19:41:00"), y el navegador la leía como hora local, así que un
+ * ticket abierto a la 1:41 pm se mostraba a las 7:41 pm. Se le pone la Z.
+ */
+export function comoUtc(fecha: string): string {
+  if (!fecha) return fecha;
+  const iso = fecha.replace(" ", "T");
+  return /T\d/.test(iso) && !/(Z|[+-]\d\d(:?\d\d)?)$/i.test(iso) ? `${iso}Z` : iso;
+}
+
 export const SUPABASE_URL = "https://tzmhgfjmddkfyffkkmto.supabase.co";
 /** Enlace directo (sozu-admin abre Mis tickets → pipeline → folio → detalle con ?ticket=). */
 const urlTicket = (numero: number) => `https://admin.sozu.com/admin/portal-tickets/todos?ticket=${numero}`;
@@ -266,7 +278,7 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
       proyecto: uno<Fila>(t.proyectos)?.nombre ?? null,
       prioridad: t.prioridad && t.prioridad !== "sin" ? t.prioridad : null,
       abiertoPor,
-      abiertoEn: t.fecha_creacion,
+      abiertoEn: comoUtc(t.fecha_creacion),
       asignados,
       loAtiendoYo: loAtiendo(t),
       evidencias: (t.tickets_adjuntos ?? [])
