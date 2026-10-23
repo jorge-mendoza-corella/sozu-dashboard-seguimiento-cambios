@@ -19,7 +19,7 @@ import { useAdjuntos } from "@/hooks/useAdjuntos";
 import { useConsola, type Consola } from "@/hooks/useConsolaClaude";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import {
-  avancePrs, duracion, siglaRepo, type PrClaude, responderAClaude, seguimientoClaude,
+  avancePrs, consultaSeguimiento, duracion, siglaRepo, type PrClaude, responderAClaude,
   type EstadoClaude, type EstadoPr, type MensajeClaude,
 } from "@/lib/agenteTickets";
 
@@ -312,15 +312,9 @@ function ReposDelTicket({ trabajando, prs, consola, folio, titulo, issue, onSesi
   );
 }
 
-/** Misma consulta en la lista y en el detalle: comparten caché y sondeo. */
+/** Misma consulta en la lista, en el detalle y en el orden de la lista: comparten caché y sondeo. */
 function useSeguimiento(ticketId: string) {
-  return useQuery({
-    queryKey: ["claude-seguimiento", ticketId],
-    queryFn: () => seguimientoClaude(ticketId),
-    refetchInterval: (query) => (activo(query.state.data?.estado) ? 15_000 : 60_000),
-    refetchIntervalInBackground: false,
-    retry: 1,
-  });
+  return useQuery(consultaSeguimiento(ticketId));
 }
 
 /**
