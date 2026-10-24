@@ -53,7 +53,7 @@ function sortBranches(branches: BranchInfo[]): BranchInfo[] {
 
 function getOverallState(status: RepoStatus): "ok" | "devPending" | "pending" | "failing" | "error" {
   if (status.error) return "error";
-  if (hasFailingDeploy(status.latestRuns)) return "failing";
+  if (hasFailingDeploy(status.latestRuns, status.branches)) return "failing";
   if (status.openPRs.length > 0) return "pending";
   const dev = status.branches.find((b) => b.name === "dev");
   if ((dev?.aheadOfMain ?? 0) > 0) return "devPending";
