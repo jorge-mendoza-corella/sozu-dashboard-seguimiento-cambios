@@ -476,19 +476,28 @@ export function deployEnCurso(latestRuns: WorkflowRun[]): "prd" | "dev" | null {
 }
 
 /**
- * True si el deploy MÁS RECIENTE de alguna rama falló. Un deploy exitoso
- * posterior en la misma rama limpia el fallo previo, así que no se reporta
- * como fallando. `latestRuns` viene ordenado más-nuevo-primero, por lo que
- * el primer run visto por rama es el último deploy de esa rama.
+ * True si el deploy MÁS RECIENTE de alguna rama falló y ese fallo sigue vigente.
+ * `latestRuns` viene ordenado más-nuevo-primero, así que el primer run visto
+ * por rama es su último deploy. Un fallo deja de contar cuando:
+ *   - un deploy posterior a PRD (`main`) terminó bien: lo que está en
+ *     producción es lo bueno, aunque `dev` no haya vuelto a desplegar;
+ *   - la rama ya avanzó a otro commit (`branches`): el fallo es de un commit
+ *     que ya no es la punta (p. ej. un workflow roto que se corrigió después y
+ *     cuyo arreglo no vuelve a correr ese deploy en la rama).
  */
-export function hasFailingDeploy(latestRuns: WorkflowRun[]): boolean {
+export function hasFailingDeploy(latestRuns: WorkflowRun[], branches: BranchInfo[] = []): boolean {
   const latestByBranch = new Map<string, WorkflowRun>();
   for (const r of latestRuns) {
     const key = r.headBranch ?? "";
     if (!latestByBranch.has(key)) latestByBranch.set(key, r);
   }
-  for (const r of latestByBranch.values()) {
-    if (r.conclusion === "failure") return true;
+  const prdBueno = latestRuns.find((r) => r.headBranch === "main" && r.conclusion === "success");
+  for (const [rama, r] of latestByBranch) {
+    if (r.conclusion !== "failure") continue;
+    if (prdBueno && Date.parse(prdBueno.createdAt) > Date.parse(r.createdAt)) continue;
+    const punta = branches.find((b) => b.name === rama)?.lastCommitSha;
+    if (punta && r.headSha && !r.headSha.startsWith(punta)) continue;
+    return true;
   }
   return false;
 }

@@ -43,11 +43,11 @@ function computeSummary(data: RepoStatus[]) {
   return {
     total: data.length,
     prdSynced: data.filter(
-      (r) => !r.error && (getDev(r)?.aheadOfMain ?? 0) === 0 && r.openPRs.length === 0 && !hasFailingDeploy(r.latestRuns),
+      (r) => !r.error && (getDev(r)?.aheadOfMain ?? 0) === 0 && r.openPRs.length === 0 && !hasFailingDeploy(r.latestRuns, r.branches),
     ).length,
     devPending: data.filter((r) => (getDev(r)?.aheadOfMain ?? 0) > 0).length,
     withPRs: data.filter((r) => r.openPRs.length > 0).length,
-    failing: data.filter((r) => hasFailingDeploy(r.latestRuns)).length,
+    failing: data.filter((r) => hasFailingDeploy(r.latestRuns, r.branches)).length,
   };
 }
 
@@ -315,7 +315,7 @@ export function DashboardPage() {
         .map((r) => statusByKey.get(`${r.owner}/${r.repo}`))
         .filter((s): s is RepoStatus => !!s);
       let sev: Alert = null;
-      if (statuses.some((s) => hasFailingDeploy(s.latestRuns))) sev = "failing";
+      if (statuses.some((s) => hasFailingDeploy(s.latestRuns, s.branches))) sev = "failing";
       else if (statuses.some((s) => s.openPRs.length > 0)) sev = "pending";
       else if (statuses.some((s) => (s.branches.find((b) => b.name === "dev")?.aheadOfMain ?? 0) > 0))
         sev = "devPending";

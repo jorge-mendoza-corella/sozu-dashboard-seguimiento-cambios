@@ -123,11 +123,11 @@ export function ResumenPage() {
       const devAhead = (s: RepoStatus) => s.branches.find((b) => b.name === "dev")?.aheadOfMain ?? 0;
       m.set(p.id, {
         repos: projRepos.length,
-        enPRD: sts.filter((s) => !s.error && devAhead(s) === 0 && s.openPRs.length === 0 && !hasFailingDeploy(s.latestRuns)).length,
+        enPRD: sts.filter((s) => !s.error && devAhead(s) === 0 && s.openPRs.length === 0 && !hasFailingDeploy(s.latestRuns, s.branches)).length,
         devPendiente: sts.filter((s) => devAhead(s) > 0).length,
         commitsPendientes: sts.reduce((acc, s) => acc + devAhead(s), 0),
         prsAbiertos: sts.reduce((acc, s) => acc + scopedPRs(s).length, 0),
-        fallando: sts.filter((s) => hasFailingDeploy(s.latestRuns)).length,
+        fallando: sts.filter((s) => hasFailingDeploy(s.latestRuns, s.branches)).length,
         deployando: sts.filter((s) =>
           s.latestRuns.some((r) => r.status === "in_progress" || r.status === "queued"),
         ).length,
