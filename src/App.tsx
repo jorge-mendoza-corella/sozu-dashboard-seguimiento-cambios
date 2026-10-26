@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { ImpersonationProvider } from "@/components/ImpersonationProvider";
 import { canAdminister, isRootAdmin } from "@/lib/firestoreUsers";
+import { useReposMonitoreo } from "@/hooks/useMonitoreo";
 import { setSessionGithubAuth } from "@/lib/github";
 import { AppLayout } from "@/components/AppLayout";
 import { GithubTokenGate } from "@/components/GithubTokenGate";
@@ -14,8 +15,23 @@ import { ContributorsPage } from "@/pages/ContributorsPage";
 import { ResumenPage } from "@/pages/ResumenPage";
 import { ConfiguracionPage } from "@/pages/ConfiguracionPage";
 import { NegocioPage } from "@/pages/NegocioPage";
+import { MonitoreoPage } from "@/pages/MonitoreoPage";
 
 const queryClient = new QueryClient();
+
+/**
+ * Monitoreo se abre si hay al menos un repo cuyos errores pueda ver (permiso
+ * por empresa/proyecto/repo). Componente aparte porque necesita proyectos y
+ * repos, y esas lecturas solo tienen sentido ya con sesión.
+ */
+function MonitoreoRoute() {
+  // `useAuth` no es un contexto: aquí arranca de nuevo en "loading" aunque
+  // AppRoutes ya tenga sesión, y sin esperarlo rebotaba a la portada.
+  const { status, appUser } = useAuth();
+  const { repos, cargando } = useReposMonitoreo(appUser);
+  if (repos.length > 0) return <MonitoreoPage />;
+  return status === "loading" || cargando ? null : <Navigate to="/" replace />;
+}
 
 function AppRoutes() {
   const { status, appUser, realUser, logout } = useAuth();
@@ -81,6 +97,7 @@ function AppRoutes() {
         {/* Negocio expone tarifas y datos fiscales de toda la cartera: es del
             admin global, no del administrador de empresa. */}
         <Route path="/negocio" element={esAdminGlobal ? <NegocioPage /> : <Navigate to="/" replace />} />
+        <Route path="/monitoreo" element={<MonitoreoRoute />} />
         <Route path="/configuracion" element={puedeAdministrar ? <ConfiguracionPage /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

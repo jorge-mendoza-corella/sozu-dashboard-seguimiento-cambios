@@ -60,7 +60,7 @@ async function tokenServicio(): Promise<string | null> {
  * tiempo de ejecución y no con `defineSecret`: si no existen, el deploy de TODAS
  * las funciones fallaría, y aquí son solo el respaldo de la config por empresa.
  */
-async function secretoGlobal(nombre: string): Promise<string> {
+export async function secretoGlobal(nombre: string): Promise<string> {
   const token = await tokenServicio();
   const proyecto = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT ?? "sozu-admin-dev";
   if (!token) return "";

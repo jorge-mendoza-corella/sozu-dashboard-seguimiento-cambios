@@ -4,7 +4,7 @@ import {
   UserPlus, Trash2, Shield, Eye, Loader2, FolderGit2, ChevronDown, ChevronUp, GitBranch,
   GitPullRequest, UserCheck, GitMerge, Rocket, Smartphone, KeyRound, ExternalLink, Building2, Eye as EyeIcon,
   Search, X,
-  MessageCircle, Bot, ToggleRight,
+  MessageCircle, Bot, ToggleRight, Siren,
 } from "lucide-react";
 import { PermisosIaChips } from "@/components/agente/PermisosIaChips";
 import { MostrarGeorgIA } from "@/components/agente/MostrarGeorgIA";
@@ -55,6 +55,7 @@ const PERMISSION_DEFS: { key: keyof CicdPermissions; label: string; icon: React.
   { key: "deployDev", label: "Desplegar dev", icon: <Rocket className="h-3 w-3" /> },
   { key: "switchDeployDev", label: "Switch deploy a dev", icon: <ToggleRight className="h-3 w-3" /> },
   { key: "viewOthers", label: "Ver cambios de otros", icon: <Eye className="h-3 w-3" /> },
+  { key: "verMonitoreo", label: "Ver monitoreo", icon: <Siren className="h-3 w-3" /> },
 ];
 
 function PermissionChips({
