@@ -19,7 +19,7 @@ import { useAdjuntos } from "@/hooks/useAdjuntos";
 import { useConsola, type Consola } from "@/hooks/useConsolaClaude";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import {
-  avancePrs, consultaSeguimiento, duracion, siglaRepo, type PrClaude, responderAClaude,
+  avancePrs, COLOR_PR, consultaSeguimiento, duracion, ETIQUETA_PR, siglaRepo, type PrClaude, responderAClaude,
   type EstadoClaude, type EstadoPr, type MensajeClaude,
 } from "@/lib/agenteTickets";
 
@@ -37,22 +37,6 @@ const COLOR: Record<EstadoClaude, string> = {
   esperando_respuesta: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
   terminado: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
   error: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300",
-};
-
-const ETIQUETA_PR: Record<EstadoPr, string> = {
-  abierto: "por revisar",
-  en_dev: "en dev",
-  en_main: "en main, falta deploy",
-  en_prd: "en PRD",
-  cerrado: "cerrado sin merge",
-};
-
-const COLOR_PR: Record<EstadoPr, string> = {
-  abierto: "text-muted-foreground",
-  en_dev: "text-sky-700 dark:text-sky-300",
-  en_main: "text-amber-700 dark:text-amber-300",
-  en_prd: "text-emerald-700 dark:text-emerald-300",
-  cerrado: "text-muted-foreground line-through",
 };
 
 const hora = (iso: string) =>

@@ -81,7 +81,7 @@ export interface RespuestaTickets {
 const functions = getFunctions(app, "us-central1");
 const llamarTickets = httpsCallable<Record<string, never>, RespuestaTickets>(functions, "agenteTickets", { timeout: 60_000 });
 const llamarMandar = httpsCallable<{ ticketId: string; md: string }, IssueClaude>(functions, "agenteMandarAClaude", { timeout: 60_000 });
-const llamarCerrar = httpsCallable<{ ticketId: string; nota: string }, { ok: true; etapa: string }>(functions, "agenteCerrarTicket", { timeout: 60_000 });
+const llamarCerrar = httpsCallable<{ ticketId: string; nota: string; prsSeleccionados?: string[] }, { ok: true; etapa: string }>(functions, "agenteCerrarTicket", { timeout: 120_000 });
 
 export async function misTickets(): Promise<RespuestaTickets> {
   return (await llamarTickets({})).data;
@@ -106,6 +106,23 @@ export interface MensajeClaude {
 }
 
 export type EstadoPr = "abierto" | "en_dev" | "en_main" | "en_prd" | "cerrado";
+
+/** Cómo se nombra cada estado de PR en el panel (seguimiento y cierre). */
+export const ETIQUETA_PR: Record<EstadoPr, string> = {
+  abierto: "por revisar",
+  en_dev: "en dev",
+  en_main: "en main, falta deploy",
+  en_prd: "en PRD",
+  cerrado: "cerrado sin merge",
+};
+
+export const COLOR_PR: Record<EstadoPr, string> = {
+  abierto: "text-muted-foreground",
+  en_dev: "text-sky-700 dark:text-sky-300",
+  en_main: "text-amber-700 dark:text-amber-300",
+  en_prd: "text-emerald-700 dark:text-emerald-300",
+  cerrado: "text-muted-foreground line-through",
+};
 
 export interface PrClaude {
   url: string;
@@ -164,6 +181,37 @@ export function duracion(desdeIso: string, hasta = Date.now()): string {
 export function avancePrs(prs: PrClaude[]): { enPrd: number; total: number } {
   const vigentes = prs.filter((p) => p.estado !== "cerrado");
   return { enPrd: vigentes.filter((p) => p.estado === "en_prd").length, total: vigentes.length };
+}
+
+// ── Tickets trabajados por fuera del dashboard ─────────────────────────────
+
+/**
+ * Convención para que un PR hecho por fuera quede ligado al ticket de folio N
+ * (basta una; la misma que aplica el servidor en `agente/prsExternos.ts`):
+ * `SOZU-N` en el título o la descripción, la rama `ticket-N` / `ticket/N` /
+ * `sozu-N`, o el trailer `Ticket-SOZU: #N` en un commit.
+ */
+export const convencionPrs = (n: number) => [`SOZU-${n} en el título o la descripción del PR`, `rama ticket-${n} (o ticket/${n}, sozu-${n})`, `trailer ${TRAILER_TICKET}: #${n} en un commit`];
+
+export type RazonMatch = "trailer" | "titulo" | "rama";
+
+export interface PrExterno extends PrClaude {
+  razones: RazonMatch[];
+  /** Ya entró a main (en main o en PRD): puede contar para cerrar. */
+  mergeado: boolean;
+}
+
+export interface PrsExternos {
+  numero: number;
+  prs: PrExterno[];
+  revisadoEn: string;
+}
+
+const llamarBuscarPrs = httpsCallable<{ ticketId: string; forzar?: boolean }, PrsExternos>(functions, "agenteBuscarPrsTicket", { timeout: 120_000 });
+
+/** PRs del ticket según la convención, en los repos de Sozu. Se reusa 10 min salvo `forzar`. */
+export async function buscarPrsTicket(ticketId: string, forzar = false): Promise<PrsExternos> {
+  return (await llamarBuscarPrs({ ticketId, forzar })).data;
 }
 
 const llamarSeguimiento = httpsCallable<{ ticketId: string; forzarPrs?: boolean }, SeguimientoClaude>(functions, "agenteClaudeSeguimiento", { timeout: 60_000 });
@@ -303,8 +351,12 @@ export async function analisisGuardado(ticketId: string): Promise<AnalisisTicket
   }
 }
 
-export async function cerrarTicketPortal(ticketId: string, nota: string) {
-  return (await llamarCerrar({ ticketId, nota })).data;
+/**
+ * `prsSeleccionados`: solo para tickets trabajados por fuera (ver
+ * `buscarPrsTicket`); el servidor vuelve a verificar cada uno.
+ */
+export async function cerrarTicketPortal(ticketId: string, nota: string, prsSeleccionados?: string[]) {
+  return (await llamarCerrar({ ticketId, nota, ...(prsSeleccionados ? { prsSeleccionados } : {}) })).data;
 }
 
 /** "jorge.mendoza@sozu.com" → "Jorge". */

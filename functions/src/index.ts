@@ -21,6 +21,7 @@ import { docPorRuta, indiceDocs, limpiarRuta, obtenerCorpus } from "./agente/doc
 import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.js";
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
 import { cerrarTicket, clienteSupabase, ticketsAsignados, tomarTicket } from "./agente/tickets.js";
+import { buscarPrsExternos, notaConPrs, verificarPrsExternos } from "./agente/prsExternos.js";
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
 import { issueDelTicket, responderAClaude, seguimientoClaude, type AdjuntoRespuesta } from "./agente/claude.js";
 import { abrirSubida } from "./agente/adjuntos.js";
@@ -537,15 +538,16 @@ export const agenteClaudeLog = onCall<{ accion: string; issue: number; jwt?: str
 );
 
 /**
- * `agenteCerrarTicket`: pasa el ticket a la etapa resuelta de su pipeline y deja la
- * nota de seguimiento (lo que se actualizó, por repo y PR). Solo tickets de Sistemas
- * asignados a quien cierra; la nota queda a su nombre en el portal.
+ * `agenteBuscarPrsTicket`: PRs de un ticket que se trabajó por fuera del
+ * dashboard (convención `SOZU-N` / rama `ticket-N` / trailer `Ticket-SOZU: #N`,
+ * ver agente/prsExternos.ts), con en qué va cada uno. Solo tickets asignados a
+ * quien pregunta. Para cerrarlo desde aquí eligiendo qué PRs lo resolvieron.
  */
-export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string }>(
+export const agenteBuscarPrsTicket = onCall<{ ticketId: string; forzar?: boolean }>(
   {
     region: "us-central1",
-    secrets: [SUPABASE_SERVICE_KEY],
-    timeoutSeconds: 60,
+    secrets: [GITHUB_TOKEN, SUPABASE_SERVICE_KEY],
+    timeoutSeconds: 120,
     memory: "512MiB",
     maxInstances: 5,
     cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
@@ -553,19 +555,89 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string }>(
   async (req) => {
     const usuario = await verificarAcceso(req, "tickets");
     const ticketId = String(req.data?.ticketId ?? "");
-    const nota = typeof req.data?.nota === "string" ? req.data.nota : "";
+    if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
+    const t = (await ticketsAsignados(clienteSupabase(SUPABASE_SERVICE_KEY.value()), usuario.email)).find((x) => x.id === ticketId);
+    if (!t) throw new HttpsError("not-found", "Ese ticket no está entre tus pendientes.");
+    try {
+      const gh = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
+      return await buscarPrsExternos(gh, usuario.email, t, req.data?.forzar === true);
+    } catch (e) {
+      console.error("[agenteBuscarPrsTicket]", e);
+      throw new HttpsError("unavailable", "No se pudieron buscar los PRs en GitHub.");
+    }
+  },
+);
+
+/**
+ * `agenteCerrarTicket`: pasa el ticket a la etapa resuelta de su pipeline y deja la
+ * nota de seguimiento (lo que se actualizó, por repo y PR). Solo tickets de Sistemas
+ * asignados a quien cierra; la nota queda a su nombre en el portal.
+ *
+ * Trabajado por fuera (sin issue de Claude ni PRs registrados): se cierra con los
+ * PRs que eligió quien cierra (`prsSeleccionados`), re-verificados aquí contra la
+ * convención del folio y ya mergeados a main. Quedan en el registro (`prs`,
+ * `origen: "externo"`) y en la nota del portal.
+ */
+export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string; prsSeleccionados?: string[] }>(
+  {
+    region: "us-central1",
+    secrets: [SUPABASE_SERVICE_KEY, GITHUB_TOKEN],
+    timeoutSeconds: 120,
+    memory: "512MiB",
+    maxInstances: 5,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  async (req) => {
+    const usuario = await verificarAcceso(req, "tickets");
+    const ticketId = String(req.data?.ticketId ?? "");
+    let nota = typeof req.data?.nota === "string" ? req.data.nota : "";
+    const seleccionados = Array.isArray(req.data?.prsSeleccionados)
+      ? req.data.prsSeleccionados.filter((u): u is string => typeof u === "string")
+      : [];
     if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
     if (!nota.trim()) throw new HttpsError("invalid-argument", "La nota de seguimiento no puede ir vacía.");
-    // Solo se cierra desde aquí lo que ya llegó a PRD por un PR hacia main ligado al ticket.
-    const enviado = (await getFirestore().doc(`agente_tickets_enviados/${usuario.email}__${ticketId}`).get()).data();
+    const ref = getFirestore().doc(`agente_tickets_enviados/${usuario.email}__${ticketId}`);
+    const enviado = (await ref.get()).data();
+    const sb = clienteSupabase(SUPABASE_SERVICE_KEY.value());
+    // Trabajado por fuera: ni issue de Claude ni PRs con el trailer ya en PRD.
+    const externo = !enviado?.issue && !(Array.isArray(enviado?.prs) && enviado.prs.length > 0);
+    let registroExterno: Record<string, unknown> | null = null;
+    if (externo) {
+      if (!seleccionados.length) {
+        throw new HttpsError("failed-precondition", "Elige al menos un PR que haya cerrado este ticket (busca sus PRs primero).");
+      }
+      const t = (await ticketsAsignados(sb, usuario.email)).find((x) => x.id === ticketId);
+      if (!t) throw new HttpsError("not-found", "Ese ticket no está entre tus pendientes.");
+      let prs;
+      try {
+        const gh = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
+        prs = await verificarPrsExternos(gh, t.numero, seleccionados);
+      } catch (e) {
+        const m = (e as Error).message;
+        const [codigo, url] = m.split(/:(.+)/);
+        const motivos: Record<string, string> = {
+          pr_ajeno: "no es de un repo de Sozu",
+          pr_no_es_del_ticket: `no trae SOZU-${t.numero}, la rama ticket-${t.numero} ni el trailer Ticket-SOZU: #${t.numero}`,
+          pr_sin_merge: "todavía no está mergeado a main",
+        };
+        if (motivos[codigo]) throw new HttpsError("failed-precondition", `El PR ${url} ${motivos[codigo]}.`);
+        console.error("[agenteCerrarTicket] verificar PRs", e);
+        throw new HttpsError("unavailable", "No se pudieron verificar los PRs en GitHub.");
+      }
+      const sinEnPrd = prs.map((p) => ({ repo: p.repo, pr: p.pr, url: p.url, cambios: p.cambios }));
+      nota = notaConPrs(nota, sinEnPrd);
+      registroExterno = {
+        owner: usuario.email, ticketId, numero: t.numero, folio: t.folio, titulo: t.titulo,
+        prs: sinEnPrd, origen: "externo", listoParaCerrar: true,
+      };
     // Mandado a Claude: todos sus PRs en PRD. Copiado a mano: algún PR con el trailer en PRD.
-    if (enviado?.issue ? enviado.listoParaCerrar !== true : !Array.isArray(enviado?.prs) || enviado.prs.length === 0) {
+    } else if (enviado?.issue ? enviado.listoParaCerrar !== true : !Array.isArray(enviado?.prs) || enviado.prs.length === 0) {
+      // Solo se cierra desde aquí lo que ya llegó a PRD por un PR hacia main ligado al ticket.
       throw new HttpsError("failed-precondition", "Todavía no están en PRD todos los PRs de este ticket; ciérralo cuando lleguen.");
     }
     try {
-      const r = await cerrarTicket(clienteSupabase(SUPABASE_SERVICE_KEY.value()), usuario.email, Number(ticketId), nota);
-      await getFirestore().doc(`agente_tickets_enviados/${usuario.email}__${ticketId}`)
-        .set({ cerrado: true, cerradoEn: FieldValue.serverTimestamp() }, { merge: true });
+      const r = await cerrarTicket(sb, usuario.email, Number(ticketId), nota);
+      await ref.set({ ...registroExterno, cerrado: true, cerradoEn: FieldValue.serverTimestamp() }, { merge: true });
       return { ok: true, etapa: r.etapa };
     } catch (e) {
       const m = (e as Error).message;

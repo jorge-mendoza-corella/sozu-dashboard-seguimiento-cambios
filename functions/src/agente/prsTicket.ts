@@ -59,7 +59,7 @@ async function shaPrd(gh: Octokit, owner: string, repo: string): Promise<string 
   return "sin_deploy";
 }
 
-async function estadoDePr(gh: Octokit, url: string): Promise<PrClaude | null> {
+export async function estadoDePr(gh: Octokit, url: string): Promise<PrClaude | null> {
   const m = url.match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/);
   if (!m) return null;
   const [, owner, repo, n] = m;
@@ -86,7 +86,7 @@ async function estadoDePr(gh: Octokit, url: string): Promise<PrClaude | null> {
 }
 
 /** Primeras líneas de los commits del PR que traen el trailer de este ticket. */
-async function cambiosDePr(gh: Octokit, p: PrClaude, numeroTicket: number): Promise<string[]> {
+export async function cambiosDePr(gh: Octokit, p: PrClaude, numeroTicket: number): Promise<string[]> {
   try {
     const { data } = await gh.pulls.listCommits({ owner: p.owner, repo: p.repo, pull_number: p.numero, per_page: 100 });
     const lineas = data
