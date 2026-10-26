@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Activity, GitBranch, Users, GitCommit, LogOut, LayoutDashboard, HardHat, ExternalLink,
-  TrendingUp, Settings, Eye, X, Menu, RefreshCw } from "lucide-react";
+  TrendingUp, Settings, Eye, X, Menu, RefreshCw, Siren } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useImpersonation } from "@/hooks/useImpersonation";
@@ -10,6 +10,7 @@ import { useBranding, useApplyBranding } from "@/hooks/useBranding";
 import { VENDOR_SIGNATURE } from "@/lib/branding";
 import { useAvancesAccess, AVANCES_URL_DEFAULT } from "@/hooks/useClients";
 import { canAdminister, isRootAdmin } from "@/lib/firestoreUsers";
+import { veMonitoreo } from "@/lib/sentry";
 import { Button } from "@/components/ui/button";
 import { AvancesDraftBadge } from "@/components/AvancesDraftBadge";
 import { CostosBadge } from "@/components/CostosBadge";
@@ -20,7 +21,7 @@ import { AgenteRepos } from "@/components/agente/AgenteRepos";
 
 // Cada item dice quién lo ve: el root, cualquier administrador (global o de
 // empresa), o todo el mundo. Las rutas repiten el corte en App.tsx.
-interface NavVisibility { root: boolean; admin: boolean; adminGlobal: boolean }
+interface NavVisibility { root: boolean; admin: boolean; adminGlobal: boolean; monitoreo: boolean }
 
 const NAV_ITEMS = [
   { to: "/resumen", label: "Resumen", icon: LayoutDashboard, show: () => true },
@@ -28,6 +29,8 @@ const NAV_ITEMS = [
   // Negocio son las tarifas y los datos fiscales de la cartera: solo admin
   // global. Un administrador de empresa no ve ni lo suyo aquí — las reglas ni
   // siquiera le dejan leer su `private/billing`.
+  // Errores de Sentry: por permiso (`verMonitoreo`), no por rol.
+  { to: "/monitoreo", label: "Monitoreo", icon: Siren, show: (v: NavVisibility) => v.monitoreo },
   { to: "/negocio", label: "Negocio", icon: TrendingUp, show: (v: NavVisibility) => v.adminGlobal },
   // Contribuidores y Usuarios los necesita también el administrador de empresa:
   // son SU gente. Cada pantalla se acota sola a sus empresas.
@@ -65,6 +68,7 @@ export function AppLayout({ children }: Props) {
       root: isRoot,
       admin: canAdminister(appUser),
       adminGlobal: isRoot || appUser?.role === "superuser",
+      monitoreo: veMonitoreo(appUser),
     }),
   );
   // Marca de la empresa del usuario (o la del proveedor): tiñe la interfaz,

@@ -256,6 +256,33 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Resumen de errores de Sentry por proyecto (pestaña Monitoreo). Lo escribe
+    // `ci/sentry_sync.py` con cuenta de servicio. Lo lee quien tenga
+    // `verMonitoreo` en sus permisos GENERALES, con el mismo default que
+    // `resolvePermissions`: sin campo `permissions`, los administradores sí y
+    // los roles operativos no. Las excepciones por empresa/repo no cuentan aquí.
+    // Además tiene que ser de Sozu (kX60JlcDL2p2EFlsi9HT): los errores son de
+    // SUS repos, y el admin de otra empresa tiene todos los permisos por default.
+    match /sentry/{slug} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email))
+        && veMonitoreo();
+      allow write: if false;
+    }
+    function veMonitoreo() {
+      let p = perfil();
+      return p.role == 'superuser'
+        || (p.clientIds is list && p.clientIds.hasAny(['kX60JlcDL2p2EFlsi9HT'])
+          && (('permissions' in p && p.permissions is map && p.permissions.get('verMonitoreo', false) == true)
+            || (!('permissions' in p) && !esRolOperativo(p.role))));
+    }
+
+    // Último WhatsApp mandado por cada issue de Sentry (silencio de 6 h). Solo
+    // lo toca la función `sentryWebhook`.
+    match /sentryAvisos/{issueId} {
+      allow read, write: if false;
+    }
+
     // Serie diaria de instalaciones por proyecto (copia de lectura de lo que
     // vive en Supabase, que es donde se mezcla lo medido con la siembra).
     match /installsDiarias/{projectId} {

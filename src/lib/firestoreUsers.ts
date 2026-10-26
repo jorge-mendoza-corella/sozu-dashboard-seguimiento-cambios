@@ -44,10 +44,14 @@ export interface CicdPermissions {
   // lanzar un deploy: quien despliega no tiene por qué decidir la regla.
   switchDeployDev: boolean;
   viewOthers: boolean; // ver ramas y PRs de otros (apagado = solo lo suyo; main/dev siempre visibles)
+  // Abrir la pestaña Monitoreo (errores de Sentry). No es una acción de CI/CD,
+  // pero vive aquí para repartirse igual que las demás. Solo cuenta el permiso
+  // general: las reglas de `sentry/*` no leen las excepciones por empresa/repo.
+  verMonitoreo: boolean;
 }
 
-export const NO_PERMISSIONS: CicdPermissions = { createPR: false, approve: false, mergeDev: false, mergeMain: false, buildApp: false, deployDev: false, switchDeployDev: false, viewOthers: false };
-export const ALL_PERMISSIONS: CicdPermissions = { createPR: true, approve: true, mergeDev: true, mergeMain: true, buildApp: true, deployDev: true, switchDeployDev: true, viewOthers: true };
+export const NO_PERMISSIONS: CicdPermissions = { createPR: false, approve: false, mergeDev: false, mergeMain: false, buildApp: false, deployDev: false, switchDeployDev: false, viewOthers: false, verMonitoreo: false };
+export const ALL_PERMISSIONS: CicdPermissions = { createPR: true, approve: true, mergeDev: true, mergeMain: true, buildApp: true, deployDev: true, switchDeployDev: true, viewOthers: true, verMonitoreo: true };
 
 export interface AppUser {
   email: string;

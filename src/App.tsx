@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { ImpersonationProvider } from "@/components/ImpersonationProvider";
 import { canAdminister, isRootAdmin } from "@/lib/firestoreUsers";
+import { veMonitoreo } from "@/lib/sentry";
 import { setSessionGithubAuth } from "@/lib/github";
 import { AppLayout } from "@/components/AppLayout";
 import { GithubTokenGate } from "@/components/GithubTokenGate";
@@ -14,6 +15,7 @@ import { ContributorsPage } from "@/pages/ContributorsPage";
 import { ResumenPage } from "@/pages/ResumenPage";
 import { ConfiguracionPage } from "@/pages/ConfiguracionPage";
 import { NegocioPage } from "@/pages/NegocioPage";
+import { MonitoreoPage } from "@/pages/MonitoreoPage";
 
 const queryClient = new QueryClient();
 
@@ -53,6 +55,7 @@ function AppRoutes() {
   const isRootReal = isRootAdmin(realUser);
   const esAdminGlobal = isRoot || appUser?.role === "superuser";
   const puedeAdministrar = canAdminister(appUser);
+  const puedeVerMonitoreo = veMonitoreo(appUser);
 
   // Gate obligatorio: sin API key de GitHub no se puede usar nada (root exento).
   if (realUser && !isRootReal && !realUser.githubToken && !tokenJustSaved) {
@@ -81,6 +84,7 @@ function AppRoutes() {
         {/* Negocio expone tarifas y datos fiscales de toda la cartera: es del
             admin global, no del administrador de empresa. */}
         <Route path="/negocio" element={esAdminGlobal ? <NegocioPage /> : <Navigate to="/" replace />} />
+        <Route path="/monitoreo" element={puedeVerMonitoreo ? <MonitoreoPage /> : <Navigate to="/" replace />} />
         <Route path="/configuracion" element={puedeAdministrar ? <ConfiguracionPage /> : <Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

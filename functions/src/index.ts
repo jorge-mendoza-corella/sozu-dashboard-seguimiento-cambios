@@ -15,7 +15,7 @@ import { Octokit } from "@octokit/rest";
 import { initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
-import { HttpsError, onCall } from "firebase-functions/v2/https";
+import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
 import { consumirCupo, reposPermitidos, verificarAcceso } from "./agente/acceso.js";
 import { docPorRuta, indiceDocs, limpiarRuta, obtenerCorpus } from "./agente/docs.js";
 import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.js";
@@ -29,6 +29,7 @@ import { procesarAdjunto } from "./agente/procesarAdjunto.js";
 import { abrirConsola, ErrorConsola, finConsola, lineaConsola, sesionConsola } from "./agente/consola.js";
 import { qrWhatsapp } from "./whatsapp.js";
 import { falloDocs } from "./docsFallo.js";
+import { sentryWebhook as atenderSentry } from "./sentryWebhook.js";
 import {
   conectarToken, desconectarToken, exigirTokenClaude, leerTokenClaude, llavePublica, marcarTokenRenovado, secretDe,
 } from "./agente/tokenClaude.js";
@@ -596,6 +597,22 @@ export const whatsappQr = onCall<{ clientId: string }>(
     cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
   },
   (req) => qrWhatsapp(req),
+);
+
+/**
+ * `sentryWebhook`: avisos de Sentry (issue nuevo, regresión, pico) por WhatsApp,
+ * con la misma configuración por empresa que los avisos de PRs. HTTP y sin
+ * login: lo llama Sentry, y la firma HMAC del client secret es la autenticación.
+ * Ver sentryWebhook.ts.
+ */
+export const sentryWebhook = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 120,
+    memory: "256MiB",
+    maxInstances: 3,
+  },
+  (req, res) => atenderSentry(req, res),
 );
 
 /**
