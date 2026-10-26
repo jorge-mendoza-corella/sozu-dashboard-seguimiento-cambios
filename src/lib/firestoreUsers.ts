@@ -44,9 +44,10 @@ export interface CicdPermissions {
   // lanzar un deploy: quien despliega no tiene por qué decidir la regla.
   switchDeployDev: boolean;
   viewOthers: boolean; // ver ramas y PRs de otros (apagado = solo lo suyo; main/dev siempre visibles)
-  // Abrir la pestaña Monitoreo (errores de Sentry). No es una acción de CI/CD,
-  // pero vive aquí para repartirse igual que las demás. Solo cuenta el permiso
-  // general: las reglas de `sentry/*` no leen las excepciones por empresa/repo.
+  // Ver los errores de Sentry de un repo (pestaña Monitoreo). No es una acción
+  // de CI/CD, pero vive aquí para repartirse igual: general, por empresa y por
+  // repo, dentro de los proyectos y repos que la persona ya tiene asignados.
+  // Nunca viene "de regalo": ver `permisosGenerales`.
   verMonitoreo: boolean;
 }
 
@@ -141,7 +142,11 @@ function permisosGenerales(user: AppUser): CicdPermissions {
   if (user.permissions) return { ...NO_PERMISSIONS, ...user.permissions };
   // Sin permisos explícitos: los administradores (globales o de empresa) los
   // tienen todos dentro de lo que ven; quien solo opera, ninguno.
-  return esRolOperativo(user.role) ? NO_PERMISSIONS : ALL_PERMISSIONS;
+  //
+  // Menos `verMonitoreo`: los errores de producción no se reparten por rol, se
+  // dan a mano. Si no, el admin de cualquier empresa con cuenta legacy los
+  // vería sin que nadie se lo hubiera dado.
+  return esRolOperativo(user.role) ? NO_PERMISSIONS : { ...ALL_PERMISSIONS, verMonitoreo: false };
 }
 
 /**

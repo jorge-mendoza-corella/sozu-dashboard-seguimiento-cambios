@@ -7,7 +7,7 @@
  * no sea de producción y se manda el WhatsApp por n8n con la MISMA resolución
  * que `ci/whatsapp.py` (la que usan los avisos de PRs y de builds):
  *
- *   sentry/{slug}.projectId (id de Sentry)  → qué proyecto de Sentry es
+ *   sentry/{slug}.sentryProjectId           → qué proyecto de Sentry es
  *   repos (repo == slug).projectId         → proyecto del dashboard
  *   projects/{id}.clientId                 → empresa
  *   clients/{id}/private/notifications     → instance, webhookUrl, enabled
@@ -186,7 +186,7 @@ interface Aviso {
 async function slugDeProyectoSentry(fs: Firestore, id: unknown): Promise<string> {
   const pid = String(id ?? "");
   if (!pid) return "";
-  const q = await fs.collection("sentry").where("projectId", "==", pid).limit(1).get();
+  const q = await fs.collection("sentry").where("sentryProjectId", "==", pid).limit(1).get();
   return q.empty ? "" : q.docs[0].id;
 }
 

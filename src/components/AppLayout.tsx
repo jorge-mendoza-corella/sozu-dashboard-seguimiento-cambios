@@ -10,7 +10,7 @@ import { useBranding, useApplyBranding } from "@/hooks/useBranding";
 import { VENDOR_SIGNATURE } from "@/lib/branding";
 import { useAvancesAccess, AVANCES_URL_DEFAULT } from "@/hooks/useClients";
 import { canAdminister, isRootAdmin } from "@/lib/firestoreUsers";
-import { veMonitoreo } from "@/lib/sentry";
+import { useReposMonitoreo } from "@/hooks/useMonitoreo";
 import { Button } from "@/components/ui/button";
 import { AvancesDraftBadge } from "@/components/AvancesDraftBadge";
 import { CostosBadge } from "@/components/CostosBadge";
@@ -29,7 +29,8 @@ const NAV_ITEMS = [
   // Negocio son las tarifas y los datos fiscales de la cartera: solo admin
   // global. Un administrador de empresa no ve ni lo suyo aquí — las reglas ni
   // siquiera le dejan leer su `private/billing`.
-  // Errores de Sentry: por permiso (`verMonitoreo`), no por rol.
+  // Errores de Sentry: por permiso (`verMonitoreo`, por empresa/proyecto/repo),
+  // no por rol. Aparece si hay al menos un repo que pueda ver.
   { to: "/monitoreo", label: "Monitoreo", icon: Siren, show: (v: NavVisibility) => v.monitoreo },
   { to: "/negocio", label: "Negocio", icon: TrendingUp, show: (v: NavVisibility) => v.adminGlobal },
   // Contribuidores y Usuarios los necesita también el administrador de empresa:
@@ -63,12 +64,13 @@ export function AppLayout({ children }: Props) {
   // cortada en el borde. A partir de `md` la barra vuelve a mostrarlos todos.
   const [menuAbierto, setMenuAbierto] = useState(false);
   const isRoot = isRootAdmin(appUser);
+  const { repos: reposMonitoreo } = useReposMonitoreo(appUser);
   const navItems = NAV_ITEMS.filter((i) =>
     i.show({
       root: isRoot,
       admin: canAdminister(appUser),
       adminGlobal: isRoot || appUser?.role === "superuser",
-      monitoreo: veMonitoreo(appUser),
+      monitoreo: reposMonitoreo.length > 0,
     }),
   );
   // Marca de la empresa del usuario (o la del proveedor): tiñe la interfaz,

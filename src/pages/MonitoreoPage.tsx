@@ -4,7 +4,9 @@ import { ExternalLink, Loader2, Siren } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useProjects, useRepos } from "@/hooks/useProjectsRepos";
+import { useProjects } from "@/hooks/useProjectsRepos";
+import { useAuth } from "@/hooks/useAuth";
+import { useReposMonitoreo } from "@/hooks/useMonitoreo";
 import {
   dispararSyncSentry, estaViejo, getSentryProyectos, pideRevision,
   type Entorno, type SentryIssue, type SentryProyecto,
@@ -20,11 +22,15 @@ const Tendencia = lazy(() => import("@/components/monitoreo/Tendencia"));
  */
 export function MonitoreoPage() {
   const [entorno, setEntorno] = useState<Entorno>("produccion");
+  const { appUser } = useAuth();
   const { data: projects } = useProjects();
-  const { data: repos } = useRepos();
+  // Solo los repos que le tocan: el permiso va por empresa, proyecto y repo.
+  const { repos } = useReposMonitoreo(appUser);
+  const slugs = useMemo(() => [...new Set(repos.map((r) => r.repo))].sort(), [repos]);
   const { data, isLoading, error } = useQuery({
-    queryKey: ["sentry"],
-    queryFn: getSentryProyectos,
+    queryKey: ["sentry", slugs.join("|")],
+    queryFn: () => getSentryProyectos(slugs),
+    enabled: slugs.length > 0,
     refetchInterval: 60_000,
   });
 
@@ -38,7 +44,7 @@ export function MonitoreoPage() {
   // slug de Sentry = nombre del repo → proyecto del dashboard.
   const grupos = useMemo(() => {
     const nombreProyecto = new Map((projects ?? []).map((p) => [p.id, p.name]));
-    const proyectoDeRepo = new Map((repos ?? []).map((r) => [r.repo, r.projectId]));
+    const proyectoDeRepo = new Map(repos.map((r) => [r.repo, r.projectId]));
     const porGrupo = new Map<string, SentryProyecto[]>();
     for (const p of data ?? []) {
       const pid = proyectoDeRepo.get(p.slug);

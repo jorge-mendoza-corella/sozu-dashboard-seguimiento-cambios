@@ -1,6 +1,6 @@
-import { collection, getDocs } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
-import { resolvePermissions, type AppUser } from "./firestoreUsers";
+import { isRootAdmin, resolvePermissions, type AppUser } from "./firestoreUsers";
 
 // ---------------------------------------------------------------------------
 // Errores de Sentry por proyecto (pestaña Monitoreo).
@@ -11,19 +11,16 @@ import { resolvePermissions, type AppUser } from "./firestoreUsers";
 // ---------------------------------------------------------------------------
 
 export const SENTRY_ORG = "sozu-lh";
-/** Empresa dueña de los repos que se monitorean (Sozu). */
-export const SENTRY_CLIENT_ID = "kX60JlcDL2p2EFlsi9HT";
-
 /**
- * ¿Abre la pestaña? Permiso general `verMonitoreo` y ser de Sozu (o admin
- * global): el admin de otra empresa trae todos los permisos por default y no
- * tiene por qué ver los errores de los repos de Sozu. Mismo corte que las
- * reglas de `sentry/*`.
+ * ¿Ve los errores de ESTE repo? `verMonitoreo` resuelto como los permisos de
+ * CI/CD (repo > empresa > general). Que el repo esté entre los suyos lo decide
+ * quien llama, con el mismo alcance de empresa/proyecto/repo del resto del
+ * dashboard. Mismo corte que las reglas de `sentry/*`.
  */
-export function veMonitoreo(user: AppUser | null): boolean {
+export function veMonitoreoDe(user: AppUser | null, clientId: string | null | undefined, repoId: string): boolean {
   if (!user) return false;
-  if (user.role === "superuser") return true;
-  return (user.clientIds ?? []).includes(SENTRY_CLIENT_ID) && resolvePermissions(user).verMonitoreo;
+  if (isRootAdmin(user)) return true;
+  return resolvePermissions(user, { clientId, repoId }).verMonitoreo;
 }
 
 export interface SentryIssue {
@@ -81,17 +78,25 @@ function resumenDe(x: unknown): SentryResumen {
   };
 }
 
-export async function getSentryProyectos(): Promise<SentryProyecto[]> {
-  const snap = await getDocs(collection(db, "sentry"));
-  return snap.docs.map((d) => {
+/**
+ * Un doc por repo permitido, no la colección entera: las reglas deciden doc por
+ * doc, y una consulta que incluyera uno ajeno se negaría completa. El repo que
+ * no tiene proyecto en Sentry (o que las reglas niegan) simplemente no sale.
+ */
+export async function getSentryProyectos(slugs: string[]): Promise<SentryProyecto[]> {
+  const docs = await Promise.all(
+    slugs.map((slug) => getDoc(doc(db, "sentry", slug)).catch(() => null)),
+  );
+  return docs.flatMap((d) => {
+    if (!d?.exists()) return [];
     const x = d.data();
     const entornos = (x.entornos ?? {}) as Record<string, unknown>;
-    return {
+    return [{
       slug: d.id,
       url: typeof x.url === "string" ? x.url : `https://${SENTRY_ORG}.sentry.io/issues/`,
       entornos: { produccion: resumenDe(entornos.produccion), todos: resumenDe(entornos.todos) },
       revisadoAt: iso(x.revisadoAt),
-    };
+    }];
   });
 }
 

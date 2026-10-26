@@ -144,6 +144,48 @@ def _valor(v):
     return {"stringValue": str(v)}
 
 
+def _texto(doc: dict, campo: str) -> str:
+    return doc.get("fields", {}).get(campo, {}).get("stringValue", "")
+
+
+def alcances(token: str) -> dict[str, dict]:
+    """slug (= nombre del repo) -> alcance del repo en el dashboard.
+
+    Las reglas de `sentry/*` deciden con esto quién lee cada doc: el permiso
+    `verMonitoreo` va por empresa, proyecto y repo, igual que los de CI/CD.
+    """
+    def listar(coleccion: str) -> list[dict]:
+        docs, page = [], None
+        while True:
+            params = {"pageSize": 300, **({"pageToken": page} if page else {})}
+            r = requests.get(f"{FS_BASE}/{coleccion}", headers=fs_headers(token), params=params, timeout=TIMEOUT)
+            r.raise_for_status()
+            j = r.json()
+            docs += j.get("documents", [])
+            page = j.get("nextPageToken")
+            if not page:
+                return docs
+
+    empresa = {d["name"].rsplit("/", 1)[-1]: _texto(d, "clientId") for d in listar("projects")}
+    repos = listar("repos")
+    # Todos los repos de cada proyecto: las reglas los necesitan para leer
+    # `repoIds` por proyecto (sin marcar ninguno de ESTE proyecto = ve todos).
+    del_proyecto: dict[str, list[str]] = {}
+    for d in repos:
+        del_proyecto.setdefault(_texto(d, "projectId"), []).append(d["name"].rsplit("/", 1)[-1])
+    salida = {}
+    for d in repos:
+        nombre, proyecto = _texto(d, "repo"), _texto(d, "projectId")
+        if nombre in PROYECTOS:
+            salida[nombre] = {
+                "repoId": d["name"].rsplit("/", 1)[-1],
+                "projectId": proyecto,
+                "clientId": empresa.get(proyecto, ""),
+                "reposDelProyecto": del_proyecto.get(proyecto, []),
+            }
+    return salida
+
+
 def escribir(token: str, slug: str, datos: dict) -> None:
     campos = {k: _valor(v) for k, v in datos.items()}
     mask = "&".join(f"updateMask.fieldPaths={k}" for k in campos)
@@ -195,6 +237,7 @@ def main() -> None:
 
     api = Sentry(sentry_token)
     ids = api.ids()
+    donde = alcances(fs_token) if escribe else {}
     ahora = datetime.now(timezone.utc)
     fallos = 0
 
@@ -213,10 +256,16 @@ def main() -> None:
             continue
         prod = entornos["produccion"]
         print(f"✓ {slug}: {prod['sinResolver']} sin resolver, {prod['nuevos24h']} nuevos 24h (producción)")
+        if escribe and slug not in donde:
+            # Sin repo en el dashboard nadie podría leerlo (las reglas no tienen
+            # con qué decidir): se avisa en vez de escribir un doc huérfano.
+            print(f"::warning::{slug}: no está en `repos` del dashboard; se salta.")
+            continue
         if escribe:
             escribir(fs_token, slug, {
                 "slug": slug,
-                "projectId": pid,
+                "sentryProjectId": pid,
+                **donde[slug],
                 "url": f"https://{SENTRY_ORG}.sentry.io/issues/?project={pid}",
                 "entornos": entornos,
                 "revisadoAt": ahora,

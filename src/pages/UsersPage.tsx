@@ -58,10 +58,6 @@ const PERMISSION_DEFS: { key: keyof CicdPermissions; label: string; icon: React.
   { key: "verMonitoreo", label: "Ver monitoreo", icon: <Siren className="h-3 w-3" /> },
 ];
 
-// Monitoreo no admite excepciones por empresa/repo: las reglas de `sentry/*`
-// solo leen el permiso general, y un chip que el servidor ignora mentiría.
-const DEFS_CON_ALCANCE = PERMISSION_DEFS.filter((d) => d.key !== "verMonitoreo");
-
 function PermissionChips({
   value,
   disabled,
@@ -1157,7 +1153,7 @@ export function UsersPage() {
                     </p>
                     <PermisosPorAlcance
                       user={u}
-                      defs={DEFS_CON_ALCANCE}
+                      defs={PERMISSION_DEFS}
                       clients={visibleClients.filter((c) => userClients.includes(c.id))}
                       projects={proyectosUsuario.filter((p) => (u.projectIds ?? proyectosUsuario.map((x) => x.id)).includes(p.id))}
                       repos={repos}
