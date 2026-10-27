@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, CheckCircle2, ChevronRight, EyeOff, ExternalLink, Loader2, RotateCcw, Ticket, X } from "lucide-react";
+import { Bot, CheckCircle2, ChevronRight, EyeOff, ExternalLink, Loader2, RefreshCw, RotateCcw, Ticket, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import {
@@ -47,7 +47,10 @@ export function DetalleIssue({ issueId, repo, puedeResolver, onCerrar }: {
   });
   const ticket = useMutation({
     mutationFn: () => crearTicketIssue(issueId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sentry-issue", issueId] }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["sentry-issue", issueId] });
+      await qc.invalidateQueries({ queryKey: ["sentry"] });
+    },
   });
   const [copiado, setCopiado] = useState(false);
   const copiar = async () => {
@@ -107,15 +110,27 @@ export function DetalleIssue({ issueId, repo, puedeResolver, onCerrar }: {
               {copiado ? "Copiado" : "Copiar para Claude"}
             </Accion>
             {data.ticket ? (
-              <a
-                href={data.ticket.url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-violet-400/60 px-2.5 text-xs font-semibold text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-950/30"
-                title={`Levantado por ${data.ticket.creadoPor}`}
-              >
-                <Ticket className="h-3.5 w-3.5" /> Ticket SOZU-{data.ticket.numero}
-              </a>
+              <>
+                <a
+                  href={data.ticket.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-violet-400/60 px-2.5 text-xs font-semibold text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-950/30"
+                  title={`Levantado por ${data.ticket.creadoPor}${data.ticket.etapa ? ` · ${data.ticket.etapa}` : ""}`}
+                >
+                  <Ticket className="h-3.5 w-3.5" /> SOZU-{data.ticket.numero}
+                  {data.ticket.etapa && <span className="font-normal opacity-80">· {data.ticket.etapa}</span>}
+                </a>
+                {puedeResolver && !data.ticket.resuelto && (
+                  <Accion
+                    onClick={() => ticket.mutate()}
+                    cargando={ticket.isPending}
+                    titulo="Reescribe la descripción del ticket con lo último de Sentry y te lo asigna si no tiene propietario"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" /> Actualizar ticket
+                  </Accion>
+                )}
+              </>
             ) : (
               puedeResolver && (
                 <Accion
@@ -137,6 +152,23 @@ export function DetalleIssue({ issueId, repo, puedeResolver, onCerrar }: {
             </a>
             {cambio.error && <p className="w-full text-xs text-red-600">{mensajeDeError(cambio.error)}</p>}
             {ticket.error && <p className="w-full text-xs text-red-600">{mensajeDeError(ticket.error)}</p>}
+            {ticket.data?.actualizado && <p className="w-full text-xs text-emerald-700 dark:text-emerald-400">Ticket actualizado.</p>}
+          </div>
+        )}
+
+        {/* El ticket ligado ya se resolvió en el portal: lo natural es cerrar el issue. */}
+        {data?.ticket?.resuelto && data.estado === "unresolved" && (
+          <div className="flex flex-wrap items-center gap-3 border-b bg-emerald-50 px-4 py-3 text-sm dark:bg-emerald-950/30">
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+            <span className="flex-1">
+              El ticket SOZU-{data.ticket.numero} ya está {data.ticket.etapa ? `en «${data.ticket.etapa}»` : "resuelto"}.
+              {puedeResolver ? " ¿Resolver también el issue en Sentry?" : ""}
+            </span>
+            {puedeResolver && (
+              <Accion onClick={() => cambio.mutate("resolved")} cargando={cambio.isPending} principal>
+                <CheckCircle2 className="h-3.5 w-3.5" /> Resolver issue
+              </Accion>
+            )}
           </div>
         )}
 

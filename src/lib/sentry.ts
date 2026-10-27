@@ -40,6 +40,8 @@ export interface SentryIssue {
   nivel: string;
   /** unresolved | resolved | ignored. Los docs viejos no lo traen. */
   estado?: string;
+  /** Ticket del portal levantado para este issue, si hay. */
+  ticket?: { numero: number; url: string };
   eventos: number;
   usuarios: number;
   primeraVez: string | null;
@@ -203,12 +205,13 @@ export interface DetalleIssue {
     excepciones: { tipo: string; valor: string; mecanismo: string; manejado: boolean; frames: FrameIssue[] }[];
     tags: { clave: string; valor: string }[];
   };
-  /** Ticket del portal ya levantado para este issue (uno por issue). */
-  ticket: TicketIssue | null;
+  /** Ticket del portal ya levantado para este issue (uno por issue), con su etapa. */
+  ticket: (TicketIssue & { etapa: string | null; resuelto: boolean }) | null;
 }
 
 export interface TicketIssue {
   numero: number;
+  ticketId: number;
   url: string;
   creadoPor: string;
 }
@@ -217,7 +220,7 @@ const functions = getFunctions(app, "us-central1");
 const llamarDetalle = httpsCallable<{ issueId: string }, DetalleIssue>(functions, "sentryDetalleIssue", { timeout: 30_000 });
 const llamarEstado = httpsCallable<{ issueId: string; estado: EstadoIssue }, { ok: true; estado: EstadoIssue }>(functions, "sentryCambiarIssue", { timeout: 30_000 });
 
-const llamarTicket = httpsCallable<{ issueId: string }, TicketIssue>(functions, "sentryCrearTicket", { timeout: 60_000 });
+const llamarTicket = httpsCallable<{ issueId: string }, TicketIssue & { actualizado: boolean }>(functions, "sentryCrearTicket", { timeout: 60_000 });
 
 export const crearTicketIssue = async (issueId: string) => (await llamarTicket({ issueId })).data;
 

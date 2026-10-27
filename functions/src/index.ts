@@ -696,8 +696,8 @@ const CORS_DASHBOARD = [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-das
  * `sentry/*`: empresa, proyecto, repo y `verMonitoreo`. Ver sentryIssues.ts.
  */
 export const sentryDetalleIssue = onCall<{ issueId: string }>(
-  { region: "us-central1", timeoutSeconds: 30, memory: "256MiB", maxInstances: 5, cors: CORS_DASHBOARD },
-  (req) => detalleIssue(req),
+  { region: "us-central1", secrets: [SUPABASE_SERVICE_KEY], timeoutSeconds: 30, memory: "256MiB", maxInstances: 5, cors: CORS_DASHBOARD },
+  (req) => detalleIssue(req, clienteSupabase(SUPABASE_SERVICE_KEY.value())),
 );
 
 /**
@@ -711,7 +711,8 @@ export const sentryCambiarIssue = onCall<{ issueId: string; estado: Estado }>(
 
 /**
  * `sentryCrearTicket`: levanta en el portal un ticket de Sistemas Soporte
- * técnico con todo el detalle del issue (uno por issue). Pide
+ * técnico con todo el detalle del issue, asignado a quien lo pide (uno por
+ * issue; si ya existe, le actualiza la descripción y el propietario). Pide
  * `resolverMonitoreo`. Ver sentryIssues.ts.
  */
 export const sentryCrearTicket = onCall<{ issueId: string }>(

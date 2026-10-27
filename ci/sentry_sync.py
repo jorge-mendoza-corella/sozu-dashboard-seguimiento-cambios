@@ -243,6 +243,28 @@ def docs_existentes(token: str) -> list[str]:
     return [d["name"].rsplit("/", 1)[-1] for d in r.json().get("documents", [])]
 
 
+def tickets(token: str) -> dict[str, dict]:
+    """issueId -> {numero, url} de `sentryTickets` (los levanta Monitoreo en el portal)."""
+    salida, page = {}, None
+    while True:
+        params = {"pageSize": 300, **({"pageToken": page} if page else {})}
+        r = requests.get(f"{FS_BASE}/sentryTickets", headers=fs_headers(token), params=params, timeout=TIMEOUT)
+        r.raise_for_status()
+        j = r.json()
+        for d in j.get("documents", []):
+            f = d.get("fields", {})
+            numero = f.get("numero", {}).get("integerValue")
+            if numero:
+                salida[d["name"].rsplit("/", 1)[-1]] = {"numero": int(numero), "url": f.get("url", {}).get("stringValue", "")}
+        page = j.get("nextPageToken")
+        if not page:
+            return salida
+
+
+def con_ticket(issues: list[dict], por_issue: dict[str, dict]) -> list[dict]:
+    return [{**i, "ticket": por_issue[i["id"]]} if i["id"] in por_issue else i for i in issues]
+
+
 def borrar(token: str, slug: str) -> None:
     r = requests.delete(f"{FS_BASE}/sentry/{quote(slug, safe='')}", headers=fs_headers(token), timeout=TIMEOUT)
     if r.status_code not in (200, 204):
@@ -308,6 +330,7 @@ def main() -> None:
     api = Sentry(sentry_token)
     ids = api.ids()
     donde = alcances(fs_token)
+    ligados = tickets(fs_token)
     ahora = datetime.now(timezone.utc)
     fallos = 0
 
@@ -325,6 +348,9 @@ def main() -> None:
             api.ligar_alertas(pid)
             dsn = api.dsn(slug)
             entornos = {nombre: resumen(api, slug, pid, env) for nombre, env in ENTORNOS.items()}
+            for r in entornos.values():
+                r["top"] = con_ticket(r["top"], ligados)
+                r["resueltos"] = con_ticket(r["resueltos"], ligados)
         except requests.RequestException as e:
             # Un proyecto que falla no se lleva a los demás; el dato anterior
             # se queda en Firestore y la pestaña lo marca como viejo.
