@@ -46,12 +46,11 @@ export interface SentryResumen {
   crashFree: number | null;
 }
 
-export type Entorno = "produccion" | "todos";
-
 export interface SentryProyecto {
   slug: string;
   url: string;
-  entornos: Record<Entorno, SentryResumen>;
+  /** Solo producción: es lo que le pega a usuarios reales. */
+  produccion: SentryResumen;
   revisadoAt: string | null;
 }
 
@@ -94,10 +93,20 @@ export async function getSentryProyectos(slugs: string[]): Promise<SentryProyect
     return [{
       slug: d.id,
       url: typeof x.url === "string" ? x.url : `https://${SENTRY_ORG}.sentry.io/issues/`,
-      entornos: { produccion: resumenDe(entornos.produccion), todos: resumenDe(entornos.todos) },
+      produccion: resumenDe(entornos.produccion),
       revisadoAt: iso(x.revisadoAt),
     }];
   });
+}
+
+/**
+ * DSN del proyecto de Sentry del repo, para instalar el SDK. Lo escribe el sync
+ * al prender el monitoreo; null mientras no corra (o si las reglas no dejan).
+ */
+export async function getSentryDsn(slug: string): Promise<string | null> {
+  const d = await getDoc(doc(db, "sentry", slug)).catch(() => null);
+  const dsn = d?.exists() ? d.data().dsn : null;
+  return typeof dsn === "string" && dsn ? dsn : null;
 }
 
 export const estaViejo = (p: SentryProyecto) =>

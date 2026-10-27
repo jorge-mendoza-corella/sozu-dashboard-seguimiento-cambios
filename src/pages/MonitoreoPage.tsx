@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useReposMonitoreo } from "@/hooks/useMonitoreo";
 import {
   dispararSyncSentry, estaViejo, getSentryProyectos, pideRevision,
-  type Entorno, type SentryIssue, type SentryProyecto, type SentryResumen,
+  type SentryIssue, type SentryProyecto, type SentryResumen,
 } from "@/lib/sentry";
 
 const Tendencia = lazy(() => import("@/components/monitoreo/Tendencia"));
@@ -17,11 +17,13 @@ const Tendencia = lazy(() => import("@/components/monitoreo/Tendencia"));
  *
  * La página contesta primero "¿hay algo roto?": arriba el total, luego solo los
  * repos con issues abiertos (los nuevos de 24 h primero) con su lista de issues,
- * y al final los sanos en fichas chicas. Producción por defecto: es lo que le
- * pega a usuarios reales; "Todos" suma dev y preview.
+ * y al final los sanos en fichas chicas. Solo producción: es lo que le pega a
+ * usuarios reales.
+ *
+ * Qué repos salen lo decide `monitoreoSentry` del repo (Proyectos → Gestionar)
+ * y, por usuario, su alcance más el permiso `verMonitoreo`.
  */
 export function MonitoreoPage() {
-  const [entorno, setEntorno] = useState<Entorno>("produccion");
   const [proyecto, setProyecto] = useState<string | null>(null);
   const { appUser } = useAuth();
   const { data: projects } = useProjects();
@@ -49,9 +51,9 @@ export function MonitoreoPage() {
     const proyectoDeRepo = new Map(repos.map((r) => [r.repo, r.projectId]));
     return (data ?? []).map((p) => {
       const pid = proyectoDeRepo.get(p.slug);
-      return { p, r: p.entornos[entorno], proyecto: (pid && nombreProyecto.get(pid)) || "Sin proyecto" };
+      return { p, r: p.produccion, proyecto: (pid && nombreProyecto.get(pid)) || "Sin proyecto" };
     });
-  }, [data, projects, repos, entorno]);
+  }, [data, projects, repos]);
 
   const nombresProyecto = useMemo(() => [...new Set(filas.map((f) => f.proyecto))].sort((a, b) => a.localeCompare(b, "es")), [filas]);
   const visibles = proyecto ? filas.filter((f) => f.proyecto === proyecto) : filas;
@@ -73,26 +75,9 @@ export function MonitoreoPage() {
             <Siren className="h-5 w-5 text-red-600 dark:text-red-400" />
             <h1 className="text-xl font-bold tracking-tight">Monitoreo</h1>
           </div>
-          <p className="text-sm text-muted-foreground">Errores de Sentry de tus repos, últimos 14 días.</p>
+          <p className="text-sm text-muted-foreground">Errores de Sentry en producción, últimos 14 días.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Actualizar revisado={revisado} viejo={viejo} queryKey={queryKey} />
-          <div className="flex rounded-md border p-0.5 text-xs">
-            {(["produccion", "todos"] as const).map((e) => (
-              <button
-                key={e}
-                type="button"
-                onClick={() => setEntorno(e)}
-                className={cn(
-                  "rounded px-3 py-1 transition-colors",
-                  entorno === e ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {e === "produccion" ? "Producción" : "Todos los entornos"}
-              </button>
-            ))}
-          </div>
-        </div>
+        <Actualizar revisado={revisado} viejo={viejo} queryKey={queryKey} />
       </header>
 
       {isLoading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
@@ -138,7 +123,7 @@ export function MonitoreoPage() {
           ) : (
             <div className="flex items-center gap-3 rounded-lg border border-emerald-500/40 bg-emerald-50 p-4 text-sm text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300">
               <CheckCircle2 className="h-5 w-5 shrink-0" />
-              Sin issues abiertos en {entorno === "produccion" ? "producción" : "ningún entorno"}.
+              Sin issues abiertos en producción.
             </div>
           )}
 
