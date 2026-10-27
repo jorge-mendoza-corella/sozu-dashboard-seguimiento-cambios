@@ -190,11 +190,13 @@ export async function cambiarEstado(req: CallableRequest<{ issueId: string; esta
       const snap = await tx.get(ref);
       const prod = mapa(mapa(snap.data()?.entornos).produccion);
       const top = Array.isArray(prod.top) ? (prod.top as Record<string, unknown>[]) : [];
+      const resueltos = Array.isArray(prod.resueltos) ? (prod.resueltos as Record<string, unknown>[]) : [];
       const quitado = top.find((i) => String(i.id) === id);
       if (!quitado) return;
       const nuevo = Date.now() - Date.parse(texto(quitado.primeraVez)) < 86_400_000;
       tx.update(ref, {
         "entornos.produccion.top": top.filter((i) => i !== quitado),
+        "entornos.produccion.resueltos": [{ ...quitado, estado }, ...resueltos.filter((i) => String(i.id) !== id)].slice(0, 5),
         "entornos.produccion.sinResolver": Math.max(0, numero(prod.sinResolver) - 1),
         "entornos.produccion.nuevos24h": Math.max(0, numero(prod.nuevos24h) - (nuevo ? 1 : 0)),
       });

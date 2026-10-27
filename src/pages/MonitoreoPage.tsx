@@ -69,6 +69,9 @@ export function MonitoreoPage() {
     .filter((f) => f.r.sinResolver > 0)
     .sort((a, b) => b.r.nuevos24h - a.r.nuevos24h || b.r.sinResolver - a.r.sinResolver || a.p.slug.localeCompare(b.p.slug));
   const sanos = visibles.filter((f) => f.r.sinResolver === 0).sort((a, b) => a.p.slug.localeCompare(b.p.slug));
+  const resueltos = visibles
+    .flatMap((f) => f.r.resueltos.map((i) => ({ i, slug: f.p.slug, puedeResolver: f.puedeResolver })))
+    .sort((a, b) => (b.i.ultimaVez ?? "").localeCompare(a.i.ultimaVez ?? ""));
 
   const total = (k: (r: SentryResumen) => number) => visibles.reduce((s, f) => s + k(f.r), 0);
   const eventos14d = (r: SentryResumen) => r.serie14d.reduce((a, b) => a + b, 0);
@@ -152,6 +155,17 @@ export function MonitoreoPage() {
             </section>
           )}
         </>
+      )}
+
+      {resueltos.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold text-muted-foreground">Resueltos recientemente</h2>
+          <ul className="divide-y overflow-hidden rounded-lg border bg-card">
+            {resueltos.map(({ i, slug, puedeResolver }) => (
+              <FilaIssue key={i.id} i={i} repo={slug} onAbrir={() => setAbierto({ issueId: i.id, puedeResolver })} />
+            ))}
+          </ul>
+        </section>
       )}
 
       {abierto && (
@@ -317,21 +331,32 @@ const COLOR_NIVEL: Record<string, string> = {
   info: "bg-sky-500",
 };
 
-function FilaIssue({ i, onAbrir }: { i: SentryIssue; onAbrir: () => void }) {
+function FilaIssue({ i, onAbrir, repo }: { i: SentryIssue; onAbrir: () => void; repo?: string }) {
+  const cerrado = i.estado === "resolved" || i.estado === "ignored";
   return (
     <li>
       <button type="button" onClick={onAbrir} className="flex w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-muted/60" title="Ver detalle">
-        <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", COLOR_NIVEL[i.nivel] ?? "bg-muted-foreground")} title={i.nivel} />
+        {cerrado ? (
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+        ) : (
+          <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", COLOR_NIVEL[i.nivel] ?? "bg-muted-foreground")} title={i.nivel} />
+        )}
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-2 text-sm">
-            <span className="truncate font-medium">{i.titulo}</span>
-            {es24h(i.primeraVez) && (
+            <span className={cn("truncate font-medium", cerrado && "text-muted-foreground line-through decoration-muted-foreground/40")}>{i.titulo}</span>
+            {cerrado && (
+              <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                {i.estado === "ignored" ? "ignorado" : "resuelto"}
+              </span>
+            )}
+            {!cerrado && es24h(i.primeraVez) && (
               <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-700 dark:bg-red-950/50 dark:text-red-300">
                 nuevo
               </span>
             )}
           </p>
           <p className="truncate text-xs text-muted-foreground">
+            {repo && <>{repo} · </>}
             <span className="font-mono">{i.shortId}</span>
             {i.culprit && <> · {i.culprit}</>}
           </p>
