@@ -120,9 +120,9 @@ class Sentry:
         except ValueError:
             return len(r.json())
 
-    def top(self, pid: str, env: str | None) -> list[dict]:
-        params = {"project": pid, "query": "is:unresolved", "statsPeriod": "14d",
-                  "sort": "freq", "limit": TOP_ISSUES}
+    def top(self, pid: str, env: str | None, query: str = "is:unresolved", sort: str = "freq") -> list[dict]:
+        params = {"project": pid, "query": query, "statsPeriod": "14d",
+                  "sort": sort, "limit": TOP_ISSUES}
         if env:
             params["environment"] = env
         out = []
@@ -133,6 +133,7 @@ class Sentry:
                 "titulo": (i.get("title") or "")[:200],
                 "culprit": (i.get("culprit") or "")[:200],
                 "nivel": i.get("level", "error"),
+                "estado": i.get("status", "unresolved"),
                 "eventos": int(i.get("count") or 0),
                 "usuarios": int(i.get("userCount") or 0),
                 "primeraVez": i.get("firstSeen"),
@@ -256,7 +257,7 @@ def escribir(token: str, slug: str, datos: dict) -> None:
 
 
 def vacio() -> dict:
-    return {"sinResolver": 0, "nuevos24h": 0, "serie14d": [0] * 14, "top": [], "crashFree": None}
+    return {"sinResolver": 0, "nuevos24h": 0, "serie14d": [0] * 14, "top": [], "resueltos": [], "crashFree": None}
 
 
 def resumen(api: Sentry, slug: str, pid: str, env: str | None) -> dict:
@@ -275,6 +276,9 @@ def resumen(api: Sentry, slug: str, pid: str, env: str | None) -> dict:
         "nuevos24h": api.contar(pid, "is:unresolved firstSeen:-24h", env),
         "serie14d": api.serie(pid, env),
         "top": api.top(pid, env),
+        # Resueltos o ignorados con actividad en los 14 días, los más recientes
+        # primero: la pestaña los lista para saber qué ya se atendió.
+        "resueltos": api.top(pid, env, "!is:unresolved", "date"),
         "crashFree": None,
     }
     # Solo las apps mandan sesiones; a las demás Sentry les contesta vacío o error.

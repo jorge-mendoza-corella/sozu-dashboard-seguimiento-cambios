@@ -38,6 +38,8 @@ export interface SentryIssue {
   titulo: string;
   culprit: string;
   nivel: string;
+  /** unresolved | resolved | ignored. Los docs viejos no lo traen. */
+  estado?: string;
   eventos: number;
   usuarios: number;
   primeraVez: string | null;
@@ -51,6 +53,8 @@ export interface SentryResumen {
   /** Eventos de error por día, 14 días, el más viejo primero. */
   serie14d: number[];
   top: SentryIssue[];
+  /** Resueltos o ignorados con actividad en 14 días, los más recientes primero. */
+  resueltos: SentryIssue[];
   /** 0–1. Solo las apps reportan sesiones; el resto, null. */
   crashFree: number | null;
 }
@@ -82,6 +86,7 @@ function resumenDe(x: unknown): SentryResumen {
     nuevos24h: num(r.nuevos24h),
     serie14d: Array.isArray(r.serie14d) ? r.serie14d.map(num) : [],
     top: Array.isArray(r.top) ? (r.top as SentryIssue[]) : [],
+    resueltos: Array.isArray(r.resueltos) ? (r.resueltos as SentryIssue[]) : [],
     crashFree: typeof r.crashFree === "number" ? r.crashFree : null,
   };
 }
