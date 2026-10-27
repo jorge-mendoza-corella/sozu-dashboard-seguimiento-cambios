@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -25,8 +25,8 @@ import { AvisoTokenClaude, ConectarClaude, EstadoTokenClaude } from "./AvisoToke
 import { useTokenClaude } from "@/hooks/useTokenClaude";
 import { BarraClaudeMini, EstadoClaudeMini, SeguimientoClaude } from "./SeguimientoClaude";
 import {
-  analisisGuardado, avancePrs, cerrarTicketPortal, consultaSeguimiento, esSoloFecha, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
-  type AnalisisTicket, type TicketAgente, type TicketEnviado,
+  analisisGuardado, avancePrs, buscarPrsTicket, cerrarTicketPortal, COLOR_PR, consultaSeguimiento, convencionPrs, esSoloFecha, ETIQUETA_PR, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
+  type AnalisisTicket, type PrExterno, type RazonMatch, type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
 
 interface Props {
@@ -407,6 +407,18 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
         >
           <CheckCircle2 className="h-4 w-4" /> Cerrar ticket
         </button>
+        {/* Trabajado por fuera (ni Claude ni el .md): se cierra eligiendo los PRs
+            que lo resolvieron. Ver `esExterno`. */}
+        {esExterno(enviado) && (
+          <button
+            type="button"
+            onClick={onCerrar}
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-3 text-xs font-semibold hover:bg-muted"
+            title={`Busca en los repos de Sozu los PRs ligados a ${t.folio} (${convencionPrs(t.numero).join("; ")}) para cerrarlo con ellos`}
+          >
+            <Search className="h-4 w-4" /> Buscar PRs que lo cerraron
+          </button>
+        )}
       </header>
 
       {/* 1. Descripción del ticket */}
@@ -681,6 +693,79 @@ function Evidencia({ e, n }: { e: TicketAgente["evidencias"][number]; n: number 
   );
 }
 
+/**
+ * ¿Se trabajó por fuera del dashboard? Ni se mandó a Claude ni llegó a PRD un PR
+ * con el trailer: para cerrarlo hay que decir qué PRs lo resolvieron.
+ */
+const esExterno = (e: TicketEnviado | null) => !e?.issue && !e?.listo;
+
+const RAZON: Record<RazonMatch, string> = { trailer: "trailer en commit", titulo: "folio en el título", rama: "rama del ticket" };
+
+/** El PR como entra a la nota y al registro: el PR hacia main cuando ya lo hay. */
+const comoPrDeTicket = (p: PrExterno) => ({
+  repo: p.repo,
+  pr: p.prMain?.numero ?? p.numero,
+  url: p.prMain?.url ?? p.url,
+  cambios: [p.titulo],
+});
+
+/**
+ * Lista de PRs de un ticket trabajado por fuera, para elegir cuáles lo cerraron.
+ * Solo cuentan los que ya entraron a main; el servidor vuelve a verificar cada uno.
+ */
+function PrsExternos({ t, prs, buscando, error, seleccion, onAlternar, onReintentar }: {
+  t: TicketAgente;
+  prs: PrExterno[] | undefined;
+  buscando: boolean;
+  error: string | null;
+  seleccion: Set<string>;
+  onAlternar: (url: string) => void;
+  onReintentar: () => void;
+}) {
+  return (
+    <div className="mt-4 rounded-lg border bg-muted/20 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium">PRs que lo cerraron (trabajado fuera del dashboard):</p>
+        <button type="button" onClick={onReintentar} disabled={buscando} className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline disabled:opacity-50">
+          <RefreshCw className={cn("h-3 w-3", buscando && "animate-spin")} /> Volver a buscar
+        </button>
+      </div>
+      {buscando && !prs && <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Buscando en los repos de Sozu…</p>}
+      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+      {prs && prs.length === 0 && (
+        <div className="mt-2 text-xs text-muted-foreground">
+          <p>No encontré PRs ligados a {t.folio}. Para que aparezcan, el PR necesita alguno de:</p>
+          <ul className="mt-1 list-disc pl-4">{convencionPrs(t.numero).map((c) => <li key={c}><code>{c}</code></li>)}</ul>
+        </div>
+      )}
+      {prs && prs.length > 0 && (
+        <ul className="mt-1.5 space-y-1">
+          {prs.map((p) => (
+            <li key={p.url}>
+              <label className={cn("flex items-start gap-1.5 text-xs", p.mergeado ? "cursor-pointer" : "opacity-60")}>
+                <input
+                  type="checkbox"
+                  checked={seleccion.has(p.url)}
+                  disabled={!p.mergeado}
+                  onChange={() => onAlternar(p.url)}
+                  className="mt-0.5 h-3.5 w-3.5 accent-emerald-600"
+                  title={p.mergeado ? undefined : "Todavía no está en main: no puede cerrar el ticket"}
+                />
+                <span className="min-w-0">
+                  <a href={p.url} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">{p.repo} #{p.numero}</a>
+                  <span className={cn("ml-1", COLOR_PR[p.estado])}>· {ETIQUETA_PR[p.estado]}</span>
+                  <span className="block truncate text-muted-foreground">{p.titulo}</span>
+                  <span className="block text-[10px] text-muted-foreground">Ligado por: {p.razones.map((r) => RAZON[r]).join(", ")}</span>
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /** Confirmación de cierre: nota de seguimiento editable (por repo y PR, en puntos). */
 function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
   t: TicketAgente;
@@ -688,7 +773,33 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
   onCancelar: () => void;
   onCerrado: () => void;
 }) {
-  const [nota, setNota] = useState(() => (enviado?.prs.length ? notaDeCierre(enviado.prs) : "Listo, favor de validar.\n\n- "));
+  const externo = esExterno(enviado);
+  // Externo: los PRs del ticket por la convención. `intento` > 0 = "Volver a
+  // buscar", que se salta lo guardado de los últimos 10 min.
+  const [intento, setIntento] = useState(0);
+  const busqueda = useQuery({
+    queryKey: ["prs-externos", t.id, intento],
+    queryFn: () => buscarPrsTicket(t.id, intento > 0),
+    enabled: externo,
+    staleTime: Infinity,
+  });
+  const encontrados = busqueda.data?.prs;
+  // Sin tocar nada, van marcados los que ya están en main.
+  const [marcados, setMarcados] = useState<Set<string> | null>(null);
+  const seleccion = marcados ?? new Set((encontrados ?? []).filter((p) => p.mergeado).map((p) => p.url));
+  const elegidos = (encontrados ?? []).filter((p) => seleccion.has(p.url));
+  const alternar = (url: string) => {
+    const nueva = new Set(seleccion);
+    if (nueva.has(url)) nueva.delete(url); else nueva.add(url);
+    setMarcados(nueva);
+  };
+  // La nota se arma con los PRs elegidos hasta que se edite a mano.
+  const [notaEditada, setNotaEditada] = useState<string | null>(null);
+  const nota = notaEditada
+    ?? (enviado?.prs.length ? notaDeCierre(enviado.prs)
+      : externo && elegidos.length ? notaDeCierre(elegidos.map(comoPrDeTicket))
+        : "Listo, favor de validar.\n\n- ");
+  const faltaPrd = elegidos.filter((p) => p.estado !== "en_prd");
   // Puede haber cambios que no pasaron por aquí (otro PR, un ajuste a mano): se
   // pide confirmar que ya se revisó todo, viendo qué fue lo que llegó a PRD.
   const [revisado, setRevisado] = useState(false);
@@ -700,7 +811,7 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
     setEnviando(true);
     setError(null);
     try {
-      const r = await cerrarTicketPortal(t.id, nota);
+      const r = await cerrarTicketPortal(t.id, nota, externo ? [...seleccion] : undefined);
       setHecho(r.etapa);
       setTimeout(onCerrado, 1400);
     } catch (e) {
@@ -727,6 +838,23 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
             </p>
           ) : (
             <>
+              {externo && (
+                <PrsExternos
+                  t={t}
+                  prs={encontrados}
+                  buscando={busqueda.isFetching}
+                  error={busqueda.error ? mensajeDeError(busqueda.error) : null}
+                  seleccion={seleccion}
+                  onAlternar={alternar}
+                  onReintentar={() => { setMarcados(null); setIntento((n) => n + 1); }}
+                />
+              )}
+              {externo && faltaPrd.length > 0 && (
+                <p className="mt-2 flex items-start gap-1.5 rounded-md bg-amber-50 p-2 text-[11px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {faltaPrd.map((p) => `${p.repo} #${p.numero}`).join(", ")} ya está en main pero el último deploy a PRD todavía no lo trae. Puedes cerrarlo igual.
+                </p>
+              )}
               {enviado && enviado.prs.length > 0 && (
                 <div className="mt-4 rounded-lg border bg-muted/20 p-3">
                   <p className="text-xs font-medium">Se pasó a PRD:</p>
@@ -746,7 +874,9 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
                 <span>
                   Ya revisé que no falta nada: {enviado && enviado.prs.length > 0
                     ? <>lo de arriba ({enviado.prs.map((p) => `${p.repo} #${p.pr}`).join(", ")}) es todo lo del ticket y ya está en PRD; no hay otro PR pendiente.</>
-                    : <>todos los cambios del ticket ya están en PRD.</>}
+                    : externo
+                      ? <>los PRs marcados son todo lo del ticket; no hay otro cambio pendiente.</>
+                      : <>todos los cambios del ticket ya están en PRD.</>}
                 </span>
               </label>
               <p className="mt-4 text-xs text-muted-foreground">
@@ -754,14 +884,14 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
               </p>
               <textarea
                 value={nota}
-                onChange={(e) => setNota(e.target.value)}
+                onChange={(e) => setNotaEditada(e.target.value)}
                 rows={10}
                 className="mt-2 w-full resize-y rounded-lg border bg-muted/30 p-3 font-mono text-[12px] leading-relaxed outline-none focus:ring-2 focus:ring-ring"
               />
               {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
               <div className="mt-4 flex justify-end gap-2">
                 <button type="button" onClick={onCancelar} disabled={enviando} className="h-9 rounded-md px-3 text-sm font-medium hover:bg-muted">No, todavía no</button>
-                <button type="button" onClick={() => void cerrar()} disabled={enviando || !nota.trim() || !revisado} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:opacity-50">
+                <button type="button" onClick={() => void cerrar()} disabled={enviando || !nota.trim() || !revisado || (externo && seleccion.size === 0)} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:opacity-50">
                   {enviando && <Loader2 className="h-4 w-4 animate-spin" />} Sí, cerrar ticket
                 </button>
               </div>
