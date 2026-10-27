@@ -31,6 +31,7 @@ import { abrirConsola, ErrorConsola, finConsola, lineaConsola, sesionConsola } f
 import { qrWhatsapp } from "./whatsapp.js";
 import { falloDocs } from "./docsFallo.js";
 import { sentryWebhook as atenderSentry } from "./sentryWebhook.js";
+import { cambiarEstado, detalleIssue, type Estado } from "./sentryIssues.js";
 import {
   conectarToken, desconectarToken, exigirTokenClaude, leerTokenClaude, llavePublica, marcarTokenRenovado, secretDe,
 } from "./agente/tokenClaude.js";
@@ -685,6 +686,27 @@ export const sentryWebhook = onRequest(
     maxInstances: 3,
   },
   (req, res) => atenderSentry(req, res),
+);
+
+const CORS_DASHBOARD = [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/];
+
+/**
+ * `sentryDetalleIssue`: el issue y su último evento (stack trace, tags,
+ * navegador, URL) para el panel de Monitoreo. Mismo corte que las reglas de
+ * `sentry/*`: empresa, proyecto, repo y `verMonitoreo`. Ver sentryIssues.ts.
+ */
+export const sentryDetalleIssue = onCall<{ issueId: string }>(
+  { region: "us-central1", timeoutSeconds: 30, memory: "256MiB", maxInstances: 5, cors: CORS_DASHBOARD },
+  (req) => detalleIssue(req),
+);
+
+/**
+ * `sentryCambiarIssue`: resolver, ignorar o reabrir un issue desde Monitoreo.
+ * Pide `resolverMonitoreo` además del alcance. Ver sentryIssues.ts.
+ */
+export const sentryCambiarIssue = onCall<{ issueId: string; estado: Estado }>(
+  { region: "us-central1", timeoutSeconds: 30, memory: "256MiB", maxInstances: 5, cors: CORS_DASHBOARD },
+  (req) => cambiarEstado(req),
 );
 
 /**
