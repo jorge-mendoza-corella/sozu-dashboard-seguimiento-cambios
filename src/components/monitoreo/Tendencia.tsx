@@ -11,14 +11,14 @@ import { Line } from "react-chartjs-2";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
 
-const COLOR = "#ef4444";
+const ROJO = "#ef4444";
 
 const etiqueta = (diasAtras: number) => {
   const d = new Date(Date.now() - diasAtras * 86_400_000);
   return d.toLocaleDateString("es-MX", { day: "numeric", month: "short" });
 };
 
-export default function Tendencia({ serie }: { serie: number[] }) {
+export default function Tendencia({ serie, alto = 48, color = ROJO }: { serie: number[]; alto?: number; color?: string }) {
   const labels = serie.map((_, i) => etiqueta(serie.length - 1 - i));
   const options: ChartOptions<"line"> = {
     responsive: true,
@@ -32,13 +32,13 @@ export default function Tendencia({ serie }: { serie: number[] }) {
     elements: { point: { radius: 0, hoverRadius: 3 } },
   };
   return (
-    <div className="h-12 w-full">
+    <div className="w-full" style={{ height: alto }}>
       <Line
         options={options}
         data={{
           labels,
           datasets: [{
-            data: serie, borderColor: COLOR, backgroundColor: "rgba(239,68,68,0.12)",
+            data: serie, borderColor: color, backgroundColor: `${color}1f`,
             borderWidth: 1.5, fill: true, tension: 0.3,
           }],
         }}

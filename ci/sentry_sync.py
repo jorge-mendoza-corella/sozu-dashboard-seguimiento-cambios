@@ -106,8 +106,10 @@ class Sentry:
 
     def serie(self, pid: str, env: str | None) -> list[int]:
         """Eventos de error por día, últimos 14 días (el más viejo primero)."""
+        # `partial=1`: sin él Sentry corta en el último día COMPLETO y lo de hoy
+        # no sale en la serie (la tarjeta decía 0 eventos con issues de hoy).
         params = {"project": pid, "statsPeriod": "14d", "interval": "1d",
-                  "yAxis": "count()", "dataset": "errors"}
+                  "yAxis": "count()", "dataset": "errors", "partial": "1"}
         if env:
             params["environment"] = env
         datos = self.get("events-stats/", params).json().get("data", [])
