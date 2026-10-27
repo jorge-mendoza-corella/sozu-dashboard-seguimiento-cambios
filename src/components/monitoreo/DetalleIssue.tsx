@@ -1,18 +1,19 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ChevronRight, EyeOff, ExternalLink, Loader2, RotateCcw, X } from "lucide-react";
+import { Bot, CheckCircle2, ChevronRight, EyeOff, ExternalLink, Loader2, RotateCcw, Ticket, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import {
-  cambiarEstadoIssue, getDetalleIssue,
+  cambiarEstadoIssue, crearTicketIssue, getDetalleIssue, promptClaude,
   type DetalleIssue as Detalle, type EstadoIssue, type FrameIssue,
 } from "@/lib/sentry";
 
 // ---------------------------------------------------------------------------
 // Panel lateral con el detalle de un issue de Sentry: datos, último evento,
-// stack trace y tags, más resolver / ignorar / reabrir. Todo pasa por las
-// funciones `sentryDetalleIssue` y `sentryCambiarIssue`, que revisan el
-// permiso del repo en el servidor.
+// stack trace y tags, más resolver / ignorar / reabrir, copiarlo como prompt
+// para Claude y levantar un ticket de Soporte técnico. Todo pasa por las
+// funciones `sentryDetalleIssue`, `sentryCambiarIssue` y `sentryCrearTicket`,
+// que revisan el permiso del repo en el servidor.
 // ---------------------------------------------------------------------------
 
 const fecha = (iso: string | null) =>
@@ -23,8 +24,10 @@ const ESTADO: Record<string, string> = { unresolved: "Sin resolver", resolved: "
 // Las URLs vienen del servidor y terminan en un href: solo se aceptan de Sentry.
 const deSentry = (url: string) => (/^https:\/\/[\w-]+\.sentry\.io\//.test(url) ? url : undefined);
 
-export function DetalleIssue({ issueId, puedeResolver, onCerrar }: {
+export function DetalleIssue({ issueId, repo, puedeResolver, onCerrar }: {
   issueId: string;
+  /** owner/repo, para el prompt de Claude. */
+  repo: string;
   puedeResolver: boolean;
   onCerrar: () => void;
 }) {
@@ -42,6 +45,17 @@ export function DetalleIssue({ issueId, puedeResolver, onCerrar }: {
       if (r.estado !== "unresolved") onCerrar();
     },
   });
+  const ticket = useMutation({
+    mutationFn: () => crearTicketIssue(issueId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sentry-issue", issueId] }),
+  });
+  const [copiado, setCopiado] = useState(false);
+  const copiar = async () => {
+    if (!data) return;
+    await navigator.clipboard.writeText(promptClaude(data, repo)).catch(() => undefined);
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 2000);
+  };
 
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === "Escape" && onCerrar();
@@ -88,6 +102,31 @@ export function DetalleIssue({ issueId, puedeResolver, onCerrar }: {
                 <RotateCcw className="h-3.5 w-3.5" /> Reabrir
               </Accion>
             )}
+            <Accion onClick={() => void copiar()} titulo="Copia el error con su stack trace como prompt para Claude Code">
+              {copiado ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <Bot className="h-3.5 w-3.5" />}
+              {copiado ? "Copiado" : "Copiar para Claude"}
+            </Accion>
+            {data.ticket ? (
+              <a
+                href={data.ticket.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-violet-400/60 px-2.5 text-xs font-semibold text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-950/30"
+                title={`Levantado por ${data.ticket.creadoPor}`}
+              >
+                <Ticket className="h-3.5 w-3.5" /> Ticket SOZU-{data.ticket.numero}
+              </a>
+            ) : (
+              puedeResolver && (
+                <Accion
+                  onClick={() => ticket.mutate()}
+                  cargando={ticket.isPending}
+                  titulo="Levanta un ticket en Sistemas Soporte técnico con todo el detalle del error"
+                >
+                  <Ticket className="h-3.5 w-3.5" /> Crear ticket
+                </Accion>
+              )
+            )}
             <a
               href={deSentry(data.url)}
               target="_blank"
@@ -97,6 +136,7 @@ export function DetalleIssue({ issueId, puedeResolver, onCerrar }: {
               Abrir en Sentry <ExternalLink className="h-3 w-3" />
             </a>
             {cambio.error && <p className="w-full text-xs text-red-600">{mensajeDeError(cambio.error)}</p>}
+            {ticket.error && <p className="w-full text-xs text-red-600">{mensajeDeError(ticket.error)}</p>}
           </div>
         )}
 
@@ -110,17 +150,19 @@ export function DetalleIssue({ issueId, puedeResolver, onCerrar }: {
   );
 }
 
-function Accion({ children, onClick, cargando, principal }: {
+function Accion({ children, onClick, cargando, principal, titulo }: {
   children: React.ReactNode;
   onClick: () => void;
   cargando?: boolean;
   principal?: boolean;
+  titulo?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={cargando}
+      title={titulo}
       className={cn(
         "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold disabled:opacity-60",
         principal ? "bg-emerald-600 text-white hover:bg-emerald-700" : "border hover:bg-muted",

@@ -12,10 +12,17 @@
  * El token sale de Secret Manager (`SENTRY_AUTH_TOKEN`, el mismo del sync) en
  * tiempo de ejecución, como en sentryWebhook.ts. Para cambiar estados necesita
  * el scope `event:write`.
+ *
+ * `crearTicketIssue` levanta un ticket en el portal de sozu-admin (Supabase)
+ * con todo el detalle, en el pipeline de Sistemas Soporte técnico, igual que
+ * `crearTicket` del portal (tickets-store.tsx). Uno por issue: queda en
+ * `sentryTickets/{issueId}` y el panel muestra el folio en vez del botón.
  */
-import { getFirestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
 import { SUPERUSER_EMAIL } from "./agente/acceso.js";
+import { sinAcentos, usuarioPortal } from "./agente/tickets.js";
 import { secretoGlobal } from "./whatsapp.js";
 
 const ORG = "sozu-lh";
@@ -112,6 +119,13 @@ const numero = (v: unknown) => (typeof v === "number" ? v : Number(v) || 0);
 /** Lo que pinta el panel: el issue y su último evento, sin datos de personas. */
 export async function detalleIssue(req: CallableRequest<{ issueId: string }>) {
   const { token, id, issue, slug } = await autorizar(req, req.data?.issueId, "verMonitoreo");
+  const [detalle, ticket] = await Promise.all([detalleDe(token, id, issue, slug), ticketDe(id)]);
+  return { ...detalle, ticket };
+}
+
+type Detalle = Awaited<ReturnType<typeof detalleDe>>;
+
+async function detalleDe(token: string, id: string, issue: Record<string, unknown>, slug: string) {
   const ev = await sentry(token, `issues/${id}/events/latest/`).catch(() => ({} as Record<string, unknown>));
   const entries = Array.isArray(ev.entries) ? (ev.entries as Record<string, unknown>[]) : [];
   const de = (tipo: string) => mapa(entries.find((e) => e.type === tipo)?.data);
@@ -203,4 +217,127 @@ export async function cambiarEstado(req: CallableRequest<{ issueId: string; esta
     });
   }
   return { ok: true, estado };
+}
+
+// --- Ticket en el portal ------------------------------------------------------
+
+/** Pipeline al que van los errores: "SOZU - Sistemas Soporte técnico". */
+const PIPELINE_SOPORTE = /sistemas.*soporte/;
+/** Clave de `tickets_fuentes` (FK): la misma que usa el portal por defecto. */
+const FUENTE = "portal_admin";
+const URL_TICKET = (numero: number) => `https://admin.sozu.com/admin/portal-tickets/todos?ticket=${numero}`;
+
+export interface TicketIssue {
+  numero: number;
+  url: string;
+  creadoPor: string;
+}
+
+async function ticketDe(issueId: string): Promise<TicketIssue | null> {
+  const d = (await getFirestore().doc(`sentryTickets/${issueId}`).get()).data();
+  return d ? { numero: numero(d.numero), url: texto(d.url), creadoPor: texto(d.creadoPor) } : null;
+}
+
+/** Texto del ticket: lo que necesita quien lo resuelva sin abrir Sentry. */
+export function textoTicket(d: Detalle): string {
+  const e = d.evento;
+  const l: string[] = [
+    `Error de producción reportado por Sentry en el repo ${d.slug}.`,
+    "",
+    `Issue: ${d.shortId} (${d.nivel})`,
+    `Error: ${d.titulo}`,
+  ];
+  if (d.culprit) l.push(`Dónde: ${d.culprit}`);
+  l.push(`Eventos: ${d.eventos} · Usuarios afectados: ${d.usuarios}`);
+  l.push(`Primera vez: ${d.primeraVez ?? "—"} · Última vez: ${d.ultimaVez ?? "—"}`);
+  const entorno = [
+    ["URL", e.url ? `${e.metodo ? `${e.metodo} ` : ""}${e.url}` : null],
+    ["Navegador", e.navegador], ["Sistema", e.sistema], ["Dispositivo", e.dispositivo],
+    ["Runtime", e.runtime], ["Release", e.release],
+  ].filter(([, v]) => v);
+  if (entorno.length) {
+    l.push("", "Último evento:");
+    for (const [k, v] of entorno) l.push(`- ${k}: ${v}`);
+  }
+  for (const x of e.excepciones) {
+    l.push("", `Stack trace: ${x.tipo}${x.valor ? `: ${x.valor}` : ""}${x.manejado ? "" : " (no capturado)"}`);
+    const frames = x.frames.filter((f) => f.propio).length ? x.frames.filter((f) => f.propio) : x.frames;
+    for (const f of frames.slice(0, 15)) {
+      l.push(`- ${f.archivo || "?"}${f.linea !== null ? `:${f.linea}` : ""}${f.columna !== null ? `:${f.columna}` : ""}${f.funcion ? ` en ${f.funcion}` : ""}`);
+    }
+  }
+  if (e.tags.length) l.push("", `Tags: ${e.tags.map((t) => `${t.clave}=${t.valor}`).join(", ")}`);
+  l.push("", `Detalle en Sentry: ${d.url}`);
+  return l.join("\n");
+}
+
+const prioridadDe = (nivel: string) => (nivel === "fatal" || nivel === "error" ? "alta" : nivel === "warning" ? "media" : "baja");
+
+async function destino(sb: SupabaseClient): Promise<{ pipeline: number; etapa: number }> {
+  const { data: pipelines, error } = await sb.from("tickets_pipelines").select("id, nombre").eq("activo", true);
+  if (error) throw error;
+  const p = (pipelines ?? []).find((x) => PIPELINE_SOPORTE.test(sinAcentos(String(x.nombre))));
+  if (!p) throw new HttpsError("failed-precondition", "No encontré el pipeline «Sistemas Soporte técnico» en el portal.");
+  const { data: etapas, error: e2 } = await sb
+    .from("tickets_etapas")
+    .select("id, nombre, orden, tipo_semantico, cerrada")
+    .eq("id_pipeline", p.id)
+    .eq("activo", true)
+    .order("orden");
+  if (e2) throw e2;
+  // Etapa de entrada, como un ticket nuevo del portal: la abierta, o la primera viva.
+  const vivas = (etapas ?? []).filter((x) => !x.cerrada && !["resuelta", "cerrada", "descartada"].includes(x.tipo_semantico));
+  const etapa = vivas.find((x) => x.tipo_semantico === "abierta") ?? vivas[0];
+  if (!etapa) throw new HttpsError("failed-precondition", "El pipeline de Soporte técnico no tiene etapas abiertas.");
+  return { pipeline: Number(p.id), etapa: Number(etapa.id) };
+}
+
+/**
+ * Levanta el ticket (o devuelve el que ya existe para ese issue). Pide el mismo
+ * permiso que resolver: es una acción sobre el error, no solo verlo.
+ */
+export async function crearTicketIssue(req: CallableRequest<{ issueId: string }>, sb: SupabaseClient): Promise<TicketIssue> {
+  const { token, id, issue, slug } = await autorizar(req, req.data?.issueId, "resolverMonitoreo");
+  const ref = getFirestore().doc(`sentryTickets/${id}`);
+  const previo = await ticketDe(id);
+  if (previo) return previo;
+
+  const email = String(req.auth?.token.email ?? "").toLowerCase();
+  const yo = await usuarioPortal(sb, email);
+  if (!yo) throw new HttpsError("failed-precondition", "Tu correo no tiene usuario en el portal de tickets.");
+  const d = await detalleDe(token, id, issue, slug);
+  const { pipeline, etapa } = await destino(sb);
+
+  const { data: ins, error } = await sb
+    .from("tickets")
+    .insert({
+      nombre: `[Sentry] ${d.shortId}: ${d.titulo}`.slice(0, 200),
+      id_pipeline: pipeline,
+      id_etapa: etapa,
+      prioridad: prioridadDe(d.nivel),
+      id_usuario_creador: yo.auth_user_id,
+      descripcion: textoTicket(d),
+      fuente: FUENTE,
+    })
+    .select("id, numero")
+    .single();
+  if (error || !ins) {
+    console.error("[sentryCrearTicket]", error);
+    throw new HttpsError("unavailable", `El portal no aceptó el ticket: ${error?.message ?? "sin respuesta"}.`);
+  }
+  await sb.from("tickets_actividad").insert({
+    id_ticket: ins.id,
+    texto: `Ticket creado desde Monitoreo del dashboard de cambios (Sentry ${d.shortId}).`,
+    tipo: "sistema",
+    id_usuario_autor: yo.auth_user_id,
+  });
+
+  const salida: TicketIssue = { numero: Number(ins.numero), url: URL_TICKET(Number(ins.numero)), creadoPor: email };
+  await ref.set({ ...salida, ticketId: Number(ins.id), slug, creadoEn: FieldValue.serverTimestamp() });
+  // Nota en el issue para quien llegue por Sentry; si falla, el ticket ya existe.
+  await sentry(token, `issues/${id}/comments/`, {
+    method: "POST",
+    body: JSON.stringify({ text: `Ticket SOZU-${salida.numero} en el portal: ${salida.url}` }),
+  }).catch((e) => console.warn("[sentryCrearTicket] comentario", (e as Error).message));
+  return salida;
 }

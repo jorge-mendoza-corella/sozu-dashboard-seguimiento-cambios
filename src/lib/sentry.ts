@@ -197,11 +197,69 @@ export interface DetalleIssue {
     excepciones: { tipo: string; valor: string; mecanismo: string; manejado: boolean; frames: FrameIssue[] }[];
     tags: { clave: string; valor: string }[];
   };
+  /** Ticket del portal ya levantado para este issue (uno por issue). */
+  ticket: TicketIssue | null;
+}
+
+export interface TicketIssue {
+  numero: number;
+  url: string;
+  creadoPor: string;
 }
 
 const functions = getFunctions(app, "us-central1");
 const llamarDetalle = httpsCallable<{ issueId: string }, DetalleIssue>(functions, "sentryDetalleIssue", { timeout: 30_000 });
 const llamarEstado = httpsCallable<{ issueId: string; estado: EstadoIssue }, { ok: true; estado: EstadoIssue }>(functions, "sentryCambiarIssue", { timeout: 30_000 });
+
+const llamarTicket = httpsCallable<{ issueId: string }, TicketIssue>(functions, "sentryCrearTicket", { timeout: 60_000 });
+
+export const crearTicketIssue = async (issueId: string) => (await llamarTicket({ issueId })).data;
+
+/**
+ * Prompt para pegar en Claude Code dentro del repo: el error con su stack trace
+ * (con las líneas de código que manda Sentry) y qué se espera que haga.
+ */
+export function promptClaude(d: DetalleIssue, repo: string): string {
+  const e = d.evento;
+  const l: string[] = [
+    `# Error de producción en ${repo} (Sentry ${d.shortId})`,
+    "",
+    `**${d.titulo}**${d.culprit ? ` — en \`${d.culprit}\`` : ""}`,
+    "",
+    `- Nivel: ${d.nivel} · Eventos: ${d.eventos} · Usuarios afectados: ${d.usuarios}`,
+    `- Primera vez: ${d.primeraVez ?? "—"} · Última vez: ${d.ultimaVez ?? "—"}`,
+  ];
+  const entorno = [
+    ["URL", e.url ? `${e.metodo ? `${e.metodo} ` : ""}${e.url}` : null],
+    ["Navegador", e.navegador], ["Sistema", e.sistema], ["Dispositivo", e.dispositivo],
+    ["Runtime", e.runtime], ["Release", e.release],
+  ].filter(([, v]) => v);
+  for (const [k, v] of entorno) l.push(`- ${k}: ${v}`);
+  for (const x of e.excepciones) {
+    l.push("", `## Stack trace: ${x.tipo}${x.valor ? `: ${x.valor}` : ""}`, "", "Del frame donde reventó hacia afuera:", "");
+    const propios = x.frames.filter((f) => f.propio);
+    for (const f of (propios.length ? propios : x.frames).slice(0, 15)) {
+      const lugar = `${f.archivo || "?"}${f.linea !== null ? `:${f.linea}` : ""}${f.columna !== null ? `:${f.columna}` : ""}`;
+      l.push(`- \`${lugar}\`${f.funcion ? ` en \`${f.funcion}\`` : ""}`);
+      if (f.contexto.length) {
+        l.push("  ```");
+        for (const c of f.contexto) l.push(`  ${c.n === f.linea ? ">" : " "} ${String(c.n).padStart(4)} ${c.l}`);
+        l.push("  ```");
+      }
+    }
+  }
+  if (e.tags.length) l.push("", `Tags: ${e.tags.map((t) => `${t.clave}=${t.valor}`).join(", ")}`);
+  l.push(
+    "",
+    `Sentry: ${d.url}`,
+    "",
+    "## Qué hacer",
+    "1. Encuentra en este repo la causa del error (los archivos del stack trace pueden venir minificados: ubica el código equivalente).",
+    "2. Corrígelo con el cambio mínimo y agrega una prueba que cubra el caso.",
+    `3. Abre un PR hacia \`dev\`${d.ticket ? ` con \`SOZU-${d.ticket.numero}\` en el título (ticket del portal)` : ""} y menciona ${d.shortId} en la descripción.`,
+  );
+  return l.join("\n");
+}
 
 export const getDetalleIssue = async (issueId: string) => (await llamarDetalle({ issueId })).data;
 export const cambiarEstadoIssue = async (issueId: string, estado: EstadoIssue) => (await llamarEstado({ issueId, estado })).data;
