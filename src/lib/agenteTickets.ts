@@ -188,10 +188,10 @@ export function avancePrs(prs: PrClaude[]): { enPrd: number; total: number } {
 /**
  * Convención para que un PR hecho por fuera quede ligado al ticket de folio N
  * (basta una; la misma que aplica el servidor en `agente/prsExternos.ts`):
- * `SOZU-N` en el título o la descripción, la rama `ticket-N` / `ticket/N` /
+ * `SOZU-N` o `Ticket #N` en el título o la descripción, la rama `ticket-N` / `ticket/N` /
  * `sozu-N`, o el trailer `Ticket-SOZU: #N` en un commit.
  */
-export const convencionPrs = (n: number) => [`SOZU-${n} en el título o la descripción del PR`, `rama ticket-${n} (o ticket/${n}, sozu-${n})`, `trailer ${TRAILER_TICKET}: #${n} en un commit`];
+export const convencionPrs = (n: number) => [`SOZU-${n} o Ticket #${n} en el título o la descripción del PR`, `rama ticket-${n} (o ticket/${n}, sozu-${n})`, `trailer ${TRAILER_TICKET}: #${n} en un commit`];
 
 export type RazonMatch = "trailer" | "titulo" | "rama";
 

@@ -6,10 +6,12 @@
  * Convención para ligar un PR con el ticket de folio N (basta con una):
  *   - trailer en algún commit:   `Ticket-SOZU: #N`   (el mismo del flujo con Claude)
  *   - título o descripción:      `SOZU-N`            (p. ej. "fix: totales SOZU-1255")
+ *                                o `Ticket #N`       (p. ej. "Ticket #1425" en la descripción)
  *   - nombre de la rama:         `ticket-N`, `ticket/N` o `sozu-N`
  *
  * Todas con borde de número: el folio 125 no se confunde con el 1255. `SOZU-N`
- * y no `#N` a secas porque `#N` en GitHub es el número de un PR o issue.
+ * o `Ticket #N`, y no `#N` a secas, porque `#N` en GitHub es el número de un PR
+ * o issue.
  *
  * Se busca solo en los repos de Sozu que monitorea el dashboard. Las búsquedas
  * de GitHub (commits y PRs) tienen tope de 30 por minuto para todo el token,
@@ -45,7 +47,7 @@ export interface PrsExternos {
 export function criteriosTicket(n: number) {
   return {
     trailer: new RegExp(`^Ticket-SOZU:\\s*#${n}(?!\\d)`, "im"),
-    texto: new RegExp(`(?<![\\w-])SOZU-${n}(?!\\d)`, "i"),
+    texto: new RegExp(`(?<![\\w-])(?:SOZU-|Ticket\\s*:?\\s*#)${n}(?!\\d)`, "i"),
     rama: new RegExp(`(?:^|[^a-z0-9])(?:ticket|sozu)[-/_]${n}(?!\\d)`, "i"),
   };
 }
@@ -126,8 +128,8 @@ export async function candidatosDelTicket(gh: Octokit, n: number, repos: { owner
     }
   }
 
-  // (b) PRs con SOZU-N en título o descripción.
-  for (const q of gruposDeDuenos(owners, `"SOZU-${n}" is:pr`)) {
+  // (b) PRs con SOZU-N o Ticket #N en título o descripción.
+  for (const q of [`"SOZU-${n}" is:pr`, `"Ticket" "${n}" is:pr`].flatMap((base) => gruposDeDuenos(owners, base))) {
     try {
       const { data } = await gh.search.issuesAndPullRequests({ q, per_page: 50 });
       for (const it of data.items) {
