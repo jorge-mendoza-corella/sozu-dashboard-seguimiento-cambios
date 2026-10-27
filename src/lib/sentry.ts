@@ -115,19 +115,20 @@ const MARCA_DISPARO = "sentry:ultimoDisparo";
  * entre todas las pestañas. Mismo esquema que el monitor de WhatsApp: el cron
  * de GitHub casi nunca corre en este repo.
  */
-export async function dispararSyncSentry(): Promise<void> {
+export async function dispararSyncSentry(forzar = false): Promise<boolean> {
   const token = import.meta.env.VITE_GITHUB_REVIEWER_TOKEN || import.meta.env.VITE_GITHUB_TOKEN;
-  if (!token) return;
+  if (!token) return false;
   try {
     const ultimo = Number(localStorage.getItem(MARCA_DISPARO) ?? 0);
-    if (Date.now() - ultimo < REFRESCAR_MS) return;
+    // El botón "Actualizar" se salta el tope, pero no dos veces en el mismo minuto.
+    if (Date.now() - ultimo < (forzar ? 60_000 : REFRESCAR_MS)) return false;
     localStorage.setItem(MARCA_DISPARO, String(Date.now()));
   } catch {
     // Sin localStorage se dispara igual: peor una corrida de más que un dato viejo.
   }
-  await fetch(SYNC_URL, {
+  return fetch(SYNC_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
     body: JSON.stringify({ ref: "main" }),
-  }).catch(() => undefined);
+  }).then((r) => r.ok).catch(() => false);
 }
