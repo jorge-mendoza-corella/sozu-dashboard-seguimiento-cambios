@@ -49,10 +49,13 @@ export interface CicdPermissions {
   // repo, dentro de los proyectos y repos que la persona ya tiene asignados.
   // Nunca viene "de regalo": ver `permisosGenerales`.
   verMonitoreo: boolean;
+  // Resolver, ignorar o reabrir issues de Sentry desde Monitoreo. Sin
+  // `verMonitoreo` no sirve de nada (no ve el repo). Tampoco viene de regalo.
+  resolverMonitoreo: boolean;
 }
 
-export const NO_PERMISSIONS: CicdPermissions = { createPR: false, approve: false, mergeDev: false, mergeMain: false, buildApp: false, deployDev: false, switchDeployDev: false, viewOthers: false, verMonitoreo: false };
-export const ALL_PERMISSIONS: CicdPermissions = { createPR: true, approve: true, mergeDev: true, mergeMain: true, buildApp: true, deployDev: true, switchDeployDev: true, viewOthers: true, verMonitoreo: true };
+export const NO_PERMISSIONS: CicdPermissions = { createPR: false, approve: false, mergeDev: false, mergeMain: false, buildApp: false, deployDev: false, switchDeployDev: false, viewOthers: false, verMonitoreo: false, resolverMonitoreo: false };
+export const ALL_PERMISSIONS: CicdPermissions = { createPR: true, approve: true, mergeDev: true, mergeMain: true, buildApp: true, deployDev: true, switchDeployDev: true, viewOthers: true, verMonitoreo: true, resolverMonitoreo: true };
 
 export interface AppUser {
   email: string;
@@ -143,10 +146,10 @@ function permisosGenerales(user: AppUser): CicdPermissions {
   // Sin permisos explícitos: los administradores (globales o de empresa) los
   // tienen todos dentro de lo que ven; quien solo opera, ninguno.
   //
-  // Menos `verMonitoreo`: los errores de producción no se reparten por rol, se
+  // Menos `verMonitoreo` y `resolverMonitoreo`: los errores de producción no se reparten por rol, se
   // dan a mano. Si no, el admin de cualquier empresa con cuenta legacy los
   // vería sin que nadie se lo hubiera dado.
-  return esRolOperativo(user.role) ? NO_PERMISSIONS : { ...ALL_PERMISSIONS, verMonitoreo: false };
+  return esRolOperativo(user.role) ? NO_PERMISSIONS : { ...ALL_PERMISSIONS, verMonitoreo: false, resolverMonitoreo: false };
 }
 
 /**

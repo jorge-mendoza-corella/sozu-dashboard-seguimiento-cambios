@@ -77,6 +77,10 @@ export interface MonitoredRepo {
   // Precio mensual fijado a ESTE repo. Es lo primero que mira el cobro; si no
   // está, se usa la tarifa del cliente y luego el default global.
   monthlyPrice?: number;
+  // Prendido: `ci/sentry_sync.py` le crea su proyecto en Sentry (slug = nombre
+  // del repo), lo liga a las alertas de WhatsApp y lo pinta en Monitoreo.
+  // Solo el root lo mueve (reglas): cada proyecto vive en la org de Sozu.
+  monitoreoSentry?: boolean;
 }
 
 const PROJECT_COLORS = [
@@ -277,6 +281,10 @@ export async function setRepoFrontUrl(id: string, url: string | null) {
   await updateDoc(doc(db, "repos", id), {
     frontUrl: limpia ? limpia.replace(/\/+$/, "") : deleteField(),
   });
+}
+
+export async function setRepoMonitoreoSentry(id: string, activo: boolean) {
+  await updateDoc(doc(db, "repos", id), { monitoreoSentry: activo ? true : deleteField() });
 }
 
 /**

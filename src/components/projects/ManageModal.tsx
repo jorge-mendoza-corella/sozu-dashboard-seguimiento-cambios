@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { X, Loader2, Trash2, Plus, FolderGit2, Pencil, Check, Smartphone, Globe, AlertTriangle } from "lucide-react";
+import { X, Loader2, Trash2, Plus, FolderGit2, Pencil, Check, Smartphone, Globe, AlertTriangle, Siren, Copy } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SelectNative } from "@/components/ui/select-native";
 import { cn } from "@/lib/utils";
 import {
   addProject, renameProject, removeProject, moveRepoToProject, removeRepo, setRepoLabel, setProjectIsApp, setProjectCodemagicApp, setProjectApprover, setProjectNotifyAuthors, setProjectAndroidPackage,
-  setProjectIosBundleId, setRepoFrontUrl, renameRepoDoc,
+  setProjectIosBundleId, setRepoFrontUrl, renameRepoDoc, setRepoMonitoreoSentry,
   type Project,
 } from "@/lib/firestoreProjects";
 import { listRepoContributors } from "@/lib/github";
@@ -22,6 +22,7 @@ import { clientDisplayName } from "@/lib/firestoreClients";
 import { useQuery } from "@tanstack/react-query";
 import { getVisibleUsers, SUPERUSER_EMAIL, isRootAdmin , scopeKeyOf} from "@/lib/firestoreUsers";
 import { checkRepoAccess } from "@/lib/githubAuth";
+import { dispararSyncSentry, getSentryDsn } from "@/lib/sentry";
 import {
   getGoogleFirebaseToken, listFirebaseProjects, listProjectPackages,
   type FirebaseAppPackage,
@@ -621,6 +622,22 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
                     />
                     {busy === `front-${r.id}` && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                   </div>
+                  {/* Monitoreo con Sentry: prenderlo crea el proyecto en Sentry
+                      (en el siguiente sync) y lo pinta en Monitoreo. Solo root. */}
+                  {esRoot && (
+                    <MonitoreoRepo
+                      slug={r.repo}
+                      activo={!!r.monitoreoSentry}
+                      ocupado={busy === `sentry-${r.id}`}
+                      onCambiar={(activo) =>
+                        run(`sentry-${r.id}`, () => setRepoMonitoreoSentry(r.id, activo), async () => {
+                          await refreshRepos();
+                          await dispararSyncSentry(true);
+                          await qc.invalidateQueries({ queryKey: ["sentry-dsn", r.repo] });
+                        })
+                      }
+                    />
+                  )}
                   {/* Renombrado en GitHub: el alta quedó con el nombre viejo y
                       el repo puede desaparecer de las tarjetas sin aviso. El
                       botón mueve el doc al id nuevo (`${owner}__${repo}`). */}
@@ -697,6 +714,56 @@ export function ManageModal({ onClose }: { onClose: () => void }) {
           {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+/**
+ * Interruptor de Sentry de un repo y, ya prendido, el DSN para instalar el SDK.
+ * El DSN lo escribe el sync (alrededor de un minuto después de prender): hasta
+ * entonces se avisa que se está creando el proyecto.
+ */
+function MonitoreoRepo({ slug, activo, ocupado, onCambiar }: {
+  slug: string;
+  activo: boolean;
+  ocupado: boolean;
+  onCambiar: (activo: boolean) => void;
+}) {
+  const { data: dsn } = useQuery({
+    queryKey: ["sentry-dsn", slug],
+    queryFn: () => getSentryDsn(slug),
+    enabled: activo,
+    // Mientras el sync crea el proyecto, se vuelve a mirar cada 20 s.
+    refetchInterval: (q) => (q.state.data ? false : 20_000),
+  });
+  const [copiado, setCopiado] = useState(false);
+  const copiar = async () => {
+    if (!dsn) return;
+    await navigator.clipboard.writeText(dsn).catch(() => undefined);
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 1500);
+  };
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+      <label className="inline-flex cursor-pointer items-center gap-1.5" title="Errores de producción en la pestaña Monitoreo y avisos por WhatsApp">
+        <input type="checkbox" className="h-3 w-3" checked={activo} disabled={ocupado} onChange={(e) => onCambiar(e.target.checked)} />
+        <Siren className={cn("h-3 w-3", activo ? "text-red-600 dark:text-red-400" : "text-muted-foreground/50")} />
+        Monitoreo con Sentry
+      </label>
+      {ocupado && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+      {activo && !ocupado && (dsn ? (
+        <button
+          type="button"
+          onClick={() => void copiar()}
+          className="inline-flex min-w-0 items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-muted-foreground hover:bg-muted"
+          title="DSN del proyecto en Sentry: va en el código del repo al instalar el SDK"
+        >
+          <Copy className="h-3 w-3 shrink-0" />
+          <span className="truncate">{copiado ? "copiado" : `DSN ${dsn.slice(8, 24)}…`}</span>
+        </button>
+      ) : (
+        <span className="text-muted-foreground">creando el proyecto en Sentry…</span>
+      ))}
     </div>
   );
 }

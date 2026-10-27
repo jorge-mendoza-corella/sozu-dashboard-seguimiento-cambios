@@ -472,15 +472,17 @@ service cloud.firestore {
       //
       // `monthlyPrice` queda fuera de su alcance a propósito: el precio del repo
       // es lo que se le cobra a esa misma empresa, y su administrador se lo
-      // pondría en cero. Ese campo solo lo mueve el root.
+      // pondría en cero. Ese campo solo lo mueve el root. `monitoreoSentry`
+      // tampoco: prenderlo crea un proyecto en la org de Sentry de Sozu.
       allow create: if administraCliente(
           get(/databases/$(database)/documents/projects/$(request.resource.data.projectId)).data.clientId)
-        && !('monthlyPrice' in request.resource.data);
+        && !('monthlyPrice' in request.resource.data)
+        && !('monitoreoSentry' in request.resource.data);
       allow update: if administraCliente(
           get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.clientId)
         && administraCliente(
           get(/databases/$(database)/documents/projects/$(request.resource.data.projectId)).data.clientId)
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['monthlyPrice']);
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['monthlyPrice', 'monitoreoSentry']);
       // Y tampoco puede borrar un repo que TENGA precio propio: borrarlo y
       // recrearlo con el mismo id (que es determinista, `owner__repo`) era la
       // forma de tirar el `monthlyPrice` y caer al default, más barato.

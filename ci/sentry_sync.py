@@ -6,16 +6,25 @@ Por qué un sync y no el navegador: el token de Sentry lee los errores de TODA l
 organización (stack traces, datos de usuarios) y no puede viajar al front. Este
 script lo usa en CI y deja en Firestore solo el resumen que la pestaña pinta.
 
+Qué repos se monitorean lo decide el dashboard: `repos/{id}.monitoreoSentry`
+(lo prende el root en Proyectos → Gestionar). Para cada repo prendido:
+  - si no tiene proyecto en Sentry, se crea (slug = nombre del repo);
+  - su detector de issues se liga a las alertas de WhatsApp (ALERTAS);
+  - se escribe el resumen y el DSN, que el modal muestra para instalar el SDK.
+El repo que se apaga pierde su doc `sentry/{slug}` (el proyecto de Sentry se
+queda: borrarlo tiraría su historial).
+
 Endpoints de Sentry (org `sozu-lh`, región US):
-  GET /organizations/{org}/projects/                      id y slug de cada proyecto
+  GET  /organizations/{org}/projects/                     id y slug de cada proyecto
+  POST /teams/{org}/{team}/projects/                      crear proyecto
+  GET  /projects/{org}/{slug}/keys/                       DSN
+  GET/PUT sentry.io/.../detectors|workflows/              ligar alertas (solo sentry.io)
   GET /organizations/{org}/issues/?project=..&query=..    issues (total en el header X-Hits)
   GET /organizations/{org}/events-stats/?project=..       eventos por día (14 días)
   GET /organizations/{org}/sessions/?project=..           crash-free rate (solo apps)
 
-Cada métrica se calcula dos veces: solo `production` y todos los entornos. La
-pestaña enseña producción por defecto —es lo que le pega a usuarios reales—,
-pero mientras un repo no tenga deploy a producción con el SDK, lo único que hay
-es lo de dev, y sin la segunda vista el proyecto se vería vacío.
+Solo `production`: es lo que le pega a usuarios reales (dev y preview reportan
+a Sentry, pero la pestaña no los mide).
 
 Firestore:
   escribe sentry/{projectSlug}
@@ -39,18 +48,16 @@ GCP_PROJECT = os.environ.get("GCP_PROJECT", "sozu-admin-dev")
 FS_BASE = f"https://firestore.googleapis.com/v1/projects/{GCP_PROJECT}/databases/(default)/documents"
 SENTRY_ORG = os.environ.get("SENTRY_ORG", "sozu-lh")
 SENTRY_API = f"https://us.sentry.io/api/0/organizations/{SENTRY_ORG}"
+SENTRY_US = "https://us.sentry.io/api/0"
+# Detectores y workflows (alertas) solo responden en el host global.
+SENTRY_GLOBAL = f"https://sentry.io/api/0/organizations/{SENTRY_ORG}"
+SENTRY_TEAM = os.environ.get("SENTRY_TEAM", "sozu")
+# Alertas que mandan el WhatsApp (issue nuevo o regresión; pico de errores).
+ALERTAS = [w for w in os.environ.get("SENTRY_ALERTAS", "6234467,6234468").split(",") if w]
 
-# Proyectos de Sentry que se monitorean. El slug es el MISMO nombre del repo en
-# Firestore `repos`: así la pestaña cruza cada tarjeta con su proyecto del
-# dashboard sin una tabla de equivalencias aparte.
-PROYECTOS = [
-    "sozu-admin", "server-stp", "sozu-edge-functions", "sozu-mcp",
-    "sozu-cliente-app", "sozu-agente-app", "sozu-web",
-]
-# Las apps Flutter reportan sesiones; el resto no, y pedírselas solo regresa vacío.
-APPS = {"sozu-cliente-app", "sozu-agente-app"}
-
-ENTORNOS = {"produccion": "production", "todos": None}
+# El slug de cada proyecto de Sentry es el MISMO nombre del repo en Firestore
+# `repos`: así la pestaña cruza cada tarjeta con su repo sin tabla aparte.
+ENTORNOS = {"produccion": "production"}
 TOP_ISSUES = 5
 TIMEOUT = 30
 
@@ -71,6 +78,36 @@ class Sentry:
 
     def ids(self) -> dict[str, str]:
         return {p["slug"]: p["id"] for p in self.get("projects/", {}).json()}
+
+    def crear(self, slug: str) -> str:
+        r = self.s.post(f"{SENTRY_US}/teams/{SENTRY_ORG}/{SENTRY_TEAM}/projects/",
+                        json={"name": slug, "slug": slug}, timeout=TIMEOUT)
+        r.raise_for_status()
+        return str(r.json()["id"])
+
+    def dsn(self, slug: str) -> str:
+        r = self.s.get(f"{SENTRY_US}/projects/{SENTRY_ORG}/{slug}/keys/", timeout=TIMEOUT)
+        r.raise_for_status()
+        llaves = [k for k in r.json() if k.get("isActive", True)]
+        return llaves[0]["dsn"]["public"] if llaves else ""
+
+    def ligar_alertas(self, pid: str) -> None:
+        """Agrega el detector de issues del proyecto a cada alerta de WhatsApp."""
+        r = self.s.get(f"{SENTRY_GLOBAL}/detectors/", params={"project": pid}, timeout=TIMEOUT)
+        r.raise_for_status()
+        detector = next((d for d in r.json() if d.get("type") == "issue_stream"), None)
+        if not detector or set(ALERTAS) <= set(map(str, detector.get("workflowIds") or [])):
+            return
+        for wid in ALERTAS:
+            w = self.s.get(f"{SENTRY_GLOBAL}/workflows/{wid}/", timeout=TIMEOUT)
+            w.raise_for_status()
+            w = w.json()
+            if str(detector["id"]) in map(str, w["detectorIds"]):
+                continue
+            cuerpo = {k: w[k] for k in ("name", "triggers", "actionFilters", "config", "enabled", "environment")}
+            cuerpo["detectorIds"] = [*w["detectorIds"], str(detector["id"])]
+            self.s.put(f"{SENTRY_GLOBAL}/workflows/{wid}/", json=cuerpo, timeout=TIMEOUT).raise_for_status()
+            print(f"  ligado a la alerta {wid}")
 
     def contar(self, pid: str, query: str, env: str | None) -> int:
         """Cuántos issues cumplen `query`. Sentry da el total en X-Hits sin paginar."""
@@ -151,7 +188,7 @@ def _texto(doc: dict, campo: str) -> str:
 
 
 def alcances(token: str) -> dict[str, dict]:
-    """slug (= nombre del repo) -> alcance del repo en el dashboard.
+    """slug (= nombre del repo) -> alcance, de los repos con `monitoreoSentry`.
 
     Las reglas de `sentry/*` deciden con esto quién lee cada doc: el permiso
     `verMonitoreo` va por empresa, proyecto y repo, igual que los de CI/CD.
@@ -178,14 +215,33 @@ def alcances(token: str) -> dict[str, dict]:
     salida = {}
     for d in repos:
         nombre, proyecto = _texto(d, "repo"), _texto(d, "projectId")
-        if nombre in PROYECTOS:
-            salida[nombre] = {
-                "repoId": d["name"].rsplit("/", 1)[-1],
-                "projectId": proyecto,
-                "clientId": empresa.get(proyecto, ""),
-                "reposDelProyecto": del_proyecto.get(proyecto, []),
-            }
+        if not d.get("fields", {}).get("monitoreoSentry", {}).get("booleanValue"):
+            continue
+        if nombre in salida:
+            # El slug de Sentry es el nombre del repo: dos repos homónimos de
+            # distinto dueño chocarían. Se queda el primero.
+            print(f"::warning::{nombre}: hay dos repos con ese nombre; se monitorea solo uno.")
+            continue
+        salida[nombre] = {
+            "repoId": d["name"].rsplit("/", 1)[-1],
+            "projectId": proyecto,
+            "clientId": empresa.get(proyecto, ""),
+            "reposDelProyecto": del_proyecto.get(proyecto, []),
+        }
     return salida
+
+
+def docs_existentes(token: str) -> list[str]:
+    r = requests.get(f"{FS_BASE}/sentry", headers=fs_headers(token),
+                     params={"pageSize": 300, "mask.fieldPaths": "slug"}, timeout=TIMEOUT)
+    r.raise_for_status()
+    return [d["name"].rsplit("/", 1)[-1] for d in r.json().get("documents", [])]
+
+
+def borrar(token: str, slug: str) -> None:
+    r = requests.delete(f"{FS_BASE}/sentry/{quote(slug, safe='')}", headers=fs_headers(token), timeout=TIMEOUT)
+    if r.status_code not in (200, 204):
+        print(f"::error::Firestore delete {slug}: {r.status_code} {r.text[:200]}")
 
 
 def escribir(token: str, slug: str, datos: dict) -> None:
@@ -221,16 +277,18 @@ def resumen(api: Sentry, slug: str, pid: str, env: str | None) -> dict:
         "top": api.top(pid, env),
         "crashFree": None,
     }
-    if slug in APPS:
+    # Solo las apps mandan sesiones; a las demás Sentry les contesta vacío o error.
+    try:
         datos["crashFree"] = api.crash_free(pid, env)
+    except requests.RequestException:
+        pass
     return datos
 
 
 def main() -> None:
     fs_token = os.environ.get("FIRESTORE_TOKEN", "").strip()
     sentry_token = os.environ.get("SENTRY_AUTH_TOKEN", "").strip()
-    escribe = os.environ.get("SENTRY_SYNC_DRY_RUN") != "1"
-    if escribe and not fs_token:
+    if not fs_token:
         print("::error::Falta FIRESTORE_TOKEN.")
         sys.exit(1)
     if not sentry_token:
@@ -239,16 +297,23 @@ def main() -> None:
 
     api = Sentry(sentry_token)
     ids = api.ids()
-    donde = alcances(fs_token) if escribe else {}
+    donde = alcances(fs_token)
     ahora = datetime.now(timezone.utc)
     fallos = 0
 
-    for slug in PROYECTOS:
-        pid = ids.get(slug)
-        if not pid:
-            print(f"⚠ {slug}: no existe en Sentry ({SENTRY_ORG}); se salta.")
-            continue
+    # Repos apagados: su doc sale de la pestaña (el proyecto de Sentry se queda).
+    for slug in set(docs_existentes(fs_token)) - set(donde):
+        print(f"- {slug}: monitoreo apagado; se quita de la pestaña.")
+        borrar(fs_token, slug)
+
+    for slug, alcance in sorted(donde.items()):
         try:
+            pid = ids.get(slug)
+            if not pid:
+                pid = api.crear(slug)
+                print(f"+ {slug}: proyecto creado en Sentry ({pid}).")
+            api.ligar_alertas(pid)
+            dsn = api.dsn(slug)
             entornos = {nombre: resumen(api, slug, pid, env) for nombre, env in ENTORNOS.items()}
         except requests.RequestException as e:
             # Un proyecto que falla no se lleva a los demás; el dato anterior
@@ -258,22 +323,17 @@ def main() -> None:
             continue
         prod = entornos["produccion"]
         print(f"✓ {slug}: {prod['sinResolver']} sin resolver, {prod['nuevos24h']} nuevos 24h (producción)")
-        if escribe and slug not in donde:
-            # Sin repo en el dashboard nadie podría leerlo (las reglas no tienen
-            # con qué decidir): se avisa en vez de escribir un doc huérfano.
-            print(f"::warning::{slug}: no está en `repos` del dashboard; se salta.")
-            continue
-        if escribe:
-            escribir(fs_token, slug, {
-                "slug": slug,
-                "sentryProjectId": pid,
-                **donde[slug],
-                "url": f"https://{SENTRY_ORG}.sentry.io/issues/?project={pid}",
-                "entornos": entornos,
-                "revisadoAt": ahora,
-            })
+        escribir(fs_token, slug, {
+            "slug": slug,
+            "sentryProjectId": pid,
+            **alcance,
+            "dsn": dsn,
+            "url": f"https://{SENTRY_ORG}.sentry.io/issues/?project={pid}",
+            "entornos": entornos,
+            "revisadoAt": ahora,
+        })
 
-    if fallos == len(PROYECTOS):
+    if donde and fallos == len(donde):
         sys.exit(1)
 
 

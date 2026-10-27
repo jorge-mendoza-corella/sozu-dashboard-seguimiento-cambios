@@ -1,5 +1,6 @@
 import { doc, getDoc } from "firebase/firestore";
-import { db } from "./firebase";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import { app, db } from "./firebase";
 import { isRootAdmin, resolvePermissions, type AppUser } from "./firestoreUsers";
 
 // ---------------------------------------------------------------------------
@@ -21,6 +22,14 @@ export function veMonitoreoDe(user: AppUser | null, clientId: string | null | un
   if (!user) return false;
   if (isRootAdmin(user)) return true;
   return resolvePermissions(user, { clientId, repoId }).verMonitoreo;
+}
+
+/** ¿Puede resolver, ignorar o reabrir issues de ESTE repo? Mismo corte que `sentryCambiarIssue`. */
+export function resuelveMonitoreoDe(user: AppUser | null, clientId: string | null | undefined, repoId: string): boolean {
+  if (!user) return false;
+  if (isRootAdmin(user)) return true;
+  const p = resolvePermissions(user, { clientId, repoId });
+  return p.verMonitoreo && p.resolverMonitoreo;
 }
 
 export interface SentryIssue {
@@ -46,12 +55,11 @@ export interface SentryResumen {
   crashFree: number | null;
 }
 
-export type Entorno = "produccion" | "todos";
-
 export interface SentryProyecto {
   slug: string;
   url: string;
-  entornos: Record<Entorno, SentryResumen>;
+  /** Solo producción: es lo que le pega a usuarios reales. */
+  produccion: SentryResumen;
   revisadoAt: string | null;
 }
 
@@ -94,10 +102,20 @@ export async function getSentryProyectos(slugs: string[]): Promise<SentryProyect
     return [{
       slug: d.id,
       url: typeof x.url === "string" ? x.url : `https://${SENTRY_ORG}.sentry.io/issues/`,
-      entornos: { produccion: resumenDe(entornos.produccion), todos: resumenDe(entornos.todos) },
+      produccion: resumenDe(entornos.produccion),
       revisadoAt: iso(x.revisadoAt),
     }];
   });
+}
+
+/**
+ * DSN del proyecto de Sentry del repo, para instalar el SDK. Lo escribe el sync
+ * al prender el monitoreo; null mientras no corra (o si las reglas no dejan).
+ */
+export async function getSentryDsn(slug: string): Promise<string | null> {
+  const d = await getDoc(doc(db, "sentry", slug)).catch(() => null);
+  const dsn = d?.exists() ? d.data().dsn : null;
+  return typeof dsn === "string" && dsn ? dsn : null;
 }
 
 export const estaViejo = (p: SentryProyecto) =>
@@ -132,3 +150,53 @@ export async function dispararSyncSentry(forzar = false): Promise<boolean> {
     body: JSON.stringify({ ref: "main" }),
   }).then((r) => r.ok).catch(() => false);
 }
+
+// --- Detalle y estado de un issue (Cloud Functions: el token no sale de ahí) --
+
+export type EstadoIssue = "resolved" | "ignored" | "unresolved";
+
+export interface FrameIssue {
+  archivo: string;
+  funcion: string;
+  linea: number | null;
+  columna: number | null;
+  /** Código del repo (no de una librería ni del runtime). */
+  propio: boolean;
+  contexto: { n: number; l: string }[];
+}
+
+export interface DetalleIssue {
+  id: string;
+  slug: string;
+  shortId: string;
+  titulo: string;
+  culprit: string;
+  nivel: string;
+  estado: string;
+  eventos: number;
+  usuarios: number;
+  primeraVez: string | null;
+  ultimaVez: string | null;
+  url: string;
+  evento: {
+    id: string;
+    fecha: string | null;
+    release: string | null;
+    mensaje: string;
+    url: string | null;
+    metodo: string | null;
+    navegador: string | null;
+    sistema: string | null;
+    dispositivo: string | null;
+    runtime: string | null;
+    excepciones: { tipo: string; valor: string; mecanismo: string; manejado: boolean; frames: FrameIssue[] }[];
+    tags: { clave: string; valor: string }[];
+  };
+}
+
+const functions = getFunctions(app, "us-central1");
+const llamarDetalle = httpsCallable<{ issueId: string }, DetalleIssue>(functions, "sentryDetalleIssue", { timeout: 30_000 });
+const llamarEstado = httpsCallable<{ issueId: string; estado: EstadoIssue }, { ok: true; estado: EstadoIssue }>(functions, "sentryCambiarIssue", { timeout: 30_000 });
+
+export const getDetalleIssue = async (issueId: string) => (await llamarDetalle({ issueId })).data;
+export const cambiarEstadoIssue = async (issueId: string, estado: EstadoIssue) => (await llamarEstado({ issueId, estado })).data;

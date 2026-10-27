@@ -5,9 +5,10 @@ import { cn } from "@/lib/utils";
 import { useProjects } from "@/hooks/useProjectsRepos";
 import { useAuth } from "@/hooks/useAuth";
 import { useReposMonitoreo } from "@/hooks/useMonitoreo";
+import { DetalleIssue } from "@/components/monitoreo/DetalleIssue";
 import {
-  dispararSyncSentry, estaViejo, getSentryProyectos, pideRevision,
-  type Entorno, type SentryIssue, type SentryProyecto, type SentryResumen,
+  dispararSyncSentry, estaViejo, getSentryProyectos, pideRevision, resuelveMonitoreoDe,
+  type SentryIssue, type SentryProyecto, type SentryResumen,
 } from "@/lib/sentry";
 
 const Tendencia = lazy(() => import("@/components/monitoreo/Tendencia"));
@@ -17,12 +18,15 @@ const Tendencia = lazy(() => import("@/components/monitoreo/Tendencia"));
  *
  * La página contesta primero "¿hay algo roto?": arriba el total, luego solo los
  * repos con issues abiertos (los nuevos de 24 h primero) con su lista de issues,
- * y al final los sanos en fichas chicas. Producción por defecto: es lo que le
- * pega a usuarios reales; "Todos" suma dev y preview.
+ * y al final los sanos en fichas chicas. Solo producción: es lo que le pega a
+ * usuarios reales.
+ *
+ * Qué repos salen lo decide `monitoreoSentry` del repo (Proyectos → Gestionar)
+ * y, por usuario, su alcance más el permiso `verMonitoreo`.
  */
 export function MonitoreoPage() {
-  const [entorno, setEntorno] = useState<Entorno>("produccion");
   const [proyecto, setProyecto] = useState<string | null>(null);
+  const [abierto, setAbierto] = useState<{ issueId: string; puedeResolver: boolean } | null>(null);
   const { appUser } = useAuth();
   const { data: projects } = useProjects();
   // Solo los repos que le tocan: el permiso va por empresa, proyecto y repo.
@@ -45,13 +49,19 @@ export function MonitoreoPage() {
 
   // slug de Sentry = nombre del repo → nombre del proyecto del dashboard.
   const filas = useMemo(() => {
-    const nombreProyecto = new Map((projects ?? []).map((p) => [p.id, p.name]));
-    const proyectoDeRepo = new Map(repos.map((r) => [r.repo, r.projectId]));
+    const proyectoPorId = new Map((projects ?? []).map((p) => [p.id, p]));
+    const repoPorSlug = new Map(repos.map((r) => [r.repo, r]));
     return (data ?? []).map((p) => {
-      const pid = proyectoDeRepo.get(p.slug);
-      return { p, r: p.entornos[entorno], proyecto: (pid && nombreProyecto.get(pid)) || "Sin proyecto" };
+      const repo = repoPorSlug.get(p.slug);
+      const proy = repo ? proyectoPorId.get(repo.projectId) : undefined;
+      return {
+        p,
+        r: p.produccion,
+        proyecto: proy?.name || "Sin proyecto",
+        puedeResolver: !!repo && resuelveMonitoreoDe(appUser, proy?.clientId, repo.id),
+      };
     });
-  }, [data, projects, repos, entorno]);
+  }, [data, projects, repos, appUser]);
 
   const nombresProyecto = useMemo(() => [...new Set(filas.map((f) => f.proyecto))].sort((a, b) => a.localeCompare(b, "es")), [filas]);
   const visibles = proyecto ? filas.filter((f) => f.proyecto === proyecto) : filas;
@@ -73,26 +83,9 @@ export function MonitoreoPage() {
             <Siren className="h-5 w-5 text-red-600 dark:text-red-400" />
             <h1 className="text-xl font-bold tracking-tight">Monitoreo</h1>
           </div>
-          <p className="text-sm text-muted-foreground">Errores de Sentry de tus repos, últimos 14 días.</p>
+          <p className="text-sm text-muted-foreground">Errores de Sentry en producción, últimos 14 días.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Actualizar revisado={revisado} viejo={viejo} queryKey={queryKey} />
-          <div className="flex rounded-md border p-0.5 text-xs">
-            {(["produccion", "todos"] as const).map((e) => (
-              <button
-                key={e}
-                type="button"
-                onClick={() => setEntorno(e)}
-                className={cn(
-                  "rounded px-3 py-1 transition-colors",
-                  entorno === e ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {e === "produccion" ? "Producción" : "Todos los entornos"}
-              </button>
-            ))}
-          </div>
-        </div>
+        <Actualizar revisado={revisado} viejo={viejo} queryKey={queryKey} />
       </header>
 
       {isLoading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
@@ -133,12 +126,20 @@ export function MonitoreoPage() {
           {conErrores.length > 0 ? (
             <section className="space-y-3">
               <h2 className="text-sm font-semibold">Requieren atención</h2>
-              {conErrores.map((f) => <RepoConErrores key={f.p.slug} p={f.p} r={f.r} proyecto={f.proyecto} />)}
+              {conErrores.map((f) => (
+                <RepoConErrores
+                  key={f.p.slug}
+                  p={f.p}
+                  r={f.r}
+                  proyecto={f.proyecto}
+                  onAbrir={(issueId) => setAbierto({ issueId, puedeResolver: f.puedeResolver })}
+                />
+              ))}
             </section>
           ) : (
             <div className="flex items-center gap-3 rounded-lg border border-emerald-500/40 bg-emerald-50 p-4 text-sm text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300">
               <CheckCircle2 className="h-5 w-5 shrink-0" />
-              Sin issues abiertos en {entorno === "produccion" ? "producción" : "ningún entorno"}.
+              Sin issues abiertos en producción.
             </div>
           )}
 
@@ -151,6 +152,10 @@ export function MonitoreoPage() {
             </section>
           )}
         </>
+      )}
+
+      {abierto && (
+        <DetalleIssue issueId={abierto.issueId} puedeResolver={abierto.puedeResolver} onCerrar={() => setAbierto(null)} />
       )}
     </div>
   );
@@ -245,7 +250,12 @@ function CrashFree({ r }: { r: SentryResumen }) {
   );
 }
 
-function RepoConErrores({ p, r, proyecto }: { p: SentryProyecto; r: SentryResumen; proyecto: string }) {
+function RepoConErrores({ p, r, proyecto, onAbrir }: {
+  p: SentryProyecto;
+  r: SentryResumen;
+  proyecto: string;
+  onAbrir: (issueId: string) => void;
+}) {
   const [abierto, setAbierto] = useState(true);
   const urgente = r.nuevos24h > 0;
   const eventos = r.serie14d.reduce((a, b) => a + b, 0);
@@ -277,7 +287,7 @@ function RepoConErrores({ p, r, proyecto }: { p: SentryProyecto; r: SentryResume
       </div>
       {abierto && r.top.length > 0 && (
         <ul className="divide-y border-t">
-          {r.top.map((i) => <FilaIssue key={i.id} i={i} />)}
+          {r.top.map((i) => <FilaIssue key={i.id} i={i} onAbrir={() => onAbrir(i.id)} />)}
           {r.sinResolver > r.top.length && (
             <li className="px-4 py-2 text-xs">
               <a href={deSentry(p.url)} target="_blank" rel="noreferrer" className="text-primary hover:underline">
@@ -307,10 +317,10 @@ const COLOR_NIVEL: Record<string, string> = {
   info: "bg-sky-500",
 };
 
-function FilaIssue({ i }: { i: SentryIssue }) {
+function FilaIssue({ i, onAbrir }: { i: SentryIssue; onAbrir: () => void }) {
   return (
     <li>
-      <a href={deSentry(i.url)} target="_blank" rel="noreferrer" className="flex items-start gap-3 px-4 py-2.5 hover:bg-muted/60">
+      <button type="button" onClick={onAbrir} className="flex w-full items-start gap-3 px-4 py-2.5 text-left hover:bg-muted/60" title="Ver detalle">
         <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", COLOR_NIVEL[i.nivel] ?? "bg-muted-foreground")} title={i.nivel} />
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-2 text-sm">
@@ -330,7 +340,7 @@ function FilaIssue({ i }: { i: SentryIssue }) {
           <div><span className="font-semibold text-foreground">{i.eventos.toLocaleString("es-MX")}</span> eventos · {i.usuarios} usuarios</div>
           <div>último {hace(i.ultimaVez)}</div>
         </div>
-      </a>
+      </button>
     </li>
   );
 }
