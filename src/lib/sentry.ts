@@ -52,6 +52,8 @@ export interface SentryResumen {
   nuevos24h: number;
   /** Eventos de error por día, 14 días, el más viejo primero. */
   serie14d: number[];
+  /** Igual, 90 días: la barra de estado. Los docs de antes del cambio no la traen. */
+  serie90d: number[];
   top: SentryIssue[];
   /** Resueltos o ignorados con actividad en 14 días, los más recientes primero. */
   resueltos: SentryIssue[];
@@ -65,6 +67,8 @@ export interface SentryProyecto {
   /** Solo producción: es lo que le pega a usuarios reales. */
   produccion: SentryResumen;
   revisadoAt: string | null;
+  /** Alta del proyecto en Sentry: antes de eso no hay datos, no "cero errores". */
+  creadoEn: string | null;
 }
 
 /** A partir de aquí la pestaña abierta pide otra corrida del sync. */
@@ -85,6 +89,7 @@ function resumenDe(x: unknown): SentryResumen {
     sinResolver: num(r.sinResolver),
     nuevos24h: num(r.nuevos24h),
     serie14d: Array.isArray(r.serie14d) ? r.serie14d.map(num) : [],
+    serie90d: Array.isArray(r.serie90d) ? r.serie90d.map(num) : [],
     top: Array.isArray(r.top) ? (r.top as SentryIssue[]) : [],
     resueltos: Array.isArray(r.resueltos) ? (r.resueltos as SentryIssue[]) : [],
     crashFree: typeof r.crashFree === "number" ? r.crashFree : null,
@@ -109,6 +114,7 @@ export async function getSentryProyectos(slugs: string[]): Promise<SentryProyect
       url: typeof x.url === "string" ? x.url : `https://${SENTRY_ORG}.sentry.io/issues/`,
       produccion: resumenDe(entornos.produccion),
       revisadoAt: iso(x.revisadoAt),
+      creadoEn: iso(x.sentryCreadoEn),
     }];
   });
 }
@@ -197,11 +203,69 @@ export interface DetalleIssue {
     excepciones: { tipo: string; valor: string; mecanismo: string; manejado: boolean; frames: FrameIssue[] }[];
     tags: { clave: string; valor: string }[];
   };
+  /** Ticket del portal ya levantado para este issue (uno por issue). */
+  ticket: TicketIssue | null;
+}
+
+export interface TicketIssue {
+  numero: number;
+  url: string;
+  creadoPor: string;
 }
 
 const functions = getFunctions(app, "us-central1");
 const llamarDetalle = httpsCallable<{ issueId: string }, DetalleIssue>(functions, "sentryDetalleIssue", { timeout: 30_000 });
 const llamarEstado = httpsCallable<{ issueId: string; estado: EstadoIssue }, { ok: true; estado: EstadoIssue }>(functions, "sentryCambiarIssue", { timeout: 30_000 });
+
+const llamarTicket = httpsCallable<{ issueId: string }, TicketIssue>(functions, "sentryCrearTicket", { timeout: 60_000 });
+
+export const crearTicketIssue = async (issueId: string) => (await llamarTicket({ issueId })).data;
+
+/**
+ * Prompt para pegar en Claude Code dentro del repo: el error con su stack trace
+ * (con las líneas de código que manda Sentry) y qué se espera que haga.
+ */
+export function promptClaude(d: DetalleIssue, repo: string): string {
+  const e = d.evento;
+  const l: string[] = [
+    `# Error de producción en ${repo} (Sentry ${d.shortId})`,
+    "",
+    `**${d.titulo}**${d.culprit ? ` — en \`${d.culprit}\`` : ""}`,
+    "",
+    `- Nivel: ${d.nivel} · Eventos: ${d.eventos} · Usuarios afectados: ${d.usuarios}`,
+    `- Primera vez: ${d.primeraVez ?? "—"} · Última vez: ${d.ultimaVez ?? "—"}`,
+  ];
+  const entorno = [
+    ["URL", e.url ? `${e.metodo ? `${e.metodo} ` : ""}${e.url}` : null],
+    ["Navegador", e.navegador], ["Sistema", e.sistema], ["Dispositivo", e.dispositivo],
+    ["Runtime", e.runtime], ["Release", e.release],
+  ].filter(([, v]) => v);
+  for (const [k, v] of entorno) l.push(`- ${k}: ${v}`);
+  for (const x of e.excepciones) {
+    l.push("", `## Stack trace: ${x.tipo}${x.valor ? `: ${x.valor}` : ""}`, "", "Del frame donde reventó hacia afuera:", "");
+    const propios = x.frames.filter((f) => f.propio);
+    for (const f of (propios.length ? propios : x.frames).slice(0, 15)) {
+      const lugar = `${f.archivo || "?"}${f.linea !== null ? `:${f.linea}` : ""}${f.columna !== null ? `:${f.columna}` : ""}`;
+      l.push(`- \`${lugar}\`${f.funcion ? ` en \`${f.funcion}\`` : ""}`);
+      if (f.contexto.length) {
+        l.push("  ```");
+        for (const c of f.contexto) l.push(`  ${c.n === f.linea ? ">" : " "} ${String(c.n).padStart(4)} ${c.l}`);
+        l.push("  ```");
+      }
+    }
+  }
+  if (e.tags.length) l.push("", `Tags: ${e.tags.map((t) => `${t.clave}=${t.valor}`).join(", ")}`);
+  l.push(
+    "",
+    `Sentry: ${d.url}`,
+    "",
+    "## Qué hacer",
+    "1. Encuentra en este repo la causa del error (los archivos del stack trace pueden venir minificados: ubica el código equivalente).",
+    "2. Corrígelo con el cambio mínimo y agrega una prueba que cubra el caso.",
+    `3. Abre un PR hacia \`dev\`${d.ticket ? ` con \`SOZU-${d.ticket.numero}\` en el título (ticket del portal)` : ""} y menciona ${d.shortId} en la descripción.`,
+  );
+  return l.join("\n");
+}
 
 export const getDetalleIssue = async (issueId: string) => (await llamarDetalle({ issueId })).data;
 export const cambiarEstadoIssue = async (issueId: string, estado: EstadoIssue) => (await llamarEstado({ issueId, estado })).data;

@@ -31,7 +31,7 @@ import { abrirConsola, ErrorConsola, finConsola, lineaConsola, sesionConsola } f
 import { qrWhatsapp } from "./whatsapp.js";
 import { falloDocs } from "./docsFallo.js";
 import { sentryWebhook as atenderSentry } from "./sentryWebhook.js";
-import { cambiarEstado, detalleIssue, type Estado } from "./sentryIssues.js";
+import { cambiarEstado, crearTicketIssue, detalleIssue, type Estado } from "./sentryIssues.js";
 import {
   conectarToken, desconectarToken, exigirTokenClaude, leerTokenClaude, llavePublica, marcarTokenRenovado, secretDe,
 } from "./agente/tokenClaude.js";
@@ -707,6 +707,16 @@ export const sentryDetalleIssue = onCall<{ issueId: string }>(
 export const sentryCambiarIssue = onCall<{ issueId: string; estado: Estado }>(
   { region: "us-central1", timeoutSeconds: 30, memory: "256MiB", maxInstances: 5, cors: CORS_DASHBOARD },
   (req) => cambiarEstado(req),
+);
+
+/**
+ * `sentryCrearTicket`: levanta en el portal un ticket de Sistemas Soporte
+ * técnico con todo el detalle del issue (uno por issue). Pide
+ * `resolverMonitoreo`. Ver sentryIssues.ts.
+ */
+export const sentryCrearTicket = onCall<{ issueId: string }>(
+  { region: "us-central1", secrets: [SUPABASE_SERVICE_KEY], timeoutSeconds: 60, memory: "256MiB", maxInstances: 5, cors: CORS_DASHBOARD },
+  (req) => crearTicketIssue(req, clienteSupabase(SUPABASE_SERVICE_KEY.value())),
 );
 
 /**

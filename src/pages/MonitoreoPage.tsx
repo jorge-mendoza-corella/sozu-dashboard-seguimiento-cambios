@@ -6,6 +6,7 @@ import { useProjects } from "@/hooks/useProjectsRepos";
 import { useAuth } from "@/hooks/useAuth";
 import { useReposMonitoreo } from "@/hooks/useMonitoreo";
 import { DetalleIssue } from "@/components/monitoreo/DetalleIssue";
+import { EstadoRepos } from "@/components/monitoreo/EstadoRepos";
 import {
   dispararSyncSentry, estaViejo, getSentryProyectos, pideRevision, resuelveMonitoreoDe,
   type SentryIssue, type SentryProyecto, type SentryResumen,
@@ -26,7 +27,7 @@ const Tendencia = lazy(() => import("@/components/monitoreo/Tendencia"));
  */
 export function MonitoreoPage() {
   const [proyecto, setProyecto] = useState<string | null>(null);
-  const [abierto, setAbierto] = useState<{ issueId: string; puedeResolver: boolean } | null>(null);
+  const [abierto, setAbierto] = useState<{ issueId: string; repo: string; puedeResolver: boolean } | null>(null);
   const { appUser } = useAuth();
   const { data: projects } = useProjects();
   // Solo los repos que le tocan: el permiso va por empresa, proyecto y repo.
@@ -58,6 +59,7 @@ export function MonitoreoPage() {
         p,
         r: p.produccion,
         proyecto: proy?.name || "Sin proyecto",
+        repoCompleto: repo ? `${repo.owner}/${repo.repo}` : p.slug,
         puedeResolver: !!repo && resuelveMonitoreoDe(appUser, proy?.clientId, repo.id),
       };
     });
@@ -70,7 +72,7 @@ export function MonitoreoPage() {
     .sort((a, b) => b.r.nuevos24h - a.r.nuevos24h || b.r.sinResolver - a.r.sinResolver || a.p.slug.localeCompare(b.p.slug));
   const sanos = visibles.filter((f) => f.r.sinResolver === 0).sort((a, b) => a.p.slug.localeCompare(b.p.slug));
   const resueltos = visibles
-    .flatMap((f) => f.r.resueltos.map((i) => ({ i, slug: f.p.slug, puedeResolver: f.puedeResolver })))
+    .flatMap((f) => f.r.resueltos.map((i) => ({ i, slug: f.p.slug, repo: f.repoCompleto, puedeResolver: f.puedeResolver })))
     .sort((a, b) => (b.i.ultimaVez ?? "").localeCompare(a.i.ultimaVez ?? ""));
 
   const total = (k: (r: SentryResumen) => number) => visibles.reduce((s, f) => s + k(f.r), 0);
@@ -126,7 +128,9 @@ export function MonitoreoPage() {
             </div>
           )}
 
-          {conErrores.length > 0 ? (
+          <EstadoRepos filas={visibles} />
+
+          {conErrores.length > 0 && (
             <section className="space-y-3">
               <h2 className="text-sm font-semibold">Requieren atención</h2>
               {conErrores.map((f) => (
@@ -135,15 +139,10 @@ export function MonitoreoPage() {
                   p={f.p}
                   r={f.r}
                   proyecto={f.proyecto}
-                  onAbrir={(issueId) => setAbierto({ issueId, puedeResolver: f.puedeResolver })}
+                  onAbrir={(issueId) => setAbierto({ issueId, repo: f.repoCompleto, puedeResolver: f.puedeResolver })}
                 />
               ))}
             </section>
-          ) : (
-            <div className="flex items-center gap-3 rounded-lg border border-emerald-500/40 bg-emerald-50 p-4 text-sm text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300">
-              <CheckCircle2 className="h-5 w-5 shrink-0" />
-              Sin issues abiertos en producción.
-            </div>
           )}
 
           {sanos.length > 0 && (
@@ -161,15 +160,15 @@ export function MonitoreoPage() {
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-muted-foreground">Resueltos recientemente</h2>
           <ul className="divide-y overflow-hidden rounded-lg border bg-card">
-            {resueltos.map(({ i, slug, puedeResolver }) => (
-              <FilaIssue key={i.id} i={i} repo={slug} onAbrir={() => setAbierto({ issueId: i.id, puedeResolver })} />
+            {resueltos.map(({ i, slug, repo, puedeResolver }) => (
+              <FilaIssue key={i.id} i={i} repo={slug} onAbrir={() => setAbierto({ issueId: i.id, repo, puedeResolver })} />
             ))}
           </ul>
         </section>
       )}
 
       {abierto && (
-        <DetalleIssue issueId={abierto.issueId} puedeResolver={abierto.puedeResolver} onCerrar={() => setAbierto(null)} />
+        <DetalleIssue issueId={abierto.issueId} repo={abierto.repo} puedeResolver={abierto.puedeResolver} onCerrar={() => setAbierto(null)} />
       )}
     </div>
   );

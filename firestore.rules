@@ -296,6 +296,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Ticket del portal levantado para cada issue (uno por issue). Solo lo
+    // tocan las funciones `sentryCrearTicket` y `sentryDetalleIssue`.
+    match /sentryTickets/{issueId} {
+      allow read, write: if false;
+    }
+
     // Serie diaria de instalaciones por proyecto (copia de lectura de lo que
     // vive en Supabase, que es donde se mezcla lo medido con la siembra).
     match /installsDiarias/{projectId} {
