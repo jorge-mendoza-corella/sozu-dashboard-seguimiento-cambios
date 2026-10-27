@@ -1,32 +1,42 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ChevronDown, ExternalLink, Loader2, RefreshCw, Siren } from "lucide-react";
+import { CheckCircle2, ChevronDown, ExternalLink, Loader2, RefreshCw, Siren, Ticket } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProjects } from "@/hooks/useProjectsRepos";
 import { useAuth } from "@/hooks/useAuth";
 import { useReposMonitoreo } from "@/hooks/useMonitoreo";
 import { DetalleIssue } from "@/components/monitoreo/DetalleIssue";
 import { EstadoRepos } from "@/components/monitoreo/EstadoRepos";
+import { SelectNative } from "@/components/ui/select-native";
 import {
   dispararSyncSentry, estaViejo, getSentryProyectos, pideRevision, resuelveMonitoreoDe,
   type SentryIssue, type SentryProyecto, type SentryResumen,
 } from "@/lib/sentry";
 
 const Tendencia = lazy(() => import("@/components/monitoreo/Tendencia"));
+const GraficaErrores = lazy(() => import("@/components/monitoreo/GraficaErrores"));
+
+type Vista = "issues" | "estado";
+const RANGOS = [14, 30, 90] as const;
 
 /**
- * Errores de Sentry de los repos que le tocan al usuario.
+ * Errores de Sentry de los repos que le tocan al usuario, en dos pestañas:
  *
- * La página contesta primero "¿hay algo roto?": arriba el total, luego solo los
- * repos con issues abiertos (los nuevos de 24 h primero) con su lista de issues,
- * y al final los sanos en fichas chicas. Solo producción: es lo que le pega a
- * usuarios reales.
+ *   Issues  qué hay que atender: cifras, gráfica de errores por día (apilada
+ *           por repo), los repos con issues abiertos y lo resuelto reciente.
+ *   Estado  página de estado: 90 días por repo y el % de días sin errores.
  *
- * Qué repos salen lo decide `monitoreoSentry` del repo (Proyectos → Gestionar)
- * y, por usuario, su alcance más el permiso `verMonitoreo`.
+ * Los filtros (proyecto y repo) aplican a las dos. Solo producción: es lo que
+ * le pega a usuarios reales. Qué repos salen lo decide `monitoreoSentry` del
+ * repo (Proyectos → Gestionar) y, por usuario, su alcance más `verMonitoreo`.
  */
 export function MonitoreoPage() {
+  const [params, setParams] = useSearchParams();
+  const vista: Vista = params.get("vista") === "estado" ? "estado" : "issues";
   const [proyecto, setProyecto] = useState<string | null>(null);
+  const [repoFiltro, setRepoFiltro] = useState<string | null>(null);
+  const [rango, setRango] = useState<(typeof RANGOS)[number]>(14);
   const [abierto, setAbierto] = useState<{ issueId: string; repo: string; puedeResolver: boolean } | null>(null);
   const { appUser } = useAuth();
   const { data: projects } = useProjects();
@@ -52,43 +62,47 @@ export function MonitoreoPage() {
   const filas = useMemo(() => {
     const proyectoPorId = new Map((projects ?? []).map((p) => [p.id, p]));
     const repoPorSlug = new Map(repos.map((r) => [r.repo, r]));
-    return (data ?? []).map((p) => {
-      const repo = repoPorSlug.get(p.slug);
-      const proy = repo ? proyectoPorId.get(repo.projectId) : undefined;
-      return {
-        p,
-        r: p.produccion,
-        proyecto: proy?.name || "Sin proyecto",
-        repoCompleto: repo ? `${repo.owner}/${repo.repo}` : p.slug,
-        puedeResolver: !!repo && resuelveMonitoreoDe(appUser, proy?.clientId, repo.id),
-      };
-    });
+    return (data ?? [])
+      .map((p) => {
+        const repo = repoPorSlug.get(p.slug);
+        const proy = repo ? proyectoPorId.get(repo.projectId) : undefined;
+        return {
+          p,
+          r: p.produccion,
+          proyecto: proy?.name || "Sin proyecto",
+          repoCompleto: repo ? `${repo.owner}/${repo.repo}` : p.slug,
+          puedeResolver: !!repo && resuelveMonitoreoDe(appUser, proy?.clientId, repo.id),
+        };
+      })
+      .sort((a, b) => a.p.slug.localeCompare(b.p.slug));
   }, [data, projects, repos, appUser]);
 
   const nombresProyecto = useMemo(() => [...new Set(filas.map((f) => f.proyecto))].sort((a, b) => a.localeCompare(b, "es")), [filas]);
-  const visibles = proyecto ? filas.filter((f) => f.proyecto === proyecto) : filas;
+  const delProyecto = proyecto ? filas.filter((f) => f.proyecto === proyecto) : filas;
+  const visibles = repoFiltro ? delProyecto.filter((f) => f.p.slug === repoFiltro) : delProyecto;
   const conErrores = visibles
     .filter((f) => f.r.sinResolver > 0)
     .sort((a, b) => b.r.nuevos24h - a.r.nuevos24h || b.r.sinResolver - a.r.sinResolver || a.p.slug.localeCompare(b.p.slug));
-  const sanos = visibles.filter((f) => f.r.sinResolver === 0).sort((a, b) => a.p.slug.localeCompare(b.p.slug));
   const resueltos = visibles
     .flatMap((f) => f.r.resueltos.map((i) => ({ i, slug: f.p.slug, repo: f.repoCompleto, puedeResolver: f.puedeResolver })))
     .sort((a, b) => (b.i.ultimaVez ?? "").localeCompare(a.i.ultimaVez ?? ""));
 
   const total = (k: (r: SentryResumen) => number) => visibles.reduce((s, f) => s + k(f.r), 0);
-  const eventos14d = (r: SentryResumen) => r.serie14d.reduce((a, b) => a + b, 0);
+  const serie = (r: SentryResumen) => (r.serie90d.length ? r.serie90d : r.serie14d);
+  const eventosRango = (r: SentryResumen) => serie(r).slice(-rango).reduce((a, b) => a + b, 0);
   const revisado = (data ?? []).map((p) => p.revisadoAt).filter((x): x is string => !!x).sort()[0] ?? null;
   const viejo = (data ?? []).some(estaViejo);
+  const cambiarVista = (v: Vista) => setParams(v === "issues" ? {} : { vista: v }, { replace: true });
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
+    <div className="mx-auto max-w-6xl space-y-4 p-4 sm:p-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="mb-1 flex items-center gap-2">
             <Siren className="h-5 w-5 text-red-600 dark:text-red-400" />
             <h1 className="text-xl font-bold tracking-tight">Monitoreo</h1>
           </div>
-          <p className="text-sm text-muted-foreground">Errores de Sentry en producción, últimos 14 días.</p>
+          <p className="text-sm text-muted-foreground">Errores de Sentry en producción.</p>
         </div>
         <Actualizar revisado={revisado} viejo={viejo} queryKey={queryKey} />
       </header>
@@ -103,68 +117,120 @@ export function MonitoreoPage() {
 
       {filas.length > 0 && (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Kpi valor={total((r) => r.sinResolver)} etiqueta="Issues sin resolver" tono={total((r) => r.sinResolver) > 0 ? "ambar" : "ok"} />
-            <Kpi valor={total((r) => r.nuevos24h)} etiqueta="Nuevos en 24 h" tono={total((r) => r.nuevos24h) > 0 ? "rojo" : "ok"} />
-            <Kpi valor={total(eventos14d)} etiqueta="Eventos en 14 días" />
-            <Kpi valor={`${conErrores.length} / ${visibles.length}`} etiqueta="Repos con errores" tono={conErrores.length > 0 ? "ambar" : "ok"} />
-          </div>
-
-          {nombresProyecto.length > 1 && (
-            <div className="flex flex-wrap gap-1.5">
-              {[null, ...nombresProyecto].map((n) => (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b">
+            <nav className="-mb-px flex gap-1" aria-label="Vistas de monitoreo">
+              {([["issues", "Issues", total((r) => r.sinResolver)], ["estado", "Estado de los repos", null]] as const).map(([v, nombre, cuenta]) => (
                 <button
-                  key={n ?? "todos"}
+                  key={v}
                   type="button"
-                  onClick={() => setProyecto(n)}
+                  onClick={() => cambiarVista(v)}
                   className={cn(
-                    "rounded-full border px-3 py-1 text-xs transition-colors",
-                    proyecto === n ? "border-primary bg-primary/10 font-medium text-primary" : "text-muted-foreground hover:bg-muted",
+                    "inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
+                    vista === v ? "border-primary font-semibold text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {n ?? "Todos los proyectos"}
+                  {nombre}
+                  {cuenta ? <span className="rounded-full bg-amber-100 px-1.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">{cuenta}</span> : null}
                 </button>
               ))}
+            </nav>
+            <div className="flex flex-wrap items-center gap-2 pb-2">
+              {nombresProyecto.length > 1 && (
+                <SelectNative
+                  className="h-8 w-auto text-xs"
+                  value={proyecto ?? ""}
+                  onChange={(e) => { setProyecto(e.target.value || null); setRepoFiltro(null); }}
+                  aria-label="Filtrar por proyecto"
+                >
+                  <option value="">Todos los proyectos</option>
+                  {nombresProyecto.map((n) => <option key={n} value={n}>{n}</option>)}
+                </SelectNative>
+              )}
+              <SelectNative
+                className="h-8 w-auto text-xs"
+                value={repoFiltro ?? ""}
+                onChange={(e) => setRepoFiltro(e.target.value || null)}
+                aria-label="Filtrar por repo"
+              >
+                <option value="">Todos los repos</option>
+                {delProyecto.map((f) => <option key={f.p.slug} value={f.p.slug}>{f.p.slug}</option>)}
+              </SelectNative>
             </div>
-          )}
+          </div>
 
-          <EstadoRepos filas={visibles} />
-
-          {conErrores.length > 0 && (
-            <section className="space-y-3">
-              <h2 className="text-sm font-semibold">Requieren atención</h2>
-              {conErrores.map((f) => (
-                <RepoConErrores
-                  key={f.p.slug}
-                  p={f.p}
-                  r={f.r}
-                  proyecto={f.proyecto}
-                  onAbrir={(issueId) => setAbierto({ issueId, repo: f.repoCompleto, puedeResolver: f.puedeResolver })}
-                />
-              ))}
-            </section>
-          )}
-
-          {sanos.length > 0 && (
-            <section className="space-y-2">
-              <h2 className="text-sm font-semibold text-muted-foreground">Sin errores abiertos</h2>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {sanos.map((f) => <RepoSano key={f.p.slug} p={f.p} r={f.r} proyecto={f.proyecto} />)}
+          {vista === "estado" ? (
+            <EstadoRepos filas={visibles} />
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <Kpi valor={total((r) => r.sinResolver)} etiqueta="Issues sin resolver" tono={total((r) => r.sinResolver) > 0 ? "ambar" : "ok"} />
+                <Kpi valor={total((r) => r.nuevos24h)} etiqueta="Nuevos en 24 h" tono={total((r) => r.nuevos24h) > 0 ? "rojo" : "ok"} />
+                <Kpi valor={total(eventosRango)} etiqueta={`Eventos en ${rango} días`} />
+                <Kpi valor={`${conErrores.length} / ${visibles.length}`} etiqueta="Repos con errores" tono={conErrores.length > 0 ? "ambar" : "ok"} />
               </div>
-            </section>
+
+              <section className="rounded-lg border bg-card p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-sm font-semibold">Errores por día{repoFiltro ? ` · ${repoFiltro}` : ""}</h2>
+                  <div className="flex rounded-md border p-0.5 text-xs">
+                    {RANGOS.map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setRango(d)}
+                        className={cn("rounded px-2.5 py-0.5", rango === d ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}
+                      >
+                        {d} d
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {total(eventosRango) > 0 ? (
+                  <Suspense fallback={<div className="h-56" />}>
+                    <GraficaErrores
+                      dias={rango}
+                      series={visibles.filter((f) => eventosRango(f.r) > 0).map((f) => ({ slug: f.p.slug, serie: serie(f.r) }))}
+                    />
+                  </Suspense>
+                ) : (
+                  <div className="flex h-24 items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Sin errores en los últimos {rango} días.
+                  </div>
+                )}
+              </section>
+
+              <section className="space-y-3">
+                <h2 className="text-sm font-semibold">Requieren atención</h2>
+                {conErrores.length > 0 ? (
+                  conErrores.map((f) => (
+                    <RepoConErrores
+                      key={f.p.slug}
+                      p={f.p}
+                      r={f.r}
+                      proyecto={f.proyecto}
+                      onAbrir={(issueId) => setAbierto({ issueId, repo: f.repoCompleto, puedeResolver: f.puedeResolver })}
+                    />
+                  ))
+                ) : (
+                  <div className="flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" /> Sin issues abiertos{repoFiltro ? ` en ${repoFiltro}` : ""}.
+                  </div>
+                )}
+              </section>
+
+              {resueltos.length > 0 && (
+                <section className="space-y-2">
+                  <h2 className="text-sm font-semibold text-muted-foreground">Resueltos recientemente</h2>
+                  <ul className="divide-y overflow-hidden rounded-lg border bg-card">
+                    {resueltos.map(({ i, slug, repo, puedeResolver }) => (
+                      <FilaIssue key={i.id} i={i} repo={slug} onAbrir={() => setAbierto({ issueId: i.id, repo, puedeResolver })} />
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </>
           )}
         </>
-      )}
-
-      {resueltos.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-muted-foreground">Resueltos recientemente</h2>
-          <ul className="divide-y overflow-hidden rounded-lg border bg-card">
-            {resueltos.map(({ i, slug, repo, puedeResolver }) => (
-              <FilaIssue key={i.id} i={i} repo={slug} onAbrir={() => setAbierto({ issueId: i.id, repo, puedeResolver })} />
-            ))}
-          </ul>
-        </section>
       )}
 
       {abierto && (
@@ -348,6 +414,11 @@ function FilaIssue({ i, onAbrir, repo }: { i: SentryIssue; onAbrir: () => void; 
                 {i.estado === "ignored" ? "ignorado" : "resuelto"}
               </span>
             )}
+            {i.ticket && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-950/50 dark:text-violet-300" title="Ticket del portal ligado a este issue">
+                <Ticket className="h-3 w-3" /> SOZU-{i.ticket.numero}
+              </span>
+            )}
             {!cerrado && es24h(i.primeraVez) && (
               <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-700 dark:bg-red-950/50 dark:text-red-300">
                 nuevo
@@ -366,19 +437,5 @@ function FilaIssue({ i, onAbrir, repo }: { i: SentryIssue; onAbrir: () => void; 
         </div>
       </button>
     </li>
-  );
-}
-
-function RepoSano({ p, r, proyecto }: { p: SentryProyecto; r: SentryResumen; proyecto: string }) {
-  const eventos = r.serie14d.reduce((a, b) => a + b, 0);
-  return (
-    <div className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5">
-      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-      <NombreRepo p={p} proyecto={proyecto} />
-      <div className="ml-auto flex flex-col items-end gap-0.5 text-right">
-        <CrashFree r={r} />
-        <span className="text-[11px] text-muted-foreground">{eventos > 0 ? `${eventos} eventos 14 d` : "sin eventos"}</span>
-      </div>
-    </div>
   );
 }

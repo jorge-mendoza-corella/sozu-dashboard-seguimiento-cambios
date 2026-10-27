@@ -104,14 +104,18 @@ export function EstadoRepos({ filas }: { filas: FilaEstado[] }) {
 
       <div className="flex items-center justify-between gap-2 border-b px-4 py-2.5">
         <h2 className="text-sm font-semibold">Estado de los repos</h2>
-        <span className="text-xs text-muted-foreground">Últimos {DIAS} días · producción</span>
+        <span className="text-xs text-muted-foreground">Últimos {DIAS} días · % de días sin errores</span>
       </div>
 
       <ul className="divide-y">
         {ordenadas.map((f) => <FilaRepo key={f.p.slug} f={f} />)}
       </ul>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t px-4 py-2 text-[11px] text-muted-foreground">
+      <div className="flex justify-between border-t px-4 pt-1.5 text-[11px] text-muted-foreground">
+        <span>hace {DIAS} días</span>
+        <span>hoy</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 pb-2 pt-1 text-[11px] text-muted-foreground">
         {(["ok", "pocos", "muchos", "sin"] as const).map((t) => (
           <span key={t} className="inline-flex items-center gap-1.5">
             <span className={cn("h-2.5 w-2.5 rounded-sm", COLOR[t])} />
@@ -127,21 +131,30 @@ function FilaRepo({ f }: { f: FilaEstado }) {
   const ds = dias(f);
   const { pct, desde, medidos } = resumen(ds);
   const abierto = f.r.sinResolver > 0;
+  const racha =
+    medidos === 0
+      ? "todavía sin datos"
+      : desde === null
+        ? `sin errores en ${medidos} ${medidos === 1 ? "día medido" : "días medidos"}`
+        : desde === 0
+          ? "último error: hoy"
+          : `sin errores desde hace ${desde} ${desde === 1 ? "día" : "días"}`;
   return (
-    <li className="px-4 py-3">
-      <div className="mb-1.5 flex items-center gap-2">
+    <li className="px-4 py-2.5">
+      <div className="mb-1 flex items-center gap-2">
         {abierto ? (
-          <AlertTriangle className={cn("h-4 w-4 shrink-0", f.r.nuevos24h ? "text-red-500" : "text-amber-500")} />
+          <AlertTriangle className={cn("h-3.5 w-3.5 shrink-0", f.r.nuevos24h ? "text-red-500" : "text-amber-500")} />
         ) : (
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
         )}
         <span className="truncate text-sm font-medium">{f.p.slug}</span>
-        <span className="hidden truncate text-xs text-muted-foreground sm:inline">{f.proyecto}</span>
-        <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
-          {pct === null ? "sin datos" : `${pct.toFixed(pct === 100 ? 0 : 1)}% días sin errores`}
+        <span className="hidden truncate text-xs text-muted-foreground md:inline">{f.proyecto}</span>
+        <span className="ml-auto hidden shrink-0 text-[11px] text-muted-foreground sm:inline">{racha}</span>
+        <span className="shrink-0 text-xs font-semibold tabular-nums">
+          {pct === null ? "—" : `${pct.toFixed(pct === 100 ? 0 : 1)}%`}
         </span>
       </div>
-      <div className="flex h-7 gap-px sm:gap-[2px]" role="img" aria-label={`Errores por día de ${f.p.slug}`}>
+      <div className="flex h-5 gap-px sm:gap-[2px]" role="img" aria-label={`Errores por día de ${f.p.slug}: ${racha}`}>
         {ds.map((d) => (
           <span
             key={d.fecha.getTime()}
@@ -149,19 +162,6 @@ function FilaRepo({ f }: { f: FilaEstado }) {
             title={`${fechaCorta(d.fecha)}: ${d.n === null ? "sin datos" : d.n === 0 ? "sin errores" : `${d.n} ${d.n === 1 ? "error" : "errores"}`}`}
           />
         ))}
-      </div>
-      <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
-        <span>hace {DIAS} días</span>
-        <span>
-          {medidos === 0
-            ? "todavía sin datos"
-            : desde === null
-              ? `sin errores en ${medidos} ${medidos === 1 ? "día medido" : "días medidos"}`
-              : desde === 0
-                ? "último error: hoy"
-                : `sin errores desde hace ${desde} ${desde === 1 ? "día" : "días"}`}
-        </span>
-        <span>hoy</span>
       </div>
     </li>
   );
