@@ -52,6 +52,8 @@ export interface SentryResumen {
   nuevos24h: number;
   /** Eventos de error por día, 14 días, el más viejo primero. */
   serie14d: number[];
+  /** Igual, 90 días: la barra de estado. Los docs de antes del cambio no la traen. */
+  serie90d: number[];
   top: SentryIssue[];
   /** Resueltos o ignorados con actividad en 14 días, los más recientes primero. */
   resueltos: SentryIssue[];
@@ -65,6 +67,8 @@ export interface SentryProyecto {
   /** Solo producción: es lo que le pega a usuarios reales. */
   produccion: SentryResumen;
   revisadoAt: string | null;
+  /** Alta del proyecto en Sentry: antes de eso no hay datos, no "cero errores". */
+  creadoEn: string | null;
 }
 
 /** A partir de aquí la pestaña abierta pide otra corrida del sync. */
@@ -85,6 +89,7 @@ function resumenDe(x: unknown): SentryResumen {
     sinResolver: num(r.sinResolver),
     nuevos24h: num(r.nuevos24h),
     serie14d: Array.isArray(r.serie14d) ? r.serie14d.map(num) : [],
+    serie90d: Array.isArray(r.serie90d) ? r.serie90d.map(num) : [],
     top: Array.isArray(r.top) ? (r.top as SentryIssue[]) : [],
     resueltos: Array.isArray(r.resueltos) ? (r.resueltos as SentryIssue[]) : [],
     crashFree: typeof r.crashFree === "number" ? r.crashFree : null,
@@ -109,6 +114,7 @@ export async function getSentryProyectos(slugs: string[]): Promise<SentryProyect
       url: typeof x.url === "string" ? x.url : `https://${SENTRY_ORG}.sentry.io/issues/`,
       produccion: resumenDe(entornos.produccion),
       revisadoAt: iso(x.revisadoAt),
+      creadoEn: iso(x.sentryCreadoEn),
     }];
   });
 }

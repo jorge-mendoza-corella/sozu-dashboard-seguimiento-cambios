@@ -6,6 +6,7 @@ import { useProjects } from "@/hooks/useProjectsRepos";
 import { useAuth } from "@/hooks/useAuth";
 import { useReposMonitoreo } from "@/hooks/useMonitoreo";
 import { DetalleIssue } from "@/components/monitoreo/DetalleIssue";
+import { EstadoRepos } from "@/components/monitoreo/EstadoRepos";
 import {
   dispararSyncSentry, estaViejo, getSentryProyectos, pideRevision, resuelveMonitoreoDe,
   type SentryIssue, type SentryProyecto, type SentryResumen,
@@ -127,7 +128,9 @@ export function MonitoreoPage() {
             </div>
           )}
 
-          {conErrores.length > 0 ? (
+          <EstadoRepos filas={visibles} />
+
+          {conErrores.length > 0 && (
             <section className="space-y-3">
               <h2 className="text-sm font-semibold">Requieren atención</h2>
               {conErrores.map((f) => (
@@ -140,11 +143,6 @@ export function MonitoreoPage() {
                 />
               ))}
             </section>
-          ) : (
-            <div className="flex items-center gap-3 rounded-lg border border-emerald-500/40 bg-emerald-50 p-4 text-sm text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300">
-              <CheckCircle2 className="h-5 w-5 shrink-0" />
-              Sin issues abiertos en producción.
-            </div>
           )}
 
           {sanos.length > 0 && (

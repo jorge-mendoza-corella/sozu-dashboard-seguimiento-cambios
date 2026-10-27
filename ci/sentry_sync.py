@@ -77,7 +77,11 @@ class Sentry:
         return r
 
     def ids(self) -> dict[str, str]:
-        return {p["slug"]: p["id"] for p in self.get("projects/", {}).json()}
+        proyectos = self.get("projects/", {}).json()
+        # Desde cuándo existe cada proyecto: antes de eso la barra de estado no
+        # tiene datos (no es "sin errores").
+        self.creados = {p["slug"]: p.get("dateCreated") for p in proyectos}
+        return {p["slug"]: p["id"] for p in proyectos}
 
     def crear(self, slug: str) -> str:
         r = self.s.post(f"{SENTRY_US}/teams/{SENTRY_ORG}/{SENTRY_TEAM}/projects/",
@@ -142,16 +146,16 @@ class Sentry:
             })
         return out
 
-    def serie(self, pid: str, env: str | None) -> list[int]:
-        """Eventos de error por día, últimos 14 días (el más viejo primero)."""
+    def serie(self, pid: str, env: str | None, dias: int = 14) -> list[int]:
+        """Eventos de error por día, últimos `dias` días (el más viejo primero, hoy al final)."""
         # `partial=1`: sin él Sentry corta en el último día COMPLETO y lo de hoy
         # no sale en la serie (la tarjeta decía 0 eventos con issues de hoy).
-        params = {"project": pid, "statsPeriod": "14d", "interval": "1d",
+        params = {"project": pid, "statsPeriod": f"{dias}d", "interval": "1d",
                   "yAxis": "count()", "dataset": "errors", "partial": "1"}
         if env:
             params["environment"] = env
         datos = self.get("events-stats/", params).json().get("data", [])
-        return [int((punto[1] or [{}])[0].get("count", 0)) for punto in datos][-14:]
+        return [int((punto[1] or [{}])[0].get("count", 0)) for punto in datos][-dias:]
 
     def crash_free(self, pid: str, env: str | None) -> float | None:
         params = {"project": pid, "statsPeriod": "14d", "interval": "1d",
@@ -257,7 +261,7 @@ def escribir(token: str, slug: str, datos: dict) -> None:
 
 
 def vacio() -> dict:
-    return {"sinResolver": 0, "nuevos24h": 0, "serie14d": [0] * 14, "top": [], "resueltos": [], "crashFree": None}
+    return {"sinResolver": 0, "nuevos24h": 0, "serie14d": [0] * 14, "serie90d": [0] * 90, "top": [], "resueltos": [], "crashFree": None}
 
 
 def resumen(api: Sentry, slug: str, pid: str, env: str | None) -> dict:
@@ -275,6 +279,8 @@ def resumen(api: Sentry, slug: str, pid: str, env: str | None) -> dict:
         "sinResolver": api.contar(pid, "is:unresolved", env),
         "nuevos24h": api.contar(pid, "is:unresolved firstSeen:-24h", env),
         "serie14d": api.serie(pid, env),
+        # Barra de estado de la pestaña: 90 días es lo que guarda Sentry.
+        "serie90d": api.serie(pid, env, 90),
         "top": api.top(pid, env),
         # Resueltos o ignorados con actividad en los 14 días, los más recientes
         # primero: la pestaña los lista para saber qué ya se atendió.
@@ -332,6 +338,7 @@ def main() -> None:
             "sentryProjectId": pid,
             **alcance,
             "dsn": dsn,
+            "sentryCreadoEn": getattr(api, "creados", {}).get(slug),
             "url": f"https://{SENTRY_ORG}.sentry.io/issues/?project={pid}",
             "entornos": entornos,
             "revisadoAt": ahora,
