@@ -460,6 +460,10 @@ export async function crearTicketIssue(req: CallableRequest<{ issueId: string }>
   const email = String(req.auth?.token.email ?? "").toLowerCase();
   const yo = await usuarioPortal(sb, email);
   if (!yo) throw new HttpsError("failed-precondition", "Tu correo no tiene usuario en el portal de tickets.");
+  // Resuelto o ignorado ya no se trabaja: hay que reabrirlo primero.
+  if (texto(issue.status) !== "unresolved") {
+    throw new HttpsError("failed-precondition", "El issue ya está resuelto o ignorado: reábrelo para levantar o actualizar su ticket.");
+  }
   const d = await detalleDe(token, id, issue, slug);
   const nombre = `Corregir ${d.shortId} en ${slug}: ${d.titulo}`.slice(0, 200);
 

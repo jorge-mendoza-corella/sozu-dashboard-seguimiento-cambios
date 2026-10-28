@@ -55,6 +55,7 @@ export function DetalleIssue({ issueId, repo, puedeResolver, puedeTicket, onCerr
     },
   });
   const [copiado, setCopiado] = useState(false);
+  const abierto = data?.estado === "unresolved";
   const copiar = async () => {
     if (!data) return;
     await navigator.clipboard.writeText(promptClaude(data, repo)).catch(() => undefined);
@@ -107,10 +108,14 @@ export function DetalleIssue({ issueId, repo, puedeResolver, puedeTicket, onCerr
                 <RotateCcw className="h-3.5 w-3.5" /> Reabrir
               </Accion>
             )}
-            <Accion onClick={() => void copiar()} titulo="Copia el error con su stack trace como prompt para Claude Code">
-              {copiado ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <Bot className="h-3.5 w-3.5" />}
-              {copiado ? "Copiado" : "Copiar para Claude"}
-            </Accion>
+            {/* Resuelto o ignorado ya no se trabaja: copiar o levantar ticket vuelve
+                a tener sentido solo si se reabre. */}
+            {abierto && (
+              <Accion onClick={() => void copiar()} titulo="Copia el error con su stack trace como prompt para Claude Code">
+                {copiado ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <Bot className="h-3.5 w-3.5" />}
+                {copiado ? "Copiado" : "Copiar para Claude"}
+              </Accion>
+            )}
             {data.ticket ? (
               <>
                 <a
@@ -123,7 +128,7 @@ export function DetalleIssue({ issueId, repo, puedeResolver, puedeTicket, onCerr
                   <Ticket className="h-3.5 w-3.5" /> SOZU-{data.ticket.numero}
                   {data.ticket.etapa && <span className="font-normal opacity-80">· {data.ticket.etapa}</span>}
                 </a>
-                {puedeTicket && !data.ticket.resuelto && (
+                {puedeTicket && abierto && !data.ticket.resuelto && (
                   <Accion
                     onClick={() => ticket.mutate()}
                     cargando={ticket.isPending}
@@ -134,7 +139,7 @@ export function DetalleIssue({ issueId, repo, puedeResolver, puedeTicket, onCerr
                 )}
               </>
             ) : (
-              puedeTicket && (
+              puedeTicket && abierto && (
                 <Accion
                   onClick={() => ticket.mutate()}
                   cargando={ticket.isPending}
