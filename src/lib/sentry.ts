@@ -24,12 +24,22 @@ export function veMonitoreoDe(user: AppUser | null, clientId: string | null | un
   return resolvePermissions(user, { clientId, repoId }).verMonitoreo;
 }
 
-/** ¿Puede resolver, ignorar o reabrir issues de ESTE repo? Mismo corte que `sentryCambiarIssue`. */
-export function resuelveMonitoreoDe(user: AppUser | null, clientId: string | null | undefined, repoId: string): boolean {
+export type PermisoMonitoreo = "resolverMonitoreo" | "verEstadoRepos" | "crearTicketMonitoreo";
+
+/**
+ * ¿Tiene `permiso` sobre ESTE repo (además de verlo)? Mismo corte que las
+ * funciones: resolver con `sentryCambiarIssue`, el ticket con `sentryCrearTicket`.
+ */
+export function permisoMonitoreoDe(
+  user: AppUser | null,
+  clientId: string | null | undefined,
+  repoId: string,
+  permiso: PermisoMonitoreo,
+): boolean {
   if (!user) return false;
   if (isRootAdmin(user)) return true;
   const p = resolvePermissions(user, { clientId, repoId });
-  return p.verMonitoreo && p.resolverMonitoreo;
+  return p.verMonitoreo && p[permiso];
 }
 
 export interface SentryIssue {

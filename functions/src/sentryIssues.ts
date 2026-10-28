@@ -7,7 +7,7 @@
  * pregunta puede ver ese repo, con la MISMA regla que `sentry/{slug}` en
  * firestore.rules (`veMonitoreoDe`): empresa, proyecto, repo y el permiso
  * `verMonitoreo` resuelto repo > empresa > general. Cambiar el estado pide
- * además `resolverMonitoreo`, resuelto igual.
+ * además `resolverMonitoreo`, y el ticket `crearTicketMonitoreo`, resueltos igual.
  *
  * El token sale de Secret Manager (`SENTRY_AUTH_TOKEN`, el mismo del sync) en
  * tiempo de ejecución, como en sentryWebhook.ts. Para cambiar estados necesita
@@ -33,7 +33,7 @@ const MAX_FRAMES = 30;
 const TAGS_PRIVADOS = new Set(["user", "user.ip", "user.id", "user.email", "user.username"]);
 
 export type Estado = "resolved" | "ignored" | "unresolved";
-type Permiso = "verMonitoreo" | "resolverMonitoreo";
+type Permiso = "verMonitoreo" | "resolverMonitoreo" | "crearTicketMonitoreo";
 
 interface Alcance {
   slug: string;
@@ -106,8 +106,12 @@ async function autorizar(req: CallableRequest, issueId: unknown, permiso: Permis
   const email = t.email.toLowerCase();
   if (email !== SUPERUSER_EMAIL) {
     const perfil = (await fs.doc(`users/${email}`).get()).data();
-    if (!perfil || !puede(perfil, alcance, permiso)) {
-      throw new HttpsError("permission-denied", permiso === "verMonitoreo" ? "No tienes acceso a este repo." : "No tienes permiso para cambiar issues de este repo.");
+    // Toda acción pide además ver el repo, igual que el front.
+    if (!perfil || !puede(perfil, alcance, "verMonitoreo")) {
+      throw new HttpsError("permission-denied", "No tienes acceso a este repo.");
+    }
+    if (!puede(perfil, alcance, permiso)) {
+      throw new HttpsError("permission-denied", permiso === "crearTicketMonitoreo" ? "No tienes permiso para crear tickets de este repo." : "No tienes permiso para cambiar issues de este repo.");
     }
   }
   return { token, id, issue, ref: d.ref, slug: alcance.slug, alcance };
@@ -393,11 +397,10 @@ async function marcarEnResumen(ref: FirebaseFirestore.DocumentReference, issueId
 /**
  * Levanta el ticket, o actualiza el que ya existe para ese issue: reescribe la
  * descripción con lo último de Sentry (mientras el ticket siga abierto) y lo
- * asigna a quien lo pide si quedó sin propietario. Pide el mismo permiso que
- * resolver: es una acción sobre el error, no solo verlo.
+ * asigna a quien lo pide si quedó sin propietario. Pide `crearTicketMonitoreo`.
  */
 export async function crearTicketIssue(req: CallableRequest<{ issueId: string }>, sb: SupabaseClient): Promise<TicketIssue & { actualizado: boolean }> {
-  const { token, id, issue, slug, alcance, ref: refResumen } = await autorizar(req, req.data?.issueId, "resolverMonitoreo");
+  const { token, id, issue, slug, alcance, ref: refResumen } = await autorizar(req, req.data?.issueId, "crearTicketMonitoreo");
   const ref = getFirestore().doc(`sentryTickets/${id}`);
   const email = String(req.auth?.token.email ?? "").toLowerCase();
   const yo = await usuarioPortal(sb, email);
