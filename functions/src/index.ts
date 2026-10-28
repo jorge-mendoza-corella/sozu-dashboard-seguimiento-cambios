@@ -31,7 +31,7 @@ import { abrirConsola, ErrorConsola, finConsola, lineaConsola, sesionConsola } f
 import { qrWhatsapp } from "./whatsapp.js";
 import { falloDocs } from "./docsFallo.js";
 import { sentryWebhook as atenderSentry } from "./sentryWebhook.js";
-import { cambiarEstado, crearTicketIssue, detalleIssue, type Estado } from "./sentryIssues.js";
+import { cambiarEstado, crearTicketIssue, detalleIssue, issuesDeTicket, resolverIssuesDeTicket, type Estado } from "./sentryIssues.js";
 import {
   conectarToken, desconectarToken, exigirTokenClaude, leerTokenClaude, llavePublica, marcarTokenRenovado, secretDe,
 } from "./agente/tokenClaude.js";
@@ -602,8 +602,11 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string; prsSe
     const sb = clienteSupabase(SUPABASE_SERVICE_KEY.value());
     // Trabajado por fuera: ni issue de Claude ni PRs con el trailer ya en PRD.
     const externo = !enviado?.issue && !(Array.isArray(enviado?.prs) && enviado.prs.length > 0);
+    // Claude terminó sin abrir PRs (el arreglo ya estaba): se cierra igual, con
+    // los PRs que lo habían resuelto si quien cierra los encontró y eligió.
+    const sinCambios = !!enviado?.issue && enviado.sinCambios === true && enviado.listoParaCerrar !== true;
     let registroExterno: Record<string, unknown> | null = null;
-    if (externo) {
+    if (externo || (sinCambios && seleccionados.length > 0)) {
       if (!seleccionados.length) {
         throw new HttpsError("failed-precondition", "Elige al menos un PR que haya cerrado este ticket (busca sus PRs primero).");
       }
@@ -629,17 +632,25 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string; prsSe
       nota = notaConPrs(nota, sinEnPrd);
       registroExterno = {
         owner: usuario.email, ticketId, numero: t.numero, folio: t.folio, titulo: t.titulo,
-        prs: sinEnPrd, origen: "externo", listoParaCerrar: true,
+        prs: sinEnPrd, origen: sinCambios ? "claude_sin_cambios" : "externo", listoParaCerrar: true,
       };
     // Mandado a Claude: todos sus PRs en PRD. Copiado a mano: algún PR con el trailer en PRD.
-    } else if (enviado?.issue ? enviado.listoParaCerrar !== true : !Array.isArray(enviado?.prs) || enviado.prs.length === 0) {
+    } else if (!sinCambios && (enviado?.issue ? enviado.listoParaCerrar !== true : !Array.isArray(enviado?.prs) || enviado.prs.length === 0)) {
       // Solo se cierra desde aquí lo que ya llegó a PRD por un PR hacia main ligado al ticket.
       throw new HttpsError("failed-precondition", "Todavía no están en PRD todos los PRs de este ticket; ciérralo cuando lleguen.");
+    }
+    // Issues de Sentry ligados (ticket levantado desde Monitoreo): la nota los
+    // menciona y se resuelven en cuanto el ticket queda cerrado.
+    const deSentry = await issuesDeTicket(Number(ticketId)).catch(() => []);
+    const abiertos = deSentry.filter((i) => i.abierto).map((i) => i.shortId);
+    if (abiertos.length) {
+      nota = `${nota.trimEnd()}\n\nSentry: ${abiertos.join(", ")} se ${abiertos.length === 1 ? "marca" : "marcan"} como resuelto${abiertos.length === 1 ? "" : "s"} al cerrar este ticket.`;
     }
     try {
       const r = await cerrarTicket(sb, usuario.email, Number(ticketId), nota);
       await ref.set({ ...registroExterno, cerrado: true, cerradoEn: FieldValue.serverTimestamp() }, { merge: true });
-      return { ok: true, etapa: r.etapa };
+      const sentryResueltos = await resolverIssuesDeTicket(deSentry, String(enviado?.folio ?? `#${ticketId}`)).catch(() => []);
+      return { ok: true, etapa: r.etapa, sentryResueltos };
     } catch (e) {
       const m = (e as Error).message;
       const conocidos: Record<string, string> = {

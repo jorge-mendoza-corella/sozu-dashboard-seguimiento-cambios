@@ -81,7 +81,10 @@ export interface RespuestaTickets {
 const functions = getFunctions(app, "us-central1");
 const llamarTickets = httpsCallable<Record<string, never>, RespuestaTickets>(functions, "agenteTickets", { timeout: 60_000 });
 const llamarMandar = httpsCallable<{ ticketId: string; md: string }, IssueClaude>(functions, "agenteMandarAClaude", { timeout: 60_000 });
-const llamarCerrar = httpsCallable<{ ticketId: string; nota: string; prsSeleccionados?: string[] }, { ok: true; etapa: string }>(functions, "agenteCerrarTicket", { timeout: 120_000 });
+const llamarCerrar = httpsCallable<
+  { ticketId: string; nota: string; prsSeleccionados?: string[] },
+  { ok: true; etapa: string; sentryResueltos?: string[] }
+>(functions, "agenteCerrarTicket", { timeout: 120_000 });
 
 export async function misTickets(): Promise<RespuestaTickets> {
   return (await llamarTickets({})).data;
@@ -144,6 +147,8 @@ export interface SeguimientoClaude {
   prs: PrClaude[];
   /** Todos los PRs vigentes ya están en PRD: se puede cerrar. */
   listoParaCerrar: boolean;
+  /** Claude terminó sin abrir PRs (el arreglo ya estaba): también se puede cerrar. */
+  sinCambios?: boolean;
   /** Arranque de la corrida activa (o la última) y su fin, si ya terminó. */
   corrida?: { inicio: string; fin: string | null } | null;
   /** Por qué falló la última corrida, si falló (lo saca la función del log). */
@@ -465,6 +470,8 @@ ${otras.length ? `\nOtros adjuntos:\n${otras.map((e) => `- ${e.tipo}: ${e.nombre
 
    El dashboard la usa para saber que el deploy a producción resolvió este ticket.
 4. Abre el PR hacia \`dev\` siguiendo el flujo del repo y resume qué cambiaste, en puntos cortos.
+5. Si no hace falta cambio porque el arreglo ya existe, dilo y pon la URL completa del PR que lo resolvió (\`https://github.com/<owner>/<repo>/pull/<n>\`): el dashboard la toma para ligar ese PR al ticket.
+6. Fechas y horas siempre en hora de Ciudad de México (America/Mexico_City), por ejemplo «27 oct, 6:42 p.m.»; nunca en UTC.
 `;
 }
 

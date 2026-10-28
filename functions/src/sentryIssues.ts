@@ -204,24 +204,79 @@ export async function cambiarEstado(req: CallableRequest<{ issueId: string; esta
   const { token, id, ref } = await autorizar(req, req.data?.issueId, "resolverMonitoreo");
   await sentry(token, `issues/${id}/`, { method: "PUT", body: JSON.stringify({ status: estado }) });
 
-  if (estado !== "unresolved") {
-    await getFirestore().runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      const prod = mapa(mapa(snap.data()?.entornos).produccion);
-      const top = Array.isArray(prod.top) ? (prod.top as Record<string, unknown>[]) : [];
-      const resueltos = Array.isArray(prod.resueltos) ? (prod.resueltos as Record<string, unknown>[]) : [];
-      const quitado = top.find((i) => String(i.id) === id);
-      if (!quitado) return;
-      const nuevo = Date.now() - Date.parse(texto(quitado.primeraVez)) < 86_400_000;
-      tx.update(ref, {
-        "entornos.produccion.top": top.filter((i) => i !== quitado),
-        "entornos.produccion.resueltos": [{ ...quitado, estado }, ...resueltos.filter((i) => String(i.id) !== id)].slice(0, 5),
-        "entornos.produccion.sinResolver": Math.max(0, numero(prod.sinResolver) - 1),
-        "entornos.produccion.nuevos24h": Math.max(0, numero(prod.nuevos24h) - (nuevo ? 1 : 0)),
-      });
-    });
-  }
+  if (estado !== "unresolved") await pasarAResueltos(ref, id, estado);
   return { ok: true, estado };
+}
+
+/** Saca el issue de los abiertos del resumen de Firestore sin esperar al sync (que lo recalcula igual). */
+async function pasarAResueltos(ref: FirebaseFirestore.DocumentReference, id: string, estado: Estado): Promise<void> {
+  await getFirestore().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const prod = mapa(mapa(snap.data()?.entornos).produccion);
+    const top = Array.isArray(prod.top) ? (prod.top as Record<string, unknown>[]) : [];
+    const resueltos = Array.isArray(prod.resueltos) ? (prod.resueltos as Record<string, unknown>[]) : [];
+    const quitado = top.find((i) => String(i.id) === id);
+    if (!quitado) return;
+    const nuevo = Date.now() - Date.parse(texto(quitado.primeraVez)) < 86_400_000;
+    tx.update(ref, {
+      "entornos.produccion.top": top.filter((i) => i !== quitado),
+      "entornos.produccion.resueltos": [{ ...quitado, estado }, ...resueltos.filter((i) => String(i.id) !== id)].slice(0, 5),
+      "entornos.produccion.sinResolver": Math.max(0, numero(prod.sinResolver) - 1),
+      "entornos.produccion.nuevos24h": Math.max(0, numero(prod.nuevos24h) - (nuevo ? 1 : 0)),
+    });
+  });
+}
+
+// --- Cierre del ticket desde el dashboard --------------------------------------
+
+export interface IssueDeTicket {
+  id: string;
+  shortId: string;
+  /** Ya estaba resuelto o ignorado en Sentry: no se toca. */
+  abierto: boolean;
+  projectId: string;
+}
+
+/**
+ * Issues de Sentry ligados al ticket (`sentryTickets` con su `ticketId`). Lo usa
+ * `agenteCerrarTicket` para mencionarlos en la nota y resolverlos al cerrar.
+ */
+export async function issuesDeTicket(ticketId: number): Promise<IssueDeTicket[]> {
+  const docs = await getFirestore().collection("sentryTickets").where("ticketId", "==", ticketId).get();
+  if (docs.empty) return [];
+  const token = await secretoGlobal("SENTRY_AUTH_TOKEN");
+  if (!token) return [];
+  const salida = await Promise.all(docs.docs.map(async (d) => {
+    const i = await sentry(token, `issues/${d.id}/`).catch(() => null);
+    return i
+      ? { id: d.id, shortId: texto(i.shortId), abierto: texto(i.status) === "unresolved", projectId: String(mapa(i.project).id ?? "") }
+      : null;
+  }));
+  return salida.filter((x): x is IssueDeTicket => !!x);
+}
+
+/** Resuelve en Sentry los issues del ticket que sigan abiertos (ya cerrado el ticket). */
+export async function resolverIssuesDeTicket(issues: IssueDeTicket[], folio: string): Promise<string[]> {
+  const abiertos = issues.filter((i) => i.abierto);
+  if (!abiertos.length) return [];
+  const token = await secretoGlobal("SENTRY_AUTH_TOKEN");
+  const fs = getFirestore();
+  const hechos: string[] = [];
+  for (const i of abiertos) {
+    try {
+      await sentry(token, `issues/${i.id}/`, { method: "PUT", body: JSON.stringify({ status: "resolved" }) });
+      await sentry(token, `issues/${i.id}/comments/`, {
+        method: "POST",
+        body: JSON.stringify({ text: `Resuelto al cerrar el ticket ${folio} desde el dashboard de cambios.` }),
+      }).catch(() => undefined);
+      const doc = (await fs.collection("sentry").where("sentryProjectId", "==", i.projectId).limit(1).get()).docs[0];
+      if (doc) await pasarAResueltos(doc.ref, i.id, "resolved");
+      hechos.push(i.shortId);
+    } catch (e) {
+      console.warn(`[sentry] resolver ${i.shortId} al cerrar ${folio}`, (e as Error).message);
+    }
+  }
+  return hechos;
 }
 
 // --- Ticket en el portal ------------------------------------------------------

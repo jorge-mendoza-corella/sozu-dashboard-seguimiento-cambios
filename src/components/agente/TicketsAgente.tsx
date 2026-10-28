@@ -339,6 +339,10 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
   const [errorMandar, setErrorMandar] = useState<string | null>(null);
   const [recienMandado, setRecienMandado] = useState<{ numero: number; url: string } | null>(null);
   const issue = recienMandado ?? enviado?.issue ?? null;
+  // Claude terminó sin abrir PRs (el arreglo ya estaba): se puede cerrar igual.
+  // Misma caché que el panel de seguimiento: no agrega llamadas.
+  const seguimiento = useQuery({ ...consultaSeguimiento(t.id), enabled: !!issue });
+  const sinCambios = !!issue && !enviado?.listo && seguimiento.data?.sinCambios === true;
 
   // Solo la investigación que haya dejado el análisis por API (ya retirado).
   useEffect(() => {
@@ -391,15 +395,18 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
           </p>
           <h2 className="mt-1 text-lg font-semibold leading-snug">{t.titulo}</h2>
         </div>
-        {/* Solo se cierra cuando todo lo del ticket está en PRD (ver `listo`). */}
+        {/* Se cierra cuando todo lo del ticket está en PRD (ver `listo`), o cuando
+            Claude terminó sin cambios porque el arreglo ya estaba. */}
         <button
           type="button"
           onClick={onCerrar}
-          disabled={!enviado?.listo}
+          disabled={!enviado?.listo && !sinCambios}
           className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-emerald-500/50 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-border disabled:bg-muted disabled:text-muted-foreground dark:bg-emerald-950/30 dark:text-emerald-300"
           title={
             enviado?.listo
               ? "Pasar el ticket a Resuelto en el portal, con nota de seguimiento"
+              : sinCambios
+                ? "Claude terminó sin abrir PRs (el arreglo ya estaba): ciérralo con los PRs que lo resolvieron, si los hay"
               : enviado?.issue
                 ? "Se habilita cuando TODOS los PRs que abrió Claude para este ticket estén en PRD"
                 : "Se habilita cuando un PR hacia main con este ticket (trailer Ticket-SOZU) llegue a PRD"
@@ -776,13 +783,18 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
   onCerrado: () => void;
 }) {
   const externo = esExterno(enviado);
+  // Claude terminó sin abrir PRs: se buscan los PRs que ya lo habían resuelto,
+  // pero elegir alguno es opcional (Claude ya verificó que no hacía falta cambio).
+  const seguimiento = useQuery({ ...consultaSeguimiento(t.id), enabled: !!enviado?.issue });
+  const sinCambios = !!enviado?.issue && !enviado.listo && seguimiento.data?.sinCambios === true;
+  const buscaPrs = externo || sinCambios;
   // Externo: los PRs del ticket por la convención. `intento` > 0 = "Volver a
   // buscar", que se salta lo guardado de los últimos 10 min.
   const [intento, setIntento] = useState(0);
   const busqueda = useQuery({
     queryKey: ["prs-externos", t.id, intento],
     queryFn: () => buscarPrsTicket(t.id, intento > 0),
-    enabled: externo,
+    enabled: buscaPrs,
     staleTime: Infinity,
   });
   const encontrados = busqueda.data?.prs;
@@ -799,8 +811,10 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
   const [notaEditada, setNotaEditada] = useState<string | null>(null);
   const nota = notaEditada
     ?? (enviado?.prs.length ? notaDeCierre(enviado.prs)
-      : externo && elegidos.length ? notaDeCierre(elegidos.map(comoPrDeTicket))
-        : "Listo, favor de validar.\n\n- ");
+      : buscaPrs && elegidos.length ? notaDeCierre(elegidos.map(comoPrDeTicket))
+        : sinCambios
+          ? `Listo, favor de validar.\n\nSin cambios de código: Claude revisó el ticket y el arreglo ya estaba en producción (issue #${enviado?.issue?.numero ?? "?"} del orquestador).`
+          : "Listo, favor de validar.\n\n- ");
   const faltaPrd = elegidos.filter((p) => p.estado !== "en_prd");
   const soloDev = faltaPrd.filter((p) => p.estado === "en_dev");
   const enMain = faltaPrd.filter((p) => p.estado !== "en_dev");
@@ -811,13 +825,15 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hecho, setHecho] = useState<string | null>(null);
+  const [sentryResueltos, setSentryResueltos] = useState<string[]>([]);
 
   const cerrar = async () => {
     setEnviando(true);
     setError(null);
     try {
-      const r = await cerrarTicketPortal(t.id, nota, externo ? [...seleccion] : undefined);
+      const r = await cerrarTicketPortal(t.id, nota, buscaPrs ? [...seleccion] : undefined);
       setHecho(r.etapa);
+      setSentryResueltos(r.sentryResueltos ?? []);
       setTimeout(onCerrado, 1400);
     } catch (e) {
       setError(mensajeDeError(e));
@@ -840,10 +856,17 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
           {hecho ? (
             <p className="mt-4 flex items-center gap-2 rounded-md bg-emerald-50 p-3 text-sm font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
               <CheckCircle2 className="h-4 w-4" /> Listo: el ticket quedó en "{hecho}" con la nota de seguimiento.
+              {sentryResueltos.length > 0 && <> También se resolvió {sentryResueltos.join(", ")} en Sentry.</>}
             </p>
           ) : (
             <>
-              {externo && (
+              {sinCambios && (
+                <p className="mt-4 rounded-md border bg-muted/30 p-2.5 text-xs text-muted-foreground">
+                  Claude terminó sin abrir PRs: reportó que el arreglo ya estaba en producción. Si abajo aparecen
+                  los PRs que lo resolvieron, márcalos para dejarlos en la nota; si no, se puede cerrar sin PRs.
+                </p>
+              )}
+              {buscaPrs && (
                 <PrsExternos
                   t={t}
                   prs={encontrados}
@@ -854,7 +877,7 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
                   onReintentar={() => { setMarcados(null); setIntento((n) => n + 1); }}
                 />
               )}
-              {externo && faltaPrd.length > 0 && (
+              {buscaPrs && faltaPrd.length > 0 && (
                 <p className="mt-2 flex items-start gap-1.5 rounded-md bg-red-50 p-2 text-[11px] text-red-900 dark:bg-red-950/30 dark:text-red-200">
                   <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
@@ -886,6 +909,8 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
                 <span>
                   Ya revisé que no falta nada: {enviado && enviado.prs.length > 0
                     ? <>lo de arriba ({enviado.prs.map((p) => `${p.repo} #${p.pr}`).join(", ")}) es todo lo del ticket y ya está en PRD; no hay otro PR pendiente.</>
+                    : sinCambios
+                      ? <>leí el reporte de Claude: no hacía falta cambio y lo que el ticket pide ya funciona en producción.</>
                     : externo
                       ? <>los PRs marcados son todo lo del ticket; no hay otro cambio pendiente.</>
                       : <>todos los cambios del ticket ya están en PRD.</>}
@@ -903,7 +928,7 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
               {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
               <div className="mt-4 flex justify-end gap-2">
                 <button type="button" onClick={onCancelar} disabled={enviando} className="h-9 rounded-md px-3 text-sm font-medium hover:bg-muted">No, todavía no</button>
-                <button type="button" onClick={() => void cerrar()} disabled={enviando || !nota.trim() || !revisado || (externo && (seleccion.size === 0 || faltaPrd.length > 0))} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:opacity-50">
+                <button type="button" onClick={() => void cerrar()} disabled={enviando || !nota.trim() || !revisado || (externo && seleccion.size === 0) || (buscaPrs && faltaPrd.length > 0)} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:opacity-50">
                   {enviando && <Loader2 className="h-4 w-4 animate-spin" />} Sí, cerrar ticket
                 </button>
               </div>
