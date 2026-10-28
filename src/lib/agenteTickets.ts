@@ -85,7 +85,8 @@ export interface TicketRelacionado {
   titulo: string;
   etapa: string | null;
   cerrado: boolean;
-  relacion: "anterior" | "posterior";
+  /** Por el portal: el anterior al que apunta o uno posterior. Por el dashboard: ligado a mano aquí. */
+  relacion: "anterior" | "posterior" | "dashboard";
   sePuedeCerrar: boolean;
   url: string;
 }
@@ -108,6 +109,20 @@ const llamarCerrar = httpsCallable<
   { ticketId: string; nota: string; prsSeleccionados?: string[] },
   { ok: true; etapa: string; sentryResueltos?: string[]; relacionadosCerrados?: string[]; relacionadosFallidos?: string[] }
 >(functions, "agenteCerrarTicket", { timeout: 120_000 });
+
+const llamarRelacionar = httpsCallable<{ ticketId: string; numero?: number; quitar?: string }, { ok: true; relacionado?: TicketRelacionado }>(
+  functions, "agenteRelacionarTicket", { timeout: 60_000 },
+);
+
+/** Liga el ticket con otro por folio (`numero`). */
+export async function relacionarTicket(ticketId: string, numero: number) {
+  return (await llamarRelacionar({ ticketId, numero })).data;
+}
+
+/** Quita la relación con el ticket `idRelacionado`. */
+export async function desligarTicket(ticketId: string, idRelacionado: string) {
+  await llamarRelacionar({ ticketId, quitar: idRelacionado });
+}
 
 export async function misTickets(): Promise<RespuestaTickets> {
   return (await llamarTickets({})).data;

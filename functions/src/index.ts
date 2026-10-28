@@ -20,7 +20,8 @@ import { consumirCupo, reposPermitidos, verificarAcceso } from "./agente/acceso.
 import { docPorRuta, indiceDocs, limpiarRuta, obtenerCorpus } from "./agente/docs.js";
 import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.js";
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
-import { cerrarRelacionados, cerrarTicket, clienteSupabase, relacionadosDe, ticketsAsignados, tomarTicket } from "./agente/tickets.js";
+import { cerrarRelacionados, cerrarTicket, clienteSupabase, ticketsAsignados, tomarTicket } from "./agente/tickets.js";
+import { desligarTicket, relacionadosConDashboard, relacionarTicket } from "./agente/relaciones.js";
 import { buscarPrsExternos, notaConPrs, verificarPrsExternos } from "./agente/prsExternos.js";
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
 import { issueDelTicket, responderAClaude, seguimientoClaude, type AdjuntoRespuesta } from "./agente/claude.js";
@@ -326,7 +327,7 @@ export const agenteTickets = onCall(
       // salen igual, sin eso.
       const [deSentry, relacionados] = await Promise.all([
         sentryDeTickets(ids).catch(() => new Map()),
-        relacionadosDe(sb, ids).catch(() => new Map()),
+        relacionadosConDashboard(sb, ids).catch(() => new Map()),
       ]);
       return {
         tickets: tickets.map((t) => ({
@@ -661,7 +662,7 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string; prsSe
     const abiertos = deSentry.filter((i) => i.abierto).map((i) => i.shortId);
     // Relacionados abiertos («¿Ya lo había reportado antes?»): se cierran con
     // este, y la nota lo dice.
-    const relacionados = ((await relacionadosDe(sb, [Number(ticketId)]).catch(() => new Map())).get(Number(ticketId)) ?? [])
+    const relacionados = ((await relacionadosConDashboard(sb, [Number(ticketId)]).catch(() => new Map())).get(Number(ticketId)) ?? [])
       .filter((r: { cerrado: boolean; sePuedeCerrar: boolean }) => !r.cerrado && r.sePuedeCerrar);
     if (relacionados.length) {
       nota = `${nota.trimEnd()}\n\nSe cierra${relacionados.length === 1 ? "" : "n"} también ${relacionados.length === 1 ? "el ticket relacionado" : "los tickets relacionados"} ${relacionados.map((r: { folio: string }) => r.folio).join(", ")}.`;
@@ -690,6 +691,54 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string; prsSe
       if (conocidos[m]) throw new HttpsError("failed-precondition", conocidos[m]);
       console.error("[agenteCerrarTicket]", e);
       throw new HttpsError("unavailable", "No se pudo cerrar el ticket en el portal.");
+    }
+  },
+);
+
+/**
+ * `agenteRelacionarTicket`: liga (o con `quitar`, desliga) uno de mis tickets
+ * con otro por folio, desde el detalle del ticket. Al cerrar uno desde aquí se
+ * cierran también los relacionados. Ver agente/relaciones.ts.
+ */
+export const agenteRelacionarTicket = onCall<{ ticketId: string; numero?: number; quitar?: string }>(
+  {
+    region: "us-central1",
+    secrets: [SUPABASE_SERVICE_KEY],
+    timeoutSeconds: 60,
+    memory: "512MiB",
+    maxInstances: 5,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  async (req) => {
+    const usuario = await verificarAcceso(req, "tickets");
+    const ticketId = String(req.data?.ticketId ?? "");
+    const quitar = req.data?.quitar == null ? null : String(req.data.quitar);
+    const numero = Number(req.data?.numero);
+    if (!/^\d+$/.test(ticketId)) throw new HttpsError("invalid-argument", "Ticket inválido.");
+    if (quitar ? !/^\d+$/.test(quitar) : !Number.isInteger(numero) || numero <= 0) {
+      throw new HttpsError("invalid-argument", "Escribe el folio del ticket (solo el número).");
+    }
+    const sb = clienteSupabase(SUPABASE_SERVICE_KEY.value());
+    if (!(await ticketsAsignados(sb, usuario.email)).some((x) => x.id === ticketId)) {
+      throw new HttpsError("not-found", "Ese ticket no está entre tus pendientes.");
+    }
+    try {
+      if (quitar) {
+        await desligarTicket(sb, usuario.email, Number(ticketId), Number(quitar));
+        return { ok: true };
+      }
+      return { ok: true, relacionado: await relacionarTicket(sb, usuario.email, Number(ticketId), numero) };
+    } catch (e) {
+      const conocidos: Record<string, string> = {
+        rel_no_existe: `No existe el ticket #${numero}.`,
+        rel_mismo: "Un ticket no se puede relacionar consigo mismo.",
+        rel_ya: `Ya está relacionado con #${numero}.`,
+        rel_del_otro: "Esa relación la puso el otro ticket en el portal; quítala desde ese ticket.",
+      };
+      const m = (e as Error).message;
+      if (conocidos[m]) throw new HttpsError("failed-precondition", conocidos[m]);
+      console.error("[agenteRelacionarTicket]", e);
+      throw new HttpsError("unavailable", "No se pudo guardar la relación en el portal.");
     }
   },
 );

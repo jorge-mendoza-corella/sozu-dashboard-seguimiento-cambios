@@ -17,7 +17,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   AlertCircle, Bot, ChevronDown, Check, CheckCircle2, Copy, ExternalLink, FileAudio, FileText, FileVideo, FolderGit2, Image as ImageIcon, Inbox, Loader2,
-  Link2, Paperclip, RefreshCw, RotateCcw, Search, Send, Siren, Sparkles, User, Users,
+  Link2, Paperclip, Plus, RefreshCw, RotateCcw, Search, Send, Siren, Sparkles, User, Users, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
@@ -26,7 +26,7 @@ import { AvisoTokenClaude, ConectarClaude, EstadoTokenClaude } from "./AvisoToke
 import { useTokenClaude } from "@/hooks/useTokenClaude";
 import { BarraClaudeMini, EstadoClaudeMini, SeguimientoClaude } from "./SeguimientoClaude";
 import {
-  analisisGuardado, avancePrs, buscarPrsTicket, cerrarTicketPortal, COLOR_PR, consultaSeguimiento, convencionPrs, esSoloFecha, ETIQUETA_PR, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket,
+  analisisGuardado, avancePrs, buscarPrsTicket, cerrarTicketPortal, COLOR_PR, consultaSeguimiento, convencionPrs, desligarTicket, esSoloFecha, ETIQUETA_PR, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket, relacionarTicket,
   type AnalisisTicket, type PrExterno, type RazonMatch, type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
 
@@ -254,6 +254,7 @@ export function TicketsAgente({
             enfocarRespuesta={actual.id === responderAhora}
             onRespuestaEnfocada={respuestaAtendida}
             puedeMandarClaude={puedeMandarClaude}
+            onRelacionCambiada={onRefrescar}
           />
         ) : !cargando && !error && (
           <SinTicketElegido puedeMandarClaude={puedeMandarClaude} />
@@ -296,8 +297,10 @@ const guardarBorrador = (id: string, v: string | null) => {
 /** Se guarda en Firestore cuando dejas de escribir por este tiempo. */
 const GUARDAR_MS = 1_000;
 
-function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuesta, onRespuestaEnfocada, puedeMandarClaude }: {
+function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuesta, onRespuestaEnfocada, puedeMandarClaude, onRelacionCambiada }: {
   puedeMandarClaude: boolean;
+  /** Se ligó o desligó un ticket: recarga la lista para que el cierre vea los relacionados nuevos. */
+  onRelacionCambiada: () => void;
   t: TicketAgente;
   email: string;
   enviado: TicketEnviado | null;
@@ -404,7 +407,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
           </p>
           <h2 className="mt-1 text-lg font-semibold leading-snug">{t.titulo}</h2>
           {t.sentry && <VinculoSentry s={t.sentry} />}
-          {!!t.relacionados?.length && <Relacionados rs={t.relacionados} />}
+          <Relacionados t={t} onCambio={onRelacionCambiada} />
         </div>
         {/* Se cierra cuando todo lo del ticket está en PRD (ver `listo`), o cuando
             Claude terminó sin cambios porque el arreglo ya estaba. */}
@@ -1018,30 +1021,131 @@ function VinculoSentry({ s }: { s: NonNullable<TicketAgente["sentry"]> }) {
   );
 }
 
-/** Tickets ligados con «¿Ya lo había reportado antes?»: el anterior y los posteriores. */
-function Relacionados({ rs }: { rs: NonNullable<TicketAgente["relacionados"]> }) {
+/**
+ * Tickets ligados: los del portal («¿Ya lo había reportado antes?», el anterior y
+ * los posteriores) y los que se ligan aquí con «Relacionar ticket» por folio.
+ * Los ligados aquí y el anterior se pueden quitar; el posterior, desde su ticket.
+ */
+function Relacionados({ t, onCambio }: { t: TicketAgente; onCambio: () => void }) {
+  const [rs, setRs] = useState(t.relacionados ?? []);
+  const [abierto, setAbierto] = useState(false);
+  const [folio, setFolio] = useState("");
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // Al recargar la lista llega la versión del servidor y reemplaza la local.
+  const [base, setBase] = useState(t.relacionados);
+  if (base !== t.relacionados) {
+    setBase(t.relacionados);
+    setRs(t.relacionados ?? []);
+  }
+
+  const ligar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const numero = Number(folio.replace(/\D/g, ""));
+    if (!numero) return setError("Escribe el folio del ticket.");
+    setOcupado("nuevo");
+    setError(null);
+    try {
+      const r = await relacionarTicket(t.id, numero);
+      if (r.relacionado) setRs((xs) => [...xs, r.relacionado!]);
+      setFolio("");
+      setAbierto(false);
+      onCambio();
+    } catch (err) {
+      setError(mensajeDeError(err));
+    } finally {
+      setOcupado(null);
+    }
+  };
+  const quitar = async (id: string) => {
+    setOcupado(id);
+    setError(null);
+    try {
+      await desligarTicket(t.id, id);
+      setRs((xs) => xs.filter((x) => x.id !== id));
+      onCambio();
+    } catch (err) {
+      setError(mensajeDeError(err));
+    } finally {
+      setOcupado(null);
+    }
+  };
+
   return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
-      <span className="inline-flex items-center gap-1 text-muted-foreground">
-        <Link2 className="h-3 w-3" /> Relacionado con
-      </span>
-      {rs.map((r) => (
-        <a
-          key={r.id}
-          href={r.url}
-          target="_blank"
-          rel="noreferrer"
-          title={`${r.relacion === "anterior" ? "Reporte anterior" : "Reporte posterior"}: ${r.titulo}`}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 hover:bg-muted",
-            r.cerrado ? "text-muted-foreground" : "border-violet-300 text-violet-700 dark:border-violet-800 dark:text-violet-300",
-          )}
-        >
-          <span className="font-semibold">{r.folio}</span>
-          <span>{r.cerrado ? "cerrado" : r.etapa ?? "abierto"}</span>
-        </a>
-      ))}
-      {rs.some((r) => !r.cerrado) && <span className="text-muted-foreground">Se cierran al cerrar este.</span>}
+    <div className="mt-1.5 flex flex-col gap-1 text-xs">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {rs.length > 0 && (
+          <span className="inline-flex items-center gap-1 text-muted-foreground">
+            <Link2 className="h-3 w-3" /> Relacionado con
+          </span>
+        )}
+        {rs.map((r) => (
+          <span
+            key={r.id}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border px-2 py-0.5",
+              r.cerrado ? "text-muted-foreground" : "border-violet-300 text-violet-700 dark:border-violet-800 dark:text-violet-300",
+            )}
+          >
+            <a
+              href={r.url}
+              target="_blank"
+              rel="noreferrer"
+              title={`${r.relacion === "anterior" ? "Reporte anterior" : r.relacion === "posterior" ? "Reporte posterior" : "Ligado desde el dashboard"}: ${r.titulo}`}
+              className="inline-flex items-center gap-1 hover:underline"
+            >
+              <span className="font-semibold">{r.folio}</span>
+              <span>{r.cerrado ? "cerrado" : r.etapa ?? "abierto"}</span>
+            </a>
+            {r.relacion !== "posterior" && (
+              <button
+                type="button"
+                onClick={() => quitar(r.id)}
+                disabled={!!ocupado}
+                title="Quitar relación"
+                className="-mr-1 rounded-full p-0.5 hover:bg-muted disabled:opacity-50"
+              >
+                {ocupado === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+              </button>
+            )}
+          </span>
+        ))}
+        {rs.some((r) => !r.cerrado) && <span className="text-muted-foreground">Se cierran al cerrar este.</span>}
+        {!abierto && (
+          <button
+            type="button"
+            onClick={() => { setAbierto(true); setError(null); }}
+            className="inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Plus className="h-3 w-3" /> Relacionar ticket
+          </button>
+        )}
+      </div>
+      {abierto && (
+        <form onSubmit={ligar} className="flex flex-wrap items-center gap-1.5">
+          <span className="text-muted-foreground">Folio</span>
+          <input
+            autoFocus
+            value={folio}
+            onChange={(e) => setFolio(e.target.value)}
+            placeholder="#1234"
+            inputMode="numeric"
+            className="h-7 w-24 rounded-md border bg-background px-2 text-xs"
+          />
+          <button
+            type="submit"
+            disabled={ocupado === "nuevo"}
+            className="inline-flex h-7 items-center gap-1 rounded-md bg-primary px-2.5 font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            {ocupado === "nuevo" && <Loader2 className="h-3 w-3 animate-spin" />} Relacionar
+          </button>
+          <button type="button" onClick={() => { setAbierto(false); setError(null); }} className="h-7 rounded-md px-2 text-muted-foreground hover:bg-muted">
+            Cancelar
+          </button>
+          <span className="w-full text-muted-foreground">Al cerrar uno de los dos desde aquí se cierra también el otro.</span>
+        </form>
+      )}
+      {error && <span className="text-red-600 dark:text-red-400">{error}</span>}
     </div>
   );
 }

@@ -406,7 +406,8 @@ async function pasarAResuelto(sb: SupabaseClient, uid: string, idTicket: number,
 
 /**
  * Otro ticket ligado por `tickets.id_ticket_relacionado`: el anterior al que
- * apunta este ticket, o uno posterior que apunta a este. Al cerrar uno desde el
+ * apunta este ticket, o uno posterior que apunta a este (o ligado desde el
+ * dashboard, ver relaciones.ts). Al cerrar uno desde el
  * dashboard se cierran también los relacionados que sigan abiertos (un nivel:
  * los directos).
  */
@@ -417,15 +418,16 @@ export interface TicketRelacionado {
   titulo: string;
   etapa: string | null;
   cerrado: boolean;
-  relacion: "anterior" | "posterior";
+  /** Por el portal: el anterior al que apunta o uno posterior. Por el dashboard: ligado a mano aquí. */
+  relacion: "anterior" | "posterior" | "dashboard";
   /** Está en un pipeline que el dashboard puede cerrar (los del asistente). */
   sePuedeCerrar: boolean;
   url: string;
 }
 
-const SELECT_REL = "id, numero, nombre, activo, id_ticket_relacionado, tickets_etapas(nombre, tipo_semantico, cerrada), tickets_pipelines(*)";
+export const SELECT_REL = "id, numero, nombre, activo, id_ticket_relacionado, tickets_etapas(nombre, tipo_semantico, cerrada), tickets_pipelines(*)";
 
-function comoRelacionado(f: Fila, relacion: TicketRelacionado["relacion"]): TicketRelacionado {
+export function comoRelacionado(f: Fila, relacion: TicketRelacionado["relacion"]): TicketRelacionado {
   const e = uno<Fila>(f.tickets_etapas);
   return {
     id: String(f.id),
