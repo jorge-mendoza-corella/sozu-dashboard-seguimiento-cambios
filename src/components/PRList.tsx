@@ -70,6 +70,47 @@ function ResumenRelease({ owner, repo, prNumber, headSha }: { owner: string; rep
   );
 }
 
+/**
+ * Autores de los cambios de un release (dev → main): los marcados al crearlo más
+ * los de los commits que trae hoy (misma consulta que el conteo de Contenido).
+ */
+function useAutoresRelease(owner: string, repo: string, prNumber: number, headSha: string | undefined, activo: boolean) {
+  const { data } = useQuery({
+    queryKey: ["release-resumen", owner, repo, prNumber, headSha],
+    queryFn: () => getReleaseResumen(owner, repo, prNumber),
+    staleTime: 5 * 60_000,
+    enabled: activo,
+  });
+  return data?.autores ?? [];
+}
+
+function AutoresPR({ owner, repo, pr, esMio }: {
+  owner: string;
+  repo: string;
+  pr: { number: number; base: string; headSha?: string; authors: string[] };
+  esMio: (login?: string | null) => boolean;
+}) {
+  const deCommits = useAutoresRelease(owner, repo, pr.number, pr.headSha, pr.base === "main");
+  const autores = [...new Map([...pr.authors, ...deCommits].map((a) => [a.toLowerCase(), a])).values()];
+  if (!autores.length) return null;
+  return (
+    <span
+      className="flex items-center gap-0.5 text-[10px] text-muted-foreground"
+      title={`Cambios de ${autores.map((a) => "@" + a).join(", ")} (autores de los commits)`}
+    >
+      <User className="h-2.5 w-2.5" />
+      {/* El login propio va en pastilla de color: así se ve
+          de un vistazo qué PRs son de quien está logueado. */}
+      {autores.map((a, i) => (
+        <span key={a} className="font-mono">
+          <span className={cn(esMio(a) && MIO_CLASS)}>{a}</span>
+          {i < autores.length - 1 && ", "}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /** Pastilla para el login de quien está logueado. */
 const MIO_CLASS = "rounded px-1 bg-fuchsia-100 text-fuchsia-700 font-semibold dark:bg-fuchsia-900/50 dark:text-fuchsia-300";
 
@@ -322,22 +363,7 @@ export function PRList({ prs, owner, repo, onRefetch, perms = NO_PERMISSIONS, ap
                   {/* Autores y reviewers */}
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     {/* Los autores del CÓDIGO (quién abrió el PR va arriba, junto a la rama). */}
-                    {pr.authors.length > 0 && (
-                      <span
-                        className="flex items-center gap-0.5 text-[10px] text-muted-foreground"
-                        title={`Cambios de ${pr.authors.map((a) => "@" + a).join(", ")} (autores de los commits)`}
-                      >
-                        <User className="h-2.5 w-2.5" />
-                        {/* El login propio va en pastilla de color: así se ve
-                            de un vistazo qué PRs son de quien está logueado. */}
-                        {pr.authors.map((a, i) => (
-                          <span key={a} className="font-mono">
-                            <span className={cn(esMio(a) && MIO_CLASS)}>{a}</span>
-                            {i < pr.authors.length - 1 && ", "}
-                          </span>
-                        ))}
-                      </span>
-                    )}
+                    <AutoresPR owner={owner} repo={repo} pr={pr} esMio={esMio} />
                     {pr.requestedReviewers.length > 0 && (
                       <span className="flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400">
                         <UserCheck className="h-2.5 w-2.5" />

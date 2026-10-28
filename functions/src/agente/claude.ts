@@ -78,7 +78,12 @@ function pidePregunta(b: string): boolean {
   if (b.includes(MARCA_PREGUNTA)) return true;
   if (/^\s*- \[ \].*(respuest|confirm|decid|defin|esperar)/im.test(b)) return true;
   const cola = b.slice(-2500);
-  return cola.split("\n").some((l) => /\?\**\s*$/.test(l.trim()) && l.trim().length > 12);
+  if (cola.split("\n").some((l) => /\?\**\s*$/.test(l.trim()) && l.trim().length > 12)) return true;
+  // Sección «Preguntas» / «Dudas» al final, o preguntas a media línea (¿…?) que
+  // cierran con un «con esas respuestas sigo…»: también espera a una persona.
+  if (/^#{1,4}\s*\**\s*(preguntas|dudas|necesito (saber|que)|pendiente de (tu|su) respuesta)/im.test(cola)) return true;
+  return (cola.match(/¿[^?¿\n]{8,}\?/g) ?? []).length >= 2 &&
+    /(con (esas|tus|sus|estas) respuestas|me confirm|d[ií]ganme|av[ií]senme|en cuanto (me )?respond)/i.test(cola);
 }
 
 // Sin el HTML que mete claude-code-action (el spinner es un <img>): el panel no
