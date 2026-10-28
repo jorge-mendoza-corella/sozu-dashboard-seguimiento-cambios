@@ -20,7 +20,7 @@ import { consumirCupo, reposPermitidos, verificarAcceso } from "./agente/acceso.
 import { docPorRuta, indiceDocs, limpiarRuta, obtenerCorpus } from "./agente/docs.js";
 import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.js";
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
-import { cerrarTicket, clienteSupabase, ticketsAsignados, tomarTicket } from "./agente/tickets.js";
+import { cerrarRelacionados, cerrarTicket, clienteSupabase, relacionadosDe, ticketsAsignados, tomarTicket } from "./agente/tickets.js";
 import { buscarPrsExternos, notaConPrs, verificarPrsExternos } from "./agente/prsExternos.js";
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
 import { issueDelTicket, responderAClaude, seguimientoClaude, type AdjuntoRespuesta } from "./agente/claude.js";
@@ -318,12 +318,22 @@ export const agenteTickets = onCall(
   async (req) => {
     const usuario = await verificarAcceso(req, "tickets");
     try {
-      const tickets = await ticketsAsignados(clienteSupabase(SUPABASE_SERVICE_KEY.value()), usuario.email);
-      // Issue de Sentry ligado (ticket levantado desde Monitoreo). Si Sentry no
-      // responde, los tickets salen igual, sin el vínculo.
-      const deSentry = await sentryDeTickets(tickets.map((t) => Number(t.id))).catch(() => new Map());
+      const sb = clienteSupabase(SUPABASE_SERVICE_KEY.value());
+      const tickets = await ticketsAsignados(sb, usuario.email);
+      const ids = tickets.map((t) => Number(t.id));
+      // Issue de Sentry ligado (ticket levantado desde Monitoreo) y tickets
+      // relacionados («¿Ya lo había reportado antes?»). Si fallan, los tickets
+      // salen igual, sin eso.
+      const [deSentry, relacionados] = await Promise.all([
+        sentryDeTickets(ids).catch(() => new Map()),
+        relacionadosDe(sb, ids).catch(() => new Map()),
+      ]);
       return {
-        tickets: tickets.map((t) => ({ ...t, sentry: deSentry.get(Number(t.id)) ?? null })),
+        tickets: tickets.map((t) => ({
+          ...t,
+          sentry: deSentry.get(Number(t.id)) ?? null,
+          relacionados: relacionados.get(Number(t.id)) ?? [],
+        })),
         revisado: new Date().toISOString(),
       };
     } catch (e) {
@@ -649,14 +659,25 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string; prsSe
     // menciona y se resuelven en cuanto el ticket queda cerrado.
     const deSentry = await issuesDeTicket(Number(ticketId)).catch(() => []);
     const abiertos = deSentry.filter((i) => i.abierto).map((i) => i.shortId);
+    // Relacionados abiertos («¿Ya lo había reportado antes?»): se cierran con
+    // este, y la nota lo dice.
+    const relacionados = ((await relacionadosDe(sb, [Number(ticketId)]).catch(() => new Map())).get(Number(ticketId)) ?? [])
+      .filter((r: { cerrado: boolean; sePuedeCerrar: boolean }) => !r.cerrado && r.sePuedeCerrar);
+    if (relacionados.length) {
+      nota = `${nota.trimEnd()}\n\nSe cierra${relacionados.length === 1 ? "" : "n"} también ${relacionados.length === 1 ? "el ticket relacionado" : "los tickets relacionados"} ${relacionados.map((r: { folio: string }) => r.folio).join(", ")}.`;
+    }
     if (abiertos.length) {
       nota = `${nota.trimEnd()}\n\nSentry: ${abiertos.join(", ")} se ${abiertos.length === 1 ? "marca" : "marcan"} como resuelto${abiertos.length === 1 ? "" : "s"} al cerrar este ticket.`;
     }
     try {
       const r = await cerrarTicket(sb, usuario.email, Number(ticketId), nota);
       await ref.set({ ...registroExterno, cerrado: true, cerradoEn: FieldValue.serverTimestamp() }, { merge: true });
-      const sentryResueltos = await resolverIssuesDeTicket(deSentry, String(enviado?.folio ?? `#${ticketId}`)).catch(() => []);
-      return { ok: true, etapa: r.etapa, sentryResueltos };
+      const folio = String(enviado?.folio ?? `#${ticketId}`);
+      const sentryResueltos = await resolverIssuesDeTicket(deSentry, folio).catch(() => []);
+      const enCascada = relacionados.length
+        ? await cerrarRelacionados(sb, usuario.email, relacionados, folio).catch(() => ({ cerrados: [], fallidos: relacionados.map((x: { folio: string }) => x.folio) }))
+        : { cerrados: [], fallidos: [] };
+      return { ok: true, etapa: r.etapa, sentryResueltos, relacionadosCerrados: enCascada.cerrados, relacionadosFallidos: enCascada.fallidos };
     } catch (e) {
       const m = (e as Error).message;
       const conocidos: Record<string, string> = {
