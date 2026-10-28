@@ -27,7 +27,8 @@ Solo `production`: es lo que le pega a usuarios reales (dev y preview reportan
 a Sentry, pero la pestaña no los mide).
 
 Firestore:
-  escribe sentry/{projectSlug}
+  escribe sentry/{projectSlug}         resumen e issues (verMonitoreo)
+          sentryEstado/{projectSlug}   90 días para la página de estado (verEstadoRepos)
 
 Variables de entorno:
   FIRESTORE_TOKEN     access token de GCP para Firestore REST
@@ -265,17 +266,18 @@ def con_ticket(issues: list[dict], por_issue: dict[str, dict]) -> list[dict]:
     return [{**i, "ticket": por_issue[i["id"]]} if i["id"] in por_issue else i for i in issues]
 
 
-def borrar(token: str, slug: str) -> None:
-    r = requests.delete(f"{FS_BASE}/sentry/{quote(slug, safe='')}", headers=fs_headers(token), timeout=TIMEOUT)
-    if r.status_code not in (200, 204):
-        print(f"::error::Firestore delete {slug}: {r.status_code} {r.text[:200]}")
+def borrar(token: str, slug: str, coleccion: str = "sentry") -> None:
+    r = requests.delete(f"{FS_BASE}/{coleccion}/{quote(slug, safe='')}", headers=fs_headers(token), timeout=TIMEOUT)
+    if r.status_code not in (200, 204, 404):
+        print(f"::error::Firestore delete {coleccion}/{slug}: {r.status_code} {r.text[:200]}")
 
 
-def escribir(token: str, slug: str, datos: dict) -> None:
+def escribir(token: str, slug: str, datos: dict, coleccion: str = "sentry", quitar: tuple[str, ...] = ()) -> None:
+    """PATCH de los campos de `datos`; los de `quitar` van en la máscara sin valor, así que se borran."""
     campos = {k: _valor(v) for k, v in datos.items()}
-    mask = "&".join(f"updateMask.fieldPaths={k}" for k in campos)
+    mask = "&".join(f"updateMask.fieldPaths={k}" for k in [*campos, *quitar])
     r = requests.patch(
-        f"{FS_BASE}/sentry/{quote(slug, safe='')}?{mask}",
+        f"{FS_BASE}/{coleccion}/{quote(slug, safe='')}?{mask}",
         headers=fs_headers(token), json={"fields": campos}, timeout=TIMEOUT,
     )
     if r.status_code not in (200, 201):
@@ -283,7 +285,7 @@ def escribir(token: str, slug: str, datos: dict) -> None:
 
 
 def vacio() -> dict:
-    return {"sinResolver": 0, "nuevos24h": 0, "serie14d": [0] * 14, "serie90d": [0] * 90, "top": [], "resueltos": [], "crashFree": None}
+    return {"sinResolver": 0, "nuevos24h": 0, "serie14d": [0] * 14, "top": [], "resueltos": [], "crashFree": None}
 
 
 def resumen(api: Sentry, slug: str, pid: str, env: str | None) -> dict:
@@ -301,8 +303,6 @@ def resumen(api: Sentry, slug: str, pid: str, env: str | None) -> dict:
         "sinResolver": api.contar(pid, "is:unresolved", env),
         "nuevos24h": api.contar(pid, "is:unresolved firstSeen:-24h", env),
         "serie14d": api.serie(pid, env),
-        # Barra de estado de la pestaña: 90 días es lo que guarda Sentry.
-        "serie90d": api.serie(pid, env, 90),
         "top": api.top(pid, env),
         # Resueltos o ignorados con actividad en los 14 días, los más recientes
         # primero: la pestaña los lista para saber qué ya se atendió.
@@ -338,6 +338,7 @@ def main() -> None:
     for slug in set(docs_existentes(fs_token)) - set(donde):
         print(f"- {slug}: monitoreo apagado; se quita de la pestaña.")
         borrar(fs_token, slug)
+        borrar(fs_token, slug, "sentryEstado")
 
     for slug, alcance in sorted(donde.items()):
         try:
@@ -348,6 +349,9 @@ def main() -> None:
             api.ligar_alertas(pid)
             dsn = api.dsn(slug)
             entornos = {nombre: resumen(api, slug, pid, env) for nombre, env in ENTORNOS.items()}
+            # Página de estado: 90 días (lo que guarda Sentry) en su propia
+            # colección, porque la lee otro permiso (`verEstadoRepos`).
+            serie90 = api.serie(pid, ENTORNOS["produccion"], 90)
             for r in entornos.values():
                 r["top"] = con_ticket(r["top"], ligados)
                 r["resueltos"] = con_ticket(r["resueltos"], ligados)
@@ -364,11 +368,17 @@ def main() -> None:
             "sentryProjectId": pid,
             **alcance,
             "dsn": dsn,
-            "sentryCreadoEn": getattr(api, "creados", {}).get(slug),
             "url": f"https://{SENTRY_ORG}.sentry.io/issues/?project={pid}",
             "entornos": entornos,
             "revisadoAt": ahora,
-        })
+        }, quitar=("sentryCreadoEn",))
+        escribir(fs_token, slug, {
+            "slug": slug,
+            **alcance,
+            "serie90d": serie90,
+            "sentryCreadoEn": getattr(api, "creados", {}).get(slug),
+            "revisadoAt": ahora,
+        }, coleccion="sentryEstado")
 
     if donde and fallos == len(donde):
         sys.exit(1)
