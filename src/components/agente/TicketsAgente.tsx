@@ -126,6 +126,33 @@ export function TicketsAgente({
     for (const e of enviados) if (e.listo) ids.add(e.ticketId);
     return ids;
   }, [clavePrs, enviados]);
+  // Estado de Claude por ticket ("id:estado:sinCambios"), en texto para que el memo no cambie en cada render.
+  const claveEstados = seguimientos
+    .map((q, i) => (q.data ? `${conIssue[i].id}:${q.data.estado}:${q.data.sinCambios ? 1 : 0}` : ""))
+    .join(",");
+
+  /**
+   * Orden de la lista, por grupos y en cada uno del folio más alto al más bajo:
+   * 0. Claude espera respuesta (tiene preguntas).
+   * 1. Alta prioridad sin trabajar.
+   * 2. Trabajándose (en Claude, copiado a Claude o tomado a mano).
+   * 3. Sin trabajar de prioridad media, baja o sin prioridad.
+   * 4. Terminados, esperando a llegar a PRD o a que se cierren.
+   */
+  const grupoDe = useMemo(() => {
+    const estados = new Map(claveEstados.split(",").filter(Boolean).map((x) => {
+      const [id, estado, sin] = x.split(":");
+      return [id, { estado, sinCambios: sin === "1" }];
+    }));
+    return (t: TicketAgente): number => {
+      const env = enviados.find((e) => e.ticketId === t.id);
+      const st = estados.get(t.id);
+      if (st?.estado === "esperando_respuesta") return 0;
+      if (conPrs.has(t.id) || st?.sinCambios || st?.estado === "terminado") return 4;
+      if (env || t.loAtiendoYo) return 2;
+      return t.prioridad === "alta" ? 1 : 3;
+    };
+  }, [claveEstados, conPrs, enviados]);
 
   const filtrados = useMemo(() => {
     const q = sinAcentos(fTexto.trim());
@@ -134,14 +161,12 @@ export function TicketsAgente({
       (!fEtapa || t.etapa === fEtapa) &&
       (!fPrioridad || (fPrioridad === "sin" ? !t.prioridad : t.prioridad === fPrioridad)) &&
       (!q || sinAcentos(`${t.folio} ${t.titulo} ${t.abiertoPor ?? ""} ${t.descripcion}`).includes(q)))
-      // Arriba queda siempre trabajo: los que ya tienen sus PRs (Claude terminó y
-      // solo falta revisarlos/desplegarlos, o ya están en PRD) bajan al final.
-      // sort es estable: dentro de cada grupo se respeta el orden que trae la lista.
-      .sort((a, b) => Number(conPrs.has(a.id)) - Number(conPrs.has(b.id)));
-  }, [base, fPipeline, fEtapa, fPrioridad, fTexto, conPrs]);
+      // Resueltos: el más reciente primero (como llegan). Pendientes: ver `grupoDe`.
+      .sort((a, b) => (enResueltos ? 0 : grupoDe(a) - grupoDe(b) || b.numero - a.numero));
+  }, [base, fPipeline, fEtapa, fPrioridad, fTexto, grupoDe, enResueltos]);
 
   // Los relacionados entre sí van juntos: arriba el de folio más alto (el papá) y
-  // debajo los demás, sangrados. El grupo queda donde caía el primero de ellos.
+  // debajo los demás, sangrados. El grupo queda donde cae el papá.
   // Contraído de entrada: el papá dice cuántos tiene y se abre con su flecha.
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
   const alternarGrupo = (id: string) =>
@@ -159,10 +184,10 @@ export function TicketsAgente({
     const puestos = new Set<string>();
     for (const t of filtrados) {
       const g = buscar(t.id);
-      if (puestos.has(g)) continue;
-      puestos.add(g);
       const miembros = grupos.get(g)!;
       const papa = miembros.reduce((a, b) => (b.numero > a.numero ? b : a));
+      if (puestos.has(g) || t !== papa) continue;
+      puestos.add(g);
       const hijos = miembros.filter((h) => h !== papa);
       salida.push({ t: papa, papa: null, hijos });
       for (const h of hijos) salida.push({ t: h, papa, hijos: [] });
