@@ -281,13 +281,27 @@ service cloud.firestore {
       // `repoIds` se lee POR PROYECTO (ver `reposAsignadosAlUsuario`): si no
       // marcó ninguno de este proyecto, ve todos los del proyecto.
       let deRepo = !repos.hasAny(d.reposDelProyecto) || repos.hasAny([d.repoId]);
+      return deEmpresa && deProyecto && deRepo && permisoMonitoreo(p, d, 'verMonitoreo');
+    }
+    // Un permiso de Monitoreo resuelto repo > empresa > general (sin default por rol).
+    function permisoMonitoreo(p, d, k) {
       let general = 'permissions' in p && p.permissions is map ? p.permissions : {};
       let porEmpresa = 'permissionsByClient' in p && p.permissionsByClient is map
         ? p.permissionsByClient.get(d.clientId, {}) : {};
       let porRepo = 'permissionsByRepo' in p && p.permissionsByRepo is map
         ? p.permissionsByRepo.get(d.repoId, {}) : {};
-      return deEmpresa && deProyecto && deRepo
-        && porRepo.get('verMonitoreo', porEmpresa.get('verMonitoreo', general.get('verMonitoreo', false))) == true;
+      return porRepo.get(k, porEmpresa.get(k, general.get(k, false))) == true;
+    }
+
+    // 90 días por repo para la pestaña «Estado de los repos». Aparte de
+    // `sentry/*` porque pide además `verEstadoRepos`. Solo lo escribe el sync.
+    match /sentryEstado/{slug} {
+      allow read: if esRootVerificado()
+        || (request.auth != null
+          && exists(/databases/$(database)/documents/users/$(request.auth.token.email))
+          && veMonitoreoDe(perfil(), resource.data)
+          && permisoMonitoreo(perfil(), resource.data, 'verEstadoRepos'));
+      allow write: if false;
     }
 
     // Último WhatsApp mandado por cada issue de Sentry (silencio de 6 h). Solo

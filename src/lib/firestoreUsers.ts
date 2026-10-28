@@ -52,10 +52,14 @@ export interface CicdPermissions {
   // Resolver, ignorar o reabrir issues de Sentry desde Monitoreo. Sin
   // `verMonitoreo` no sirve de nada (no ve el repo). Tampoco viene de regalo.
   resolverMonitoreo: boolean;
+  // Pestaña «Estado de los repos» de Monitoreo (90 días por repo).
+  verEstadoRepos: boolean;
+  // Levantar o actualizar en el portal el ticket de soporte de un issue.
+  crearTicketMonitoreo: boolean;
 }
 
-export const NO_PERMISSIONS: CicdPermissions = { createPR: false, approve: false, mergeDev: false, mergeMain: false, buildApp: false, deployDev: false, switchDeployDev: false, viewOthers: false, verMonitoreo: false, resolverMonitoreo: false };
-export const ALL_PERMISSIONS: CicdPermissions = { createPR: true, approve: true, mergeDev: true, mergeMain: true, buildApp: true, deployDev: true, switchDeployDev: true, viewOthers: true, verMonitoreo: true, resolverMonitoreo: true };
+export const NO_PERMISSIONS: CicdPermissions = { createPR: false, approve: false, mergeDev: false, mergeMain: false, buildApp: false, deployDev: false, switchDeployDev: false, viewOthers: false, verMonitoreo: false, resolverMonitoreo: false, verEstadoRepos: false, crearTicketMonitoreo: false };
+export const ALL_PERMISSIONS: CicdPermissions = { createPR: true, approve: true, mergeDev: true, mergeMain: true, buildApp: true, deployDev: true, switchDeployDev: true, viewOthers: true, verMonitoreo: true, resolverMonitoreo: true, verEstadoRepos: true, crearTicketMonitoreo: true };
 
 export interface AppUser {
   email: string;
@@ -146,10 +150,11 @@ function permisosGenerales(user: AppUser): CicdPermissions {
   // Sin permisos explícitos: los administradores (globales o de empresa) los
   // tienen todos dentro de lo que ven; quien solo opera, ninguno.
   //
-  // Menos `verMonitoreo` y `resolverMonitoreo`: los errores de producción no se reparten por rol, se
+  // Menos los de Monitoreo (`verMonitoreo`, `resolverMonitoreo`, `verEstadoRepos`,
+  // `crearTicketMonitoreo`): los errores de producción no se reparten por rol, se
   // dan a mano. Si no, el admin de cualquier empresa con cuenta legacy los
   // vería sin que nadie se lo hubiera dado.
-  return esRolOperativo(user.role) ? NO_PERMISSIONS : { ...ALL_PERMISSIONS, verMonitoreo: false, resolverMonitoreo: false };
+  return esRolOperativo(user.role) ? NO_PERMISSIONS : { ...ALL_PERMISSIONS, verMonitoreo: false, resolverMonitoreo: false, verEstadoRepos: false, crearTicketMonitoreo: false };
 }
 
 /**

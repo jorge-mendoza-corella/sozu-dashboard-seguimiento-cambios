@@ -713,7 +713,7 @@ export const sentryCambiarIssue = onCall<{ issueId: string; estado: Estado }>(
  * `sentryCrearTicket`: levanta en el portal un ticket de Sistemas Soporte
  * técnico con todo el detalle del issue, asignado a quien lo pide (uno por
  * issue; si ya existe, le actualiza la descripción y el propietario). Pide
- * `resolverMonitoreo`. Ver sentryIssues.ts.
+ * `crearTicketMonitoreo`. Ver sentryIssues.ts.
  */
 export const sentryCrearTicket = onCall<{ issueId: string }>(
   { region: "us-central1", secrets: [SUPABASE_SERVICE_KEY], timeoutSeconds: 60, memory: "256MiB", maxInstances: 5, cors: CORS_DASHBOARD },

@@ -10,7 +10,7 @@ import { DetalleIssue } from "@/components/monitoreo/DetalleIssue";
 import { EstadoRepos } from "@/components/monitoreo/EstadoRepos";
 import { SelectNative } from "@/components/ui/select-native";
 import {
-  dispararSyncSentry, estaViejo, getSentryProyectos, pideRevision, resuelveMonitoreoDe,
+  dispararSyncSentry, estaViejo, getSentryEstado, getSentryProyectos, permisoMonitoreoDe, pideRevision,
   type SentryIssue, type SentryProyecto, type SentryResumen,
 } from "@/lib/sentry";
 
@@ -33,11 +33,11 @@ const RANGOS = [14, 30, 90] as const;
  */
 export function MonitoreoPage() {
   const [params, setParams] = useSearchParams();
-  const vista: Vista = params.get("vista") === "estado" ? "estado" : "issues";
+  const pideEstado = params.get("vista") === "estado";
   const [proyecto, setProyecto] = useState<string | null>(null);
   const [repoFiltro, setRepoFiltro] = useState<string | null>(null);
   const [rango, setRango] = useState<(typeof RANGOS)[number]>(14);
-  const [abierto, setAbierto] = useState<{ issueId: string; repo: string; puedeResolver: boolean } | null>(null);
+  const [abierto, setAbierto] = useState<{ issueId: string; repo: string; puedeResolver: boolean; puedeTicket: boolean } | null>(null);
   const { appUser } = useAuth();
   const { data: projects } = useProjects();
   // Solo los repos que le tocan: el permiso va por empresa, proyecto y repo.
@@ -71,7 +71,9 @@ export function MonitoreoPage() {
           r: p.produccion,
           proyecto: proy?.name || "Sin proyecto",
           repoCompleto: repo ? `${repo.owner}/${repo.repo}` : p.slug,
-          puedeResolver: !!repo && resuelveMonitoreoDe(appUser, proy?.clientId, repo.id),
+          puedeResolver: !!repo && permisoMonitoreoDe(appUser, proy?.clientId, repo.id, "resolverMonitoreo"),
+          puedeTicket: !!repo && permisoMonitoreoDe(appUser, proy?.clientId, repo.id, "crearTicketMonitoreo"),
+          veEstado: !!repo && permisoMonitoreoDe(appUser, proy?.clientId, repo.id, "verEstadoRepos"),
         };
       })
       .sort((a, b) => a.p.slug.localeCompare(b.p.slug));
@@ -80,16 +82,32 @@ export function MonitoreoPage() {
   const nombresProyecto = useMemo(() => [...new Set(filas.map((f) => f.proyecto))].sort((a, b) => a.localeCompare(b, "es")), [filas]);
   const delProyecto = proyecto ? filas.filter((f) => f.proyecto === proyecto) : filas;
   const visibles = repoFiltro ? delProyecto.filter((f) => f.p.slug === repoFiltro) : delProyecto;
+  // Estado de los repos: solo con `verEstadoRepos`, y solo de los repos donde lo tiene.
+  const slugsEstado = filas.filter((f) => f.veEstado).map((f) => f.p.slug);
+  const hayEstado = slugsEstado.length > 0;
+  const { data: estados } = useQuery({
+    queryKey: ["sentry-estado", slugsEstado.join("|")],
+    queryFn: () => getSentryEstado(slugsEstado),
+    enabled: hayEstado,
+    refetchInterval: 60_000,
+  });
+  const estadoDe = new Map((estados ?? []).map((e) => [e.slug, e]));
+  const conEstado = visibles.filter((f) => f.veEstado).map((f) => ({ ...f, e: estadoDe.get(f.p.slug) }));
+  // Más de 14 días sale de `sentryEstado`: solo si se tiene para TODOS los repos a la vista.
+  const rangosVisibles = visibles.every((f) => estadoDe.has(f.p.slug)) ? RANGOS : ([14] as const);
+  const rangoEf = (rangosVisibles as readonly number[]).includes(rango) ? rango : 14;
+  const vista: Vista = pideEstado && hayEstado ? "estado" : "issues";
   const conErrores = visibles
     .filter((f) => f.r.sinResolver > 0)
     .sort((a, b) => b.r.nuevos24h - a.r.nuevos24h || b.r.sinResolver - a.r.sinResolver || a.p.slug.localeCompare(b.p.slug));
   const resueltos = visibles
-    .flatMap((f) => f.r.resueltos.map((i) => ({ i, slug: f.p.slug, repo: f.repoCompleto, puedeResolver: f.puedeResolver })))
+    .flatMap((f) => f.r.resueltos.map((i) => ({ i, slug: f.p.slug, repo: f.repoCompleto, puedeResolver: f.puedeResolver, puedeTicket: f.puedeTicket })))
     .sort((a, b) => (b.i.ultimaVez ?? "").localeCompare(a.i.ultimaVez ?? ""));
 
   const total = (k: (r: SentryResumen) => number) => visibles.reduce((s, f) => s + k(f.r), 0);
-  const serie = (r: SentryResumen) => (r.serie90d.length ? r.serie90d : r.serie14d);
-  const eventosRango = (r: SentryResumen) => serie(r).slice(-rango).reduce((a, b) => a + b, 0);
+  const serieDe = (f: (typeof filas)[number]) => (rangoEf > 14 ? estadoDe.get(f.p.slug)?.serie90d ?? f.r.serie14d : f.r.serie14d);
+  const eventosDe = (f: (typeof filas)[number]) => serieDe(f).slice(-rangoEf).reduce((a, b) => a + b, 0);
+  const eventosRango = visibles.reduce((s, f) => s + eventosDe(f), 0);
   const revisado = (data ?? []).map((p) => p.revisadoAt).filter((x): x is string => !!x).sort()[0] ?? null;
   const viejo = (data ?? []).some(estaViejo);
   const cambiarVista = (v: Vista) => setParams(v === "issues" ? {} : { vista: v }, { replace: true });
@@ -119,7 +137,7 @@ export function MonitoreoPage() {
         <>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b">
             <nav className="-mb-px flex gap-1" aria-label="Vistas de monitoreo">
-              {([["issues", "Issues", total((r) => r.sinResolver)], ["estado", "Estado de los repos", null]] as const).map(([v, nombre, cuenta]) => (
+              {([["issues", "Issues", total((r) => r.sinResolver)], ...(hayEstado ? [["estado", "Estado de los repos", null] as const] : [])] as const).map(([v, nombre, cuenta]) => (
                 <button
                   key={v}
                   type="button"
@@ -159,42 +177,46 @@ export function MonitoreoPage() {
           </div>
 
           {vista === "estado" ? (
-            <EstadoRepos filas={visibles} />
+            conEstado.length > 0 ? (
+              <EstadoRepos filas={conEstado} />
+            ) : (
+              <p className="text-sm text-muted-foreground">No tienes permiso para ver el estado de {repoFiltro ?? "estos repos"}.</p>
+            )
           ) : (
             <>
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 <Kpi valor={total((r) => r.sinResolver)} etiqueta="Issues sin resolver" tono={total((r) => r.sinResolver) > 0 ? "ambar" : "ok"} />
                 <Kpi valor={total((r) => r.nuevos24h)} etiqueta="Nuevos en 24 h" tono={total((r) => r.nuevos24h) > 0 ? "rojo" : "ok"} />
-                <Kpi valor={total(eventosRango)} etiqueta={`Eventos en ${rango} días`} />
+                <Kpi valor={eventosRango} etiqueta={`Eventos en ${rangoEf} días`} />
                 <Kpi valor={`${conErrores.length} / ${visibles.length}`} etiqueta="Repos con errores" tono={conErrores.length > 0 ? "ambar" : "ok"} />
               </div>
 
               <section className="rounded-lg border bg-card p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <h2 className="text-sm font-semibold">Errores por día{repoFiltro ? ` · ${repoFiltro}` : ""}</h2>
-                  <div className="flex rounded-md border p-0.5 text-xs">
-                    {RANGOS.map((d) => (
+                  {rangosVisibles.length > 1 && <div className="flex rounded-md border p-0.5 text-xs">
+                    {rangosVisibles.map((d) => (
                       <button
                         key={d}
                         type="button"
                         onClick={() => setRango(d)}
-                        className={cn("rounded px-2.5 py-0.5", rango === d ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}
+                        className={cn("rounded px-2.5 py-0.5", rangoEf === d ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}
                       >
                         {d} d
                       </button>
                     ))}
-                  </div>
+                  </div>}
                 </div>
-                {total(eventosRango) > 0 ? (
+                {eventosRango > 0 ? (
                   <Suspense fallback={<div className="h-56" />}>
                     <GraficaErrores
-                      dias={rango}
-                      series={visibles.filter((f) => eventosRango(f.r) > 0).map((f) => ({ slug: f.p.slug, serie: serie(f.r) }))}
+                      dias={rangoEf}
+                      series={visibles.filter((f) => eventosDe(f) > 0).map((f) => ({ slug: f.p.slug, serie: serieDe(f) }))}
                     />
                   </Suspense>
                 ) : (
                   <div className="flex h-24 items-center justify-center gap-2 text-sm text-muted-foreground">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Sin errores en los últimos {rango} días.
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Sin errores en los últimos {rangoEf} días.
                   </div>
                 )}
               </section>
@@ -208,7 +230,7 @@ export function MonitoreoPage() {
                       p={f.p}
                       r={f.r}
                       proyecto={f.proyecto}
-                      onAbrir={(issueId) => setAbierto({ issueId, repo: f.repoCompleto, puedeResolver: f.puedeResolver })}
+                      onAbrir={(issueId) => setAbierto({ issueId, repo: f.repoCompleto, puedeResolver: f.puedeResolver, puedeTicket: f.puedeTicket })}
                     />
                   ))
                 ) : (
@@ -222,8 +244,8 @@ export function MonitoreoPage() {
                 <section className="space-y-2">
                   <h2 className="text-sm font-semibold text-muted-foreground">Resueltos recientemente</h2>
                   <ul className="divide-y overflow-hidden rounded-lg border bg-card">
-                    {resueltos.map(({ i, slug, repo, puedeResolver }) => (
-                      <FilaIssue key={i.id} i={i} repo={slug} onAbrir={() => setAbierto({ issueId: i.id, repo, puedeResolver })} />
+                    {resueltos.map(({ i, slug, repo, puedeResolver, puedeTicket }) => (
+                      <FilaIssue key={i.id} i={i} repo={slug} onAbrir={() => setAbierto({ issueId: i.id, repo, puedeResolver, puedeTicket })} />
                     ))}
                   </ul>
                 </section>
@@ -234,7 +256,13 @@ export function MonitoreoPage() {
       )}
 
       {abierto && (
-        <DetalleIssue issueId={abierto.issueId} repo={abierto.repo} puedeResolver={abierto.puedeResolver} onCerrar={() => setAbierto(null)} />
+        <DetalleIssue
+          issueId={abierto.issueId}
+          repo={abierto.repo}
+          puedeResolver={abierto.puedeResolver}
+          puedeTicket={abierto.puedeTicket}
+          onCerrar={() => setAbierto(null)}
+        />
       )}
     </div>
   );

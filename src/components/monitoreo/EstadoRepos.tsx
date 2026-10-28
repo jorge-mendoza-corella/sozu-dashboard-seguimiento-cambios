@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { SentryProyecto, SentryResumen } from "@/lib/sentry";
+import type { SentryEstado, SentryProyecto, SentryResumen } from "@/lib/sentry";
 
 // ---------------------------------------------------------------------------
 // Página de estado al estilo status.supabase.com: una barra por repo con un
@@ -18,6 +18,8 @@ const DIA_MS = 86_400_000;
 export interface FilaEstado {
   p: SentryProyecto;
   r: SentryResumen;
+  /** De `sentryEstado/{slug}`; sin él (aún no corre el sync) la barra sale sin datos. */
+  e: SentryEstado | undefined;
   proyecto: string;
 }
 
@@ -40,9 +42,9 @@ const inicioDelDia = (t: number) => {
 
 /** Los 90 días con su conteo, o null si el proyecto todavía no existía. */
 function dias(f: FilaEstado): { fecha: Date; n: number | null }[] {
-  const serie = f.r.serie90d.length ? f.r.serie90d : f.r.serie14d;
+  const serie = f.e?.serie90d ?? [];
   const hoy = inicioDelDia(Date.now());
-  const alta = f.p.creadoEn ? inicioDelDia(new Date(f.p.creadoEn).getTime()) : null;
+  const alta = f.e?.creadoEn ? inicioDelDia(new Date(f.e.creadoEn).getTime()) : null;
   return Array.from({ length: DIAS }, (_, i) => {
     const atras = DIAS - 1 - i;
     const t = hoy - atras * DIA_MS;

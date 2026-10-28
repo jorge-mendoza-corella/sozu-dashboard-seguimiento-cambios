@@ -24,11 +24,13 @@ const ESTADO: Record<string, string> = { unresolved: "Sin resolver", resolved: "
 // Las URLs vienen del servidor y terminan en un href: solo se aceptan de Sentry.
 const deSentry = (url: string) => (/^https:\/\/[\w-]+\.sentry\.io\//.test(url) ? url : undefined);
 
-export function DetalleIssue({ issueId, repo, puedeResolver, onCerrar }: {
+export function DetalleIssue({ issueId, repo, puedeResolver, puedeTicket, onCerrar }: {
   issueId: string;
   /** owner/repo, para el prompt de Claude. */
   repo: string;
   puedeResolver: boolean;
+  /** Crear o actualizar el ticket de soporte (`crearTicketMonitoreo`). */
+  puedeTicket: boolean;
   onCerrar: () => void;
 }) {
   const qc = useQueryClient();
@@ -121,7 +123,7 @@ export function DetalleIssue({ issueId, repo, puedeResolver, onCerrar }: {
                   <Ticket className="h-3.5 w-3.5" /> SOZU-{data.ticket.numero}
                   {data.ticket.etapa && <span className="font-normal opacity-80">· {data.ticket.etapa}</span>}
                 </a>
-                {puedeResolver && !data.ticket.resuelto && (
+                {puedeTicket && !data.ticket.resuelto && (
                   <Accion
                     onClick={() => ticket.mutate()}
                     cargando={ticket.isPending}
@@ -132,7 +134,7 @@ export function DetalleIssue({ issueId, repo, puedeResolver, onCerrar }: {
                 )}
               </>
             ) : (
-              puedeResolver && (
+              puedeTicket && (
                 <Accion
                   onClick={() => ticket.mutate()}
                   cargando={ticket.isPending}
