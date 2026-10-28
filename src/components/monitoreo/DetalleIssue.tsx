@@ -128,6 +128,16 @@ export function DetalleIssue({ issueId, repo, puedeResolver, puedeTicket, onCerr
                   <Ticket className="h-3.5 w-3.5" /> SOZU-{data.ticket.numero}
                   {data.ticket.etapa && <span className="font-normal opacity-80">· {data.ticket.etapa}</span>}
                 </a>
+                {puedeTicket && abierto && data.ticket.resuelto && (
+                  <Accion
+                    onClick={() => ticket.mutate()}
+                    cargando={ticket.isPending}
+                    principal={!!data.ticket.regreso}
+                    titulo={`SOZU-${data.ticket.numero} ya se cerró: levanta uno nuevo con lo último de Sentry, relacionado con el anterior`}
+                  >
+                    <Ticket className="h-3.5 w-3.5" /> Crear ticket nuevo
+                  </Accion>
+                )}
                 {puedeTicket && abierto && !data.ticket.resuelto && (
                   <Accion
                     onClick={() => ticket.mutate()}
@@ -163,8 +173,19 @@ export function DetalleIssue({ issueId, repo, puedeResolver, puedeTicket, onCerr
           </div>
         )}
 
+        {/* El error volvió después de cerrar su ticket: lo natural es un ticket nuevo. */}
+        {data?.ticket?.regreso && data.estado === "unresolved" && (
+          <div className="flex flex-wrap items-center gap-3 border-b bg-red-50 px-4 py-3 text-sm dark:bg-red-950/30">
+            <RotateCcw className="h-4 w-4 shrink-0 text-red-600" />
+            <span className="flex-1">
+              Volvió a aparecer después de cerrar SOZU-{data.ticket.numero}
+              {data.ticket.cerradoEn ? ` (cerrado el ${new Date(data.ticket.cerradoEn).toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Mexico_City" })})` : ""}.
+              {puedeTicket ? " Levanta un ticket nuevo: queda relacionado con el anterior." : ""}
+            </span>
+          </div>
+        )}
         {/* El ticket ligado ya se resolvió en el portal: lo natural es cerrar el issue. */}
-        {data?.ticket?.resuelto && data.estado === "unresolved" && (
+        {data?.ticket?.resuelto && !data.ticket.regreso && data.estado === "unresolved" && (
           <div className="flex flex-wrap items-center gap-3 border-b bg-emerald-50 px-4 py-3 text-sm dark:bg-emerald-950/30">
             <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
             <span className="flex-1">

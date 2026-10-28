@@ -397,7 +397,7 @@ function DetalleResuelto({ t, enviado }: { t: TicketAgente; enviado: TicketEnvia
           {t.prioridad && <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase", COLOR_PRIORIDAD[t.prioridad])}>{t.prioridad}</span>}
         </p>
         <h2 className="mt-1 text-lg font-semibold leading-snug">{t.titulo}</h2>
-        {t.sentry && <VinculoSentry s={t.sentry} />}
+        {t.sentry && <VinculoSentry s={t.sentry} cerradoEn={t.cerradoEn ?? null} />}
         {!!t.relacionados?.length && <Relacionados t={t} onCambio={() => {}} soloLectura />}
       </header>
       <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
@@ -1199,8 +1199,13 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
 }
 
 /** Issue de Sentry ligado al ticket (levantado desde Monitoreo), con su estado y enlaces. */
-function VinculoSentry({ s }: { s: NonNullable<TicketAgente["sentry"]> }) {
+/**
+ * Issue de Sentry del ticket. `cerradoEn` (ticket resuelto): si el issue sigue
+ * abierto con eventos después del cierre, el error volvió.
+ */
+function VinculoSentry({ s, cerradoEn }: { s: NonNullable<TicketAgente["sentry"]>; cerradoEn?: string | null }) {
   const abierto = s.estado === "unresolved";
+  const volvio = abierto && !!cerradoEn && !!s.ultimaVez && Date.parse(s.ultimaVez) > Date.parse(cerradoEn);
   return (
     <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
       <span
@@ -1209,9 +1214,17 @@ function VinculoSentry({ s }: { s: NonNullable<TicketAgente["sentry"]> }) {
           abierto ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
         )}
       >
-        <Siren className="h-3 w-3" /> Sentry {s.shortId} · {abierto ? "sin resolver" : s.estado === "ignored" ? "ignorado" : "resuelto"}
+        <Siren className="h-3 w-3" /> Sentry {s.shortId} · {volvio ? "volvió a aparecer" : abierto ? "sin resolver" : s.estado === "ignored" ? "ignorado" : "resuelto"}
       </span>
-      <span className="text-muted-foreground">{abierto ? "Se resuelve al cerrar este ticket." : ""}</span>
+      <span className="text-muted-foreground">
+        {cerradoEn
+          ? volvio
+            ? s.ticketNuevo
+              ? <>Se resolvió al cerrar este ticket, pero el error volvió; lo sigue <a href={s.ticketNuevo.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">#{s.ticketNuevo.numero}</a>.</>
+              : "Se resolvió al cerrar este ticket, pero el error volvió: levanta un ticket nuevo desde Monitoreo."
+            : abierto ? "Sigue abierto en Sentry." : ""
+          : abierto ? "Se resuelve al cerrar este ticket." : ""}
+      </span>
       <Link to="/monitoreo" className="text-primary hover:underline">Ver en Monitoreo</Link>
       {/^https:\/\/[\w-]+\.sentry\.io\//.test(s.url) && (
         <a href={s.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-muted-foreground hover:text-foreground hover:underline">

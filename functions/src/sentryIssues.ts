@@ -22,7 +22,7 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
 import { SUPERUSER_EMAIL } from "./agente/acceso.js";
-import { sinAcentos, usuarioPortal } from "./agente/tickets.js";
+import { comoUtc, sinAcentos, usuarioPortal } from "./agente/tickets.js";
 import { secretoGlobal } from "./whatsapp.js";
 
 const ORG = "sozu-lh";
@@ -125,7 +125,13 @@ export async function detalleIssue(req: CallableRequest<{ issueId: string }>, sb
   const { token, id, issue, slug } = await autorizar(req, req.data?.issueId, "verMonitoreo");
   const [detalle, ticket] = await Promise.all([detalleDe(token, id, issue, slug), ticketDe(id)]);
   // Con su etapa en el portal: si ya se resolvió, el panel ofrece resolver el issue.
-  return { ...detalle, ticket: ticket ? { ...ticket, ...(await estadoTicket(sb, ticket.ticketId)) } : null };
+  if (!ticket) return { ...detalle, ticket: null };
+  const estado = await estadoTicket(sb, ticket.ticketId);
+  // Volvió después de cerrar el ticket (evento nuevo tras el cierre): no se
+  // resuelve el issue, se levanta un ticket nuevo ligado al anterior.
+  const regreso = estado.resuelto && texto(issue.status) === "unresolved" && !!estado.cerradoEn &&
+    Date.parse(texto(issue.lastSeen)) > Date.parse(estado.cerradoEn);
+  return { ...detalle, ticket: { ...ticket, ...estado, regreso } };
 }
 
 type Detalle = Awaited<ReturnType<typeof detalleDe>>;
@@ -301,16 +307,16 @@ async function ticketDe(issueId: string): Promise<TicketIssue | null> {
 }
 
 /** Etapa del ticket en el portal y si ya se resolvió (o cerró / descartó). */
-async function estadoTicket(sb: SupabaseClient, ticketId: number): Promise<{ etapa: string | null; resuelto: boolean }> {
+async function estadoTicket(sb: SupabaseClient, ticketId: number): Promise<{ etapa: string | null; resuelto: boolean; cerradoEn: string | null }> {
   const { data, error } = await sb
     .from("tickets")
-    .select("activo, tickets_etapas(nombre, tipo_semantico, cerrada)")
+    .select("activo, fecha_cierre, tickets_etapas(nombre, tipo_semantico, cerrada)")
     .eq("id", ticketId)
     .maybeSingle();
-  if (error || !data) return { etapa: null, resuelto: false };
+  if (error || !data) return { etapa: null, resuelto: false, cerradoEn: null };
   const e = mapa(Array.isArray(data.tickets_etapas) ? data.tickets_etapas[0] : data.tickets_etapas);
   const resuelto = e.cerrada === true || TERMINALES.has(texto(e.tipo_semantico)) || data.activo === false;
-  return { etapa: texto(e.nombre) || null, resuelto };
+  return { etapa: texto(e.nombre) || null, resuelto, cerradoEn: data.fecha_cierre ? comoUtc(String(data.fecha_cierre)) : null };
 }
 
 /** Quién sufre el error según el repo: el campo «Rol afectado» de la plantilla. */
@@ -484,8 +490,11 @@ export async function crearTicketIssue(req: CallableRequest<{ issueId: string }>
         id_usuario_autor: yo.auth_user_id,
       });
     }
-    await marcarEnResumen(refResumen, id, previo);
-    return { ...previo, actualizado: !resuelto };
+    if (!resuelto) {
+      await marcarEnResumen(refResumen, id, previo);
+      return { ...previo, actualizado: true };
+    }
+    // Su ticket ya se cerró y el error volvió: va uno nuevo, ligado al anterior.
   }
 
   const { pipeline, etapa } = await destino(sb);
@@ -511,20 +520,32 @@ export async function crearTicketIssue(req: CallableRequest<{ issueId: string }>
   // Con el folio ya asignado, el «Qué necesito» lo pide en el título del PR.
   await sb.from("tickets").update({ descripcion: textoTicket(d, await contextoDe(alcance, folio)) }).eq("id", ins.id);
   await asignarSiFalta(sb, Number(ins.id), yo.auth_user_id);
+  // Regresión: «¿Ya lo había reportado antes?» con el ticket que ya se cerró. Aparte
+  // del alta: si el trigger del portal no lo acepta, el ticket nuevo queda igual.
+  if (previo) {
+    const { error: eRel } = await sb.from("tickets").update({ id_ticket_relacionado: previo.ticketId }).eq("id", ins.id);
+    if (eRel) console.warn("[sentryCrearTicket] relacionar con el anterior", eRel.message);
+  }
   await sb.from("tickets_actividad").insert({
     id_ticket: ins.id,
-    texto: `Ticket creado desde Monitoreo del dashboard de cambios (Sentry ${d.shortId}).`,
+    texto: previo
+      ? `Ticket creado desde Monitoreo del dashboard de cambios (Sentry ${d.shortId}): el error volvió después de cerrar el ticket #${previo.numero}.`
+      : `Ticket creado desde Monitoreo del dashboard de cambios (Sentry ${d.shortId}).`,
     tipo: "sistema",
     id_usuario_autor: yo.auth_user_id,
   });
 
   const salida: TicketIssue = { numero: folio, ticketId: Number(ins.id), url: URL_TICKET(folio), creadoPor: email };
-  await ref.set({ ...salida, slug, shortId: d.shortId, creadoEn: FieldValue.serverTimestamp() });
+  await ref.set({
+    ...salida, slug, shortId: d.shortId, creadoEn: FieldValue.serverTimestamp(),
+    // Los tickets anteriores del mismo issue (cerrados): siguen mostrando el vínculo.
+    ...(previo ? { anteriores: FieldValue.arrayUnion(previo.ticketId), numerosAnteriores: FieldValue.arrayUnion(previo.numero) } : {}),
+  }, { merge: true });
   await marcarEnResumen(refResumen, id, salida);
   // Nota en el issue para quien llegue por Sentry; si falla, el ticket ya existe.
   await sentry(token, `issues/${id}/comments/`, {
     method: "POST",
-    body: JSON.stringify({ text: `Ticket SOZU-${folio} en el portal: ${salida.url}` }),
+    body: JSON.stringify({ text: previo ? `Volvió después de cerrar SOZU-${previo.numero}. Ticket nuevo SOZU-${folio} en el portal: ${salida.url}` : `Ticket SOZU-${folio} en el portal: ${salida.url}` }),
   }).catch((e) => console.warn("[sentryCrearTicket] comentario", (e as Error).message));
   return { ...salida, actualizado: false };
 }
@@ -538,6 +559,10 @@ export interface SentryDeTicket {
   /** unresolved | resolved | ignored, como lo tiene Sentry ahora. */
   estado: string;
   url: string;
+  /** Último evento del issue: si es posterior al cierre del ticket, el error volvió. */
+  ultimaVez: string | null;
+  /** Ticket que se levantó después, cuando el error volvió tras cerrar este. */
+  ticketNuevo: { numero: number; url: string } | null;
 }
 
 /**
@@ -553,6 +578,7 @@ export async function sentryDeTickets(ticketIds: number[]): Promise<Map<number, 
   const docs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   for (let i = 0; i < ids.length; i += 30) {
     docs.push(...(await fs.collection("sentryTickets").where("ticketId", "in", ids.slice(i, i + 30)).get()).docs);
+    docs.push(...(await fs.collection("sentryTickets").where("anteriores", "array-contains-any", ids.slice(i, i + 30)).get()).docs);
   }
   if (!docs.length) return salida;
   const token = await secretoGlobal("SENTRY_AUTH_TOKEN");
@@ -561,13 +587,18 @@ export async function sentryDeTickets(ticketIds: number[]): Promise<Map<number, 
     const issue = token ? await sentry(token, `issues/${d.id}/`).catch(() => null) : null;
     const shortId = texto(x.shortId) || texto(issue?.shortId);
     if (!x.shortId && shortId) await d.ref.set({ shortId }, { merge: true }).catch(() => undefined);
-    salida.set(numero(x.ticketId), {
+    const base = {
       issueId: d.id,
       shortId: shortId || `issue ${d.id}`,
       slug: texto(x.slug),
       estado: texto(issue?.status) || "unresolved",
       url: texto(issue?.permalink) || `https://${ORG}.sentry.io/issues/${d.id}/`,
-    });
+      ultimaVez: texto(issue?.lastSeen) || null,
+    };
+    if (ids.includes(numero(x.ticketId))) salida.set(numero(x.ticketId), { ...base, ticketNuevo: null });
+    for (const ant of Array.isArray(x.anteriores) ? x.anteriores.map(Number) : []) {
+      if (ids.includes(ant)) salida.set(ant, { ...base, ticketNuevo: { numero: numero(x.numero), url: texto(x.url) } });
+    }
   }));
   return salida;
 }

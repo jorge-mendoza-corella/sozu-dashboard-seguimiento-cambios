@@ -229,7 +229,13 @@ export interface DetalleIssue {
     tags: { clave: string; valor: string }[];
   };
   /** Ticket del portal ya levantado para este issue (uno por issue), con su etapa. */
-  ticket: (TicketIssue & { etapa: string | null; resuelto: boolean }) | null;
+  ticket: (TicketIssue & {
+    etapa: string | null;
+    resuelto: boolean;
+    cerradoEn?: string | null;
+    /** El error volvió después de cerrar el ticket: toca levantar uno nuevo (queda ligado al anterior). */
+    regreso?: boolean;
+  }) | null;
 }
 
 export interface TicketIssue {
