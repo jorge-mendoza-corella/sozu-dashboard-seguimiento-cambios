@@ -74,6 +74,10 @@ export interface TicketSalida {
   loAtiendoYo: boolean;
   evidencias: { nombre: string; tipo: "imagen" | "audio" | "video" | "documento" | "otro"; url: string | null }[];
   url: string | null;
+  /** De dónde se levantó (`tickets.fuente` → etiqueta de `tickets_fuentes`, p. ej. «Portal admin»). */
+  origen: string | null;
+  /** Cuándo pasó a una etapa cerrada; solo en los resueltos. */
+  cerradoEn: string | null;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -164,11 +168,15 @@ export async function usuarioPortal(sb: SupabaseClient, email: string): Promise<
   return null;
 }
 
-export async function ticketsAsignados(sb: SupabaseClient, email: string): Promise<TicketSalida[]> {
-  const yo = await usuarioPortal(sb, email);
-  if (!yo) return [];
-  const uid: string = yo.auth_user_id;
+const SELECT_TICKET = `id, numero, nombre, descripcion, fecha_creacion, fecha_cierre, fuente, prioridad, solicitante, id_usuario_creador,
+       id_usuario_propietario, id_entidad_relacionada,
+       id_pipeline, id_etapa,
+       tickets_etapas(nombre, tipo_semantico, cerrada), tickets_pipelines(*), tickets_categorias(nombre),
+       proyectos(nombre), tickets_propietarios(id_usuario),
+       tickets_adjuntos(nombre, tipo, url, activo), tickets_solicitantes(id_entidad_relacionada)`;
 
+/** Mis tickets (propietario por la tabla N:N o por la columna legada) de los pipelines con asistente. */
+async function misFilas(sb: SupabaseClient, uid: string): Promise<Fila[]> {
   // Ids de tickets: por la tabla N:N y por la columna legada.
   const [{ data: props, error: e2 }, { data: legado, error: e3 }] = await Promise.all([
     sb.from("tickets_propietarios").select("id_ticket").eq("id_usuario", uid),
@@ -181,23 +189,23 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
 
   const { data: filas, error: e4 } = await sb
     .from("tickets")
-    .select(
-      `id, numero, nombre, descripcion, fecha_creacion, prioridad, solicitante, id_usuario_creador,
-       id_usuario_propietario, id_entidad_relacionada,
-       id_pipeline, id_etapa,
-       tickets_etapas(nombre, tipo_semantico), tickets_pipelines(*), tickets_categorias(nombre),
-       proyectos(nombre), tickets_propietarios(id_usuario),
-       tickets_adjuntos(nombre, tipo, url, activo), tickets_solicitantes(id_entidad_relacionada)`,
-    )
+    .select(SELECT_TICKET)
     .in("id", ids)
     .eq("activo", true)
     .order("fecha_creacion", { ascending: false });
   if (e4) throw e4;
+  return (filas ?? []).filter((t: Fila) => pipelineConAsistente(uno<Fila>(t.tickets_pipelines)));
+}
+
+export async function ticketsAsignados(sb: SupabaseClient, email: string): Promise<TicketSalida[]> {
+  const yo = await usuarioPortal(sb, email);
+  if (!yo) return [];
+  const uid: string = yo.auth_user_id;
 
   // Pipelines con asistente y etapas Nuevo / En revisión / En lista de espera, más los que
   // atiendo yo (los que atiende otro ya no me tienen de propietario). Orden: prioridad
   // (alta → media → baja → sin) y, dentro de cada una, el más antiguo primero.
-  const conAsistente = (filas ?? []).filter((t: Fila) => pipelineConAsistente(uno<Fila>(t.tickets_pipelines)));
+  const conAsistente = await misFilas(sb, uid);
   const etapas = await etapasPorPipeline(sb, [...new Set<number>(conAsistente.map((t: Fila) => t.id_pipeline))]);
   const loAtiendo = (t: Fila) => atendidoPor(propietariosDe(t), t.id_etapa, etapas.get(t.id_pipeline) ?? []) === uid;
   const pendientes = conAsistente
@@ -209,7 +217,36 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
       (ORDEN_PRIORIDAD[a.prioridad] ?? 3) - (ORDEN_PRIORIDAD[b.prioridad] ?? 3) ||
       Date.parse(a.fecha_creacion) - Date.parse(b.fecha_creacion))
     .slice(0, MAX_TICKETS);
+  return comoSalida(sb, pendientes, uid, loAtiendo);
+}
+
+const MAX_RESUELTOS = 50;
+
+/** Mis tickets ya cerrados (etapa terminal), el más reciente primero. Solo lectura en el panel. */
+export async function ticketsResueltos(sb: SupabaseClient, email: string): Promise<TicketSalida[]> {
+  const yo = await usuarioPortal(sb, email);
+  if (!yo) return [];
+  const uid: string = yo.auth_user_id;
+  const cerrados = (await misFilas(sb, uid))
+    .filter((t: Fila) => {
+      const e = uno<Fila>(t.tickets_etapas);
+      return !!e?.cerrada || TIPOS_TERMINALES.has(e?.tipo_semantico ?? "");
+    })
+    .sort((a: Fila, b: Fila) => Date.parse(b.fecha_cierre ?? b.fecha_creacion) - Date.parse(a.fecha_cierre ?? a.fecha_creacion))
+    .slice(0, MAX_RESUELTOS);
+  return comoSalida(sb, cerrados, uid, () => false);
+}
+
+/** Etiqueta de cada clave de `tickets_fuentes`. Sin el catálogo en el ambiente, vacío (sale la clave). */
+async function etiquetasFuente(sb: SupabaseClient): Promise<Map<string, string>> {
+  const { data, error } = await sb.from("tickets_fuentes").select("clave, etiqueta");
+  if (error) return new Map();
+  return new Map((data ?? []).map((f: Fila) => [f.clave, f.etiqueta]));
+}
+
+async function comoSalida(sb: SupabaseClient, pendientes: Fila[], uid: string, loAtiendo: (t: Fila) => boolean): Promise<TicketSalida[]> {
   if (pendientes.length === 0) return [];
+  const fuentes = await etiquetasFuente(sb);
 
   // Nombres de asignados y creadores en una sola consulta.
   const uids = new Set<string>();
@@ -285,6 +322,8 @@ export async function ticketsAsignados(sb: SupabaseClient, email: string): Promi
         .filter((a: Fila) => a.activo !== false)
         .map((a: Fila) => ({ nombre: a.nombre ?? "archivo", tipo: tipoEvidencia(a.tipo), url: a.url ?? null })),
       url: urlTicket(t.numero),
+      origen: t.fuente ? fuentes.get(t.fuente) ?? t.fuente : null,
+      cerradoEn: t.fecha_cierre ? comoUtc(t.fecha_cierre) : null,
     };
   });
 }

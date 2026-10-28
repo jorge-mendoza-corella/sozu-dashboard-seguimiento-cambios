@@ -65,6 +65,10 @@ export interface TicketAgente {
   evidencias: EvidenciaTicket[];
   /** Enlace directo al ticket en el portal (requiere sesión en el admin). */
   url: string | null;
+  /** De dónde se levantó (etiqueta de `tickets_fuentes`); falta en respuestas viejas. */
+  origen?: string | null;
+  /** Cuándo se cerró; solo en los resueltos. */
+  cerradoEn?: string | null;
   /**
    * Issue de Sentry ligado (ticket levantado desde Monitoreo). Al cerrar el
    * ticket desde aquí se resuelve en Sentry. Falta en respuestas viejas.
@@ -103,7 +107,7 @@ export interface RespuestaTickets {
 }
 
 const functions = getFunctions(app, "us-central1");
-const llamarTickets = httpsCallable<Record<string, never>, RespuestaTickets>(functions, "agenteTickets", { timeout: 60_000 });
+const llamarTickets = httpsCallable<{ vista?: "resueltos" }, RespuestaTickets>(functions, "agenteTickets", { timeout: 60_000 });
 const llamarMandar = httpsCallable<{ ticketId: string; md: string }, IssueClaude>(functions, "agenteMandarAClaude", { timeout: 60_000 });
 const llamarCerrar = httpsCallable<
   { ticketId: string; nota: string; prsSeleccionados?: string[] },
@@ -126,6 +130,20 @@ export async function desligarTicket(ticketId: string, idRelacionado: string) {
 
 export async function misTickets(): Promise<RespuestaTickets> {
   return (await llamarTickets({})).data;
+}
+
+/** Mis tickets ya cerrados (pestaña Resueltos), el más reciente primero. */
+export async function misTicketsResueltos(): Promise<RespuestaTickets> {
+  return (await llamarTickets({ vista: "resueltos" })).data;
+}
+
+/**
+ * De dónde salió el ticket: los de Monitoreo los levanta el dashboard desde un
+ * issue de Sentry (con la fuente del portal por defecto); los demás, su fuente.
+ */
+export function origenTicket(t: Pick<TicketAgente, "origen" | "sentry">): string | null {
+  if (t.sentry) return `Dashboard de cambios · Monitoreo, desde el issue ${t.sentry.shortId} de Sentry`;
+  return t.origen ?? null;
 }
 
 export interface IssueClaude {
