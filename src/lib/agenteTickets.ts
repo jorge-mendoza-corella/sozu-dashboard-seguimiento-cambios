@@ -264,7 +264,8 @@ export function avancePrs(prs: PrClaude[]): { enPrd: number; total: number } {
  */
 export const convencionPrs = (n: number) => [`SOZU-${n} o Ticket #${n} en el título o la descripción del PR`, `rama ticket-${n} (o ticket/${n}, sozu-${n})`, `trailer ${TRAILER_TICKET}: #${n} en un commit`];
 
-export type RazonMatch = "trailer" | "titulo" | "rama";
+/** `manual`: lo agregó a mano quien cierra. */
+export type RazonMatch = "trailer" | "titulo" | "rama" | "manual";
 
 export interface PrExterno extends PrClaude {
   razones: RazonMatch[];
@@ -278,11 +279,19 @@ export interface PrsExternos {
   revisadoEn: string;
 }
 
-const llamarBuscarPrs = httpsCallable<{ ticketId: string; forzar?: boolean }, PrsExternos>(functions, "agenteBuscarPrsTicket", { timeout: 120_000 });
+const llamarBuscarPrs = httpsCallable<{ ticketId: string; forzar?: boolean; agregar?: string; quitar?: string }, PrsExternos>(functions, "agenteBuscarPrsTicket", { timeout: 120_000 });
 
 /** PRs del ticket según la convención, en los repos de Sozu. Se reusa 10 min salvo `forzar`. */
 export async function buscarPrsTicket(ticketId: string, forzar = false): Promise<PrsExternos> {
   return (await llamarBuscarPrs({ ticketId, forzar })).data;
+}
+
+/**
+ * Liga a mano un PR al ticket (o lo desliga con `quitar`), para los trabajados
+ * por fuera que no traen nada que los relacione. Devuelve la lista actualizada.
+ */
+export async function prManualTicket(ticketId: string, url: string, quitar = false): Promise<PrsExternos> {
+  return (await llamarBuscarPrs({ ticketId, ...(quitar ? { quitar: url } : { agregar: url }) })).data;
 }
 
 const llamarSeguimiento = httpsCallable<{ ticketId: string; forzarPrs?: boolean }, SeguimientoClaude>(functions, "agenteClaudeSeguimiento", { timeout: 60_000 });

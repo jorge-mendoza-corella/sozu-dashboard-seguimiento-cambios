@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -26,8 +26,8 @@ import { AvisoTokenClaude, ConectarClaude, EstadoTokenClaude } from "./AvisoToke
 import { useTokenClaude } from "@/hooks/useTokenClaude";
 import { BarraClaudeMini, EstadoClaudeMini, SeguimientoClaude } from "./SeguimientoClaude";
 import {
-  analisisGuardado, avancePrs, buscarPrsTicket, cerrarTicketPortal, COLOR_PR, consultaSeguimiento, convencionPrs, desligarTicket, esSoloFecha, ETIQUETA_PR, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, misTicketsResueltos, notaDeCierre, origenTicket, promptDeTicket, relacionarTicket,
-  type AnalisisTicket, type PrExterno, type RazonMatch, type TicketAgente, type TicketEnviado,
+  analisisGuardado, avancePrs, buscarPrsTicket, cerrarTicketPortal, COLOR_PR, consultaSeguimiento, convencionPrs, desligarTicket, esSoloFecha, ETIQUETA_PR, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, prManualTicket, misTicketsResueltos, notaDeCierre, origenTicket, promptDeTicket, relacionarTicket,
+  type AnalisisTicket, type PrExterno, type PrsExternos as ListaPrsExternos, type RazonMatch, type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
 
 interface Props {
@@ -921,7 +921,7 @@ function Evidencia({ e, n }: { e: TicketAgente["evidencias"][number]; n: number 
  */
 const esExterno = (e: TicketEnviado | null) => !e?.issue && !e?.listo;
 
-const RAZON: Record<RazonMatch, string> = { trailer: "trailer en commit", titulo: "folio en el título", rama: "rama del ticket" };
+const RAZON: Record<RazonMatch, string> = { trailer: "trailer en commit", titulo: "folio en el título", rama: "rama del ticket", manual: "agregado a mano" };
 
 /** El PR como entra a la nota y al registro: el PR hacia main cuando ya lo hay. */
 const comoPrDeTicket = (p: PrExterno) => ({
@@ -937,7 +937,7 @@ const comoPrDeTicket = (p: PrExterno) => ({
  * portal, pero el ticket solo se cierra cuando todos los marcados están en PRD;
  * el servidor vuelve a verificar cada uno.
  */
-function PrsExternos({ t, prs, buscando, error, seleccion, onAlternar, onReintentar }: {
+function PrsExternos({ t, prs, buscando, error, seleccion, onAlternar, onReintentar, onManual }: {
   t: TicketAgente;
   prs: PrExterno[] | undefined;
   buscando: boolean;
@@ -945,7 +945,27 @@ function PrsExternos({ t, prs, buscando, error, seleccion, onAlternar, onReinten
   seleccion: Set<string>;
   onAlternar: (url: string) => void;
   onReintentar: () => void;
+  /** Lista nueva tras agregar o quitar a mano el PR `url`. */
+  onManual: (lista: ListaPrsExternos, url: string, quitado: boolean) => void;
 }) {
+  // PRs trabajados por fuera que no traen nada que los ligue al ticket: se agregan por URL.
+  const [url, setUrl] = useState("");
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  const [errorManual, setErrorManual] = useState<string | null>(null);
+  const manual = async (u: string, quitar: boolean) => {
+    if (!u.trim()) return;
+    setOcupado(quitar ? u : "nuevo");
+    setErrorManual(null);
+    try {
+      const lista = await prManualTicket(t.id, u.trim(), quitar);
+      onManual(lista, u.trim(), quitar);
+      if (!quitar) setUrl("");
+    } catch (e) {
+      setErrorManual(mensajeDeError(e));
+    } finally {
+      setOcupado(null);
+    }
+  };
   return (
     <div className="mt-4 rounded-lg border bg-muted/20 p-3">
       <div className="flex items-center justify-between gap-2">
@@ -958,8 +978,9 @@ function PrsExternos({ t, prs, buscando, error, seleccion, onAlternar, onReinten
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
       {prs && prs.length === 0 && (
         <div className="mt-2 text-xs text-muted-foreground">
-          <p>No encontré PRs ligados a {t.folio}. Para que aparezcan, el PR necesita alguno de:</p>
+          <p>No encontré PRs ligados a {t.folio}. Para que aparezcan solos, el PR necesita alguno de:</p>
           <ul className="mt-1 list-disc pl-4">{convencionPrs(t.numero).map((c) => <li key={c}><code>{c}</code></li>)}</ul>
+          <p className="mt-1">Si no trae ninguno, agrégalo abajo con su URL.</p>
         </div>
       )}
       {prs && prs.length > 0 && (
@@ -981,11 +1002,44 @@ function PrsExternos({ t, prs, buscando, error, seleccion, onAlternar, onReinten
                   <span className="block truncate text-muted-foreground">{p.titulo}</span>
                   <span className="block text-[10px] text-muted-foreground">Ligado por: {p.razones.map((r) => RAZON[r]).join(", ")}</span>
                 </span>
+                {p.razones.includes("manual") && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); void manual(p.url, true); }}
+                    disabled={!!ocupado}
+                    title="Quitar este PR del ticket"
+                    className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+                  >
+                    {ocupado === p.url ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                  </button>
+                )}
               </label>
             </li>
           ))}
         </ul>
       )}
+      {prs && (
+        <form
+          onSubmit={(e) => { e.preventDefault(); void manual(url, false); }}
+          className="mt-2.5 flex items-center gap-1.5 border-t pt-2.5"
+        >
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://github.com/…/pull/123"
+            className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs"
+            title="PR de un repo de Sozu que resolvió este ticket aunque no traiga el folio"
+          />
+          <button
+            type="submit"
+            disabled={!url.trim() || ocupado === "nuevo"}
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+          >
+            {ocupado === "nuevo" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />} Agregar PR
+          </button>
+        </form>
+      )}
+      {errorManual && <p className="mt-1 text-xs text-destructive">{errorManual}</p>}
     </div>
   );
 }
@@ -1006,6 +1060,7 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
   // Externo: los PRs del ticket por la convención. `intento` > 0 = "Volver a
   // buscar", que se salta lo guardado de los últimos 10 min.
   const [intento, setIntento] = useState(0);
+  const qc = useQueryClient();
   const busqueda = useQuery({
     queryKey: ["prs-externos", t.id, intento],
     queryFn: () => buscarPrsTicket(t.id, intento > 0),
@@ -1133,6 +1188,16 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
                   seleccion={seleccion}
                   onAlternar={alternar}
                   onReintentar={() => { setMarcados(null); setIntento((n) => n + 1); }}
+                  onManual={(lista, url, quitado) => {
+                    qc.setQueryData(["prs-externos", t.id, intento], lista);
+                    // Recién agregado y ya fusionado: va marcado, como los encontrados.
+                    if (marcados) {
+                      const nueva = new Set(marcados);
+                      if (quitado) nueva.delete(url);
+                      else if (lista.prs.some((p) => p.url === url && p.mergeado)) nueva.add(url);
+                      setMarcados(nueva);
+                    }
+                  }}
                 />
               )}
               {buscaPrs && faltaPrd.length > 0 && (

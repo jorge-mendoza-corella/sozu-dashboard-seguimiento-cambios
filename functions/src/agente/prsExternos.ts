@@ -20,7 +20,7 @@
  * todavía no tiene (y las ramas, que la búsqueda no mira).
  */
 import type { Octokit } from "@octokit/rest";
-import { getFirestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { cambiosDePr, estadoDePr, type PrClaude } from "./prsTicket.js";
 
 /** Empresa dueña de los repos donde se buscan los PRs (Sozu). */
@@ -29,7 +29,8 @@ const REVISAR_MS = 10 * 60_000;
 /** Más que esto ya no es "los PRs de un ticket": algo matcheó de más. */
 const MAX_PRS = 20;
 
-export type RazonMatch = "trailer" | "titulo" | "rama";
+/** `manual`: lo agregó a mano quien cierra (no trae nada que lo ligue al ticket). */
+export type RazonMatch = "trailer" | "titulo" | "rama" | "manual";
 
 export interface PrExterno extends PrClaude {
   razones: RazonMatch[];
@@ -174,8 +175,12 @@ export async function buscarPrsExternos(
   forzar = false,
 ): Promise<PrsExternos> {
   const ref = registro(email, t.id);
-  const previo = (await ref.get()).data()?.prsExternos as PrsExternos | undefined;
-  if (!forzar && previo && previo.numero === t.numero && Date.now() - Date.parse(previo.revisadoEn) < REVISAR_MS) return previo;
+  const datos = (await ref.get()).data();
+  const previo = datos?.prsExternos as PrsExternos | undefined;
+  const manuales = Array.isArray(datos?.prsManuales) ? (datos.prsManuales as string[]) : [];
+  if (!forzar && previo && previo.numero === t.numero && Date.now() - Date.parse(previo.revisadoEn) < REVISAR_MS) {
+    return conManuales(gh, previo, manuales);
+  }
 
   const encontrados = await candidatosDelTicket(gh, t.numero, await reposDeSozu());
   const urls = [...encontrados.keys()].slice(0, MAX_PRS);
@@ -191,7 +196,51 @@ export async function buscarPrsExternos(
     { owner: email, ticketId: t.id, numero: t.numero, folio: t.folio, titulo: t.titulo, prsExternos: salida },
     { merge: true },
   );
-  return salida;
+  return conManuales(gh, salida, manuales);
+}
+
+/** Los PRs agregados a mano (`prsManuales` del registro) que la búsqueda no trajo, con su estado de hoy. */
+async function conManuales(gh: Octokit, base: PrsExternos, manuales: string[]): Promise<PrsExternos> {
+  const ya = new Set(base.prs.map((p) => p.url));
+  const extra = (await Promise.all(manuales.filter((u) => !ya.has(u)).map(async (url) => {
+    const p = await estadoDePr(gh, url).catch(() => null);
+    return p ? ({ ...p, razones: ["manual"], mergeado: esMergeado(p.estado) } as PrExterno) : null;
+  }))).filter((p): p is PrExterno => !!p);
+  const marcarManual = (p: PrExterno) => (manuales.includes(p.url) && !p.razones.includes("manual") ? { ...p, razones: [...p.razones, "manual" as const] } : p);
+  return { ...base, prs: [...base.prs.map(marcarManual), ...extra] };
+}
+
+const esMergeado = (estado: string) => estado === "en_dev" || estado === "en_main" || estado === "en_prd";
+const URL_PR = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)$/;
+
+/**
+ * Agrega (o quita) a mano un PR al ticket, para cuando se trabajó por fuera y el
+ * PR no trae el folio, la rama ni el trailer. Tiene que ser de un repo de Sozu.
+ * Queda en `prsManuales` del registro; al cerrar se exige igual que esté en PRD.
+ */
+export async function agregarPrManual(
+  gh: Octokit,
+  email: string,
+  t: { id: string; numero: number; folio: string; titulo: string },
+  url: string,
+  quitar = false,
+): Promise<PrsExternos> {
+  const limpia = url.trim().replace(/[#?].*$/, "").replace(/\/(files|commits|checks)\/?$/, "").replace(/\/$/, "");
+  const ref = registro(email, t.id);
+  if (quitar) {
+    await ref.set({ prsManuales: FieldValue.arrayRemove(limpia) }, { merge: true });
+  } else {
+    const m = limpia.match(URL_PR);
+    if (!m) throw new Error("pr_url");
+    const repos = new Set((await reposDeSozu()).map((r) => clave(r.owner, r.repo)));
+    if (!repos.has(clave(m[1], m[2]))) throw new Error("pr_ajeno");
+    if (!(await estadoDePr(gh, limpia).catch(() => null))) throw new Error("pr_no_existe");
+    await ref.set(
+      { owner: email, ticketId: t.id, numero: t.numero, folio: t.folio, titulo: t.titulo, prsManuales: FieldValue.arrayUnion(limpia) },
+      { merge: true },
+    );
+  }
+  return buscarPrsExternos(gh, email, t);
 }
 
 /**
@@ -207,6 +256,8 @@ export async function verificarPrsExternos(
   gh: Octokit,
   numero: number,
   urls: string[],
+  /** Agregados a mano por quien cierra: no tienen que cumplir la convención del folio. */
+  manuales: string[] = [],
 ): Promise<{ repo: string; pr: number; url: string; cambios: string[]; enPrd: boolean }[]> {
   const repos = new Set((await reposDeSozu()).map((r) => clave(r.owner, r.repo)));
   const c = criteriosTicket(numero);
@@ -215,7 +266,7 @@ export async function verificarPrsExternos(
     if (!m || !repos.has(clave(m[1], m[2]))) throw new Error(`pr_ajeno:${url}`);
     const [, owner, repo, n] = m;
     const { data: pr } = await gh.pulls.get({ owner, repo, pull_number: Number(n) });
-    let es = razonesDePr(pr, numero).length > 0;
+    let es = manuales.includes(url) || razonesDePr(pr, numero).length > 0;
     if (!es) {
       const { data: commits } = await gh.pulls.listCommits({ owner, repo, pull_number: pr.number, per_page: 100 });
       es = commits.some((x) => c.trailer.test(x.commit.message));
