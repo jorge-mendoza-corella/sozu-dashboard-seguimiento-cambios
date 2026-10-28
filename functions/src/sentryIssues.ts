@@ -515,7 +515,7 @@ export async function crearTicketIssue(req: CallableRequest<{ issueId: string }>
   });
 
   const salida: TicketIssue = { numero: folio, ticketId: Number(ins.id), url: URL_TICKET(folio), creadoPor: email };
-  await ref.set({ ...salida, slug, creadoEn: FieldValue.serverTimestamp() });
+  await ref.set({ ...salida, slug, shortId: d.shortId, creadoEn: FieldValue.serverTimestamp() });
   await marcarEnResumen(refResumen, id, salida);
   // Nota en el issue para quien llegue por Sentry; si falla, el ticket ya existe.
   await sentry(token, `issues/${id}/comments/`, {
@@ -523,4 +523,47 @@ export async function crearTicketIssue(req: CallableRequest<{ issueId: string }>
     body: JSON.stringify({ text: `Ticket SOZU-${folio} en el portal: ${salida.url}` }),
   }).catch((e) => console.warn("[sentryCrearTicket] comentario", (e as Error).message));
   return { ...salida, actualizado: false };
+}
+
+// --- Vínculo visible desde los tickets ----------------------------------------
+
+export interface SentryDeTicket {
+  issueId: string;
+  shortId: string;
+  slug: string;
+  /** unresolved | resolved | ignored, como lo tiene Sentry ahora. */
+  estado: string;
+  url: string;
+}
+
+/**
+ * Issue de Sentry ligado a cada ticket (por `sentryTickets.ticketId`), para que
+ * la lista y el detalle de tickets lo muestren y el cierre avise que lo
+ * resuelve. Los docs viejos no guardaban el shortId: se completa y se guarda.
+ */
+export async function sentryDeTickets(ticketIds: number[]): Promise<Map<number, SentryDeTicket>> {
+  const salida = new Map<number, SentryDeTicket>();
+  const ids = [...new Set(ticketIds)].filter((n) => Number.isFinite(n));
+  if (!ids.length) return salida;
+  const fs = getFirestore();
+  const docs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+  for (let i = 0; i < ids.length; i += 30) {
+    docs.push(...(await fs.collection("sentryTickets").where("ticketId", "in", ids.slice(i, i + 30)).get()).docs);
+  }
+  if (!docs.length) return salida;
+  const token = await secretoGlobal("SENTRY_AUTH_TOKEN");
+  await Promise.all(docs.map(async (d) => {
+    const x = d.data();
+    const issue = token ? await sentry(token, `issues/${d.id}/`).catch(() => null) : null;
+    const shortId = texto(x.shortId) || texto(issue?.shortId);
+    if (!x.shortId && shortId) await d.ref.set({ shortId }, { merge: true }).catch(() => undefined);
+    salida.set(numero(x.ticketId), {
+      issueId: d.id,
+      shortId: shortId || `issue ${d.id}`,
+      slug: texto(x.slug),
+      estado: texto(issue?.status) || "unresolved",
+      url: texto(issue?.permalink) || `https://${ORG}.sentry.io/issues/${d.id}/`,
+    });
+  }));
+  return salida;
 }

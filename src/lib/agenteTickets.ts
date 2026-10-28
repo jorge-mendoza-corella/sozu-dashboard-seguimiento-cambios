@@ -65,6 +65,11 @@ export interface TicketAgente {
   evidencias: EvidenciaTicket[];
   /** Enlace directo al ticket en el portal (requiere sesión en el admin). */
   url: string | null;
+  /**
+   * Issue de Sentry ligado (ticket levantado desde Monitoreo). Al cerrar el
+   * ticket desde aquí se resuelve en Sentry. Falta en respuestas viejas.
+   */
+  sentry?: { issueId: string; shortId: string; slug: string; estado: string; url: string } | null;
 }
 
 export interface AnalisisTicket {

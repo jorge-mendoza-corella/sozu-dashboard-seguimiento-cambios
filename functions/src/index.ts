@@ -31,7 +31,7 @@ import { abrirConsola, ErrorConsola, finConsola, lineaConsola, sesionConsola } f
 import { qrWhatsapp } from "./whatsapp.js";
 import { falloDocs } from "./docsFallo.js";
 import { sentryWebhook as atenderSentry } from "./sentryWebhook.js";
-import { cambiarEstado, crearTicketIssue, detalleIssue, issuesDeTicket, resolverIssuesDeTicket, type Estado } from "./sentryIssues.js";
+import { cambiarEstado, crearTicketIssue, detalleIssue, issuesDeTicket, resolverIssuesDeTicket, sentryDeTickets, type Estado } from "./sentryIssues.js";
 import {
   conectarToken, desconectarToken, exigirTokenClaude, leerTokenClaude, llavePublica, marcarTokenRenovado, secretDe,
 } from "./agente/tokenClaude.js";
@@ -319,7 +319,13 @@ export const agenteTickets = onCall(
     const usuario = await verificarAcceso(req, "tickets");
     try {
       const tickets = await ticketsAsignados(clienteSupabase(SUPABASE_SERVICE_KEY.value()), usuario.email);
-      return { tickets, revisado: new Date().toISOString() };
+      // Issue de Sentry ligado (ticket levantado desde Monitoreo). Si Sentry no
+      // responde, los tickets salen igual, sin el vínculo.
+      const deSentry = await sentryDeTickets(tickets.map((t) => Number(t.id))).catch(() => new Map());
+      return {
+        tickets: tickets.map((t) => ({ ...t, sentry: deSentry.get(Number(t.id)) ?? null })),
+        revisado: new Date().toISOString(),
+      };
     } catch (e) {
       console.error("[agenteTickets]", e);
       throw new HttpsError("unavailable", "No se pudieron leer los tickets del portal.");
