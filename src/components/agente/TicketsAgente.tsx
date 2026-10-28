@@ -9,7 +9,7 @@
  * botón para cerrar el ticket en el portal. La investigación por API ya no corre;
  * la que algún ticket ya tenga se muestra como solo lectura.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -57,6 +57,9 @@ const COLOR_PRIORIDAD: Record<string, string> = {
   media: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
   baja: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
 };
+
+/** Ticket de la lista arrastrado sobre el detalle de otro: se relacionan. */
+const TIPO_ARRASTRE = "application/x-sozu-ticket";
 
 const sinAcentos = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const unicos = (xs: (string | null)[]) => [...new Set(xs.filter((x): x is string => !!x))].sort();
@@ -125,6 +128,31 @@ export function TicketsAgente({
       .sort((a, b) => Number(conPrs.has(a.id)) - Number(conPrs.has(b.id)));
   }, [tickets, fPipeline, fEtapa, fPrioridad, fTexto, conPrs]);
 
+  // Los relacionados entre sí van juntos: arriba el de folio más alto (el papá) y
+  // debajo los demás, sangrados. El grupo queda donde caía el primero de ellos.
+  const lista = useMemo(() => {
+    const visibles = new Map(filtrados.map((t) => [t.id, t]));
+    const raiz = new Map(filtrados.map((t) => [t.id, t.id]));
+    const buscar = (id: string): string => (raiz.get(id) === id ? id : buscar(raiz.get(id)!));
+    for (const t of filtrados) {
+      for (const r of t.relacionados ?? []) if (visibles.has(r.id)) raiz.set(buscar(r.id), buscar(t.id));
+    }
+    const grupos = new Map<string, TicketAgente[]>();
+    for (const t of filtrados) grupos.set(buscar(t.id), [...(grupos.get(buscar(t.id)) ?? []), t]);
+    const salida: { t: TicketAgente; papa: TicketAgente | null }[] = [];
+    const puestos = new Set<string>();
+    for (const t of filtrados) {
+      const g = buscar(t.id);
+      if (puestos.has(g)) continue;
+      puestos.add(g);
+      const miembros = grupos.get(g)!;
+      const papa = miembros.reduce((a, b) => (b.numero > a.numero ? b : a));
+      salida.push({ t: papa, papa: null });
+      for (const h of miembros) if (h !== papa) salida.push({ t: h, papa });
+    }
+    return salida;
+  }, [filtrados]);
+
   // Lo que pide GeorgIA (contestar o cerrar) manda sobre lo elegido a mano. Se
   // busca en todos los tickets, no solo en los filtrados: un filtro no lo esconde.
   const pedidoPorGeorgia = responderAhora ?? cerrarAhora;
@@ -191,14 +219,26 @@ export function TicketsAgente({
               <Inbox className="h-6 w-6" /> {tickets.length ? "Ningún ticket con esos filtros." : "No tienes tickets pendientes."}
             </p>
           )}
-          {filtrados.map((t) => {
+          {lista.map(({ t, papa }) => {
             const env = enviadoDe(t);
+            const rels = t.relacionados ?? [];
             return (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => { setElegido(t.id); setDetalleMovil(true); }}
-                className={cn("mb-1 w-full rounded-md px-2.5 py-2 text-left text-xs transition-colors", actual?.id === t.id ? "bg-primary/10" : "hover:bg-muted")}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(TIPO_ARRASTRE, String(t.numero));
+                  e.dataTransfer.setData("text/plain", t.folio);
+                  e.dataTransfer.effectAllowed = "link";
+                }}
+                title="Arrástralo sobre otro ticket para relacionarlos"
+                className={cn(
+                  "mb-1 w-full rounded-md px-2.5 py-2 text-left text-xs transition-colors",
+                  actual?.id === t.id ? "bg-primary/10" : "hover:bg-muted",
+                  papa && "ml-4 w-[calc(100%-1rem)] rounded-l-none border-l-2 border-violet-300 dark:border-violet-800",
+                )}
               >
                 <span className="flex items-center gap-1.5">
                   <span className="font-mono text-[10px] text-muted-foreground">{t.folio}</span>
@@ -222,6 +262,12 @@ export function TicketsAgente({
                 <span className="block truncate text-[10px] text-muted-foreground">
                   {t.abiertoPor ?? "—"} · {fechaTicket(t.abiertoEn, "dia")}
                 </span>
+                {rels.length > 0 && (
+                  <span className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-violet-700 dark:text-violet-300">
+                    <Link2 className="h-2.5 w-2.5 shrink-0" />
+                    Relacionado con {[papa?.folio, ...rels.filter((r) => r.id !== papa?.id).map((r) => r.folio)].filter(Boolean).join(", ")}
+                  </span>
+                )}
                 {env?.issue && !env.listo && <BarraClaudeMini ticketId={t.id} />}
               </button>
             );
@@ -395,8 +441,37 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
   const otros = t.asignados.filter((a) => !a.soyYo);
   const imagenes = t.evidencias.filter((e) => e.tipo === "imagen");
 
+  // Soltar aquí un ticket arrastrado de la lista lo relaciona con este.
+  const relacionados = useRef<{ ligar: (numero: number) => void }>(null);
+  const [encima, setEncima] = useState(false);
+  const esTicket = (e: React.DragEvent) => e.dataTransfer.types.includes(TIPO_ARRASTRE);
+
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5">
+    <div
+      className="relative mx-auto flex max-w-3xl flex-col gap-5"
+      onDragOver={(e) => {
+        if (!esTicket(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "link";
+        setEncima(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setEncima(false);
+      }}
+      onDrop={(e) => {
+        if (!esTicket(e)) return;
+        e.preventDefault();
+        setEncima(false);
+        relacionados.current?.ligar(Number(e.dataTransfer.getData(TIPO_ARRASTRE)));
+      }}
+    >
+      {encima && (
+        <div className="pointer-events-none absolute -inset-2 z-10 flex items-start justify-center rounded-lg border-2 border-dashed border-violet-400 bg-violet-50/80 pt-24 dark:bg-violet-950/60">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white shadow">
+            <Link2 className="h-3.5 w-3.5" /> Suelta para relacionarlo con {t.folio}
+          </span>
+        </div>
+      )}
       <header className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -407,7 +482,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
           </p>
           <h2 className="mt-1 text-lg font-semibold leading-snug">{t.titulo}</h2>
           {t.sentry && <VinculoSentry s={t.sentry} />}
-          <Relacionados t={t} onCambio={onRelacionCambiada} />
+          <Relacionados ref={relacionados} t={t} onCambio={onRelacionCambiada} />
         </div>
         {/* Se cierra cuando todo lo del ticket está en PRD (ver `listo`), o cuando
             Claude terminó sin cambios porque el arreglo ya estaba. */}
@@ -1024,9 +1099,10 @@ function VinculoSentry({ s }: { s: NonNullable<TicketAgente["sentry"]> }) {
 /**
  * Tickets ligados: los del portal («¿Ya lo había reportado antes?», el anterior y
  * los posteriores) y los que se ligan aquí con «Relacionar ticket» por folio.
+ * También se liga arrastrando un ticket de la lista sobre el detalle (`ref.ligar`).
  * Los ligados aquí y el anterior se pueden quitar; el posterior, desde su ticket.
  */
-function Relacionados({ t, onCambio }: { t: TicketAgente; onCambio: () => void }) {
+function Relacionados({ t, onCambio, ref }: { t: TicketAgente; onCambio: () => void; ref: Ref<{ ligar: (numero: number) => void }> }) {
   const [rs, setRs] = useState(t.relacionados ?? []);
   const [abierto, setAbierto] = useState(false);
   const [folio, setFolio] = useState("");
@@ -1039,10 +1115,11 @@ function Relacionados({ t, onCambio }: { t: TicketAgente; onCambio: () => void }
     setRs(t.relacionados ?? []);
   }
 
-  const ligar = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const numero = Number(folio.replace(/\D/g, ""));
+  const ligar = async (numero: number) => {
     if (!numero) return setError("Escribe el folio del ticket.");
+    if (numero === t.numero) return setError("Un ticket no se puede relacionar consigo mismo.");
+    if (rs.some((r) => r.numero === numero)) return setError(`Ya está relacionado con #${numero}.`);
+    if (ocupado) return;
     setOcupado("nuevo");
     setError(null);
     try {
@@ -1057,6 +1134,7 @@ function Relacionados({ t, onCambio }: { t: TicketAgente; onCambio: () => void }
       setOcupado(null);
     }
   };
+  useImperativeHandle(ref, () => ({ ligar }));
   const quitar = async (id: string) => {
     setOcupado(id);
     setError(null);
@@ -1115,14 +1193,16 @@ function Relacionados({ t, onCambio }: { t: TicketAgente; onCambio: () => void }
           <button
             type="button"
             onClick={() => { setAbierto(true); setError(null); }}
+            title="Por folio, o arrastra un ticket de la lista sobre este"
             className="inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <Plus className="h-3 w-3" /> Relacionar ticket
           </button>
         )}
+        {!abierto && ocupado === "nuevo" && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
       </div>
       {abierto && (
-        <form onSubmit={ligar} className="flex flex-wrap items-center gap-1.5">
+        <form onSubmit={(e) => { e.preventDefault(); ligar(Number(folio.replace(/\D/g, ""))); }} className="flex flex-wrap items-center gap-1.5">
           <span className="text-muted-foreground">Folio</span>
           <input
             autoFocus
@@ -1142,7 +1222,7 @@ function Relacionados({ t, onCambio }: { t: TicketAgente; onCambio: () => void }
           <button type="button" onClick={() => { setAbierto(false); setError(null); }} className="h-7 rounded-md px-2 text-muted-foreground hover:bg-muted">
             Cancelar
           </button>
-          <span className="w-full text-muted-foreground">Al cerrar uno de los dos desde aquí se cierra también el otro.</span>
+          <span className="w-full text-muted-foreground">Al cerrar uno de los dos desde aquí se cierra también el otro. También puedes arrastrar un ticket de la lista sobre este.</span>
         </form>
       )}
       {error && <span className="text-red-600 dark:text-red-400">{error}</span>}
