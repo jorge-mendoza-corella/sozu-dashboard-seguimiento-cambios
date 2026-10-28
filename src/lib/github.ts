@@ -1169,16 +1169,23 @@ export async function getMergedDevPRsForRelease(
  * commits) y commits propios (los que no son merge). Una o dos llamadas; el
  * detalle completo sigue siendo getMergedDevPRsForRelease.
  */
-export async function getReleaseResumen(owner: string, repo: string, prNumber: number): Promise<{ prs: number; commits: number }> {
+export async function getReleaseResumen(owner: string, repo: string, prNumber: number): Promise<{ prs: number; commits: number; autores: string[] }> {
   const commits = await octokit.paginate(octokit.pulls.listCommits, { owner, repo, pull_number: prNumber, per_page: 100 });
   const prs = new Set<number>();
   let propios = 0;
+  // Autores de los commits que trae HOY (sin merges ni bots): la descripción del
+  // release se escribe al crearlo y no se entera de los PRs que entran después.
+  const autores = new Map<string, number>();
   for (const c of commits) {
     const m = c.commit.message.match(/^Merge pull request #(\d+)/);
     if (m) prs.add(Number(m[1]));
-    else if ((c.parents?.length ?? 1) <= 1) propios += 1;
+    else if ((c.parents?.length ?? 1) <= 1) {
+      propios += 1;
+      const login = c.author?.login;
+      if (login && !/\[bot\]$|^github-actions/i.test(login)) autores.set(login, (autores.get(login) ?? 0) + 1);
+    }
   }
-  return { prs: prs.size, commits: propios };
+  return { prs: prs.size, commits: propios, autores: [...autores.entries()].sort((a, b) => b[1] - a[1]).map(([l]) => l) };
 }
 
 export interface AporteAutor {
