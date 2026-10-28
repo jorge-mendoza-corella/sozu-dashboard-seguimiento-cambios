@@ -345,8 +345,15 @@ export async function tomarTicket(sb: SupabaseClient, email: string, idTicket: n
 export async function cerrarTicket(sb: SupabaseClient, email: string, idTicket: number, nota: string): Promise<{ etapa: string }> {
   const yo = await usuarioPortal(sb, email);
   if (!yo) throw new Error("sin_usuario_portal");
-  const uid: string = yo.auth_user_id;
+  return pasarAResuelto(sb, yo.auth_user_id, idTicket, nota, true);
+}
 
+/**
+ * Pasa el ticket a la etapa resuelta de su pipeline con la nota a nombre de
+ * `uid`. `exigirPropietario` = false solo para los relacionados que se cierran
+ * en cascada con el principal (quien cierra lo pidió explícitamente).
+ */
+async function pasarAResuelto(sb: SupabaseClient, uid: string, idTicket: number, nota: string, exigirPropietario: boolean): Promise<{ etapa: string }> {
   const { data: t, error: e2 } = await sb
     .from("tickets")
     .select("id, id_pipeline, id_etapa, id_usuario_propietario, activo, tickets_pipelines(*), tickets_propietarios(id_usuario)")
@@ -355,7 +362,7 @@ export async function cerrarTicket(sb: SupabaseClient, email: string, idTicket: 
   if (e2) throw e2;
   if (!t || !t.activo) throw new Error("no_existe");
   const propietarios = ((t.tickets_propietarios ?? []) as Fila[]).map((p) => p.id_usuario);
-  if (!propietarios.includes(uid) && t.id_usuario_propietario !== uid) throw new Error("no_es_tuyo");
+  if (exigirPropietario && !propietarios.includes(uid) && t.id_usuario_propietario !== uid) throw new Error("no_es_tuyo");
   if (!pipelineConAsistente(uno<Fila>(t.tickets_pipelines))) throw new Error("pipeline_no_permitido");
 
   const { data: destino, error: e3 } = await sb
@@ -393,4 +400,100 @@ export async function cerrarTicket(sb: SupabaseClient, email: string, idTicket: 
   });
   if (e5) throw e5;
   return { etapa: destino.nombre };
+}
+
+// --- Tickets relacionados («¿Ya lo había reportado antes?» del portal) -----------
+
+/**
+ * Otro ticket ligado por `tickets.id_ticket_relacionado`: el anterior al que
+ * apunta este ticket, o uno posterior que apunta a este. Al cerrar uno desde el
+ * dashboard se cierran también los relacionados que sigan abiertos (un nivel:
+ * los directos).
+ */
+export interface TicketRelacionado {
+  id: string;
+  numero: number;
+  folio: string;
+  titulo: string;
+  etapa: string | null;
+  cerrado: boolean;
+  relacion: "anterior" | "posterior";
+  /** Está en un pipeline que el dashboard puede cerrar (los del asistente). */
+  sePuedeCerrar: boolean;
+  url: string;
+}
+
+const SELECT_REL = "id, numero, nombre, activo, id_ticket_relacionado, tickets_etapas(nombre, tipo_semantico, cerrada), tickets_pipelines(*)";
+
+function comoRelacionado(f: Fila, relacion: TicketRelacionado["relacion"]): TicketRelacionado {
+  const e = uno<Fila>(f.tickets_etapas);
+  return {
+    id: String(f.id),
+    numero: Number(f.numero),
+    folio: `#${f.numero}`,
+    titulo: String(f.nombre ?? ""),
+    etapa: e?.nombre ?? null,
+    cerrado: !!e?.cerrada || TIPOS_TERMINALES.has(e?.tipo_semantico ?? ""),
+    relacion,
+    sePuedeCerrar: pipelineConAsistente(uno<Fila>(f.tickets_pipelines)),
+    url: urlTicket(Number(f.numero)),
+  };
+}
+
+/** Relacionados de cada ticket. Sin la columna en el ambiente (o si falla), vacío. */
+export async function relacionadosDe(sb: SupabaseClient, ids: number[]): Promise<Map<number, TicketRelacionado[]>> {
+  const salida = new Map<number, TicketRelacionado[]>();
+  if (!ids.length) return salida;
+  const agregar = (id: number, r: TicketRelacionado) => salida.set(id, [...(salida.get(id) ?? []), r]);
+  const [propios, posteriores] = await Promise.all([
+    sb.from("tickets").select("id, id_ticket_relacionado").in("id", ids).not("id_ticket_relacionado", "is", null),
+    sb.from("tickets").select(SELECT_REL).in("id_ticket_relacionado", ids).eq("activo", true),
+  ]);
+  if (propios.error || posteriores.error) return salida;
+  for (const f of posteriores.data ?? []) agregar(Number(f.id_ticket_relacionado), comoRelacionado(f, "posterior"));
+  const anteriores = [...new Set((propios.data ?? []).map((f: Fila) => Number(f.id_ticket_relacionado)))];
+  if (anteriores.length) {
+    const { data, error } = await sb.from("tickets").select(SELECT_REL).in("id", anteriores).eq("activo", true);
+    if (!error) {
+      const porId = new Map((data ?? []).map((f: Fila) => [Number(f.id), f]));
+      for (const f of propios.data ?? []) {
+        const rel = porId.get(Number(f.id_ticket_relacionado));
+        if (rel) agregar(Number(f.id), comoRelacionado(rel, "anterior"));
+      }
+    }
+  }
+  return salida;
+}
+
+/**
+ * Cierra en cascada los relacionados abiertos del ticket que se acaba de cerrar,
+ * con una nota que dice con cuál se cerraron. Los que no se pueden (otro
+ * pipeline, ya no existen) se reportan sin detener a los demás.
+ */
+export async function cerrarRelacionados(
+  sb: SupabaseClient,
+  email: string,
+  relacionados: TicketRelacionado[],
+  folioPrincipal: string,
+): Promise<{ cerrados: string[]; fallidos: string[] }> {
+  const yo = await usuarioPortal(sb, email);
+  const cerrados: string[] = [];
+  const fallidos: string[] = [];
+  if (!yo) return { cerrados, fallidos: relacionados.filter((r) => !r.cerrado).map((r) => r.folio) };
+  for (const r of relacionados.filter((x) => !x.cerrado)) {
+    try {
+      await pasarAResuelto(
+        sb,
+        yo.auth_user_id,
+        Number(r.id),
+        `Se cierra junto con el ticket relacionado ${folioPrincipal}, desde el dashboard de cambios: lo que se resolvió ahí resuelve también este.`,
+        false,
+      );
+      cerrados.push(r.folio);
+    } catch (e) {
+      console.warn(`[cerrarRelacionados] ${r.folio}`, (e as Error).message);
+      fallidos.push(r.folio);
+    }
+  }
+  return { cerrados, fallidos };
 }

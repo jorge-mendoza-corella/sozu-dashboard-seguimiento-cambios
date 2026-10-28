@@ -70,6 +70,24 @@ export interface TicketAgente {
    * ticket desde aquí se resuelve en Sentry. Falta en respuestas viejas.
    */
   sentry?: { issueId: string; shortId: string; slug: string; estado: string; url: string } | null;
+  /**
+   * Tickets ligados con «¿Ya lo había reportado antes?» del portal: el anterior
+   * al que apunta y los posteriores que apuntan a este. Al cerrar desde aquí se
+   * cierran también los que sigan abiertos. Falta en respuestas viejas.
+   */
+  relacionados?: TicketRelacionado[];
+}
+
+export interface TicketRelacionado {
+  id: string;
+  numero: number;
+  folio: string;
+  titulo: string;
+  etapa: string | null;
+  cerrado: boolean;
+  relacion: "anterior" | "posterior";
+  sePuedeCerrar: boolean;
+  url: string;
 }
 
 export interface AnalisisTicket {
@@ -88,7 +106,7 @@ const llamarTickets = httpsCallable<Record<string, never>, RespuestaTickets>(fun
 const llamarMandar = httpsCallable<{ ticketId: string; md: string }, IssueClaude>(functions, "agenteMandarAClaude", { timeout: 60_000 });
 const llamarCerrar = httpsCallable<
   { ticketId: string; nota: string; prsSeleccionados?: string[] },
-  { ok: true; etapa: string; sentryResueltos?: string[] }
+  { ok: true; etapa: string; sentryResueltos?: string[]; relacionadosCerrados?: string[]; relacionadosFallidos?: string[] }
 >(functions, "agenteCerrarTicket", { timeout: 120_000 });
 
 export async function misTickets(): Promise<RespuestaTickets> {

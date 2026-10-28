@@ -17,7 +17,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   AlertCircle, Bot, ChevronDown, Check, CheckCircle2, Copy, ExternalLink, FileAudio, FileText, FileVideo, FolderGit2, Image as ImageIcon, Inbox, Loader2,
-  Paperclip, RefreshCw, RotateCcw, Search, Send, Siren, Sparkles, User, Users,
+  Link2, Paperclip, RefreshCw, RotateCcw, Search, Send, Siren, Sparkles, User, Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
@@ -404,6 +404,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
           </p>
           <h2 className="mt-1 text-lg font-semibold leading-snug">{t.titulo}</h2>
           {t.sentry && <VinculoSentry s={t.sentry} />}
+          {!!t.relacionados?.length && <Relacionados rs={t.relacionados} />}
         </div>
         {/* Se cierra cuando todo lo del ticket está en PRD (ver `listo`), o cuando
             Claude terminó sin cambios porque el arreglo ya estaba. */}
@@ -836,6 +837,8 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
   const [error, setError] = useState<string | null>(null);
   const [hecho, setHecho] = useState<string | null>(null);
   const [sentryResueltos, setSentryResueltos] = useState<string[]>([]);
+  const [cascada, setCascada] = useState<{ cerrados: string[]; fallidos: string[] }>({ cerrados: [], fallidos: [] });
+  const relAbiertos = (t.relacionados ?? []).filter((r) => !r.cerrado);
 
   const cerrar = async () => {
     setEnviando(true);
@@ -844,6 +847,7 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
       const r = await cerrarTicketPortal(t.id, nota, buscaPrs ? [...seleccion] : undefined);
       setHecho(r.etapa);
       setSentryResueltos(r.sentryResueltos ?? []);
+      setCascada({ cerrados: r.relacionadosCerrados ?? [], fallidos: r.relacionadosFallidos ?? [] });
       setTimeout(onCerrado, 1400);
     } catch (e) {
       setError(mensajeDeError(e));
@@ -867,9 +871,30 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
             <p className="mt-4 flex items-center gap-2 rounded-md bg-emerald-50 p-3 text-sm font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
               <CheckCircle2 className="h-4 w-4" /> Listo: el ticket quedó en "{hecho}" con la nota de seguimiento.
               {sentryResueltos.length > 0 && <> También se resolvió {sentryResueltos.join(", ")} en Sentry.</>}
+              {cascada.cerrados.length > 0 && <> Se cerró también {cascada.cerrados.join(", ")} (relacionado{cascada.cerrados.length === 1 ? "" : "s"}).</>}
+              {cascada.fallidos.length > 0 && <span className="text-amber-700 dark:text-amber-400"> No se pudo cerrar {cascada.fallidos.join(", ")}: ciérralo{cascada.fallidos.length === 1 ? "" : "s"} en el portal.</span>}
             </p>
           ) : (
             <>
+              {relAbiertos.length > 0 && (
+                <div className="mt-4 rounded-md border border-violet-300/70 bg-violet-50 p-2.5 text-xs text-violet-900 dark:border-violet-800/60 dark:bg-violet-950/30 dark:text-violet-200">
+                  <p className="flex items-start gap-1.5">
+                    <Link2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      Al cerrar {t.folio} también se {relAbiertos.length === 1 ? "cierra el ticket relacionado" : "cierran los tickets relacionados"}:
+                    </span>
+                  </p>
+                  <ul className="mt-1.5 space-y-0.5 pl-5">
+                    {relAbiertos.map((r) => (
+                      <li key={r.id}>
+                        <span className="font-semibold">{r.folio}</span> {r.titulo}
+                        <span className="text-violet-700/80 dark:text-violet-300/80"> · {r.etapa ?? "abierto"}</span>
+                        {!r.sePuedeCerrar && <span className="text-amber-700 dark:text-amber-400"> · otro pipeline: ciérralo en el portal</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {t.sentry && (
                 <p
                   className={cn(
@@ -990,5 +1015,33 @@ function VinculoSentry({ s }: { s: NonNullable<TicketAgente["sentry"]> }) {
         </a>
       )}
     </p>
+  );
+}
+
+/** Tickets ligados con «¿Ya lo había reportado antes?»: el anterior y los posteriores. */
+function Relacionados({ rs }: { rs: NonNullable<TicketAgente["relacionados"]> }) {
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+      <span className="inline-flex items-center gap-1 text-muted-foreground">
+        <Link2 className="h-3 w-3" /> Relacionado con
+      </span>
+      {rs.map((r) => (
+        <a
+          key={r.id}
+          href={r.url}
+          target="_blank"
+          rel="noreferrer"
+          title={`${r.relacion === "anterior" ? "Reporte anterior" : "Reporte posterior"}: ${r.titulo}`}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 hover:bg-muted",
+            r.cerrado ? "text-muted-foreground" : "border-violet-300 text-violet-700 dark:border-violet-800 dark:text-violet-300",
+          )}
+        >
+          <span className="font-semibold">{r.folio}</span>
+          <span>{r.cerrado ? "cerrado" : r.etapa ?? "abierto"}</span>
+        </a>
+      ))}
+      {rs.some((r) => !r.cerrado) && <span className="text-muted-foreground">Se cierran al cerrar este.</span>}
+    </div>
   );
 }
