@@ -583,6 +583,12 @@ service cloud.firestore {
         && docId == request.auth.token.email + '__' + request.resource.data.ticketId;
     }
 
+    // Tickets relacionados a mano desde el dashboard (ver functions/src/agente/relaciones.ts).
+    // Solo la función `agenteRelacionarTicket` los toca.
+    match /agente_tickets_relaciones/{docId} {
+      allow read, write: if false;
+    }
+
     // .md del ticket editado por cada quien (borrador antes de mandarlo a Claude).
     // Aparte de los enviados: guardar un borrador no cuenta como mandarlo.
     // Id = "<email>__<ticketId>": cada quien solo ve y toca los suyos.
