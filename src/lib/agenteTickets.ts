@@ -73,7 +73,17 @@ export interface TicketAgente {
    * Issue de Sentry ligado (ticket levantado desde Monitoreo). Al cerrar el
    * ticket desde aquí se resuelve en Sentry. Falta en respuestas viejas.
    */
-  sentry?: { issueId: string; shortId: string; slug: string; estado: string; url: string } | null;
+  sentry?: {
+    issueId: string;
+    shortId: string;
+    slug: string;
+    estado: string;
+    url: string;
+    /** Último evento: si es posterior al cierre del ticket, el error volvió. */
+    ultimaVez?: string | null;
+    /** Ticket levantado después porque el error volvió tras cerrar este. */
+    ticketNuevo?: { numero: number; url: string } | null;
+  } | null;
   /**
    * Tickets ligados con «¿Ya lo había reportado antes?» del portal: el anterior
    * al que apunta y los posteriores que apuntan a este. Al cerrar desde aquí se
