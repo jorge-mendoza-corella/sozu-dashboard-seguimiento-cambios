@@ -1,0 +1,112 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { ChevronDown, ChevronRight, ExternalLink, GitMerge, GitPullRequestClosed, History, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { formatDistanceToNow } from "@/lib/timeUtils";
+import { DIAS_HISTORIAL_PRS, getContenidoPR, getHistorialPRs, type PrHistorial } from "@/lib/github";
+
+// ---------------------------------------------------------------------------
+// Historial de PRs del repo (cerrados en los últimos DIAS_HISTORIAL_PRS días):
+// contraído de entrada y sin consultar GitHub hasta abrirlo. Cada PR se abre
+// para ver su descripción y sus commits, con enlace directo a GitHub.
+// ---------------------------------------------------------------------------
+
+export function HistorialPRs({ owner, repo, soloDe = null, esMio }: {
+  owner: string;
+  repo: string;
+  /** Sin permiso de ver a otros: solo los PRs de este login. */
+  soloDe?: string | null;
+  esMio: (login?: string | null) => boolean;
+}) {
+  const [abierto, setAbierto] = useState(false);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["historial-prs", owner, repo],
+    queryFn: () => getHistorialPRs(owner, repo),
+    enabled: abierto,
+    staleTime: 5 * 60_000,
+  });
+  const prs = (data ?? []).filter((p) => !soloDe || p.author.toLowerCase() === soloDe.toLowerCase());
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setAbierto((v) => !v)}
+        className="flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
+      >
+        <History className="h-3.5 w-3.5" /> Historial de PRs {data && `(${prs.length})`}
+        <span className="font-normal normal-case tracking-normal">· últimos {DIAS_HISTORIAL_PRS} días como máximo</span>
+        {abierto ? <ChevronDown className="ml-auto h-3.5 w-3.5" /> : <ChevronRight className="ml-auto h-3.5 w-3.5" />}
+      </button>
+      {abierto && (
+        <div className="mt-2 space-y-1">
+          {isLoading && <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Leyendo GitHub…</p>}
+          {error && <p className="text-xs text-destructive">No se pudo leer el historial de GitHub.</p>}
+          {data && prs.length === 0 && <p className="text-xs text-muted-foreground">Sin PRs cerrados en los últimos {DIAS_HISTORIAL_PRS} días.</p>}
+          {prs.map((p) => <FilaPR key={p.number} owner={owner} repo={repo} pr={p} esMio={esMio} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilaPR({ owner, repo, pr, esMio }: { owner: string; repo: string; pr: PrHistorial; esMio: (login?: string | null) => boolean }) {
+  const [abierto, setAbierto] = useState(false);
+  const { data, isLoading } = useQuery({
+    queryKey: ["contenido-pr", owner, repo, pr.number],
+    queryFn: () => getContenidoPR(owner, repo, pr.number),
+    enabled: abierto,
+    staleTime: Infinity,
+  });
+  const aMain = pr.base === "main";
+  return (
+    <div className="rounded-md border bg-muted/20 text-xs">
+      <div className="flex items-start gap-1.5 px-2 py-1.5">
+        <button type="button" onClick={() => setAbierto((v) => !v)} className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground" title="Ver qué contenía">
+          {abierto ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        </button>
+        {pr.merged
+          ? <GitMerge className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600" />
+          : <GitPullRequestClosed className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />}
+        <button type="button" onClick={() => setAbierto((v) => !v)} className="min-w-0 flex-1 text-left">
+          <span className="font-mono text-muted-foreground">#{pr.number}</span>{" "}
+          <span className="font-medium">{pr.title}</span>
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-muted-foreground">
+            <span className="font-mono">{pr.head} → <span className={cn(aMain ? "text-emerald-700 dark:text-emerald-400" : "text-sky-600 dark:text-sky-400")}>{pr.base}</span></span>
+            <span>·</span>
+            <span className={cn("font-mono", esMio(pr.author) && "rounded bg-fuchsia-100 px-1 font-semibold text-fuchsia-700 dark:bg-fuchsia-900/50 dark:text-fuchsia-300")}>{pr.author}</span>
+            <span>·</span>
+            <span title={new Date(pr.closedAt).toLocaleString("es-MX", { timeZone: "America/Mexico_City" })}>
+              {pr.merged ? "fusionado" : "cerrado sin fusionar"} hace {formatDistanceToNow(pr.closedAt)}
+            </span>
+          </span>
+        </button>
+        <a href={pr.url} target="_blank" rel="noreferrer" className="shrink-0 text-muted-foreground hover:text-primary" title="Abrir en GitHub">
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      </div>
+      {abierto && (
+        <div className="space-y-2 border-t px-3 py-2">
+          {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+          {data && (
+            <>
+              {data.descripcion && <p className="line-clamp-6 whitespace-pre-wrap text-[11px] text-muted-foreground">{data.descripcion}</p>}
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {data.commits.length} commit{data.commits.length === 1 ? "" : "s"} · {data.archivos} archivo{data.archivos === 1 ? "" : "s"}
+              </p>
+              <ul className="space-y-0.5">
+                {data.commits.map((c) => (
+                  <li key={c.sha} className="flex items-baseline gap-1.5">
+                    <a href={c.url} target="_blank" rel="noreferrer" className="shrink-0 font-mono text-[10px] text-primary hover:underline">{c.sha}</a>
+                    <span className="min-w-0 flex-1 truncate" title={c.message}>{c.message}</span>
+                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{c.author}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
