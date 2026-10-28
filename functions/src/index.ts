@@ -619,7 +619,7 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string; prsSe
         const motivos: Record<string, string> = {
           pr_ajeno: "no es de un repo de Sozu",
           pr_no_es_del_ticket: `no trae SOZU-${t.numero}, la rama ticket-${t.numero} ni el trailer Ticket-SOZU: #${t.numero}`,
-          pr_sin_merge: "todavía no está mergeado a main",
+          pr_sin_prd: "todavía no llega a PRD (el ticket se cierra cuando todo lo marcado está en producción)",
         };
         if (motivos[codigo]) throw new HttpsError("failed-precondition", `El PR ${url} ${motivos[codigo]}.`);
         console.error("[agenteCerrarTicket] verificar PRs", e);

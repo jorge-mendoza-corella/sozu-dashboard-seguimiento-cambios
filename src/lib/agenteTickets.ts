@@ -497,8 +497,6 @@ export interface PrDeTicket {
   pr: number;
   url: string;
   cambios: string[];
-  /** A qué rama llegó: "main" (o PRD) por defecto; "dev" si todavía no sale a main. */
-  destino?: "main" | "dev";
 }
 
 export interface TicketEnviado {
@@ -609,6 +607,6 @@ export async function ticketsResueltosEnDeploy(
  *   - cambio 1
  */
 export function notaDeCierre(prs: PrDeTicket[]): string {
-  const bloques = prs.map((p) => `${p.repo} — PR hacia ${p.destino ?? "main"} #${p.pr}\n${p.cambios.map((c) => `- ${c}`).join("\n")}`);
+  const bloques = prs.map((p) => `${p.repo} — PR hacia main #${p.pr}\n${p.cambios.map((c) => `- ${c}`).join("\n")}`);
   return ["Listo, favor de validar.", ...bloques].join("\n\n");
 }

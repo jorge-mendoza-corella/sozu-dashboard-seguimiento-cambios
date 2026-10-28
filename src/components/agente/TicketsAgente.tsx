@@ -707,13 +707,13 @@ const comoPrDeTicket = (p: PrExterno) => ({
   pr: p.prMain?.numero ?? p.numero,
   url: p.prMain?.url ?? p.url,
   cambios: [p.titulo],
-  destino: p.estado === "en_dev" ? ("dev" as const) : ("main" as const),
 });
 
 /**
  * Lista de PRs de un ticket trabajado por fuera, para elegir cuáles lo cerraron.
- * Cuentan los que ya se fusionaron (dev, main o PRD), como en el portal; el
- * servidor vuelve a verificar cada uno.
+ * Se pueden marcar los que ya se fusionaron (dev, main o PRD), como en el
+ * portal, pero el ticket solo se cierra cuando todos los marcados están en PRD;
+ * el servidor vuelve a verificar cada uno.
  */
 function PrsExternos({ t, prs, buscando, error, seleccion, onAlternar, onReintentar }: {
   t: TicketAgente;
@@ -855,14 +855,15 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
                 />
               )}
               {externo && faltaPrd.length > 0 && (
-                <p className="mt-2 flex items-start gap-1.5 rounded-md bg-amber-50 p-2 text-[11px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                <p className="mt-2 flex items-start gap-1.5 rounded-md bg-red-50 p-2 text-[11px] text-red-900 dark:bg-red-950/30 dark:text-red-200">
                   <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
+                    Todavía no se puede cerrar:{" "}
                     {[
-                      soloDev.length > 0 && `${lista(soloDev)} ${soloDev.length === 1 ? "está" : "están"} en dev y todavía no sale${soloDev.length === 1 ? "" : "n"} a main`,
-                      enMain.length > 0 && `${lista(enMain)} ya ${enMain.length === 1 ? "está" : "están"} en main pero el último deploy a PRD todavía no ${enMain.length === 1 ? "lo" : "los"} trae`,
+                      soloDev.length > 0 && `${lista(soloDev)} ${soloDev.length === 1 ? "está" : "están"} en dev y no ha${soloDev.length === 1 ? "" : "n"} salido a main`,
+                      enMain.length > 0 && `${lista(enMain)} ya ${enMain.length === 1 ? "está" : "están"} en main, pero el último deploy a PRD no ${enMain.length === 1 ? "lo" : "los"} trae`,
                     ].filter(Boolean).join("; ")}
-                    . Puedes cerrarlo igual.
+                    . Se habilita cuando todo lo marcado llegue a PRD (o desmarca lo que no sea de este ticket).
                   </span>
                 </p>
               )}
@@ -902,7 +903,7 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
               {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
               <div className="mt-4 flex justify-end gap-2">
                 <button type="button" onClick={onCancelar} disabled={enviando} className="h-9 rounded-md px-3 text-sm font-medium hover:bg-muted">No, todavía no</button>
-                <button type="button" onClick={() => void cerrar()} disabled={enviando || !nota.trim() || !revisado || (externo && seleccion.size === 0)} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:opacity-50">
+                <button type="button" onClick={() => void cerrar()} disabled={enviando || !nota.trim() || !revisado || (externo && (seleccion.size === 0 || faltaPrd.length > 0))} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:opacity-50">
                   {enviando && <Loader2 className="h-4 w-4 animate-spin" />} Sí, cerrar ticket
                 </button>
               </div>
