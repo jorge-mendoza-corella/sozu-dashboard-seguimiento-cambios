@@ -14,7 +14,7 @@ import { DIAS_HISTORIAL_PRS, getContenidoPR, getHistorialPRs, type PrHistorial }
 export function HistorialPRs({ owner, repo, soloDe = null, esMio }: {
   owner: string;
   repo: string;
-  /** Sin permiso de ver a otros: solo los PRs de este login. */
+  /** null = los de todos; si no, solo los de este login ("" = ninguno). */
   soloDe?: string | null;
   esMio: (login?: string | null) => boolean;
 }) {
@@ -25,7 +25,7 @@ export function HistorialPRs({ owner, repo, soloDe = null, esMio }: {
     enabled: abierto,
     staleTime: 5 * 60_000,
   });
-  const prs = (data ?? []).filter((p) => !soloDe || p.author.toLowerCase() === soloDe.toLowerCase());
+  const prs = (data ?? []).filter((p) => soloDe === null || p.author.toLowerCase() === soloDe.toLowerCase());
 
   return (
     <div>

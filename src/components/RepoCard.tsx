@@ -959,13 +959,15 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           <PRList prs={scopedPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} perms={perms} approver={approver} codeOwnerAuths={codeOwnerAuths} selfLogin={canViewOthers ? null : selfLogin} myLogin={myLogin} avisos={avisos} />
         </div>
 
-        {/* Historial de PRs (cerrados en los últimos días): se lee al abrirlo. */}
-        <HistorialPRs
+        {/* Historial de PRs (cerrados en los últimos días): con su permiso; solo
+            los propios salvo con «ver cambios de otros». Se lee al abrirlo. */}
+        {perms.verHistorialPRs && <HistorialPRs
           owner={status.owner}
           repo={status.repo}
-          soloDe={canViewOthers ? null : selfLogin}
+          // Sin «ver cambios de otros», solo los suyos (sin login de GitHub, ninguno).
+          soloDe={perms.viewOthers ? null : selfLogin ?? ""}
           esMio={(l) => !!myLogin && !!l && l.toLowerCase() === myLogin.toLowerCase()}
-        />
+        />}
 
         {/* Últimos deploys */}
         <div>
