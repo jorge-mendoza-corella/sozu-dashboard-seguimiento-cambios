@@ -41,6 +41,12 @@ export interface SeguimientoClaude {
   prs: PrClaude[];
   /** Todos los PRs vigentes ya están en PRD: se puede cerrar el ticket. */
   listoParaCerrar: boolean;
+  /**
+   * Claude terminó sin abrir PRs (el arreglo ya estaba, o no hacía falta
+   * cambio): también se puede cerrar, eligiendo si acaso los PRs que ya lo
+   * habían resuelto. Queda en el registro para que el cierre lo valide.
+   */
+  sinCambios: boolean;
   /** Arranque de la corrida activa (o en cola) y, si ya terminó, cuándo. */
   corrida: { inicio: string; fin: string | null } | null;
   /** Por qué falló la última corrida (token vencido, límite de la ventana…), si falló. */
@@ -168,6 +174,12 @@ export async function seguimientoClaude(
     listo: false,
   }));
 
+  const sinCambios = estado === "terminado" && prsEstado.prs.filter((p) => p.estado !== "cerrado").length === 0;
+  await getFirestore()
+    .doc(`agente_tickets_enviados/${quien.email}__${quien.ticketId}`)
+    .set({ sinCambios }, { merge: true })
+    .catch(() => undefined);
+
   // Solo cuando la corrida falló: el log se baja una vez y queda en caché.
   const fallo = estado === "error" && run?.conclusion === "failure"
     ? await falloDocs(gh, ORQUESTADOR.owner, ORQUESTADOR.repo, run.id).catch(() => null)
@@ -182,6 +194,7 @@ export async function seguimientoClaude(
     mensajes,
     prs: prsEstado.prs,
     listoParaCerrar: prsEstado.listo,
+    sinCambios,
     corrida: run
       ? {
           inicio: run.run_started_at ?? run.created_at,
