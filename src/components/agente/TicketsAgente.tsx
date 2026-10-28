@@ -130,6 +130,10 @@ export function TicketsAgente({
 
   // Los relacionados entre sí van juntos: arriba el de folio más alto (el papá) y
   // debajo los demás, sangrados. El grupo queda donde caía el primero de ellos.
+  // Contraído de entrada: el papá dice cuántos tiene y se abre con su flecha.
+  const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
+  const alternarGrupo = (id: string) =>
+    setAbiertos((xs) => { const n = new Set(xs); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const lista = useMemo(() => {
     const visibles = new Map(filtrados.map((t) => [t.id, t]));
     const raiz = new Map(filtrados.map((t) => [t.id, t.id]));
@@ -139,7 +143,7 @@ export function TicketsAgente({
     }
     const grupos = new Map<string, TicketAgente[]>();
     for (const t of filtrados) grupos.set(buscar(t.id), [...(grupos.get(buscar(t.id)) ?? []), t]);
-    const salida: { t: TicketAgente; papa: TicketAgente | null }[] = [];
+    const salida: { t: TicketAgente; papa: TicketAgente | null; hijos: TicketAgente[] }[] = [];
     const puestos = new Set<string>();
     for (const t of filtrados) {
       const g = buscar(t.id);
@@ -147,8 +151,9 @@ export function TicketsAgente({
       puestos.add(g);
       const miembros = grupos.get(g)!;
       const papa = miembros.reduce((a, b) => (b.numero > a.numero ? b : a));
-      salida.push({ t: papa, papa: null });
-      for (const h of miembros) if (h !== papa) salida.push({ t: h, papa });
+      const hijos = miembros.filter((h) => h !== papa);
+      salida.push({ t: papa, papa: null, hijos });
+      for (const h of hijos) salida.push({ t: h, papa, hijos: [] });
     }
     return salida;
   }, [filtrados]);
@@ -219,7 +224,12 @@ export function TicketsAgente({
               <Inbox className="h-6 w-6" /> {tickets.length ? "Ningún ticket con esos filtros." : "No tienes tickets pendientes."}
             </p>
           )}
-          {lista.map(({ t, papa }) => {
+          {lista.map(({ t, papa, hijos }) => {
+            // El grupo se ve abierto si se abrió a mano o si el elegido es uno de sus hijos.
+            const abiertoGrupo = (p: TicketAgente, hs: TicketAgente[]) =>
+              abiertos.has(p.id) || hs.some((h) => h.id === actual?.id);
+            if (papa && !abiertoGrupo(papa, lista.find((x) => x.t === papa)!.hijos)) return null;
+            const abierto = hijos.length > 0 && abiertoGrupo(t, hijos);
             const env = enviadoDe(t);
             const rels = t.relacionados ?? [];
             return (
@@ -254,6 +264,19 @@ export function TicketsAgente({
                       title={`Ligado al issue ${t.sentry.shortId} de Sentry: al cerrar el ticket se resuelve también`}
                     >
                       <Siren className="h-2.5 w-2.5" /> Sentry
+                    </span>
+                  )}
+                  {hijos.length > 0 && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => { e.stopPropagation(); alternarGrupo(t.id); }}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); alternarGrupo(t.id); } }}
+                      title={abierto ? "Contraer relacionados" : "Ver relacionados"}
+                      className="inline-flex items-center gap-0.5 rounded bg-violet-100 px-1 text-[9px] font-semibold text-violet-700 hover:bg-violet-200 dark:bg-violet-950/40 dark:text-violet-300"
+                    >
+                      <ChevronDown className={cn("h-2.5 w-2.5 transition-transform", !abierto && "-rotate-90")} />
+                      <Link2 className="h-2.5 w-2.5" /> {hijos.length}
                     </span>
                   )}
                   <span className="ml-auto text-[10px] text-muted-foreground">{t.etapa}</span>
