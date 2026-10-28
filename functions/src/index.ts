@@ -22,7 +22,7 @@ import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
 import { cerrarRelacionados, cerrarTicket, clienteSupabase, ticketsAsignados, ticketsResueltos, tomarTicket } from "./agente/tickets.js";
 import { desligarTicket, relacionadosConDashboard, relacionarTicket } from "./agente/relaciones.js";
-import { buscarPrsExternos, notaConPrs, verificarPrsExternos } from "./agente/prsExternos.js";
+import { agregarPrManual, buscarPrsExternos, notaConPrs, verificarPrsExternos } from "./agente/prsExternos.js";
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
 import { issueDelTicket, responderAClaude, seguimientoClaude, type AdjuntoRespuesta } from "./agente/claude.js";
 import { abrirSubida } from "./agente/adjuntos.js";
@@ -563,8 +563,10 @@ export const agenteClaudeLog = onCall<{ accion: string; issue: number; jwt?: str
  * dashboard (convención `SOZU-N` / rama `ticket-N` / trailer `Ticket-SOZU: #N`,
  * ver agente/prsExternos.ts), con en qué va cada uno. Solo tickets asignados a
  * quien pregunta. Para cerrarlo desde aquí eligiendo qué PRs lo resolvieron.
+ * Con `agregar` (o `quitar`) y la URL de un PR, lo liga a mano al ticket: para
+ * los que no traen nada que los relacione.
  */
-export const agenteBuscarPrsTicket = onCall<{ ticketId: string; forzar?: boolean }>(
+export const agenteBuscarPrsTicket = onCall<{ ticketId: string; forzar?: boolean; agregar?: string; quitar?: string }>(
   {
     region: "us-central1",
     secrets: [GITHUB_TOKEN, SUPABASE_SERVICE_KEY],
@@ -581,8 +583,18 @@ export const agenteBuscarPrsTicket = onCall<{ ticketId: string; forzar?: boolean
     if (!t) throw new HttpsError("not-found", "Ese ticket no está entre tus pendientes.");
     try {
       const gh = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
+      const agregar = typeof req.data?.agregar === "string" ? req.data.agregar : "";
+      const quitar = typeof req.data?.quitar === "string" ? req.data.quitar : "";
+      if (agregar || quitar) return await agregarPrManual(gh, usuario.email, t, agregar || quitar, !!quitar);
       return await buscarPrsExternos(gh, usuario.email, t, req.data?.forzar === true);
     } catch (e) {
+      const conocidos: Record<string, string> = {
+        pr_url: "Pega la URL del PR, como https://github.com/dueño/repo/pull/123.",
+        pr_ajeno: "Ese PR no es de un repo de Sozu.",
+        pr_no_existe: "No encontré ese PR en GitHub.",
+      };
+      const m = (e as Error).message;
+      if (conocidos[m]) throw new HttpsError("failed-precondition", conocidos[m]);
       console.error("[agenteBuscarPrsTicket]", e);
       throw new HttpsError("unavailable", "No se pudieron buscar los PRs en GitHub.");
     }
@@ -635,13 +647,14 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string; prsSe
       let prs;
       try {
         const gh = new Octokit({ auth: GITHUB_TOKEN.value(), userAgent: "sozu-dashboard-agente" });
-        prs = await verificarPrsExternos(gh, t.numero, seleccionados);
+        const manuales = Array.isArray(enviado?.prsManuales) ? enviado.prsManuales.filter((u: unknown): u is string => typeof u === "string") : [];
+        prs = await verificarPrsExternos(gh, t.numero, seleccionados, manuales);
       } catch (e) {
         const m = (e as Error).message;
         const [codigo, url] = m.split(/:(.+)/);
         const motivos: Record<string, string> = {
           pr_ajeno: "no es de un repo de Sozu",
-          pr_no_es_del_ticket: `no trae SOZU-${t.numero}, la rama ticket-${t.numero} ni el trailer Ticket-SOZU: #${t.numero}`,
+          pr_no_es_del_ticket: `no trae SOZU-${t.numero}, la rama ticket-${t.numero} ni el trailer Ticket-SOZU: #${t.numero} (agrégalo a mano)`,
           pr_sin_prd: "todavía no llega a PRD (el ticket se cierra cuando todo lo marcado está en producción)",
         };
         if (motivos[codigo]) throw new HttpsError("failed-precondition", `El PR ${url} ${motivos[codigo]}.`);
