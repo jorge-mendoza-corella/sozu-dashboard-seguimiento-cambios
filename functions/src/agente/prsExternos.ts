@@ -33,7 +33,11 @@ export type RazonMatch = "trailer" | "titulo" | "rama";
 
 export interface PrExterno extends PrClaude {
   razones: RazonMatch[];
-  /** Ya entró a main (en_main o en_prd): puede contar para cerrar. */
+  /**
+   * Ya se fusionó (en dev, en main o en PRD): se puede marcar, como en el
+   * portal. Para CERRAR el ticket, en cambio, todos los marcados tienen que
+   * estar en PRD (ver `verificarPrsExternos`).
+   */
   mergeado: boolean;
 }
 
@@ -178,7 +182,7 @@ export async function buscarPrsExternos(
   const prs = (await Promise.all(urls.map(async (url) => {
     const p = await estadoDePr(gh, url).catch(() => null);
     if (!p) return null;
-    const r: PrExterno = { ...p, razones: [...(encontrados.get(url) ?? [])], mergeado: p.estado === "en_main" || p.estado === "en_prd" };
+    const r: PrExterno = { ...p, razones: [...(encontrados.get(url) ?? [])], mergeado: p.estado === "en_dev" || p.estado === "en_main" || p.estado === "en_prd" };
     return r;
   }))).filter((p): p is PrExterno => !!p);
 
@@ -218,7 +222,8 @@ export async function verificarPrsExternos(
     }
     if (!es) throw new Error(`pr_no_es_del_ticket:${url}`);
     const estado = await estadoDePr(gh, url);
-    if (!estado || (estado.estado !== "en_main" && estado.estado !== "en_prd")) throw new Error(`pr_sin_merge:${url}`);
+    // El ticket se cierra cuando lo arreglado ya le llega a usuarios: PRD.
+    if (!estado || estado.estado !== "en_prd") throw new Error(`pr_sin_prd:${url}`);
     const lineas = await cambiosDePr(gh, estado, numero);
     return {
       repo,
