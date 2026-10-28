@@ -12,11 +12,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQueries, useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   AlertCircle, Bot, ChevronDown, Check, CheckCircle2, Copy, ExternalLink, FileAudio, FileText, FileVideo, FolderGit2, Image as ImageIcon, Inbox, Loader2,
-  Paperclip, RefreshCw, RotateCcw, Search, Send, Sparkles, User, Users,
+  Paperclip, RefreshCw, RotateCcw, Search, Send, Siren, Sparkles, User, Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
@@ -207,6 +208,14 @@ export function TicketsAgente({
                     : env.issue
                       ? <EstadoClaudeMini ticketId={t.id} />
                       : <span className="rounded bg-violet-100 px-1 text-[9px] font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300" title="Se copió el .md para Claude">en Claude</span>)}
+                  {t.sentry && (
+                    <span
+                      className="inline-flex items-center gap-0.5 rounded bg-red-100 px-1 text-[9px] font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                      title={`Ligado al issue ${t.sentry.shortId} de Sentry: al cerrar el ticket se resuelve también`}
+                    >
+                      <Siren className="h-2.5 w-2.5" /> Sentry
+                    </span>
+                  )}
                   <span className="ml-auto text-[10px] text-muted-foreground">{t.etapa}</span>
                 </span>
                 <span className={cn("mt-0.5 block truncate font-medium", actual?.id === t.id && "text-primary")}>{t.titulo}</span>
@@ -394,6 +403,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
             {t.prioridad && <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase", COLOR_PRIORIDAD[t.prioridad])}>{t.prioridad}</span>}
           </p>
           <h2 className="mt-1 text-lg font-semibold leading-snug">{t.titulo}</h2>
+          {t.sentry && <VinculoSentry s={t.sentry} />}
         </div>
         {/* Se cierra cuando todo lo del ticket está en PRD (ver `listo`), o cuando
             Claude terminó sin cambios porque el arreglo ya estaba. */}
@@ -860,6 +870,25 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
             </p>
           ) : (
             <>
+              {t.sentry && (
+                <p
+                  className={cn(
+                    "mt-4 flex items-start gap-1.5 rounded-md border p-2.5 text-xs",
+                    t.sentry.estado === "unresolved"
+                      ? "border-red-300/70 bg-red-50 text-red-900 dark:border-red-800/60 dark:bg-red-950/30 dark:text-red-200"
+                      : "bg-muted/30 text-muted-foreground",
+                  )}
+                >
+                  <Siren className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    {t.sentry.estado === "unresolved" ? (
+                      <>Al cerrar el ticket también se marca como <strong>resuelto</strong> el issue <strong>{t.sentry.shortId}</strong> de Sentry ({t.sentry.slug}), y la nota lo menciona.</>
+                    ) : (
+                      <>El issue {t.sentry.shortId} de Sentry ya está {t.sentry.estado === "ignored" ? "ignorado" : "resuelto"}: no se toca.</>
+                    )}
+                  </span>
+                </p>
+              )}
               {sinCambios && (
                 <p className="mt-4 rounded-md border bg-muted/30 p-2.5 text-xs text-muted-foreground">
                   Claude terminó sin abrir PRs: reportó que el arreglo ya estaba en producción. Si abajo aparecen
@@ -937,5 +966,29 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+/** Issue de Sentry ligado al ticket (levantado desde Monitoreo), con su estado y enlaces. */
+function VinculoSentry({ s }: { s: NonNullable<TicketAgente["sentry"]> }) {
+  const abierto = s.estado === "unresolved";
+  return (
+    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium",
+          abierto ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+        )}
+      >
+        <Siren className="h-3 w-3" /> Sentry {s.shortId} · {abierto ? "sin resolver" : s.estado === "ignored" ? "ignorado" : "resuelto"}
+      </span>
+      <span className="text-muted-foreground">{abierto ? "Se resuelve al cerrar este ticket." : ""}</span>
+      <Link to="/monitoreo" className="text-primary hover:underline">Ver en Monitoreo</Link>
+      {/^https:\/\/[\w-]+\.sentry\.io\//.test(s.url) && (
+        <a href={s.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-muted-foreground hover:text-foreground hover:underline">
+          Sentry <ExternalLink className="h-3 w-3" />
+        </a>
+      )}
+    </p>
   );
 }
