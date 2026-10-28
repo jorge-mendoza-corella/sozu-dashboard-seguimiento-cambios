@@ -128,6 +128,31 @@ export function TicketsAgente({
       .sort((a, b) => Number(conPrs.has(a.id)) - Number(conPrs.has(b.id)));
   }, [tickets, fPipeline, fEtapa, fPrioridad, fTexto, conPrs]);
 
+  // Los relacionados entre sí van juntos: arriba el de folio más alto (el papá) y
+  // debajo los demás, sangrados. El grupo queda donde caía el primero de ellos.
+  const lista = useMemo(() => {
+    const visibles = new Map(filtrados.map((t) => [t.id, t]));
+    const raiz = new Map(filtrados.map((t) => [t.id, t.id]));
+    const buscar = (id: string): string => (raiz.get(id) === id ? id : buscar(raiz.get(id)!));
+    for (const t of filtrados) {
+      for (const r of t.relacionados ?? []) if (visibles.has(r.id)) raiz.set(buscar(r.id), buscar(t.id));
+    }
+    const grupos = new Map<string, TicketAgente[]>();
+    for (const t of filtrados) grupos.set(buscar(t.id), [...(grupos.get(buscar(t.id)) ?? []), t]);
+    const salida: { t: TicketAgente; papa: TicketAgente | null }[] = [];
+    const puestos = new Set<string>();
+    for (const t of filtrados) {
+      const g = buscar(t.id);
+      if (puestos.has(g)) continue;
+      puestos.add(g);
+      const miembros = grupos.get(g)!;
+      const papa = miembros.reduce((a, b) => (b.numero > a.numero ? b : a));
+      salida.push({ t: papa, papa: null });
+      for (const h of miembros) if (h !== papa) salida.push({ t: h, papa });
+    }
+    return salida;
+  }, [filtrados]);
+
   // Lo que pide GeorgIA (contestar o cerrar) manda sobre lo elegido a mano. Se
   // busca en todos los tickets, no solo en los filtrados: un filtro no lo esconde.
   const pedidoPorGeorgia = responderAhora ?? cerrarAhora;
@@ -194,8 +219,9 @@ export function TicketsAgente({
               <Inbox className="h-6 w-6" /> {tickets.length ? "Ningún ticket con esos filtros." : "No tienes tickets pendientes."}
             </p>
           )}
-          {filtrados.map((t) => {
+          {lista.map(({ t, papa }) => {
             const env = enviadoDe(t);
+            const rels = t.relacionados ?? [];
             return (
               <button
                 key={t.id}
@@ -208,7 +234,11 @@ export function TicketsAgente({
                   e.dataTransfer.effectAllowed = "link";
                 }}
                 title="Arrástralo sobre otro ticket para relacionarlos"
-                className={cn("mb-1 w-full rounded-md px-2.5 py-2 text-left text-xs transition-colors", actual?.id === t.id ? "bg-primary/10" : "hover:bg-muted")}
+                className={cn(
+                  "mb-1 w-full rounded-md px-2.5 py-2 text-left text-xs transition-colors",
+                  actual?.id === t.id ? "bg-primary/10" : "hover:bg-muted",
+                  papa && "ml-4 w-[calc(100%-1rem)] rounded-l-none border-l-2 border-violet-300 dark:border-violet-800",
+                )}
               >
                 <span className="flex items-center gap-1.5">
                   <span className="font-mono text-[10px] text-muted-foreground">{t.folio}</span>
@@ -232,6 +262,12 @@ export function TicketsAgente({
                 <span className="block truncate text-[10px] text-muted-foreground">
                   {t.abiertoPor ?? "—"} · {fechaTicket(t.abiertoEn, "dia")}
                 </span>
+                {rels.length > 0 && (
+                  <span className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-violet-700 dark:text-violet-300">
+                    <Link2 className="h-2.5 w-2.5 shrink-0" />
+                    Relacionado con {[papa?.folio, ...rels.filter((r) => r.id !== papa?.id).map((r) => r.folio)].filter(Boolean).join(", ")}
+                  </span>
+                )}
                 {env?.issue && !env.listo && <BarraClaudeMini ticketId={t.id} />}
               </button>
             );
