@@ -16,7 +16,7 @@ import { Link } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  AlertCircle, Bot, ChevronDown, Check, CheckCircle2, Copy, ExternalLink, FileAudio, FileText, FileVideo, FolderGit2, Image as ImageIcon, Inbox, Loader2,
+  AlertCircle, Bot, CalendarCheck, ChevronDown, Compass, Check, CheckCircle2, Copy, ExternalLink, FileAudio, FileText, FileVideo, FolderGit2, Image as ImageIcon, Inbox, Loader2,
   Link2, Paperclip, Plus, RefreshCw, RotateCcw, Search, Send, Siren, Sparkles, User, Users, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,7 +26,7 @@ import { AvisoTokenClaude, ConectarClaude, EstadoTokenClaude } from "./AvisoToke
 import { useTokenClaude } from "@/hooks/useTokenClaude";
 import { BarraClaudeMini, EstadoClaudeMini, SeguimientoClaude } from "./SeguimientoClaude";
 import {
-  analisisGuardado, avancePrs, buscarPrsTicket, cerrarTicketPortal, COLOR_PR, consultaSeguimiento, convencionPrs, desligarTicket, esSoloFecha, ETIQUETA_PR, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, notaDeCierre, promptDeTicket, relacionarTicket,
+  analisisGuardado, avancePrs, buscarPrsTicket, cerrarTicketPortal, COLOR_PR, consultaSeguimiento, convencionPrs, desligarTicket, esSoloFecha, ETIQUETA_PR, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, misTicketsResueltos, notaDeCierre, origenTicket, promptDeTicket, relacionarTicket,
   type AnalisisTicket, type PrExterno, type RazonMatch, type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
 
@@ -79,6 +79,18 @@ export function TicketsAgente({
   onTicketVisto, puedeMandarClaude,
 }: Props) {
   const [elegido, setElegido] = useState<string | null>(null);
+  // Pendientes (los de siempre) o Resueltos (ya cerrados, solo lectura).
+  const [vista, setVista] = useState<"pendientes" | "resueltos">("pendientes");
+  const resueltosQ = useQuery({
+    queryKey: ["agenteTicketsResueltos", email],
+    queryFn: misTicketsResueltos,
+    enabled: vista === "resueltos",
+    staleTime: 60_000,
+  });
+  const enResueltos = vista === "resueltos";
+  const base = enResueltos ? resueltosQ.data?.tickets ?? null : tickets;
+  const cargandoLista = enResueltos ? resueltosQ.isLoading : cargando;
+  const errorLista = enResueltos ? (resueltosQ.error ? mensajeDeError(resueltosQ.error) : null) : error;
   const [fPipeline, setFPipeline] = useState("");
   const [fEtapa, setFEtapa] = useState("");
   const [fPrioridad, setFPrioridad] = useState("");
@@ -117,7 +129,7 @@ export function TicketsAgente({
 
   const filtrados = useMemo(() => {
     const q = sinAcentos(fTexto.trim());
-    return (tickets ?? []).filter((t) =>
+    return (base ?? []).filter((t) =>
       (!fPipeline || t.pipeline === fPipeline) &&
       (!fEtapa || t.etapa === fEtapa) &&
       (!fPrioridad || (fPrioridad === "sin" ? !t.prioridad : t.prioridad === fPrioridad)) &&
@@ -126,7 +138,7 @@ export function TicketsAgente({
       // solo falta revisarlos/desplegarlos, o ya están en PRD) bajan al final.
       // sort es estable: dentro de cada grupo se respeta el orden que trae la lista.
       .sort((a, b) => Number(conPrs.has(a.id)) - Number(conPrs.has(b.id)));
-  }, [tickets, fPipeline, fEtapa, fPrioridad, fTexto, conPrs]);
+  }, [base, fPipeline, fEtapa, fPrioridad, fTexto, conPrs]);
 
   // Los relacionados entre sí van juntos: arriba el de folio más alto (el papá) y
   // debajo los demás, sangrados. El grupo queda donde caía el primero de ellos.
@@ -161,7 +173,7 @@ export function TicketsAgente({
   // Lo que pide GeorgIA (contestar o cerrar) manda sobre lo elegido a mano. Se
   // busca en todos los tickets, no solo en los filtrados: un filtro no lo esconde.
   const pedidoPorGeorgia = responderAhora ?? cerrarAhora;
-  const actual = (pedidoPorGeorgia && (tickets ?? []).find((t) => t.id === pedidoPorGeorgia))
+  const actual = (!enResueltos && pedidoPorGeorgia && (tickets ?? []).find((t) => t.id === pedidoPorGeorgia))
     || filtrados.find((t) => t.id === elegido) || filtrados[0] || null;
   useEffect(() => { onTicketVisto?.(actual); }, [actual, onTicketVisto]);
   const respuestaAtendida = useCallback(() => {
@@ -179,13 +191,37 @@ export function TicketsAgente({
           detalleMovil || pedidoPorGeorgia ? "hidden" : "flex",
         )}
       >
-        <div className="flex h-11 items-center gap-2 border-b px-3 text-xs text-muted-foreground">
+        <div className="flex gap-1 border-b px-2 pt-2">
+          {(["pendientes", "resueltos"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => { setVista(v); setElegido(null); }}
+              className={cn(
+                "-mb-px inline-flex items-center gap-1 rounded-t-md border border-b-0 px-3 py-1.5 text-xs font-medium",
+                vista === v ? "bg-background text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {v === "pendientes" ? <Inbox className="h-3.5 w-3.5" /> : <CalendarCheck className="h-3.5 w-3.5" />}
+              {v === "pendientes" ? `Pendientes${tickets ? ` (${tickets.length})` : ""}` : "Resueltos"}
+            </button>
+          ))}
+        </div>
+        <div className="flex h-9 items-center gap-2 border-b px-3 text-xs text-muted-foreground">
           <span className="flex-1">
-            {tickets ? `${filtrados.length} de ${tickets.length} pendiente${tickets.length === 1 ? "" : "s"}` : "Tickets"}
-            {revisado && ` · ${new Date(revisado).toLocaleTimeString("es-MX", { hour: "numeric", minute: "2-digit" })}`}
+            {enResueltos
+              ? base ? `${filtrados.length} de ${base.length} resuelto${base.length === 1 ? "" : "s"} (los más recientes)` : "Resueltos"
+              : tickets ? `${filtrados.length} de ${tickets.length} pendiente${tickets.length === 1 ? "" : "s"}` : "Tickets"}
+            {!enResueltos && revisado && ` · ${new Date(revisado).toLocaleTimeString("es-MX", { hour: "numeric", minute: "2-digit" })}`}
           </span>
-          <button type="button" onClick={onRefrescar} disabled={cargando} className="rounded p-1 hover:bg-muted disabled:opacity-50" title="Revisar ahora">
-            <RefreshCw className={cn("h-3.5 w-3.5", cargando && "animate-spin")} />
+          <button
+            type="button"
+            onClick={() => (enResueltos ? void resueltosQ.refetch() : onRefrescar())}
+            disabled={enResueltos ? resueltosQ.isFetching : cargando}
+            className="rounded p-1 hover:bg-muted disabled:opacity-50"
+            title="Revisar ahora"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", (enResueltos ? resueltosQ.isFetching : cargando) && "animate-spin")} />
           </button>
         </div>
         {/* Filtros */}
@@ -197,11 +233,11 @@ export function TicketsAgente({
           <div className="flex gap-1.5">
             <select value={fPipeline} onChange={(e) => setFPipeline(e.target.value)} className={claseSelect} title="Pipeline">
               <option value="">Pipeline: todos</option>
-              {unicos((tickets ?? []).map((t) => t.pipeline)).map((p) => <option key={p} value={p}>{p.replace(/^SOZU - Sistemas\s*/i, "")}</option>)}
+              {unicos((base ?? []).map((t) => t.pipeline)).map((p) => <option key={p} value={p}>{p.replace(/^SOZU - Sistemas\s*/i, "")}</option>)}
             </select>
             <select value={fEtapa} onChange={(e) => setFEtapa(e.target.value)} className={claseSelect} title="Etapa">
               <option value="">Etapa: todas</option>
-              {unicos((tickets ?? []).map((t) => t.etapa)).map((p) => <option key={p} value={p}>{p}</option>)}
+              {unicos((base ?? []).map((t) => t.etapa)).map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
             <select value={fPrioridad} onChange={(e) => setFPrioridad(e.target.value)} className={claseSelect} title="Prioridad">
               <option value="">Prioridad</option>
@@ -213,15 +249,16 @@ export function TicketsAgente({
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          {error && (
+          {errorLista && (
             <p className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
-              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{error}
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{errorLista}
             </p>
           )}
-          {!tickets && cargando && <div className="flex justify-center py-6"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>}
-          {tickets && filtrados.length === 0 && (
+          {!base && cargandoLista && <div className="flex justify-center py-6"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>}
+          {base && filtrados.length === 0 && (
             <p className="flex flex-col items-center gap-2 py-8 text-center text-xs text-muted-foreground">
-              <Inbox className="h-6 w-6" /> {tickets.length ? "Ningún ticket con esos filtros." : "No tienes tickets pendientes."}
+              <Inbox className="h-6 w-6" />
+              {base.length ? "Ningún ticket con esos filtros." : enResueltos ? "Todavía no tienes tickets resueltos." : "No tienes tickets pendientes."}
             </p>
           )}
           {lista.map(({ t, papa, hijos }) => {
@@ -237,7 +274,7 @@ export function TicketsAgente({
                 key={t.id}
                 type="button"
                 onClick={() => { setElegido(t.id); setDetalleMovil(true); }}
-                draggable
+                draggable={!enResueltos}
                 onDragStart={(e) => {
                   e.dataTransfer.setData(TIPO_ARRASTRE, String(t.numero));
                   e.dataTransfer.setData("text/plain", t.folio);
@@ -283,7 +320,7 @@ export function TicketsAgente({
                 </span>
                 <span className={cn("mt-0.5 block truncate font-medium", actual?.id === t.id && "text-primary")}>{t.titulo}</span>
                 <span className="block truncate text-[10px] text-muted-foreground">
-                  {t.abiertoPor ?? "—"} · {fechaTicket(t.abiertoEn, "dia")}
+                  {t.abiertoPor ?? "—"} · {enResueltos && t.cerradoEn ? `cerrado ${fechaTicket(t.cerradoEn, "dia")}` : fechaTicket(t.abiertoEn, "dia")}
                 </span>
                 {rels.length > 0 && (
                   <span className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-violet-700 dark:text-violet-300">
@@ -312,7 +349,9 @@ export function TicketsAgente({
         >
           ← Tickets
         </button>
-        {actual ? (
+        {actual && enResueltos ? (
+          <DetalleResuelto key={actual.id} t={actual} enviado={enviadoDe(actual)} />
+        ) : actual ? (
           <DetalleTicket
             key={actual.id}
             t={actual}
@@ -325,7 +364,7 @@ export function TicketsAgente({
             puedeMandarClaude={puedeMandarClaude}
             onRelacionCambiada={onRefrescar}
           />
-        ) : !cargando && !error && (
+        ) : !cargandoLista && !errorLista && (
           <SinTicketElegido puedeMandarClaude={puedeMandarClaude} />
         )}
       </section>
@@ -337,6 +376,69 @@ export function TicketsAgente({
           onCancelar={terminarCierre}
           onCerrado={() => { terminarCierre(); onRefrescar(); }}
         />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Detalle de un ticket ya resuelto (pestaña Resueltos): solo lectura, sin cerrar
+ * ni mandar a Claude. Lo de siempre más cuándo se cerró y con qué PRs.
+ */
+function DetalleResuelto({ t, enviado }: { t: TicketAgente; enviado: TicketEnviado | null }) {
+  const imagenes = t.evidencias.filter((e) => e.tipo === "imagen");
+  return (
+    <div className="mx-auto flex max-w-3xl flex-col gap-5">
+      <header>
+        <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="font-mono">{t.folio}</span>
+          {t.pipeline && <span>{t.pipeline}</span>}
+          {t.etapa && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">{t.etapa}</span>}
+          {t.prioridad && <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase", COLOR_PRIORIDAD[t.prioridad])}>{t.prioridad}</span>}
+        </p>
+        <h2 className="mt-1 text-lg font-semibold leading-snug">{t.titulo}</h2>
+        {t.sentry && <VinculoSentry s={t.sentry} />}
+        {!!t.relacionados?.length && <Relacionados t={t} onCambio={() => {}} soloLectura />}
+      </header>
+      <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+        <Dato icono={User} etiqueta="Abierto por">{t.abiertoPor ?? "—"}</Dato>
+        <Dato icono={FileText} etiqueta="Fecha">{esSoloFecha(t.abiertoEn) ? fechaTicket(t.abiertoEn, "corta") : fecha(t.abiertoEn)}</Dato>
+        {t.cerradoEn && <Dato icono={CalendarCheck} etiqueta="Cerrado">{fecha(t.cerradoEn)}</Dato>}
+        <Dato icono={Users} etiqueta="Para">{t.asignados.map((a) => (a.soyYo ? `${a.nombre} (tú)` : a.nombre)).join(", ") || "—"}</Dato>
+        {(t.categoria || t.proyecto) && <Dato icono={Inbox} etiqueta="Categoría">{[t.categoria, t.proyecto].filter(Boolean).join(" · ")}</Dato>}
+        {origenTicket(t) && <Dato icono={Compass} etiqueta="Creado desde">{origenTicket(t)}</Dato>}
+        {t.url && (
+          <Dato icono={ExternalLink} etiqueta="Portal">
+            <a href={t.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">Abrir {t.folio} en el portal de tickets</a>
+          </Dato>
+        )}
+        {!!enviado?.prs.length && (
+          <Dato icono={FolderGit2} etiqueta="PRs">
+            {enviado.prs.map((p) => (
+              <a key={`${p.repo}${p.pr}`} href={p.url} target="_blank" rel="noreferrer" className="mr-2 text-primary hover:underline">{p.repo} #{p.pr}</a>
+            ))}
+          </Dato>
+        )}
+      </div>
+      <div>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Descripción</h3>
+        {t.descripcion.trim() ? (
+          <div className="prose prose-sm max-w-none dark:prose-invert prose-a:text-primary">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer">{children}</a> }}>
+              {t.descripcion}
+            </ReactMarkdown>
+          </div>
+        ) : <p className="text-sm text-muted-foreground">Sin descripción.</p>}
+      </div>
+      {t.evidencias.length > 0 && (
+        <div>
+          <h3 className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Paperclip className="h-3.5 w-3.5" /> Evidencias ({t.evidencias.length})
+          </h3>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {t.evidencias.map((e, i) => <Evidencia key={`${e.url}${i}`} e={e} n={e.tipo === "imagen" ? imagenes.indexOf(e) + 1 : null} />)}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -559,6 +661,7 @@ function DetalleTicket({ t, email, enviado, onEnviado, onCerrar, enfocarRespuest
             {otros.length > 0 && <span className="mt-1 block text-[11px] text-muted-foreground">También va para: {otros.map((o) => o.nombre).join(", ")}</span>}
           </Dato>
           {(t.categoria || t.proyecto) && <Dato icono={Inbox} etiqueta="Categoría">{[t.categoria, t.proyecto].filter(Boolean).join(" · ")}</Dato>}
+          {origenTicket(t) && <Dato icono={Compass} etiqueta="Creado desde">{origenTicket(t)}</Dato>}
           {t.url && (
             <Dato icono={ExternalLink} etiqueta="Portal">
               <a href={t.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">Abrir {t.folio} en el portal de tickets</a>
@@ -1125,7 +1228,13 @@ function VinculoSentry({ s }: { s: NonNullable<TicketAgente["sentry"]> }) {
  * También se liga arrastrando un ticket de la lista sobre el detalle (`ref.ligar`).
  * Los ligados aquí y el anterior se pueden quitar; el posterior, desde su ticket.
  */
-function Relacionados({ t, onCambio, ref }: { t: TicketAgente; onCambio: () => void; ref: Ref<{ ligar: (numero: number) => void }> }) {
+function Relacionados({ t, onCambio, ref, soloLectura = false }: {
+  t: TicketAgente;
+  onCambio: () => void;
+  ref?: Ref<{ ligar: (numero: number) => void }>;
+  /** Ticket ya resuelto: se ven, no se ligan ni se quitan. */
+  soloLectura?: boolean;
+}) {
   const [rs, setRs] = useState(t.relacionados ?? []);
   const [abierto, setAbierto] = useState(false);
   const [folio, setFolio] = useState("");
@@ -1198,7 +1307,7 @@ function Relacionados({ t, onCambio, ref }: { t: TicketAgente; onCambio: () => v
               <span className="font-semibold">{r.folio}</span>
               <span>{r.cerrado ? "cerrado" : r.etapa ?? "abierto"}</span>
             </a>
-            {r.relacion !== "posterior" && (
+            {r.relacion !== "posterior" && !soloLectura && (
               <button
                 type="button"
                 onClick={() => quitar(r.id)}
@@ -1211,8 +1320,8 @@ function Relacionados({ t, onCambio, ref }: { t: TicketAgente; onCambio: () => v
             )}
           </span>
         ))}
-        {rs.some((r) => !r.cerrado) && <span className="text-muted-foreground">Se cierran al cerrar este.</span>}
-        {!abierto && (
+        {!soloLectura && rs.some((r) => !r.cerrado) && <span className="text-muted-foreground">Se cierran al cerrar este.</span>}
+        {!abierto && !soloLectura && (
           <button
             type="button"
             onClick={() => { setAbierto(true); setError(null); }}

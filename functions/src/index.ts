@@ -20,7 +20,7 @@ import { consumirCupo, reposPermitidos, verificarAcceso } from "./agente/acceso.
 import { docPorRuta, indiceDocs, limpiarRuta, obtenerCorpus } from "./agente/docs.js";
 import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.js";
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
-import { cerrarRelacionados, cerrarTicket, clienteSupabase, ticketsAsignados, tomarTicket } from "./agente/tickets.js";
+import { cerrarRelacionados, cerrarTicket, clienteSupabase, ticketsAsignados, ticketsResueltos, tomarTicket } from "./agente/tickets.js";
 import { desligarTicket, relacionadosConDashboard, relacionarTicket } from "./agente/relaciones.js";
 import { buscarPrsExternos, notaConPrs, verificarPrsExternos } from "./agente/prsExternos.js";
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
@@ -305,7 +305,8 @@ export const agenteDoc = onCall<{ ruta: string }>(
 /**
  * `agenteTickets`: tickets pendientes del portal de sozu-admin asignados a
  * quien está logueado. Requiere el permiso "Revisar tickets". El panel lo
- * llama cada 15 min; si hay, el personaje grita.
+ * llama cada 15 min; si hay, el personaje grita. Con `vista: "resueltos"`,
+ * los ya cerrados (pestaña Resueltos, solo lectura).
  */
 export const agenteTickets = onCall(
   {
@@ -320,7 +321,9 @@ export const agenteTickets = onCall(
     const usuario = await verificarAcceso(req, "tickets");
     try {
       const sb = clienteSupabase(SUPABASE_SERVICE_KEY.value());
-      const tickets = await ticketsAsignados(sb, usuario.email);
+      const tickets = (req.data as { vista?: string } | undefined)?.vista === "resueltos"
+        ? await ticketsResueltos(sb, usuario.email)
+        : await ticketsAsignados(sb, usuario.email);
       const ids = tickets.map((t) => Number(t.id));
       // Issue de Sentry ligado (ticket levantado desde Monitoreo) y tickets
       // relacionados («¿Ya lo había reportado antes?»). Si fallan, los tickets
