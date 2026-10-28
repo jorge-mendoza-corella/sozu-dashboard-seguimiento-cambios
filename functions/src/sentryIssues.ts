@@ -289,8 +289,11 @@ export async function resolverIssuesDeTicket(issues: IssueDeTicket[], folio: str
 
 /** Pipeline al que van los errores: "SOZU - Sistemas Soporte técnico". */
 const PIPELINE_SOPORTE = /sistemas.*soporte/;
-/** Clave de `tickets_fuentes` (FK): la misma que usa el portal por defecto. */
-const FUENTE = "portal_admin";
+/**
+ * Clave de `tickets_fuentes` (FK) de los tickets que levanta Monitoreo: el admin la muestra como
+ * "Dashboard - Sentry" (migración 20261031150000 de sozu-supabase-migrations).
+ */
+const FUENTE = "dashboard_sentry";
 const URL_TICKET = (numero: number) => `https://admin.sozu.com/admin/portal-tickets/todos?ticket=${numero}`;
 const TERMINALES = new Set(["resuelta", "cerrada", "descartada"]);
 
