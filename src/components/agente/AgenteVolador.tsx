@@ -23,6 +23,7 @@ import { createPortal } from "react-dom";
 import "./personaje.css";
 import { Antojos, Bata, Blusa, BrazoHumano, CabezaCartoon, Camisa, Camiseta, Cola, Filipina, Gi, HojasVestido, Playera, Saco, Vestido } from "./skins";
 import { PERSONALIDAD } from "./personalidades";
+import { callarVoz, hablar } from "./voz";
 import { EVENTO_MEGAFONO, type MensajeMegafono } from "@/lib/megafono";
 import { nombreAvatar, PALETA, PAREJA, SKINS, useCorreosAvatar, useNombresAvatar, useSkinGeorgIA, type Skin } from "./skinsDatos";
 import { ANCHO_UTILERIA, ARRIBA_UTILERIA, partidoDeHoy, partidoEnVivo, partidosSeleccion, setPartidosSeleccion, type TipoUtileria, type Utileria } from "./escenasDatos";
@@ -588,6 +589,8 @@ interface Props {
   nombreUsuario: string;
   /** `motivo` = "tickets" si se le dio clic mientras gritaba la alerta. */
   onClick: (motivo: "chat" | "tickets") => void;
+  /** Permiso «Voz del avatar»: dice en voz alta lo que pone en sus globos. */
+  voz?: boolean;
 }
 
 const TAM = 80;
@@ -601,7 +604,7 @@ const VEL_CAMINAR = 48;
 
 const azar = (a: number, b: number) => a + Math.random() * (b - a);
 
-export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
+export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: Props) {
   const raiz = useRef<HTMLButtonElement>(null);
   const orientacion = useRef<HTMLDivElement>(null);
   const inclinacion = useRef<HTMLDivElement>(null);
@@ -638,6 +641,11 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
   useEffect(() => {
     usuariosRef.current = SKINS.filter((x) => correosAvatar[x.id]).map((x) => ({ skin: x.id, nombre: nombreAvatar(x.id) }));
   }, [correosAvatar]);
+  const vozRef = useRef(voz);
+  useEffect(() => {
+    vozRef.current = voz;
+    if (!voz && typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+  }, [voz]);
   const skinRef = useRef(skin);
   useEffect(() => {
     skinRef.current = skin;
@@ -781,6 +789,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       idDialogo += 1;
       finDialogo = performance.now() + ms;
       setDialogo({ id: idDialogo, texto, tipo });
+      if (vozRef.current && tipo !== "zzz" && !pausaRef.current) hablar(texto, skinRef.current);
     };
 
     let snackActual: Snack | null = null;
@@ -2089,8 +2098,11 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
         a.onloadedmetadata = () => {
           if (Number.isFinite(a.duration)) s.alertaHasta = Math.max(s.alertaHasta, performance.now() + a.duration * 1000 + 2500);
         };
+        // Mientras suena su audio, la voz del avatar no lo tapa.
+        callarVoz(gritos.length * 3000 * 2);
+        a.onended = () => callarVoz(0);
         // Sin interacción previa el navegador puede bloquearlo: entonces solo grita el texto.
-        void a.play().catch(() => {});
+        void a.play().catch(() => callarVoz(0));
       }
       alertaRef.current = { apagar: () => { s.alertaGritos = []; audioMegafono?.pause(); }, motivo: "chat" };
     };

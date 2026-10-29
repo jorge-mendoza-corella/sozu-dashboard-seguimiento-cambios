@@ -89,7 +89,7 @@ export function AgenteAccesoSection() {
       setAgentitoVisible(visible);
     });
 
-  const recargar = () => leerAccesoAgente().then(setAcceso).catch(() => setAcceso({ emails: [], sinAgente: [], docs: [], tickets: [], claude: [], megafono: [], ticketsApagados: [] }));
+  const recargar = () => leerAccesoAgente().then(setAcceso).catch(() => setAcceso({ emails: [], sinAgente: [], docs: [], tickets: [], claude: [], megafono: [], voz: [], ticketsApagados: [] }));
   useEffect(() => { void recargar(); }, []);
   // Lo elige cada quien en su panel: aquí solo se muestra.
   const [skins, setSkins] = useState<Record<string, Skin>>({});

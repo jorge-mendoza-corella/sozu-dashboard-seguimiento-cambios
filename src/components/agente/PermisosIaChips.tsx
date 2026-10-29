@@ -5,10 +5,10 @@
  * edita en Configuración → Agente IA.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BellRing, Bot, FileText, Loader2, Megaphone, Send } from "lucide-react";
+import { BellRing, Bot, FileText, Loader2, Megaphone, Send, Volume2 } from "lucide-react";
 import { useState } from "react";
 import { AyudaTooltip } from "@/components/ui/ayuda-tooltip";
-import { cambiarClaude, cambiarMegafono, cambiarTickets, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, quitarAccesoAgente } from "@/lib/agenteRepos";
+import { cambiarClaude, cambiarMegafono, cambiarTickets, cambiarVoz, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, quitarAccesoAgente } from "@/lib/agenteRepos";
 
 const CLAVE_ACCESO_AGENTE = ["agente-acceso"];
 
@@ -22,7 +22,7 @@ const claseChip = (on: boolean) =>
 export function PermisosIaChips({ email, disabled }: { email: string; disabled?: boolean }) {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: CLAVE_ACCESO_AGENTE, queryFn: leerAccesoAgente });
-  const [busy, setBusy] = useState<"agente" | "docs" | "tickets" | "claude" | "megafono" | null>(null);
+  const [busy, setBusy] = useState<"agente" | "docs" | "tickets" | "claude" | "megafono" | "voz" | null>(null);
   const [error, setError] = useState("");
 
   const agente = !!data?.emails.includes(email);
@@ -30,8 +30,9 @@ export function PermisosIaChips({ email, disabled }: { email: string; disabled?:
   const tickets = !!data?.tickets.includes(email);
   const claude = !!data?.claude.includes(email);
   const megafono = !!data?.megafono.includes(email);
+  const voz = !!data?.voz.includes(email);
 
-  const run = async (k: "agente" | "docs" | "tickets" | "claude" | "megafono", fn: () => Promise<void>) => {
+  const run = async (k: "agente" | "docs" | "tickets" | "claude" | "megafono" | "voz", fn: () => Promise<void>) => {
     setBusy(k);
     setError("");
     try {
@@ -103,6 +104,17 @@ export function PermisosIaChips({ email, disabled }: { email: string; disabled?:
           >
             {busy === "megafono" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Megaphone className="h-3 w-3" />}
             Megáfono
+          </button>
+        </AyudaTooltip>
+        <AyudaTooltip texto={"Voz del avatar: su GeorgIA dice en voz alta lo que pone en sus globos, cada personaje con su tono (voz del navegador)." + (!agente ? " Primero dale acceso a GeorgIA." : "")}>
+          <button
+            type="button"
+            disabled={disabled || busy !== null || !agente}
+            className={claseChip(voz && agente)}
+            onClick={() => void run("voz", () => cambiarVoz(email, !voz))}
+          >
+            {busy === "voz" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Volume2 className="h-3 w-3" />}
+            Voz del avatar
           </button>
         </AyudaTooltip>
       </div>

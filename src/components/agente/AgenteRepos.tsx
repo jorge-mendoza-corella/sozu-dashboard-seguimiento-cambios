@@ -309,7 +309,7 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
       {/* El personaje vuela por la pantalla; clic abre el chat. Va en z-30,
           debajo de los botones flotantes del dashboard (Actualizar, z-40). */}
       {/* Escondido por preferencia: el chat sigue en Alt+K (y los tickets se siguen revisando). */}
-      {visible && <AgenteVolador pausado={abierto} nombreUsuario={nombreDeEmail(email)} onClick={abrir} />}
+      {visible && <AgenteVolador pausado={abierto} nombreUsuario={nombreDeEmail(email)} onClick={abrir} voz={!!permisos.voz} />}
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         <Dialog.Content

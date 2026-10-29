@@ -150,6 +150,8 @@ export interface PermisosAgente {
   claude: boolean;
   /** Manda mensajes que gritan los avatares de los demás (requiere agente). */
   megafono?: boolean;
+  /** Su avatar habla en voz alta (requiere agente). */
+  voz?: boolean;
 }
 
 const listaDe = (v: unknown): string[] =>
@@ -184,6 +186,8 @@ export async function permisosAgente(email: string | null | undefined): Promise<
       ...p,
       claude: esRoot || (p.tickets && listaDe(d?.claude).includes(email)),
       megafono: esRoot || (agente && listaDe(d?.megafono).includes(email)),
+      // Sin el root de regalo: la voz se prende a mano, también para él.
+      voz: agente && listaDe(d?.voz).includes(email),
     };
   } catch {
     // Sin doc (o sin poder leerlo) el root conserva todo por default.
@@ -201,6 +205,8 @@ export interface AccesoAgente {
   claude: string[];
   /** Mandan mensajes con el megáfono. */
   megafono: string[];
+  /** Su avatar habla en voz alta. */
+  voz: string[];
   ticketsApagados: string[];
 }
 
@@ -214,6 +220,7 @@ export async function leerAccesoAgente(): Promise<AccesoAgente> {
     tickets: listaDe(d?.tickets),
     claude: listaDe(d?.claude),
     megafono: listaDe(d?.megafono),
+    voz: listaDe(d?.voz),
     ticketsApagados: listaDe(d?.ticketsApagados),
   };
 }
@@ -299,6 +306,11 @@ export async function cambiarTickets(email: string, activar: boolean): Promise<v
     return;
   }
   await setDoc(ACCESO(), { tickets: activar ? arrayUnion(email) : arrayRemove(email) }, { merge: true });
+}
+
+/** Voz del avatar: que hable en voz alta para esta persona (requiere GeorgIA). */
+export async function cambiarVoz(email: string, activar: boolean): Promise<void> {
+  await setDoc(ACCESO(), { voz: activar ? arrayUnion(email) : arrayRemove(email) }, { merge: true });
 }
 
 /** Megáfono: mandar mensajes que gritan los avatares (requiere GeorgIA). */
