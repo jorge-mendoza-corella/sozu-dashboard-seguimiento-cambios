@@ -218,7 +218,7 @@ function prDeUrl(url: string): PrClaude | null {
 
 export interface AdjuntoRespuesta {
   nombre: string;
-  tipo: "imagen" | "video" | "audio";
+  tipo: "imagen" | "video" | "audio" | "documento";
   url: string;
 }
 
@@ -238,7 +238,7 @@ export async function responderAClaude(
   adjuntos: AdjuntoRespuesta[] = [],
 ): Promise<void> {
   const validos = adjuntos
-    .filter((a) => ["imagen", "video", "audio"].includes(a?.tipo) && typeof a.url === "string" && URL_ADJUNTO.test(a.url))
+    .filter((a) => ["imagen", "video", "audio", "documento"].includes(a?.tipo) && typeof a.url === "string" && URL_ADJUNTO.test(a.url))
     .slice(0, 10);
   const lista = validos.length
     ? `\n\nAdjuntos:\n${validos.map((a) => `- ${a.tipo}: ${String(a.nombre).replace(/\s+/g, " ").slice(0, 80)} — ${a.url}`).join("\n")}`

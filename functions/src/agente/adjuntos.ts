@@ -1,5 +1,6 @@
 /**
- * Adjuntos (imagen, video, audio) para responderle a Claude desde el dashboard.
+ * Adjuntos (imagen, video, audio y documentos) para responderle a Claude desde
+ * el dashboard.
  *
  * El bucket es el de sozu-admin-dev, que comparte con SOZU Admin: aquí no se
  * tocan sus reglas. La función abre una subida reanudable con el admin SDK (no
@@ -14,6 +15,17 @@ import { HttpsError } from "firebase-functions/v2/https";
 
 export const MAX_ADJUNTO = 200 * 1024 * 1024;
 const TIPOS = /^(image|video|audio)\//;
+/** Documentos (solo en las respuestas de un ticket, no en el chat de GeorgIA). */
+const DOCUMENTOS: Record<string, string> = {
+  md: "text/markdown",
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  json: "application/json",
+  csv: "text/csv",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
 
 export interface SubidaAdjunto {
   /** Sesión de subida reanudable: el navegador hace PUT del archivo aquí. */
@@ -37,7 +49,13 @@ export async function abrirSubida(
   tamano: number,
   origen: string | undefined,
 ): Promise<SubidaAdjunto> {
-  if (!TIPOS.test(tipo)) throw new HttpsError("invalid-argument", "Solo imágenes, videos o audios.");
+  const ext = nombre.includes(".") ? nombre.split(".").pop()!.toLowerCase() : "";
+  const documento = carpeta !== "chat" && DOCUMENTOS[ext] === tipo;
+  if (!TIPOS.test(tipo) && !documento) {
+    throw new HttpsError("invalid-argument", carpeta === "chat"
+      ? "Solo imágenes, videos o audios."
+      : "Solo imágenes, videos, audios o documentos (.md, .pdf, .doc, .docx, .csv, .json, .xls, .xlsx).");
+  }
   if (!Number.isFinite(tamano) || tamano <= 0 || tamano > MAX_ADJUNTO) {
     throw new HttpsError("invalid-argument", `El archivo pasa de ${MAX_ADJUNTO >> 20} MB.`);
   }

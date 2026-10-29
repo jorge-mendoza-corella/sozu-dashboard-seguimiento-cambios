@@ -57,7 +57,7 @@ export interface MensajeAgente {
 
 /** Adjunto de una pregunta: audio y video llegan ya transcritos (y el video con cuadros). */
 export interface AdjuntoChat {
-  tipo: "imagen" | "audio" | "video";
+  tipo: "imagen" | "audio" | "video" | "documento";
   nombre: string;
   url: string;
   transcripcion?: string | null;

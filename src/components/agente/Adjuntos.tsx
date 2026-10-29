@@ -1,6 +1,7 @@
 /**
  * Adjuntos (imagen, video, audio y nota de voz) para lo que se le manda a
- * Claude: la respuesta en un ticket y las preguntas a GeorgIA.
+ * Claude: la respuesta en un ticket y las preguntas a GeorgIA. En la respuesta
+ * de un ticket también documentos (.md, .pdf, .doc, .docx, .csv, .json, .xls, .xlsx).
  *
  * Se suben en cuanto se eligen (directo a Storage, ver `subirAdjunto`). Con
  * `transcribir`, los audios y videos además pasan por `agenteProcesarAdjunto`
@@ -10,10 +11,10 @@
 import { useRef } from "react";
 import { Loader2, Mic, Paperclip, Square, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MAX_ADJUNTO_MB, type AdjuntoRespuesta } from "@/lib/agenteTickets";
+import { ACCEPT_DOCUMENTOS, MAX_ADJUNTO_MB, type AdjuntoRespuesta } from "@/lib/agenteTickets";
 import type { Adjuntos } from "@/hooks/useAdjuntos";
 
-const ICONO: Record<AdjuntoRespuesta["tipo"], string> = { imagen: "🖼", video: "🎬", audio: "🎙" };
+const ICONO: Record<AdjuntoRespuesta["tipo"], string> = { imagen: "🖼", video: "🎬", audio: "🎙", documento: "📄" };
 
 /** Lo que se va a mandar, con vista previa y avance. */
 export function AdjuntosPendientes({ a, className }: { a: Adjuntos; className?: string }) {
@@ -68,7 +69,7 @@ export function BotonesAdjuntar({ a, compacto = false }: { a: Adjuntos; compacto
         ref={selector}
         type="file"
         multiple
-        accept="image/*,video/*,audio/*"
+        accept={`image/*,video/*,audio/*${a.documentos ? `,${ACCEPT_DOCUMENTOS}` : ""}`}
         className="hidden"
         onChange={(e) => { a.agregar([...(e.target.files ?? [])]); e.target.value = ""; }}
       />
@@ -76,7 +77,7 @@ export function BotonesAdjuntar({ a, compacto = false }: { a: Adjuntos; compacto
         type="button"
         onClick={() => selector.current?.click()}
         className={boton}
-        title={`Imagen, video o audio (hasta ${MAX_ADJUNTO_MB} MB). También puedes pegar una captura.`}
+        title={`${a.documentos ? "Imagen, video, audio o documento (.md, .pdf, .doc, .docx, .csv, .json, .xls, .xlsx)" : "Imagen, video o audio"} (hasta ${MAX_ADJUNTO_MB} MB). También puedes pegar una captura.`}
         aria-label="Adjuntar"
       >
         <Paperclip className={compacto ? "h-4 w-4" : "h-3 w-3"} />{!compacto && " Adjuntar"}
