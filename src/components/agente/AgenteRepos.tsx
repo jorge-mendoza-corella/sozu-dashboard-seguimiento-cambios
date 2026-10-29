@@ -15,7 +15,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  ArrowLeft, BellRing, Bot, Palette, Check, MessageSquare, Copy, FileText, History, Loader2, Lock, MessageSquarePlus, Pencil, Pin, PinOff, Search, Send,
+  ArrowLeft, BellRing, Bot, Palette, Check, Megaphone, MessageSquare, Copy, FileText, History, Loader2, Lock, MessageSquarePlus, Pencil, Pin, PinOff, Search, Send,
   Square, Trash2, Wrench, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,8 @@ import {
   type AdjuntoChat,
 } from "@/lib/agenteRepos";
 import { ElegirAvatar } from "./ElegirAvatar";
+import { Megafono } from "./Megafono";
+import { EVENTO_MEGAFONO, escucharBuzon } from "@/lib/megafono";
 import { avatarDeCorreo, setSkinTicket } from "./skinsDatos";
 import { AdjuntoEnMensaje, AdjuntosPendientes, BotonesAdjuntar } from "./Adjuntos";
 import { useAdjuntos } from "@/hooks/useAdjuntos";
@@ -81,11 +83,16 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
   }, [email]);
   const [permisos, setPermisos] = useState<PermisosAgente>({ agente: false, docs: false, tickets: false, claude: false });
   const [abierto, setAbierto] = useState(false);
-  const [pestana, setPestana] = useState<"chat" | "tickets" | "avatar">("chat");
+  const [pestana, setPestana] = useState<"chat" | "tickets" | "avatar" | "megafono">("chat");
   const acceso = permisos.agente;
   // Vigía global: reacciona a los deploys de todos los repos, estén o no en pantalla.
   const { realUser } = useAuth();
   useVigiaDeploys(acceso ? realUser : null, permisos.tickets);
+  // Megáfono: los mensajes que me mandan se los pasa al avatar para que los grite.
+  useEffect(() => {
+    if (!acceso || !email) return;
+    return escucharBuzon(email, (m) => window.dispatchEvent(new CustomEvent(EVENTO_MEGAFONO, { detail: m })));
+  }, [acceso, email]);
 
   // ── Tickets: revisión cada 15 min mientras el dashboard está abierto ──────
   const [tickets, setTickets] = useState<TicketAgente[] | null>(null);
@@ -317,6 +324,7 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
               ["chat", "Chat", MessageSquare],
               ...(permisos.tickets ? [["tickets", `Tickets${tickets ? ` (${tickets.length})` : ""}`, BellRing] as const] : []),
               ["avatar", "Avatar", Palette],
+              ...(permisos.megafono ? [["megafono", "Megáfono", Megaphone] as const] : []),
             ] as const).map(([v, etiqueta, Icono]) => (
               <button
                 key={v}
@@ -339,6 +347,12 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
           <div className={cn("flex min-h-0 flex-1 flex-col", pestana !== "chat" && "hidden")}>
             <PanelAgente email={email} verDocs={permisos.docs} />
           </div>
+          {pestana === "megafono" && permisos.megafono && (
+            <>
+              <Dialog.Title className="sr-only">Megáfono</Dialog.Title>
+              <Megafono email={email} />
+            </>
+          )}
           {pestana === "avatar" && (
             <>
               <Dialog.Title className="sr-only">Tu avatar de GeorgIA</Dialog.Title>

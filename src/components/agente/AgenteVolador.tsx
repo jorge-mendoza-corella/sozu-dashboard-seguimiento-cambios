@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./personaje.css";
 import { Antojos, Bata, Blusa, BrazoHumano, CabezaCartoon, Camisa, Saco, Vestido } from "./skins";
+import { EVENTO_MEGAFONO, type MensajeMegafono } from "@/lib/megafono";
 import { nombreAvatar, PALETA, SKINS, useCorreosAvatar, useNombresAvatar, useSkinGeorgIA, type Skin } from "./skinsDatos";
 import { ANCHO_UTILERIA, ARRIBA_UTILERIA, partidoDeHoy, partidoEnVivo, partidosSeleccion, setPartidosSeleccion, type TipoUtileria, type Utileria } from "./escenasDatos";
 import { cargarPartidosSeleccion } from "@/lib/agenteRepos";
@@ -655,7 +656,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
     nombreRef.current = nombreUsuario;
   }, [nombreUsuario]);
   /** Hay alerta de tickets activa (el clic abre la pestaña de tickets y la apaga). */
-  const alertaRef = useRef<{ apagar: () => void } | null>(null);
+  const alertaRef = useRef<{ apagar: () => void; motivo?: "chat" | "tickets" } | null>(null);
   useEffect(() => {
     pausaRef.current = pausado || pausaLocal;
   }, [pausado, pausaLocal]);
@@ -741,6 +742,8 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       festejoTheta: 0,
       alertaGritos: [] as string[],
       alertaHasta: 0,
+      /** Duración de la próxima alerta (el megáfono dura lo que su mensaje); 0 = ALERTA_MS. */
+      alertaDur: 0,
       /** El clic atendió la escena de Claude: se corta al volver. */
       cortarEscena: false,
       alertaIdx: 0,
@@ -1442,7 +1445,8 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       if (s.alertaGritos.length && s.pose !== "alerta" && !enEscena()) {
         cambiarPose("alerta");
         ponerAnimo("grito");
-        s.alertaHasta = ahora + ALERTA_MS;
+        s.alertaHasta = ahora + (s.alertaDur || ALERTA_MS);
+        s.alertaDur = 0;
         s.alertaIdx = 0;
         proximaFrase = ahora;
       }
@@ -2040,6 +2044,30 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       alertaRef.current = { apagar: () => { s.alertaGritos = []; } };
     };
     window.addEventListener(EVENTO_ALERTA_TICKETS, alAlerta);
+    // Megáfono: aterriza y grita el mensaje que le mandaron (con su audio, si trae).
+    let audioMegafono: HTMLAudioElement | null = null;
+    const alMegafono = (e: Event) => {
+      const m = (e as CustomEvent<MensajeMegafono>).detail;
+      if (!m) return;
+      audioMegafono?.pause();
+      const gritos = [`📣 ¡Mensaje de ${m.deNombre}!`, ...(m.texto ? [`📣 ${m.texto}`] : [`🔊 ${m.deNombre} dice…`])];
+      s.alertaGritos = gritos;
+      s.alertaIdx = 0;
+      // Lo grita dos vueltas (o lo que dure el audio, si es más).
+      s.alertaDur = gritos.length * 3000 * 2;
+      if (s.pose === "alerta") s.alertaHasta = performance.now() + s.alertaDur;
+      if (m.audio) {
+        const a = new Audio(m.audio);
+        audioMegafono = a;
+        a.onloadedmetadata = () => {
+          if (Number.isFinite(a.duration)) s.alertaHasta = Math.max(s.alertaHasta, performance.now() + a.duration * 1000 + 2500);
+        };
+        // Sin interacción previa el navegador puede bloquearlo: entonces solo grita el texto.
+        void a.play().catch(() => {});
+      }
+      alertaRef.current = { apagar: () => { s.alertaGritos = []; audioMegafono?.pause(); }, motivo: "chat" };
+    };
+    window.addEventListener(EVENTO_MEGAFONO, alMegafono);
     const alClaude = (e: Event) => {
       const c = (e as CustomEvent<DetalleClaude>).detail;
       if (!c) return;
@@ -2114,6 +2142,8 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       window.removeEventListener(EVENTO_DEV_FALLO, alDevFallo);
       window.removeEventListener(EVENTO_STORE, alStore);
       window.removeEventListener(EVENTO_ALERTA_TICKETS, alAlerta);
+      window.removeEventListener(EVENTO_MEGAFONO, alMegafono);
+      audioMegafono?.pause();
       window.removeEventListener(EVENTO_CLAUDE, alClaude);
       window.removeEventListener(EVENTO_ARCADE, alArcade);
       window.removeEventListener(EVENTO_PESCA, alPesca);
@@ -2145,7 +2175,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       aria-hidden={pausado || undefined}
       tabIndex={pausado ? -1 : undefined}
       onClick={() => {
-        const habiaAlerta = !!alertaRef.current;
+        const habiaAlerta = !!alertaRef.current && alertaRef.current.motivo !== "chat";
         alertaRef.current?.apagar();
         alertaRef.current = null;
         marcarAtrapado();
