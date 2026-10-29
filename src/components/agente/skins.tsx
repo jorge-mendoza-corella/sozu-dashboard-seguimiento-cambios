@@ -14,6 +14,10 @@
  *   tomaso      Tomaso: lentes al aire, cara delgada, traje gris y camisa blanca
  *   licesita    Licesita: pelo lacio oscuro, collar y vestido verde azulado
  *   keity, abel, pablo, rodrigo, manuel: el equipo; sus rasgos van en RASGOS
+ *   cotorrisa (con Ricardo), cantinflas, pantera, dino, homero, stitch (con Lilo),
+ *   linguini (Remy en el gorro), ryu (con Ken): sus rasgos también en RASGOS; los
+ *   compañeros salen junto al principal (PAREJA) y cada uno cuenta sus chistes
+ *   a su modo (personalidades.ts)
  *
  * La elegida vive en `agente_config/acceso.skin` (la cambia el root en
  * Configuración → GeorgIA) y se comparte por un store chico para que todo
@@ -84,6 +88,22 @@ type Trazo = { d: string; fill: string; opacity?: number };
 const RASGOS: Partial<Record<Skin, {
   cara: string;
   peloAtras?: string;
+  /** Color del pelo de atrás (por omisión, negro). */
+  peloAtrasColor?: string;
+  /** Detrás de la cara: orejas de animal, picos, la gorra por detrás. */
+  atras?: React.ReactNode;
+  /** Sin las orejas humanas (las trae `atras`, o no tiene). */
+  sinOrejas?: boolean;
+  /** Encima del pelo: gorra, sombrero, cinta, audífonos, gorro de chef. */
+  encima?: React.ReactNode;
+  /** Al final, encima de todo: bigotes de gato, dientes, copas de los audífonos. */
+  frente?: React.ReactNode;
+  /** Ojos de otro tamaño (los de caricatura). */
+  ojo?: { rx: number; ry: number; iris: number; pupila: number; brillo: number };
+  /** Nariz propia (relleno con la piel). */
+  narizD?: string;
+  /** Sin nariz dibujada (la trae `frente`). */
+  sinNariz?: boolean;
   pelo: Trazo[];
   mechas?: { d: string; stroke: string };
   lentes?: { stroke: string; ancho: number };
@@ -148,6 +168,202 @@ const RASGOS: Partial<Record<Skin, {
     ],
     bigote: { d: "M49 74.4 Q55 69.4 62 72.4 Q69 69.4 75 74.4 Q70 74 66 74.6 Q63 74 62 75.2 Q61 74 58 74.6 Q54 74 49 74.4 Z", fill: "#111827", opacity: 0.95 },
   },
+  // ── La Cotorrisa ──
+  cotorrisa: {
+    cara: "M30 46 Q30 17 60 17 Q90 17 90 46 Q90 74 76 83 Q60 90 44 83 Q30 74 30 46Z",
+    pelo: [{ d: "M31 48 Q30 36 35 30 L37 48 Z M89 48 Q90 36 85 30 L83 48 Z", fill: "#1c1917", opacity: 0.7 }],
+    barba: [
+      { d: "M31 52 Q30 80 44 90 Q60 99 76 90 Q90 80 89 52 L86 56 Q85 72 74 77 Q67 80 62 77 Q57 80 50 77 Q39 72 34 56 Z", fill: "#292524" },
+      { d: "M52 86 Q62 95 72 86 L70 82 Q62 85 54 82 Z", fill: "#1c1917" },
+    ],
+    bigote: { d: "M48 74 Q55 69 62 72 Q69 69 76 74 Q70 77 62 75.4 Q54 77 48 74 Z", fill: "#1c1917" },
+    nariz: "ancha",
+    encima: (
+      <>
+        {/* Gorra blanca con visera oscura */}
+        <path d="M29 40 Q28 9 60 8 Q92 9 91 40 Z" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="1" />
+        <path d="M60 8 L60 40" stroke="#e2e8f0" strokeWidth="1" />
+        <path d="M27 40 Q60 33 100 42 L98 47 Q60 39 27 45 Z" fill="#1f2937" />
+        {/* Diadema de los audífonos */}
+        <path d="M23 56 Q19 4 60 2 Q101 4 97 56" fill="none" stroke="#111827" strokeWidth="5" strokeLinecap="round" />
+      </>
+    ),
+    frente: (
+      <>
+        <rect x="16" y="46" width="15" height="22" rx="6" fill="#111827" />
+        <rect x="89" y="46" width="15" height="22" rx="6" fill="#111827" />
+        <rect x="19" y="50" width="6" height="14" rx="3" fill="#374151" />
+      </>
+    ),
+    sinOrejas: true,
+  },
+  ricardo: {
+    cara: "M31 46 Q31 18 60 18 Q89 18 89 46 Q89 72 76 82 Q60 89 44 82 Q31 72 31 46Z",
+    pelo: [
+      { d: "M32 46 Q27 14 58 10 Q92 10 88 44 Q86 30 80 26 Q72 30 62 26 Q52 31 44 27 Q36 32 34.5 46Z", fill: "#3f2a1d" },
+      { d: "M44 27 Q50 22 56 27 M62 26 Q68 21 74 26", fill: "#3f2a1d" },
+    ],
+    mechas: { d: "M40 18 Q56 10 76 14 M46 22 Q60 15 80 20", stroke: "#78350f" },
+    barba: [
+      { d: "M32 56 Q32 79 44 86 Q60 93 76 86 Q88 79 88 56 L85 58 Q84 72 74 77 Q67 80 62 77 Q57 80 50 77 Q40 72 35 58 Z", fill: "#3f2a1d", opacity: 0.8 },
+    ],
+    bigote: { d: "M50 74 Q56 70.5 62 72.5 Q68 70.5 74 74 Q69 75.6 62 74.6 Q55 75.6 50 74 Z", fill: "#3f2a1d" },
+    encima: <path d="M24 56 Q20 4 60 2 Q100 4 96 56" fill="none" stroke="#111827" strokeWidth="5" strokeLinecap="round" />,
+    frente: (
+      <>
+        <rect x="17" y="46" width="15" height="22" rx="6" fill="#111827" />
+        <rect x="88" y="46" width="15" height="22" rx="6" fill="#111827" />
+      </>
+    ),
+    sinOrejas: true,
+  },
+  // ── Cantinflas: greña, sombrerito y el bigotito en las comisuras ──
+  cantinflas: {
+    cara: "M32 47 Q32 18 60 18 Q88 18 88 47 Q88 73 75 83 Q60 89 45 83 Q32 73 32 47Z",
+    pelo: [{ d: "M31 50 Q27 22 50 18 Q60 30 70 18 Q92 22 89 50 Q86 36 78 32 L74 40 L68 30 L60 38 L52 30 L46 40 L42 32 Q34 36 31 50Z", fill: "#111827" }],
+    nariz: "ancha",
+    bigote: { d: "M49 75 Q52 72.6 55.6 74.2 Q53 76 49 75 Z M68.4 74.2 Q72 72.6 75 75 Q71 76 68.4 74.2 Z", fill: "#111827" },
+    encima: (
+      <>
+        {/* Sombrerito de fieltro gastado, de lado */}
+        <path d="M38 24 Q40 4 60 4 Q80 4 82 24 Z" fill="#57534e" transform="rotate(-8 60 20)" />
+        <path d="M24 26 Q60 16 96 24 L95 29 Q60 21 25 31 Z" fill="#44403c" transform="rotate(-8 60 24)" />
+        <path d="M39 22 Q60 17 81 21" stroke="#292524" strokeWidth="2.4" fill="none" transform="rotate(-8 60 20)" />
+      </>
+    ),
+  },
+  // ── Pantera Rosa: cara alargada, orejas de gato y hocico blanco ──
+  pantera: {
+    cara: "M34 50 Q32 14 60 12 Q88 14 86 50 Q86 80 72 90 Q60 96 48 90 Q34 80 34 50Z",
+    atras: (
+      <>
+        <path d="M36 30 L28 2 L50 20 Z M84 30 L92 2 L70 20 Z" fill="#f472b6" />
+        <path d="M37 26 L32 9 L46 21 Z M83 26 L88 9 L74 21 Z" fill="#be185d" opacity="0.6" />
+      </>
+    ),
+    pelo: [],
+    sinOrejas: true,
+    ojo: { rx: 7, ry: 6.2, iris: 3.2, pupila: 1.4, brillo: 1 },
+    frente: (
+      <>
+        <ellipse cx="62" cy="77" rx="16" ry="12" fill="#fdf2f8" opacity="0.9" />
+        <ellipse cx="62" cy="67" rx="5" ry="3.4" fill="#9d174d" />
+        <path d="M46 70 L28 66 M46 74 L28 75 M78 70 L96 66 M78 74 L96 75" stroke="#831843" strokeWidth="0.9" strokeLinecap="round" />
+      </>
+    ),
+  },
+  // ── Dinosaurio: hocico largo, picos y dientes ──
+  dino: {
+    cara: "M28 56 Q26 20 54 16 Q76 14 86 30 Q104 40 104 60 Q104 80 86 86 L50 88 Q30 84 28 56Z",
+    atras: <path d="M36 22 L34 8 L46 16 L50 2 L58 14 L66 0 L70 14 L80 4 L80 20 Z" fill="#15803d" />,
+    pelo: [],
+    sinOrejas: true,
+    sinNariz: true,
+    ojo: { rx: 6.4, ry: 7, iris: 4, pupila: 2, brillo: 1.2 },
+    frente: (
+      <>
+        <path d="M92 50 Q94 48 96 50 M84 48 Q86 46 88 48" stroke="#14532d" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+        <path d="M66 82 l2.4 4.6 l2.4 -4.6 l2.4 4.6 l2.4 -4.6 l2.4 4.6 l2.4 -4.6 l2.4 4.6 l2.4 -4.6" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="0.4" />
+        <path d="M36 70 Q40 66 44 70 M38 76 Q42 72 46 76" stroke="#15803d" strokeWidth="1.4" fill="none" opacity="0.7" />
+      </>
+    ),
+  },
+  // ── Homero: cabeza alta, dos pelos, barba de días ──
+  homero: {
+    cara: "M34 88 L34 30 Q36 10 60 10 Q86 10 86 30 L86 72 Q86 92 62 92 Q38 92 34 88 Z",
+    pelo: [],
+    ojo: { rx: 8.4, ry: 8.4, iris: 2.2, pupila: 2.2, brillo: 0.8 },
+    narizD: "M63 60 Q80 57 81 64 Q80 70 63 68",
+    atras: <path d="M28 50 L33 46 L31 54 L35 50" fill="none" stroke="#3f2a1d" strokeWidth="1.4" strokeLinecap="round" />,
+    encima: <path d="M47 13 Q50 1 55 13 M57 12 Q61 0 66 12" fill="none" stroke="#3f2a1d" strokeWidth="1.6" strokeLinecap="round" />,
+    barba: [{ d: "M42 70 Q42 93 63 93 Q85 93 85 72 Q79 64 63 64 Q49 64 42 70 Z", fill: "#b08d57", opacity: 0.6 }],
+  },
+  // ── Stitch: orejotas, ojos negros enormes y nariz grande ──
+  stitch: {
+    cara: "M24 54 Q24 20 60 18 Q96 20 96 54 Q96 84 60 88 Q24 84 24 54Z",
+    atras: (
+      <>
+        <path d="M30 40 Q4 20 2 48 Q8 70 32 60 Z M90 40 Q116 20 118 48 Q112 70 88 60 Z" fill="#3b82f6" />
+        <path d="M28 44 Q10 32 9 48 Q13 60 29 56 Z M92 44 Q110 32 111 48 Q107 60 91 56 Z" fill="#f9a8d4" opacity="0.85" />
+        <path d="M6 36 L2 30 M114 36 L118 30" stroke="#1d4ed8" strokeWidth="3" strokeLinecap="round" />
+      </>
+    ),
+    pelo: [{ d: "M48 20 Q56 12 60 18 Q64 12 72 20", fill: "#1d4ed8" }],
+    sinOrejas: true,
+    ojo: { rx: 9.5, ry: 10.5, iris: 8.6, pupila: 7.4, brillo: 2.4 },
+    frente: (
+      <>
+        <ellipse cx="62" cy="78" rx="18" ry="10" fill="#93c5fd" opacity="0.8" />
+        <ellipse cx="62" cy="66" rx="10" ry="6.4" fill="#1e3a8a" />
+        <ellipse cx="59" cy="64" rx="2.6" ry="1.4" fill="#93c5fd" opacity="0.7" />
+      </>
+    ),
+  },
+  // ── Lilo: pelo negro largo con fleco ──
+  lilo: {
+    cara: "M33 50 Q33 20 60 20 Q87 20 87 50 Q87 74 74 83 Q60 89 46 83 Q33 74 33 50Z",
+    peloAtras: "M24 56 Q20 12 60 12 Q100 12 96 56 L100 118 Q86 123 78 113 L78 62 L42 62 L42 113 Q34 123 20 118 Z",
+    pelo: [
+      { d: "M29 56 Q26 14 60 13 Q94 14 91 56 Q89 40 84 36 L80 42 L74 34 L66 42 L60 34 L54 42 L46 34 L40 42 L36 36 Q31 42 29 56Z", fill: "#111827" },
+      { d: "M29 52 Q26 84 32 112 L40 110 Q35 82 35.5 54Z M91 52 Q94 84 88 112 L80 110 Q85 82 84.5 54Z", fill: "#111827" },
+    ],
+    pestanas: true,
+    nariz: "ancha",
+    encima: (
+      // Flor roja en el pelo
+      <g transform="translate(84 30)">
+        {[0, 72, 144, 216, 288].map((a) => <ellipse key={a} cx="0" cy="-5" rx="3" ry="5" fill="#f43f5e" transform={`rotate(${a})`} />)}
+        <circle r="2.4" fill="#fde047" />
+      </g>
+    ),
+  },
+  // ── Linguini con Remy en el gorro ──
+  linguini: {
+    cara: "M33 46 Q33 18 60 18 Q87 18 87 46 Q87 74 74 84 Q60 90 46 84 Q33 74 33 46Z",
+    pelo: [{ d: "M31 52 Q26 24 44 20 L42 30 L50 22 L52 32 L58 22 L62 30 L70 22 L72 32 L80 24 Q92 28 89 52 Q86 40 80 36 Q60 32 40 36 Q34 40 31 52Z", fill: "#9a3412" }],
+    nariz: "larga",
+    encima: (
+      <>
+        {/* Gorro de chef */}
+        <path d="M38 30 Q32 12 44 8 Q48 -6 60 -2 Q72 -6 76 8 Q88 12 82 30 Z" fill="#ffffff" stroke="#cbd5e1" strokeWidth="1.2" />
+        <rect x="38" y="24" width="44" height="9" rx="2" fill="#f1f5f9" stroke="#cbd5e1" strokeWidth="1" />
+        {/* Remy asomado arriba del gorro */}
+        <g transform="translate(62 -1) scale(1.5)">
+          <path d="M14 2 Q26 -2 24 -12" fill="none" stroke="#f9a8d4" strokeWidth="1.6" strokeLinecap="round" />
+          <ellipse cx="6" cy="0" rx="11" ry="7" fill="#64748b" />
+          <ellipse cx="-6" cy="-3" rx="8" ry="6.4" fill="#94a3b8" />
+          <circle cx="-9" cy="-10" r="4" fill="#94a3b8" />
+          <circle cx="-2" cy="-10" r="4" fill="#94a3b8" />
+          <circle cx="-9" cy="-10" r="2.2" fill="#f9a8d4" />
+          <circle cx="-2" cy="-10" r="2.2" fill="#f9a8d4" />
+          <circle cx="-9" cy="-3.6" r="1.4" fill="#0f172a" />
+          <circle cx="-13.6" cy="-1" r="1.6" fill="#f472b6" />
+          <path d="M-14 0 L-20 -1 M-14 1.4 L-20 2" stroke="#475569" strokeWidth="0.5" />
+        </g>
+      </>
+    ),
+  },
+  // ── Ryu: pelo corto en picos y cinta roja ──
+  ryu: {
+    cara: "M31 46 Q31 18 60 18 Q89 18 89 46 Q89 72 76 82 Q60 89 44 82 Q31 72 31 46Z",
+    pelo: [{ d: "M31 46 Q26 14 50 12 L52 4 L60 12 L68 2 L72 12 L84 8 Q94 20 89 46 Q86 30 78 28 Q60 24 42 28 Q34 32 31 46Z", fill: "#111827" }],
+    nariz: "larga",
+    encima: (
+      <>
+        <path d="M30 34 Q60 26 90 34 L90 41 Q60 33 30 41 Z" fill="#dc2626" />
+        <path d="M30 37 Q16 38 6 50 M30 39 Q18 46 12 58" fill="none" stroke="#dc2626" strokeWidth="3.4" strokeLinecap="round" />
+      </>
+    ),
+  },
+  // ── Ken: melena rubia ──
+  ken: {
+    cara: "M31 46 Q31 18 60 18 Q89 18 89 46 Q89 72 76 82 Q60 89 44 82 Q31 72 31 46Z",
+    peloAtras: "M26 60 Q22 10 60 8 Q98 10 94 60 Q92 70 88 74 L84 50 L36 50 L32 74 Q28 70 26 60Z",
+    peloAtrasColor: "#eab308",
+    pelo: [{ d: "M29 54 Q24 10 60 8 Q96 10 91 54 Q88 34 76 30 Q72 38 62 40 Q66 32 60 28 Q48 36 38 34 Q32 40 29 54Z", fill: "#facc15" }],
+    mechas: { d: "M40 16 Q56 8 78 14 M62 40 Q70 34 76 30", stroke: "#ca8a04" },
+    nariz: "larga",
+  },
   manuel: {
     cara: "M29 48 Q29 18 60 18 Q91 18 91 48 Q91 75 77 84 Q60 91 43 84 Q29 75 29 48Z",
     pelo: [
@@ -179,11 +395,11 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
   // El ratón y el travieso no llevan goggles: se reconocen por la silueta.
   const sinGoggles = !!r || (["raton", "travieso", "ramon", "tomaso", "licesita"] as Skin[]).includes(skin);
   const labios = p.labios ?? "#7c3a1d";
-  const ojo =
-    skin === "chibi" ? { rx: 7.4, ry: 8.6, iris: 5, pupila: 2.4, brillo: 1.7 }
+  const ojo = r?.ojo ??
+    (skin === "chibi" ? { rx: 7.4, ry: 8.6, iris: 5, pupila: 2.4, brillo: 1.7 }
     : skin === "raton" ? { rx: 5, ry: 9, iris: 3.4, pupila: 2.6, brillo: 1 }
     : skin === "travieso" ? { rx: 8.4, ry: 8.4, iris: 2.2, pupila: 2.2, brillo: 0.8 }
-    : { rx: 6, ry: 7, iris: 3.7, pupila: 1.8, brillo: 1.1 };
+    : { rx: 6, ry: 7, iris: 3.7, pupila: 1.8, brillo: 1.1 });
   return (
     <g className="pj-cabeza">
       {/* Cuello */}
@@ -198,7 +414,8 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
             // Pelo lacio de atrás: cae hasta los hombros
             <path d="M26 56 Q22 12 60 12 Q98 12 94 56 L97 104 Q86 109 78 101 L78 62 L42 62 L42 101 Q34 109 23 104 Z" fill="#1c1917" />
           )}
-          {r?.peloAtras && <path d={r.peloAtras} fill="#1c1917" />}
+          {r?.peloAtras && <path d={r.peloAtras} fill={r.peloAtrasColor ?? "#1c1917"} />}
+          {r?.atras}
           {r ? (
             <path d={r.cara} fill={piel} />
           ) : skin === "raton" ? (
@@ -234,7 +451,7 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
           ) : (
             <ellipse cx="60" cy="52" rx="31" ry="34" fill={piel} />
           )}
-          {skin !== "raton" && (
+          {skin !== "raton" && !r?.sinOrejas && (
             <>
               <ellipse cx="29.5" cy="57" rx="5" ry="7" fill={piel} />
               <path d="M27 56 Q29 53 31 57" fill="none" stroke={p.pielSolida} strokeWidth="1.2" />
@@ -281,6 +498,7 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
           )}
           {r?.pelo.map((t, i) => <path key={i} d={t.d} fill={t.fill} opacity={t.opacity} />)}
           {r?.mechas && <path d={r.mechas.d} fill="none" stroke={r.mechas.stroke} strokeWidth="1.3" strokeLinecap="round" />}
+          {r?.encima}
           {skin === "chibi" && (
             <path d="M27 58 Q24 22 58 20 Q94 18 94 54 Q86 36 72 36 Q70 28 60 33 Q44 30 34 42 Q28 50 29 60Z" fill="#111827" />
           )}
@@ -300,7 +518,7 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
           <g className="pj-ojo-abierto pj-ojo-cartoon">
             {[52, 72].map((x) => (
               <g key={x}>
-                <ellipse cx={x} cy="55" rx={ojo.rx} ry={ojo.ry} fill="#fff" stroke={skin === "travieso" ? "#1f2937" : undefined} strokeWidth="0.8" />
+                <ellipse cx={x} cy="55" rx={ojo.rx} ry={ojo.ry} fill="#fff" stroke={skin === "travieso" || skin === "homero" ? "#1f2937" : undefined} strokeWidth="0.8" />
                 <circle className="pj-pupila" cx={x + 1.8} cy="56" r={ojo.iris} fill={p.iris} />
                 <circle cx={x + 2.3} cy="56.4" r={ojo.pupila} fill="#0f172a" />
                 <circle cx={x + 3.4} cy="53.6" r={ojo.brillo} fill="#fff" />
@@ -351,7 +569,9 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
           )}
 
           {/* Nariz */}
-          {r?.nariz === "ancha" ? (
+          {r?.sinNariz ? null : r?.narizD ? (
+            <path d={r.narizD} fill={piel} stroke={p.pielSolida} strokeWidth="1" />
+          ) : r?.nariz === "ancha" ? (
             <path d="M61 57 Q63 64 66 66 Q66 69.4 62 69.4 Q58 69.4 56.4 67.6" stroke={p.pielSolida} strokeWidth="2.2" fill="none" strokeLinecap="round" />
           ) : skin === "abuelo" || skin === "cientifico" || skin === "tomaso" || r?.nariz === "larga" ? (
             <path d="M62 57 Q66 68 72 70 Q68 74 61 72 Q58 70 60 66Z" fill={p.pielSolida} />
@@ -434,6 +654,8 @@ export function CabezaCartoon({ skin }: { skin: Exclude<Skin, "cyborg"> }) {
           )}
           {r?.bigote && <path d={r.bigote.d} fill={r.bigote.fill} opacity={r.bigote.opacity} />}
           {skin === "heroe" && <path d="M56 86 Q60 88 64 86" stroke={p.pielSolida} strokeWidth="1.4" fill="none" />}
+
+          {r?.frente}
 
           {/* Lágrimas */}
           <g className="pj-lagrimas">
@@ -524,4 +746,93 @@ export function Blusa({ skin }: { skin: Skin }) {
       {lunares.map(([x, y]) => <circle key={`${x}${y}`} cx={x} cy={y} r="0.95" fill="#111827" />)}
     </>
   );
+}
+
+/** Karategi: solapas cruzadas (Ryu y Ken). */
+export function Gi({ skin }: { skin: Skin }) {
+  const borde = skin === "ken" ? "#991b1b" : "#cbd5e1";
+  return (
+    <>
+      <path d="M43 34 L48 44 L53 34 Z" fill={`url(#pj-piel-${skin})`} />
+      <path d="M42.6 34.2 L52 52 M53.4 34.2 L44 52" fill="none" stroke={borde} strokeWidth="1.1" />
+      {/* Mangas cortadas a la altura del hombro */}
+      <path d="M36.4 38.4 L38.8 37.2 M59.6 38.4 L57.2 37.2" stroke={borde} strokeWidth="0.8" />
+    </>
+  );
+}
+
+/** Hojas blancas del vestido de Lilo. */
+export function HojasVestido() {
+  const hojas: [number, number, number][] = [[41, 42, -30], [54, 40, 25], [46, 50, 10], [55, 54, -20], [41, 56, 40], [49, 60, -10]];
+  return (
+    <>
+      {hojas.map(([x, y, a]) => (
+        <g key={`${x}${y}`} transform={`translate(${x} ${y}) rotate(${a})`}>
+          <path d="M0 -3.2 Q2.2 0 0 3.2 Q-2.2 0 0 -3.2 Z" fill="#fef2f2" opacity="0.9" />
+          <path d="M0 -2.6 L0 2.6" stroke="#fca5a5" strokeWidth="0.3" />
+        </g>
+      ))}
+    </>
+  );
+}
+
+/** Filipina de cocinero: doble fila de botones (Linguini). */
+export function Filipina() {
+  return (
+    <>
+      <path d="M43.4 33.8 L48 37.4 L52.6 33.8" fill="none" stroke="#cbd5e1" strokeWidth="0.8" />
+      <path d="M52 37 L52 60" stroke="#cbd5e1" strokeWidth="0.5" />
+      {[41, 46, 51, 56].map((y) => (
+        <g key={y}>
+          <circle cx="45.4" cy={y} r="0.7" fill="#94a3b8" />
+          <circle cx="54.4" cy={y} r="0.7" fill="#94a3b8" />
+        </g>
+      ))}
+    </>
+  );
+}
+
+/** Playera con estampado (La Cotorrisa). */
+export function Playera({ skin }: { skin: Skin }) {
+  return (
+    <>
+      <path d="M43.6 33.8 Q48 37 52.4 33.8" fill="none" stroke="#0f172a" strokeWidth="0.9" opacity="0.5" />
+      {skin === "cotorrisa" ? (
+        // Pajarito de La Cotorrisa
+        <g transform="translate(48 46)">
+          <ellipse rx="4.2" ry="3.4" fill="#22c55e" />
+          <circle cx="2.6" cy="-2" r="2" fill="#22c55e" />
+          <path d="M4.4 -2 L6.4 -1.4 L4.4 -0.8 Z" fill="#facc15" />
+          <circle cx="3" cy="-2.4" r="0.45" fill="#0f172a" />
+        </g>
+      ) : (
+        <text x="48" y="48.6" textAnchor="middle" fontSize="4.6" fontWeight="700" fill="#e0f2fe" opacity="0.9">JA</text>
+      )}
+    </>
+  );
+}
+
+/** Camiseta de tirantes con el pantalón amarrado con mecate (Cantinflas). */
+export function Camiseta({ skin }: { skin: Skin }) {
+  return (
+    <>
+      <path d="M41 33.6 Q48 39 55 33.6 L54 36.6 Q48 41.6 42 36.6 Z" fill={`url(#pj-piel-${skin})`} />
+      {/* Gabardina al hombro */}
+      <path d="M55.6 34 Q61 36 60.4 46 L57.6 46 Q58 39 54.2 36 Z" fill="#a16207" opacity="0.9" />
+      <path d="M40 60.6 Q46 63 54 60.4" stroke="#854d0e" strokeWidth="0.6" fill="none" />
+      <path d="M48.6 63 L47.6 67.4 M49 63 L50.6 67" stroke="#ca8a04" strokeWidth="0.9" strokeLinecap="round" />
+    </>
+  );
+}
+
+/** Cola detrás del cuerpo (Pantera Rosa, dinosaurio, Stitch). */
+export function Cola({ tipo, skin }: { tipo: "pantera" | "dino" | "stitch"; skin: Skin }) {
+  const piel = `url(#pj-piel-${skin})`;
+  if (tipo === "pantera") {
+    return <path className="pj-cola" d="M40 60 Q24 64 20 50 Q17 38 26 34" fill="none" stroke={piel} strokeWidth="2.6" strokeLinecap="round" />;
+  }
+  if (tipo === "dino") {
+    return <path className="pj-cola" d="M42 54 Q30 62 10 84 Q26 80 46 66 Z" fill={piel} />;
+  }
+  return <path className="pj-cola" d="M40 60 Q34 64 32 60" fill="none" stroke={piel} strokeWidth="2.4" strokeLinecap="round" />;
 }

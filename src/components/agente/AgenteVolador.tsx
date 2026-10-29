@@ -21,8 +21,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./personaje.css";
-import { Antojos, Bata, Blusa, BrazoHumano, CabezaCartoon, Camisa, Saco, Vestido } from "./skins";
-import { nombreAvatar, PALETA, SKINS, useCorreosAvatar, useNombresAvatar, useSkinGeorgIA, type Skin } from "./skinsDatos";
+import { Antojos, Bata, Blusa, BrazoHumano, CabezaCartoon, Camisa, Camiseta, Cola, Filipina, Gi, HojasVestido, Playera, Saco, Vestido } from "./skins";
+import { PERSONALIDAD } from "./personalidades";
+import { nombreAvatar, PALETA, PAREJA, SKINS, useCorreosAvatar, useNombresAvatar, useSkinGeorgIA, type Skin } from "./skinsDatos";
 import { ANCHO_UTILERIA, ARRIBA_UTILERIA, partidoDeHoy, partidoEnVivo, partidosSeleccion, setPartidosSeleccion, type TipoUtileria, type Utileria } from "./escenasDatos";
 import { cargarPartidosSeleccion } from "@/lib/agenteRepos";
 import { UtileriaEscena } from "./escenasExtra";
@@ -107,7 +108,9 @@ type Pose = "volar" | "caminar" | "quieto" | "agachar" | "despegar" | "girar" | 
   | "victoria" | "pregunta" | "chispazo" | "arcade" | "marometa" | "berrinche" | "patada"
   | "pescar" | "jalar" | "presume" | "perseguir" | "coraje" | "rumbo" | "cafe" | "celular" | "susto" | "pensar"
   | "rezar" | "sentado" | "cabeceo" | "teclear" | "jalarpelo" | "senal" | "cubrirse" | "comer" | "enchilado"
-  | "explicar" | "encoger" | "forcejeo" | "tropiezo" | "abanicar" | "arrastrar" | "pegar" | "porra";
+  | "explicar" | "encoger" | "forcejeo" | "tropiezo" | "abanicar" | "arrastrar" | "pegar" | "porra"
+  // Al contar un chiste, cada avatar a su modo (ver personalidades.ts).
+  | "risa" | "sigilo" | "rugido" | "hadouken";
 export type Animo = "serio" | "feliz" | "grito" | "aburrido" | "dormido" | "llorando" | "relajado" | "comiendo" | "sorbiendo" | "lamiendo";
 /** Cómo vuela: puño al frente, nadando de crol, o boca arriba con las manos en la nuca. */
 export type EstiloVuelo = "superman" | "nado" | "relax";
@@ -878,6 +881,8 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       animo?: Animo;
       decir?: () => string;
       tipo?: Dialogo["tipo"];
+      /** Cuánto se queda el globo de `decir` (por omisión 2.4 s). */
+      dura?: number;
       frases?: () => string;
       tipoFrases?: Dialogo["tipo"];
       cada?: number;
@@ -915,9 +920,9 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       p.al?.();
       if (p.decir) {
         finDialogo = 0;
-        decir(p.decir(), p.tipo ?? "grito", 2400);
+        decir(p.decir(), p.tipo ?? "grito", p.dura ?? 2400);
       }
-      guion.prox = ahora + (p.decir ? 2700 : 600);
+      guion.prox = ahora + (p.decir ? (p.dura ?? 2400) + 300 : 600);
     };
     /**
      * Arranca un guion. Con `tipo`, pone la utilería enfrente de él (hacia donde
@@ -983,6 +988,25 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
       }
     };
     const unaF = (l: readonly string[]) => () => una(l);
+
+    // Chistes: cada avatar los cuenta con su animación (personalidades.ts); en los
+    // de dos, las líneas se contestan. Cada línea se queda según lo larga que sea.
+    let proximoChiste = performance.now() + azar(20_000, 45_000);
+    const contarChiste = (ahora: number): boolean => {
+      const per = PERSONALIDAD[skinRef.current];
+      if (!per?.chistes.length) return false;
+      const lineas = una(per.chistes);
+      const pasos: PasoGuion[] = lineas.map((l, i) => {
+        const dura = Math.min(5200, 1600 + l.length * 45);
+        return { pose: per.pose, ms: dura + 400, dura, decir: () => l, tipo: "habla", animo: i === lineas.length - 1 ? "feliz" : "serio" };
+      });
+      return empezarGuion(ahora, pasos, null);
+    };
+    /** Frase del avatar si tiene las suyas (la mitad de las veces), si no la general. */
+    const fraseDe = (tipo: "caminar" | "aburrido", generales: readonly string[]) => {
+      const propias = PERSONALIDAD[skinRef.current]?.[tipo];
+      return propias?.length && Math.random() < 0.6 ? una(propias) : una(generales);
+    };
 
     const escenaViernes = (ahora: number, repo: string): boolean => {
       idLetrero += 1;
@@ -1960,13 +1984,16 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           proximaFrase = ahora + azar(4000, 9000);
         } else if (s.pose === "caminar") {
           if (Math.random() < ganasDeQueLoAtrapen()) decir(una(FRASES.atrapame), "habla", 2600);
-          else if (Math.random() < 0.7) decir(una(FRASES.caminar));
+          else if (Math.random() < 0.7) decir(fraseDe("caminar", FRASES.caminar));
           proximaFrase = ahora + azar(3500, 7000);
         } else if (s.pose === "quieto" && (snackActual === "pizza" || snackActual === "refresco")) {
           // Con antojo no se duerme: come y lo comenta (y a veces lo resalta en viñeta).
           if (!finManga && Math.random() < 0.5) lanzarManga(una(VIÑETAS_SNACK[snackActual]));
           else if (Math.random() < 0.7) decir(una(FRASES[snackActual]), "habla", 2600);
           proximaFrase = ahora + azar(3500, 6000);
+        } else if (s.pose === "quieto" && !snackActual && ahora >= proximoChiste && contarChiste(ahora)) {
+          // Un chiste a su modo (ver personalidades.ts); el siguiente, en un rato.
+          proximoChiste = ahora + azar(35_000, 80_000);
         } else if (s.pose === "quieto" && !finManga && Math.random() < 0.55) {
           // Cuadro de manga: resalta su expresión con algo chusco.
           lanzarManga(una(snackActual ? VIÑETAS_SNACK[snackActual] : VIÑETAS));
@@ -1976,7 +2003,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           if (animoActual === "aburrido" && Math.random() < ganasDeQueLoAtrapen()) {
             decir(una(FRASES.atrapame), "habla", 2600);
           } else if (animoActual === "aburrido" && Math.random() < 0.55) {
-            decir(una(FRASES.aburrido), "habla", 2600);
+            decir(fraseDe("aburrido", FRASES.aburrido), "habla", 2600);
           } else {
             ponerAnimo("dormido");
             decir("Z z z", "zzz", 3200);
@@ -2383,6 +2410,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick }: Props) {
           {extra === "foco" && <span className="agente-volador__foco" aria-hidden>💡</span>}
           {extra === "venda" && <span className="agente-volador__venda" aria-hidden />}
           {pose === "enchilado" && <span className="agente-volador__orejas" aria-hidden><i>💨</i><i>💨</i></span>}
+          {pose === "hadouken" && <span className="agente-volador__hadouken" aria-hidden />}
           {(cafe?.fase === "app" || cafe?.fase === "bug") && (
             <span className="agente-volador__cel" data-bug={cafe.fase === "bug" || undefined} aria-hidden />
           )}
@@ -2520,7 +2548,14 @@ function Pez() {
  * curvas. Las articulaciones (hombros 38/58,39 · codo 58.1,51.6 · caderas
  * 45/52,63 · capa 48,37) están fijas: personaje.css gira sobre ellas.
  */
-export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superman", skin, calzones = false }: {
+/** Dónde va el compañero de los avatares de dos (atrás y a la izquierda). */
+const LUGAR_PAREJA: Partial<Record<Skin, string>> = {
+  ricardo: "translate(-30 4) scale(0.94)",
+  lilo: "translate(-22 22) scale(0.76)",
+  ken: "translate(-32 3) scale(0.95)",
+};
+
+export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superman", skin, calzones = false, anidado = false }: {
   pose: Pose;
   animo?: Animo;
   snack?: Snack | null;
@@ -2529,9 +2564,12 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
   skin?: Skin;
   /** Sin ropa, en calzones de corazones y descalzo (escena del oso). */
   calzones?: boolean;
+  /** Es el compañero dibujado dentro del principal: las poses las toma del de afuera. */
+  anidado?: boolean;
 }) {
   const skinElegida = useSkinGeorgIA();
   const sk = skin ?? skinElegida;
+  const pareja = anidado ? undefined : PAREJA[sk];
   const pal = PALETA[sk];
   // Vestido sin mangas: el brazo de atrás va con la piel.
   const manga = calzones || pal.brazosDescubiertos ? `url(#pj-piel-${sk})` : `url(#pj-camisa-${sk})`;
@@ -2540,12 +2578,10 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
   return (
     <svg
       viewBox="0 0 96 96"
-      className="agente-volador__sprite"
-      data-pose={pose}
-      data-animo={animo}
-      data-snack={snack ?? undefined}
-      data-vuelo={vuelo}
-      data-skin={sk}
+      className={anidado ? "pj-pareja" : "agente-volador__sprite"}
+      {...(anidado
+        ? { width: 96, height: 96, overflow: "visible" }
+        : { "data-pose": pose, "data-animo": animo, "data-snack": snack ?? undefined, "data-vuelo": vuelo, "data-skin": sk })}
       aria-hidden
     >
       <defs>
@@ -2599,6 +2635,12 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         </radialGradient>
       </defs>
 
+      {/* El compañero (Ricardo, Lilo, Ken): atrás, con la misma pose. */}
+      {pareja && (
+        <g transform={LUGAR_PAREJA[pareja]}>
+          <Personaje pose={pose} animo={animo} vuelo={vuelo} skin={pareja} anidado />
+        </g>
+      )}
       <g className="agente-volador__cuerpo">
         {/* Capa: cae de los hombros con pliegues */}
         <g className="pj-capa">
@@ -2606,6 +2648,8 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
           <path d="M37 46 C34.6 58 33.4 68 33 79" fill="none" stroke="#3f0707" strokeWidth="0.6" opacity="0.6" />
           <path d="M46 42 C45 56 44.6 68 45 80.6" fill="none" stroke="#3f0707" strokeWidth="0.6" opacity="0.5" />
         </g>
+
+        {pal.cola && !calzones && <Cola tipo={pal.cola} skin={sk} />}
 
         {/* Brazo de atrás: manga arremangada y mano */}
         <g className="pj-brazo">
@@ -2658,7 +2702,7 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
           <>
         <path d="M54 35 C57.6 42 57.6 52 55.4 60.2" fill="none" stroke="#4b5260" strokeWidth="0.5" opacity="0.5" />
         {/* Cuello de camisa */}
-        <path d="M43.6 34 L48 39.6 L46.2 34.4 Z M52.4 34 L48 39.6 L49.8 34.4 Z" fill="#6b727c" />
+        {!pal.sinCuello && <path d="M43.6 34 L48 39.6 L46.2 34.4 Z M52.4 34 L48 39.6 L49.8 34.4 Z" fill="#6b727c" />}
         {!pal.faja && <path d="M48 39.6 L48 60" stroke="#565d68" strokeWidth="0.6" />}
         {/* Botones y emblema de engrane en el pecho (el saco de Ramón los tapa) */}
         {!pal.sinEmblema && [44, 49.5, 55].map((y) => <circle key={y} cx="48.9" cy={y} r="0.85" fill="#d4a446" />)}
@@ -2688,6 +2732,12 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         {sk === "pablo" && <Saco camisa="#f8fafc" cuello="#ffffff" solapa="#57534e" boton="#292524" />}
         {sk === "rodrigo" && <Saco camisa="#f8fafc" cuello="#ffffff" solapa="#0f172a" boton="#0f172a" corbata="#1e3a8a" />}
         {sk === "manuel" && <Saco camisa="#1f2937" cuello="#111827" solapa="#030712" boton="#111827" />}
+        {(sk === "ryu" || sk === "ken") && <Gi skin={sk} />}
+        {sk === "lilo" && <HojasVestido />}
+        {sk === "linguini" && <Filipina />}
+        {(sk === "cotorrisa" || sk === "ricardo") && <Playera skin={sk} />}
+        {sk === "cantinflas" && <Camiseta skin={sk} />}
+        {sk === "homero" && <Camisa skin={sk} />}
           </>
         )}
         {sk === "cyborg" ? (
