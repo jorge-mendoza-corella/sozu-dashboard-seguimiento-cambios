@@ -1105,17 +1105,26 @@ function BuscarEnHistorial({ ticketId, yaAgregados, agregando, onAgregar }: {
   onAgregar: (url: string) => void;
 }) {
   const [texto, setTexto] = useState("");
-  const [consulta, setConsulta] = useState("");
+  const [autor, setAutor] = useState("");
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
+  const [consulta, setConsulta] = useState({ texto: "", autor: "" });
   // Se busca cuando se deja de escribir.
   useEffect(() => {
-    const id = setTimeout(() => setConsulta(texto.trim()), 450);
+    const id = setTimeout(() => setConsulta({ texto: texto.trim(), autor: autor.trim() }), 450);
     return () => clearTimeout(id);
-  }, [texto]);
+  }, [texto, autor]);
   const { data, isFetching, error } = useQuery({
-    queryKey: ["historial-prs-texto", ticketId, consulta],
-    queryFn: () => buscarPrsHistorial(ticketId, consulta),
+    queryKey: ["historial-prs-texto", ticketId, consulta.texto, consulta.autor, desde, hasta],
+    queryFn: () => buscarPrsHistorial(ticketId, consulta.texto, { autor: consulta.autor || undefined, desde: desde || undefined, hasta: hasta || undefined }),
     staleTime: 5 * 60_000,
   });
+  // Sugerencias de autor: los que han salido en las búsquedas.
+  const [autoresVistos, setAutoresVistos] = useState<string[]>([]);
+  const nuevos = (data ?? []).map((p) => p.autor).filter((a) => a !== "?" && !autoresVistos.includes(a));
+  if (nuevos.length) setAutoresVistos((xs) => [...new Set([...xs, ...nuevos])].sort((a, b) => a.localeCompare(b)));
+  const conFiltros = !!(consulta.texto || consulta.autor || desde || hasta);
+  const claseCampo = "h-7 rounded-md border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-ring";
   return (
     <div className="mt-2.5 border-t pt-2.5">
       <p className="mb-1 text-[11px] font-medium">Buscar en el historial de PRs</p>
@@ -1129,8 +1138,31 @@ function BuscarEnHistorial({ ticketId, yaAgregados, agregando, onAgregar }: {
         />
         {isFetching && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
       </div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+        <input
+          value={autor}
+          onChange={(e) => setAutor(e.target.value)}
+          list={`autores-${ticketId}`}
+          placeholder="Quién lo hizo (usuario GitHub)"
+          className={cn(claseCampo, "w-48")}
+        />
+        <datalist id={`autores-${ticketId}`}>
+          {autoresVistos.map((a) => <option key={a} value={a} />)}
+        </datalist>
+        <label className="inline-flex items-center gap-1">
+          Del <input type="date" value={desde} max={hasta || undefined} onChange={(e) => setDesde(e.target.value)} className={claseCampo} />
+        </label>
+        <label className="inline-flex items-center gap-1">
+          al <input type="date" value={hasta} min={desde || undefined} onChange={(e) => setHasta(e.target.value)} className={claseCampo} />
+        </label>
+        {conFiltros && (
+          <button type="button" onClick={() => { setTexto(""); setAutor(""); setDesde(""); setHasta(""); }} className="rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground">
+            Limpiar
+          </button>
+        )}
+      </div>
       <p className="mt-1 text-[10px] text-muted-foreground">
-        {consulta ? "PRs fusionados de Sozu con eso en el título o la descripción." : "Sin texto: los fusionados en la última semana."}
+        {conFiltros ? "PRs fusionados de Sozu con esos filtros (fecha = cuándo se fusionó)." : "Sin filtros: los fusionados en la última semana."}
       </p>
       {error && <p className="mt-1 text-xs text-destructive">{mensajeDeError(error)}</p>}
       {data && data.length === 0 && <p className="mt-1 text-xs text-muted-foreground">Sin resultados.</p>}

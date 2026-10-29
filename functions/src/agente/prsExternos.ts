@@ -232,12 +232,28 @@ export interface PrDeHistorial {
  * Para el cierre de un ticket trabajado por fuera: encontrar el PR por lo que
  * hace aunque no traiga el folio, y agregarlo con `agregarPrManual`.
  */
-export async function buscarPrsPorTexto(gh: Octokit, texto: string): Promise<PrDeHistorial[]> {
+/**
+ * Filtros extra: `autor` (login de GitHub de quien abrió el PR) y `desde`/`hasta`
+ * (fecha de fusión, YYYY-MM-DD). Sin texto, autor ni fechas: la última semana.
+ */
+export async function buscarPrsPorTexto(
+  gh: Octokit,
+  texto: string,
+  { autor, desde, hasta }: { autor?: string; desde?: string; hasta?: string } = {},
+): Promise<PrDeHistorial[]> {
   const repos = await reposDeSozu();
   const permitidos = new Set(repos.map((r) => clave(r.owner, r.repo)));
   const limpio = texto.replace(/["\\]/g, " ").trim().slice(0, 80);
-  const desde = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
-  const filtro = limpio ? `${limpio} in:title,body` : `merged:>=${desde}`;
+  const fecha = (f?: string) => (f && /^\d{4}-\d{2}-\d{2}$/.test(f) ? f : "");
+  const login = autor && /^[A-Za-z0-9-]{1,39}$/.test(autor.trim()) ? autor.trim() : "";
+  const [d, h] = [fecha(desde), fecha(hasta)];
+  const semana = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+  const filtro = [
+    limpio && `${limpio} in:title,body`,
+    login && `author:${login}`,
+    d && h ? `merged:${d}..${h}` : d ? `merged:>=${d}` : h ? `merged:<=${h}` : "",
+    !limpio && !login && !d && !h && `merged:>=${semana}`,
+  ].filter(Boolean).join(" ");
   type Nodo = { number: number; title: string; url: string; baseRefName: string; mergedAt: string | null; bodyText: string; author: { login: string } | null; repository: { name: string; owner: { login: string } } };
   const grupos = gruposDeDuenos([...new Set(repos.map((r) => r.owner))], `is:pr is:merged ${filtro} sort:updated-desc`);
   const nodos = (await Promise.all(grupos.map(async (q) => {

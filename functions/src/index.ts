@@ -569,7 +569,7 @@ export const agenteClaudeLog = onCall<{ accion: string; issue: number; jwt?: str
  * los que no traen nada que los relacione. Con `texto`, busca PRs fusionados de
  * Sozu por título o descripción (vacío: los de la última semana).
  */
-export const agenteBuscarPrsTicket = onCall<{ ticketId: string; forzar?: boolean; agregar?: string; quitar?: string; texto?: string }>(
+export const agenteBuscarPrsTicket = onCall<{ ticketId: string; forzar?: boolean; agregar?: string; quitar?: string; texto?: string; autor?: string; desde?: string; hasta?: string }>(
   {
     region: "us-central1",
     secrets: [GITHUB_TOKEN, SUPABASE_SERVICE_KEY],
@@ -590,7 +590,10 @@ export const agenteBuscarPrsTicket = onCall<{ ticketId: string; forzar?: boolean
       const quitar = typeof req.data?.quitar === "string" ? req.data.quitar : "";
       if (agregar || quitar) return await agregarPrManual(gh, usuario.email, t, agregar || quitar, !!quitar);
       // Buscar en el historial por texto (título o descripción) para agregarlos a mano.
-      if (typeof req.data?.texto === "string") return { historial: await buscarPrsPorTexto(gh, req.data.texto) };
+      if (typeof req.data?.texto === "string") {
+        const { autor, desde, hasta } = req.data;
+        return { historial: await buscarPrsPorTexto(gh, req.data.texto, { autor, desde, hasta }) };
+      }
       return await buscarPrsExternos(gh, usuario.email, t, req.data?.forzar === true);
     } catch (e) {
       const conocidos: Record<string, string> = {

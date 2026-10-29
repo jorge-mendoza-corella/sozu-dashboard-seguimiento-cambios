@@ -279,7 +279,7 @@ export interface PrsExternos {
   revisadoEn: string;
 }
 
-const llamarBuscarPrs = httpsCallable<{ ticketId: string; forzar?: boolean; agregar?: string; quitar?: string; texto?: string }, PrsExternos>(functions, "agenteBuscarPrsTicket", { timeout: 120_000 });
+const llamarBuscarPrs = httpsCallable<{ ticketId: string; forzar?: boolean; agregar?: string; quitar?: string; texto?: string; autor?: string; desde?: string; hasta?: string }, PrsExternos>(functions, "agenteBuscarPrsTicket", { timeout: 120_000 });
 
 /** PRs del ticket según la convención, en los repos de Sozu. Se reusa 10 min salvo `forzar`. */
 export async function buscarPrsTicket(ticketId: string, forzar = false): Promise<PrsExternos> {
@@ -299,8 +299,12 @@ export interface PrDeHistorial {
 }
 
 /** PRs fusionados de Sozu que mencionan `texto` (vacío: los de la última semana). */
-export async function buscarPrsHistorial(ticketId: string, texto: string): Promise<PrDeHistorial[]> {
-  const r = (await llamarBuscarPrs({ ticketId, texto })).data as unknown as { historial: PrDeHistorial[] };
+export async function buscarPrsHistorial(
+  ticketId: string,
+  texto: string,
+  filtros: { autor?: string; desde?: string; hasta?: string } = {},
+): Promise<PrDeHistorial[]> {
+  const r = (await llamarBuscarPrs({ ticketId, texto, ...filtros })).data as unknown as { historial: PrDeHistorial[] };
   return r.historial ?? [];
 }
 
