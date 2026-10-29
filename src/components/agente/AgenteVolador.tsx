@@ -24,7 +24,7 @@ import "./personaje.css";
 import { Antojos, Bata, Blusa, BrazoHumano, CabezaCartoon, Camisa, Camiseta, Cola, Filipina, Gi, HojasVestido, Playera, Saco, Vestido } from "./skins";
 import { PERSONALIDAD } from "./personalidades";
 import { callarVoz, hablar } from "./voz";
-import { EVENTO_MEGAFONO, type MensajeMegafono } from "@/lib/megafono";
+import { EVENTO_AVISO, EVENTO_AVISO_ENTREGADO, type AvisoParaAvatar } from "@/lib/avisos";
 import { nombreAvatar, PALETA, PAREJA, SKINS, useCorreosAvatar, useNombresAvatar, useSkinGeorgIA, type Skin } from "./skinsDatos";
 import { ANCHO_UTILERIA, ARRIBA_UTILERIA, partidoDeHoy, partidoEnVivo, partidosSeleccion, setPartidosSeleccion, type TipoUtileria, type Utileria } from "./escenasDatos";
 import { cargarPartidosSeleccion } from "@/lib/agenteRepos";
@@ -41,8 +41,10 @@ export interface DetalleAlerta {
 }
 /** Cuánto grita antes de rendirse y volver a volar (la próxima revisión insiste). */
 const ALERTA_MS = 90_000;
-/** Megáfono: lo que dura el «¡quiere decirte algo!» antes del mensaje. */
-const LLAMADA_MS = 2200;
+/** Avisos: lo que tarda el mensajero en entrar, lo mínimo que grita y lo que tarda en irse. */
+const MENSAJERO_ENTRA_MS = 1600;
+const MENSAJERO_GRITA_MS = 6500;
+const MENSAJERO_SALE_MS = 1400;
 
 /**
  * Una corrida de Claude Code (tickets) terminó: GeorgIA baja y lo actúa.
@@ -589,8 +591,11 @@ interface Props {
   pausado: boolean;
   /** Nombre de quien está logueado (para que el personaje se desquite con él). */
   nombreUsuario: string;
-  /** `motivo` = "tickets" si se le dio clic mientras gritaba la alerta. */
-  onClick: (motivo: "chat" | "tickets") => void;
+  /**
+   * `motivo` = "tickets" si se le dio clic mientras gritaba la alerta; "avisos"
+   * (con la conversación) si fue mientras le traían un aviso.
+   */
+  onClick: (motivo: "chat" | "tickets" | "avisos", convId?: string) => void;
   /** Permiso «Voz del avatar»: dice en voz alta lo que pone en sus globos. */
   voz?: boolean;
 }
@@ -637,8 +642,10 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
   const [enMano, setEnMano] = useState<"elote" | "cafe" | "termo" | "bandera" | "palo" | null>(null);
   /** Encima de la cabeza o la cara: el foco de la idea o la venda de la piñata. */
   const [extra, setExtra] = useState<"foco" | "venda" | null>(null);
-  /** Megáfono: antes del mensaje, «¡quiere decirte algo!» (signo y ondas). */
+  /** Avisos: antes del mensaje, «¡te buscan!» (signo y ondas) sobre el propio. */
   const [llamando, setLlamando] = useState(false);
+  /** Avisos: el avatar de quien manda entra desde una orilla y lo grita. */
+  const [mensajero, setMensajero] = useState<(AvisoParaAvatar & { x: number; y: number; lado: "izq" | "der"; fase: "entra" | "grita" | "sale" }) | null>(null);
   // Avatares que son usuarios (con correo): los socios de la tanda.
   const correosAvatar = useCorreosAvatar();
   const usuariosRef = useRef<{ skin: Skin; nombre: string }[]>([]);
@@ -671,7 +678,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
     nombreRef.current = nombreUsuario;
   }, [nombreUsuario]);
   /** Hay alerta de tickets activa (el clic abre la pestaña de tickets y la apaga). */
-  const alertaRef = useRef<{ apagar: () => void; motivo?: "chat" | "tickets" } | null>(null);
+  const alertaRef = useRef<{ apagar: () => void; motivo?: "chat" | "tickets" | "avisos"; convId?: string } | null>(null);
   useEffect(() => {
     pausaRef.current = pausado || pausaLocal;
   }, [pausado, pausaLocal]);
@@ -757,12 +764,10 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
       festejoTheta: 0,
       alertaGritos: [] as string[],
       alertaHasta: 0,
-      /** Duración de la próxima alerta (el megáfono dura lo que su mensaje); 0 = ALERTA_MS. */
+      /** Duración de la próxima alerta (la de un aviso la termina el mensajero); 0 = ALERTA_MS. */
       alertaDur: 0,
-      /** La alerta en curso (o pendiente) es un mensaje del megáfono. */
+      /** La alerta en curso es un aviso (la grita el mensajero, no el propio). */
       megafono: false,
-      /** El mensaje del megáfono se dice en voz alta. */
-      megafonoVoz: false,
       /** El clic atendió la escena de Claude: se corta al volver. */
       cortarEscena: false,
       alertaIdx: 0,
@@ -793,8 +798,35 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
     };
     let finDialogo = 0;
     let llamadaHasta = 0;
-    /** Audio del megáfono: suena junto con el mensaje, después de la llamada. */
-    let tocarAudio: (() => void) | null = null;
+    // Avisos: uno a la vez; los que llegan mientras tanto esperan su turno.
+    const colaAvisos: AvisoParaAvatar[] = [];
+    let avisoActual: AvisoParaAvatar | null = null;
+    let audioAviso: HTMLAudioElement | null = null;
+    let faseMensajero: "entra" | "grita" | "sale" | null = null;
+    let faseHasta = 0;
+    const terminarAviso = () => {
+      audioAviso?.pause();
+      audioAviso = null;
+      callarVoz(0);
+      avisoActual = null;
+      faseMensajero = null;
+      s.megafono = false;
+      s.alertaGritos = [];
+      llamadaHasta = 0;
+      setLlamando(false);
+      setMensajero(null);
+    };
+    const tomarAviso = () => {
+      if (avisoActual || !colaAvisos.length || s.alertaGritos.length) return;
+      const a = colaAvisos.shift()!;
+      avisoActual = a;
+      audioAviso = a.audio && !a.recordatorio ? Object.assign(new Audio(a.audio), { preload: "auto" }) : null;
+      // Marcador: la pose «alerta» sigue mientras dure el aviso (la termina el mensajero).
+      s.alertaGritos = ["…"];
+      s.alertaDur = 10 * 60_000;
+      s.megafono = true;
+      alertaRef.current = { apagar: terminarAviso, motivo: "avisos", convId: a.convId };
+    };
     let proximaFrase = performance.now() + azar(1500, 4000);
     /** `voz`: decirlo en voz alta; por defecto, si la persona tiene la voz prendida. */
     const decir = (texto: string, tipo: Dialogo["tipo"] = "habla", ms = 2400, voz = vozRef.current) => {
@@ -1486,7 +1518,8 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
         }
       }
 
-      // El megáfono no espera a que acabe la escena (arcade, pesca…): la acelera.
+      tomarAviso();
+      // El aviso no espera a que acabe la escena (arcade, pesca…): la acelera.
       if (s.megafono && s.alertaGritos.length && s.pose !== "alerta" && enEscena() && !guion && s.hasta) {
         s.hasta = Math.min(s.hasta, ahora + 300);
       }
@@ -1499,14 +1532,15 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
         s.alertaDur = 0;
         s.alertaIdx = 0;
         proximaFrase = ahora;
-        if (s.megafono) {
-          // Primero llama la atención (sin texto) y luego dice el mensaje.
+        if (s.megafono && avisoActual) {
+          // Se sorprende («!») mientras el avatar de quien manda entra desde la
+          // orilla con más espacio; luego ése lo grita.
           finDialogo = 0;
           setDialogo(null);
           setLlamando(true);
-          llamadaHasta = ahora + LLAMADA_MS;
-          proximaFrase = llamadaHasta;
-          s.alertaHasta += LLAMADA_MS;
+          proximaFrase = Infinity;
+          // El mensajero sale en cuanto el propio toca el piso (ver case "alerta").
+          faseMensajero = null;
         }
       }
 
@@ -1667,23 +1701,56 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
             llamadaHasta = 0;
             setLlamando(false);
           }
-          if (!finDialogo && ahora >= proximaFrase) {
-            if (tocarAudio) {
-              tocarAudio();
-              tocarAudio = null;
+          if (s.megafono && avisoActual && !faseMensajero && s.y >= piso() - 1) {
+            // Ya en el piso: entra el de quien manda, por la orilla con más espacio.
+            const lado = s.x > TAM + 60 ? "izq" : "der";
+            const x = lado === "izq" ? s.x - TAM - 20 : Math.min(window.innerWidth - TAM - MARGEN, s.x + TAM + 20);
+            s.dir = (lado === "izq" ? -1 : 1) as 1 | -1;
+            faseMensajero = "entra";
+            faseHasta = ahora + MENSAJERO_ENTRA_MS;
+            llamadaHasta = faseHasta;
+            setMensajero({ ...avisoActual, x, y: piso(), lado, fase: "entra" });
+          }
+          if (s.megafono && avisoActual && faseMensajero && ahora >= faseHasta) {
+            const a = avisoActual;
+            if (faseMensajero === "entra") {
+              // Llegó: lo grita (con su audio o con la voz de su personaje).
+              faseMensajero = "grita";
+              faseHasta = ahora + Math.max(MENSAJERO_GRITA_MS, a.texto.length * 70);
+              setMensajero((m) => (m ? { ...m, fase: "grita" } : m));
+              ponerAnimo("grito");
+              if (audioAviso) {
+                const audio = audioAviso;
+                const alargar = () => {
+                  if (Number.isFinite(audio.duration)) faseHasta = Math.max(faseHasta, performance.now() + audio.duration * 1000 + 1500);
+                };
+                if (audio.readyState >= 1) alargar();
+                else audio.onloadedmetadata = alargar;
+                // Mientras suena su audio, la voz del avatar propio no lo tapa.
+                callarVoz(MENSAJERO_GRITA_MS);
+                audio.onended = () => callarVoz(0);
+                // Sin interacción previa el navegador puede bloquearlo: queda el globo.
+                void audio.play().catch(() => callarVoz(0));
+              } else if (a.voz && !a.recordatorio && a.texto) hablar(a.texto, (a.deSkin ?? skinRef.current) as Skin);
+              if (!a.recordatorio) {
+                window.dispatchEvent(new CustomEvent(EVENTO_AVISO_ENTREGADO, { detail: { convId: a.convId, msgId: a.msgId } }));
+              }
+            } else if (faseMensajero === "grita") {
+              faseMensajero = "sale";
+              faseHasta = ahora + MENSAJERO_SALE_MS;
+              setMensajero((m) => (m ? { ...m, fase: "sale" } : m));
+            } else {
+              terminarAviso();
             }
-            const grito = s.alertaGritos[s.alertaIdx % s.alertaGritos.length];
-            // El megáfono manda su propia voz (una vez, no en cada vuelta).
-            decir(grito, "grito", 2600, s.megafono ? s.megafonoVoz && s.alertaIdx === 0 : vozRef.current);
+          }
+          if (!s.megafono && !finDialogo && ahora >= proximaFrase) {
+            decir(s.alertaGritos[s.alertaIdx % s.alertaGritos.length], "grito", 2600);
             s.alertaIdx += 1;
             proximaFrase = ahora + 3000;
           }
           if (ahora >= s.alertaHasta || !s.alertaGritos.length) {
+            if (s.megafono) terminarAviso();
             s.alertaGritos = [];
-            s.megafono = false;
-            s.megafonoVoz = false;
-            llamadaHasta = 0;
-            setLlamando(false);
             alertaRef.current = null;
             cambiarPose("agachar", 180);
             s.siguiente = "despegar";
@@ -2120,42 +2187,15 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
       alertaRef.current = { apagar: () => { s.alertaGritos = []; } };
     };
     window.addEventListener(EVENTO_ALERTA_TICKETS, alAlerta);
-    // Megáfono: aterriza y grita el mensaje que le mandaron (con su audio, si trae).
-    let audioMegafono: HTMLAudioElement | null = null;
-    const alMegafono = (e: Event) => {
-      const m = (e as CustomEvent<MensajeMegafono>).detail;
-      if (!m) return;
-      audioMegafono?.pause();
-      // Solo el mensaje (sin «Mensaje de…»); si es puro audio, la bocina.
-      const gritos = [m.texto || "🔊 …"];
-      s.alertaGritos = gritos;
-      s.megafono = true;
-      // Lo dice en voz alta si quien lo mandó lo pidió (aunque aquí no esté
-      // prendida la voz de diario); si no, solo el globo.
-      s.megafonoVoz = !!m.voz;
-      s.alertaIdx = 0;
-      // Lo grita dos vueltas (o lo que dure el audio, si es más).
-      s.alertaDur = gritos.length * 3000 * 2;
-      if (s.pose === "alerta") s.alertaHasta = performance.now() + s.alertaDur;
-      tocarAudio = null;
-      if (m.audio) {
-        const a = new Audio(m.audio);
-        a.preload = "auto";
-        audioMegafono = a;
-        // Suena cuando empieza el mensaje (después de la llamada).
-        tocarAudio = () => {
-          const dura = Number.isFinite(a.duration) ? a.duration * 1000 : 0;
-          s.alertaHasta = Math.max(s.alertaHasta, performance.now() + dura + 2500);
-          // Mientras suena su audio, la voz del avatar no lo tapa.
-          callarVoz(Math.max(dura, 6000));
-          a.onended = () => callarVoz(0);
-          // Sin interacción previa el navegador puede bloquearlo: entonces solo grita el texto.
-          void a.play().catch(() => callarVoz(0));
-        };
-      }
-      alertaRef.current = { apagar: () => { s.alertaGritos = []; s.megafono = false; tocarAudio = null; audioMegafono?.pause(); }, motivo: "chat" };
+    // Avisos: a la cola (uno por conversación: el nuevo reemplaza al que esperaba).
+    const alAviso = (e: Event) => {
+      const m = (e as CustomEvent<AvisoParaAvatar>).detail;
+      if (!m || (avisoActual?.convId === m.convId && avisoActual.msgId === m.msgId)) return;
+      const i = colaAvisos.findIndex((x) => x.convId === m.convId);
+      if (i >= 0) colaAvisos.splice(i, 1, m);
+      else colaAvisos.push(m);
     };
-    window.addEventListener(EVENTO_MEGAFONO, alMegafono);
+    window.addEventListener(EVENTO_AVISO, alAviso);
     const alClaude = (e: Event) => {
       const c = (e as CustomEvent<DetalleClaude>).detail;
       if (!c) return;
@@ -2230,8 +2270,8 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
       window.removeEventListener(EVENTO_DEV_FALLO, alDevFallo);
       window.removeEventListener(EVENTO_STORE, alStore);
       window.removeEventListener(EVENTO_ALERTA_TICKETS, alAlerta);
-      window.removeEventListener(EVENTO_MEGAFONO, alMegafono);
-      audioMegafono?.pause();
+      window.removeEventListener(EVENTO_AVISO, alAviso);
+      audioAviso?.pause();
       window.removeEventListener(EVENTO_CLAUDE, alClaude);
       window.removeEventListener(EVENTO_ARCADE, alArcade);
       window.removeEventListener(EVENTO_PESCA, alPesca);
@@ -2263,11 +2303,11 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
       aria-hidden={pausado || undefined}
       tabIndex={pausado ? -1 : undefined}
       onClick={() => {
-        const habiaAlerta = !!alertaRef.current && alertaRef.current.motivo !== "chat";
-        alertaRef.current?.apagar();
+        const alerta = alertaRef.current;
+        alerta?.apagar();
         alertaRef.current = null;
         marcarAtrapado();
-        onClick(habiaAlerta ? "tickets" : "chat");
+        onClick(alerta?.motivo === "avisos" ? "avisos" : alerta && alerta.motivo !== "chat" ? "tickets" : "chat", alerta?.convId);
       }}
       onPointerEnter={congelar(true)}
       onPointerLeave={congelar(false)}
@@ -2472,6 +2512,54 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
           <i>⚡</i><i>💥</i><i>⚡</i><em />
         </span>
       )}
+      {mensajero && !pausado &&
+        createPortal(
+          <div
+            className="agente-mensajero"
+            data-fase={mensajero.fase}
+            data-lado={mensajero.lado}
+            style={{
+              left: mensajero.x,
+              top: mensajero.y,
+              ["--desde" as string]: `${mensajero.lado === "izq" ? -(mensajero.x + TAM + 40) : window.innerWidth - mensajero.x + 40}px`,
+            }}
+            role="button"
+            tabIndex={0}
+            title={`Aviso de ${mensajero.deNombre}: clic para contestar`}
+            onClick={() => {
+              alertaRef.current?.apagar();
+              alertaRef.current = null;
+              onClick("avisos", mensajero.convId);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" && e.key !== " ") return;
+              e.preventDefault();
+              alertaRef.current?.apagar();
+              alertaRef.current = null;
+              onClick("avisos", mensajero.convId);
+            }}
+          >
+            {/* Entra mirando hacia el propio; al irse se voltea. */}
+            <div
+              className="agente-mensajero__cuerpo"
+              style={{ transform: `scaleX(${(mensajero.lado === "izq") === (mensajero.fase !== "sale") ? 1 : -1})` }}
+            >
+              <Personaje
+                pose={mensajero.fase === "grita" ? "alerta" : "caminar"}
+                animo={mensajero.fase === "grita" ? "grito" : "feliz"}
+                skin={(SKINS.some((x) => x.id === mensajero.deSkin) ? mensajero.deSkin : skin) as Skin}
+              />
+            </div>
+            <span className="agente-volador__gafete">{mensajero.deNombre}</span>
+            {mensajero.fase === "grita" && (
+              <span className="agente-volador__dialogo agente-mensajero__globo" data-tipo="grito">
+                <b className="agente-mensajero__quien">{mensajero.deNombre}{mensajero.recordatorio ? " (sigue esperando)" : ""}</b>
+                {mensajero.texto || "🔊 …"}
+              </span>
+            )}
+          </div>,
+          document.body,
+        )}
       {llamando && pose === "alerta" && !pausado && (
         <span className="agente-volador__llamada" aria-hidden>
           <em /><em /><b>!</b>

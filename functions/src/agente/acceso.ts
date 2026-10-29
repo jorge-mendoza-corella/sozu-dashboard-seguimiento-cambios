@@ -72,7 +72,7 @@ export async function verificarAcceso(req: CallableRequest, permiso: Permiso = "
   if (permiso === "claude" && !mandaClaude) {
     throw new HttpsError("permission-denied", "No tienes permiso para mandar tickets a Claude.");
   }
-  // Megáfono: mandar mensajes que gritan los avatares de los demás.
+  // Avisos: abrir conversaciones que el avatar grita en la pantalla del otro.
   if (permiso === "megafono" && !(esRoot || (usaAgente && lista(cfg.megafono).includes(email)))) {
     throw new HttpsError("permission-denied", "No tienes permiso para mandar mensajes con el avatar.");
   }
