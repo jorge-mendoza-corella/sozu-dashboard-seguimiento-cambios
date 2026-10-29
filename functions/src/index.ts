@@ -501,8 +501,8 @@ export const agenteClaudeResponder = onCall<{ ticketId: string; texto: string; a
 );
 
 /**
- * `agenteSubirAdjunto`: abre la subida de una imagen, video o audio para la
- * respuesta a Claude (solo tickets que la persona mandó) o, con ticketId
+ * `agenteSubirAdjunto`: abre la subida de una imagen, video, audio o documento
+ * para la respuesta a Claude (solo tickets que la persona mandó) o, con ticketId
  * "chat", para una pregunta a GeorgIA. Ver agente/adjuntos.ts.
  */
 export const agenteSubirAdjunto = onCall<{ ticketId: string; nombre: string; tipo: string; tamano: number }>(

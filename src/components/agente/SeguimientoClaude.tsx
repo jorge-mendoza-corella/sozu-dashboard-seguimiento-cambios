@@ -448,8 +448,9 @@ export function SeguimientoClaude({ ticketId, folio, titulo, issue, enfocar = fa
   const [enviando, setEnviando] = useState(false);
 
   // Adjuntos: se suben en cuanto se eligen; la respuesta lleva sus URLs (el
-  // orquestador transcribe audios y videos en la corrida).
-  const adj = useAdjuntos({ carpeta: ticketId });
+  // orquestador transcribe audios y videos en la corrida; los documentos los
+  // descarga Claude y los lee).
+  const adj = useAdjuntos({ carpeta: ticketId, documentos: true });
   const subiendo = adj.ocupado;
   const error = adj.error;
   const setError = adj.setError;

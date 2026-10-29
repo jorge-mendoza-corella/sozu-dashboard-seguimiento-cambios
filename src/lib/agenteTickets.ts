@@ -315,7 +315,7 @@ export async function prManualTicket(ticketId: string, url: string, quitar = fal
 const llamarSeguimiento = httpsCallable<{ ticketId: string; forzarPrs?: boolean }, SeguimientoClaude>(functions, "agenteClaudeSeguimiento", { timeout: 60_000 });
 export interface AdjuntoRespuesta {
   nombre: string;
-  tipo: "imagen" | "video" | "audio";
+  tipo: "imagen" | "video" | "audio" | "documento";
   url: string;
 }
 
@@ -328,23 +328,45 @@ const llamarSubida = httpsCallable<{ ticketId: string; nombre: string; tipo: str
 
 export const MAX_ADJUNTO_MB = 200;
 
-export const tipoAdjunto = (mime: string): AdjuntoRespuesta["tipo"] | null =>
-  mime.startsWith("image/") ? "imagen" : mime.startsWith("video/") ? "video" : mime.startsWith("audio/") ? "audio" : null;
+/**
+ * Documentos que se pueden adjuntar en la respuesta de un ticket (no en el chat
+ * de GeorgIA), con su tipo MIME: el navegador a veces no da ninguno (.md).
+ */
+export const MIME_DOCUMENTO: Record<string, string> = {
+  md: "text/markdown",
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  json: "application/json",
+  csv: "text/csv",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+export const ACCEPT_DOCUMENTOS = Object.keys(MIME_DOCUMENTO).map((e) => `.${e}`).join(",");
+
+const extensionDe = (nombre: string) => (nombre.includes(".") ? nombre.split(".").pop()!.toLowerCase() : "");
+
+export const tipoAdjunto = (mime: string, nombre = ""): AdjuntoRespuesta["tipo"] | null =>
+  mime.startsWith("image/") ? "imagen"
+    : mime.startsWith("video/") ? "video"
+      : mime.startsWith("audio/") ? "audio"
+        : MIME_DOCUMENTO[extensionDe(nombre)] ? "documento" : null;
 
 /**
- * Sube una imagen, video o audio para la respuesta a Claude. La función abre la
- * subida y el archivo va directo a Storage (sin pasar por el callable, que tiene
- * tope de tamaño); `alAvanzar` recibe 0–1.
+ * Sube una imagen, video, audio o documento para la respuesta a Claude. La
+ * función abre la subida y el archivo va directo a Storage (sin pasar por el
+ * callable, que tiene tope de tamaño); `alAvanzar` recibe 0–1.
  */
 export async function subirAdjunto(ticketId: string, archivo: File, alAvanzar: (p: number) => void): Promise<AdjuntoRespuesta> {
-  const tipo = tipoAdjunto(archivo.type);
-  if (!tipo) throw new Error("Solo imágenes, videos o audios.");
+  const tipo = tipoAdjunto(archivo.type, archivo.name);
+  if (!tipo) throw new Error("Solo imágenes, videos, audios o documentos (.md, .pdf, .doc, .docx, .csv, .json, .xls, .xlsx).");
   if (archivo.size > MAX_ADJUNTO_MB * 1024 * 1024) throw new Error(`Pasa de ${MAX_ADJUNTO_MB} MB.`);
-  const { sesion, url } = (await llamarSubida({ ticketId, nombre: archivo.name, tipo: archivo.type, tamano: archivo.size })).data;
+  const mime = tipo === "documento" ? MIME_DOCUMENTO[extensionDe(archivo.name)] : archivo.type;
+  const { sesion, url } = (await llamarSubida({ ticketId, nombre: archivo.name, tipo: mime, tamano: archivo.size })).data;
   await new Promise<void>((ok, mal) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", sesion);
-    xhr.setRequestHeader("Content-Type", archivo.type);
+    xhr.setRequestHeader("Content-Type", mime);
     xhr.upload.onprogress = (e) => e.lengthComputable && alAvanzar(e.loaded / e.total);
     xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? ok() : mal(new Error(`La subida respondió ${xhr.status}.`)));
     xhr.onerror = () => mal(new Error("No se pudo subir el archivo."));

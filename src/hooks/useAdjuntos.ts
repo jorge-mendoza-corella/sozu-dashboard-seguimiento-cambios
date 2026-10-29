@@ -1,6 +1,6 @@
 /**
- * Estado de los adjuntos (imagen, video, audio, nota de voz) de un mensaje a
- * Claude. La vista está en components/agente/Adjuntos.tsx.
+ * Estado de los adjuntos (imagen, video, audio, nota de voz y, en los tickets,
+ * documentos) de un mensaje a Claude. La vista está en components/agente/Adjuntos.tsx.
  */
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent } from "react";
 import { mensajeDeError, procesarAdjunto, type AdjuntoChat } from "@/lib/agenteRepos";
@@ -21,16 +21,22 @@ export interface AdjuntoLocal {
   error?: string;
 }
 
-export function useAdjuntos({ carpeta, transcribir = false }: { carpeta: string; transcribir?: boolean }) {
+/**
+ * `documentos`: acepta .md, .pdf, .doc, .docx, .csv, .json, .xls y .xlsx (las
+ * respuestas de un ticket: Claude Code los descarga y los lee en la corrida).
+ */
+export function useAdjuntos({ carpeta, transcribir = false, documentos = false }: { carpeta: string; transcribir?: boolean; documentos?: boolean }) {
   const [adjuntos, setAdjuntos] = useState<AdjuntoLocal[]>([]);
   const [error, setError] = useState<string | null>(null);
   const cambiar = (id: string, p: Partial<AdjuntoLocal>) => setAdjuntos((xs) => xs.map((x) => (x.id === id ? { ...x, ...p } : x)));
 
   const agregar = (archivos: File[]) => {
     for (const f of archivos) {
-      const tipo = tipoAdjunto(f.type);
-      if (!tipo) {
-        setError(`"${f.name}" no es imagen, video ni audio.`);
+      const tipo = tipoAdjunto(f.type, f.name);
+      if (!tipo || (tipo === "documento" && !documentos)) {
+        setError(documentos
+          ? `"${f.name}" no es imagen, video, audio ni documento (.md, .pdf, .doc, .docx, .csv, .json, .xls, .xlsx).`
+          : `"${f.name}" no es imagen, video ni audio.`);
         continue;
       }
       if (transcribir && tipo === "imagen" && !IMAGENES_CLAUDE.test(f.type)) {
@@ -41,7 +47,7 @@ export function useAdjuntos({ carpeta, transcribir = false }: { carpeta: string;
       setAdjuntos((xs) => [...xs, { id, nombre: f.name, tipo, avance: 0, local: URL.createObjectURL(f) }]);
       subirAdjunto(carpeta, f, (p) => cambiar(id, { avance: p }))
         .then(async (r) => {
-          if (!transcribir || r.tipo === "imagen") return cambiar(id, { avance: 1, listo: r });
+          if (!transcribir || r.tipo === "imagen" || r.tipo === "documento") return cambiar(id, { avance: 1, listo: r });
           cambiar(id, { avance: 1, procesando: true });
           const extra = await procesarAdjunto(r.url, r.tipo);
           cambiar(id, { procesando: false, listo: { ...r, ...extra } });
@@ -92,7 +98,10 @@ export function useAdjuntos({ carpeta, transcribir = false }: { carpeta: string;
 
   /** Pegar una captura de pantalla la adjunta. */
   const alPegar = (e: ClipboardEvent) => {
-    const archivos = [...e.clipboardData.files].filter((f) => tipoAdjunto(f.type));
+    const archivos = [...e.clipboardData.files].filter((f) => {
+      const t = tipoAdjunto(f.type, f.name);
+      return t && (t !== "documento" || documentos);
+    });
     if (archivos.length) {
       e.preventDefault();
       agregar(archivos);
@@ -101,6 +110,7 @@ export function useAdjuntos({ carpeta, transcribir = false }: { carpeta: string;
 
   return {
     adjuntos,
+    documentos,
     listos: adjuntos.flatMap((x) => (x.listo ? [x.listo] : [])),
     /** Alguno se sigue subiendo o transcribiendo. */
     ocupado: adjuntos.some((x) => !x.listo && !x.error),
