@@ -1842,3 +1842,69 @@ export async function reintentarDocs(owner: string, repo: string, run: WorkflowR
     throw await errorDeEscritura(err, owner, repo, "reintentar la documentación");
   }
 }
+
+/** Días hacia atrás del historial de PRs de cada repo. */
+export const DIAS_HISTORIAL_PRS = 7;
+
+export interface PrHistorial {
+  number: number;
+  title: string;
+  url: string;
+  head: string;
+  base: string;
+  /** Autor real (marcador `pr_author`) o quien lo abrió. */
+  author: string;
+  merged: boolean;
+  /** Cuándo se fusionó o, si no, cuándo se cerró. */
+  closedAt: string;
+}
+
+/**
+ * PRs cerrados (fusionados o no) en los últimos DIAS_HISTORIAL_PRS días, el más
+ * reciente primero. Vienen por fecha de actualización: se para al salir del rango.
+ */
+export async function getHistorialPRs(owner: string, repo: string): Promise<PrHistorial[]> {
+  const desde = Date.now() - DIAS_HISTORIAL_PRS * 86_400_000;
+  const salida: PrHistorial[] = [];
+  for (let page = 1; page <= 3; page++) {
+    const { data } = await octokit.pulls.list({ owner, repo, state: "closed", sort: "updated", direction: "desc", per_page: 100, page });
+    for (const pr of data) {
+      const cerrado = pr.merged_at ?? pr.closed_at;
+      if (!cerrado || Date.parse(cerrado) < desde) continue;
+      salida.push({
+        number: pr.number,
+        title: pr.title,
+        url: pr.html_url,
+        head: pr.head.ref,
+        base: pr.base.ref,
+        author: (pr.body ?? "").match(/<!-- pr_author: ([\w.-]+) -->/)?.[1] ?? pr.user?.login ?? "?",
+        merged: !!pr.merged_at,
+        closedAt: cerrado,
+      });
+    }
+    if (data.length < 100 || Date.parse(data[data.length - 1].updated_at) < desde) break;
+  }
+  return salida.sort((a, b) => b.closedAt.localeCompare(a.closedAt));
+}
+
+/** Qué contenía un PR: su descripción (sin marcadores internos) y sus commits. */
+export async function getContenidoPR(owner: string, repo: string, prNumber: number): Promise<{
+  descripcion: string;
+  archivos: number;
+  commits: { sha: string; url: string; message: string; author: string }[];
+}> {
+  const [{ data: pr }, commits] = await Promise.all([
+    octokit.pulls.get({ owner, repo, pull_number: prNumber }),
+    octokit.paginate(octokit.pulls.listCommits, { owner, repo, pull_number: prNumber, per_page: 100 }),
+  ]);
+  return {
+    descripcion: (pr.body ?? "").replace(/<!--[\s\S]*?-->/g, "").replace(/^> 👤 Cambios de:.*$/m, "").trim(),
+    archivos: pr.changed_files ?? 0,
+    commits: commits.map((c) => ({
+      sha: c.sha.slice(0, 7),
+      url: c.html_url,
+      message: c.commit.message.split("\n")[0],
+      author: c.author?.login ?? c.commit.author?.name ?? "?",
+    })),
+  };
+}

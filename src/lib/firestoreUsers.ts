@@ -56,10 +56,13 @@ export interface CicdPermissions {
   verEstadoRepos: boolean;
   // Levantar o actualizar en el portal el ticket de soporte de un issue.
   crearTicketMonitoreo: boolean;
+  // Historial de PRs (últimos 7 días) en la tarjeta del repo. Solo los propios,
+  // o los de todos con `viewOthers`. Se da a mano, como los de Monitoreo.
+  verHistorialPRs: boolean;
 }
 
-export const NO_PERMISSIONS: CicdPermissions = { createPR: false, approve: false, mergeDev: false, mergeMain: false, buildApp: false, deployDev: false, switchDeployDev: false, viewOthers: false, verMonitoreo: false, resolverMonitoreo: false, verEstadoRepos: false, crearTicketMonitoreo: false };
-export const ALL_PERMISSIONS: CicdPermissions = { createPR: true, approve: true, mergeDev: true, mergeMain: true, buildApp: true, deployDev: true, switchDeployDev: true, viewOthers: true, verMonitoreo: true, resolverMonitoreo: true, verEstadoRepos: true, crearTicketMonitoreo: true };
+export const NO_PERMISSIONS: CicdPermissions = { createPR: false, approve: false, mergeDev: false, mergeMain: false, buildApp: false, deployDev: false, switchDeployDev: false, viewOthers: false, verMonitoreo: false, resolverMonitoreo: false, verEstadoRepos: false, crearTicketMonitoreo: false, verHistorialPRs: false };
+export const ALL_PERMISSIONS: CicdPermissions = { createPR: true, approve: true, mergeDev: true, mergeMain: true, buildApp: true, deployDev: true, switchDeployDev: true, viewOthers: true, verMonitoreo: true, resolverMonitoreo: true, verEstadoRepos: true, crearTicketMonitoreo: true, verHistorialPRs: true };
 
 export interface AppUser {
   email: string;
@@ -151,10 +154,12 @@ function permisosGenerales(user: AppUser): CicdPermissions {
   // tienen todos dentro de lo que ven; quien solo opera, ninguno.
   //
   // Menos los de Monitoreo (`verMonitoreo`, `resolverMonitoreo`, `verEstadoRepos`,
-  // `crearTicketMonitoreo`): los errores de producción no se reparten por rol, se
-  // dan a mano. Si no, el admin de cualquier empresa con cuenta legacy los
-  // vería sin que nadie se lo hubiera dado.
-  return esRolOperativo(user.role) ? NO_PERMISSIONS : { ...ALL_PERMISSIONS, verMonitoreo: false, resolverMonitoreo: false, verEstadoRepos: false, crearTicketMonitoreo: false };
+  // `crearTicketMonitoreo`) y el historial de PRs (`verHistorialPRs`): no se
+  // reparten por rol, se dan a mano. Si no, el admin de cualquier empresa con
+  // cuenta legacy los vería sin que nadie se lo hubiera dado.
+  return esRolOperativo(user.role)
+    ? NO_PERMISSIONS
+    : { ...ALL_PERMISSIONS, verMonitoreo: false, resolverMonitoreo: false, verEstadoRepos: false, crearTicketMonitoreo: false, verHistorialPRs: false };
 }
 
 /**

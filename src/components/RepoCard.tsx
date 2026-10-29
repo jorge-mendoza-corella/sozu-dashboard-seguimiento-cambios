@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/firestoreProjects";
 import { BranchRow } from "./BranchRow";
 import { PRList } from "./PRList";
+import { HistorialPRs } from "./HistorialPRs";
 import { WorkflowBadge } from "./WorkflowBadge";
 import { DeployMetaTooltip } from "./DeployMetaTooltip";
 import { DocsStatusDot } from "./DocsStatusDot";
@@ -957,6 +958,16 @@ export function RepoCard({ status, onRefetch, readOnly = false, perms = NO_PERMI
           </h4>
           <PRList prs={scopedPRs} owner={status.owner} repo={status.repo} onRefetch={onRefetch} perms={perms} approver={approver} codeOwnerAuths={codeOwnerAuths} selfLogin={canViewOthers ? null : selfLogin} myLogin={myLogin} avisos={avisos} />
         </div>
+
+        {/* Historial de PRs (cerrados en los últimos días): con su permiso; solo
+            los propios salvo con «ver cambios de otros». Se lee al abrirlo. */}
+        {perms.verHistorialPRs && <HistorialPRs
+          owner={status.owner}
+          repo={status.repo}
+          // Sin «ver cambios de otros», solo los suyos (sin login de GitHub, ninguno).
+          soloDe={perms.viewOthers ? null : selfLogin ?? ""}
+          esMio={(l) => !!myLogin && !!l && l.toLowerCase() === myLogin.toLowerCase()}
+        />}
 
         {/* Últimos deploys */}
         <div>
