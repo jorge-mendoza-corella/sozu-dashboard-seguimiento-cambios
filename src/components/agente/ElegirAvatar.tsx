@@ -4,10 +4,11 @@
  * GeorgIA). Se guarda en `agente_skins/{email}`.
  */
 import { useState } from "react";
-import { Check, Loader2, RotateCcw } from "lucide-react";
+import { Check, Loader2, RotateCcw, Volume2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Personaje } from "./AgenteVolador";
-import { SKINS, useNombresAvatar, useSkinGeneral, useSkinPropio, type Skin } from "./skinsDatos";
+import { SKINS, useNombresAvatar, useSkinGeneral, useSkinGeorgIA, useSkinPropio, type Skin } from "./skinsDatos";
+import { probarVoz } from "./voz";
 import { cambiarSkinPropio } from "@/lib/agenteRepos";
 
 export function ElegirAvatar({ email }: { email: string }) {
@@ -31,6 +32,8 @@ export function ElegirAvatar({ email }: { email: string }) {
 
   const nombreDe = useNombresAvatar();
   const nombreGeneral = nombreDe(general);
+  const actual = useSkinGeorgIA();
+  const [pruebaVoz, setPruebaVoz] = useState<string | null>(null);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-5">
@@ -38,6 +41,18 @@ export function ElegirAvatar({ email }: { email: string }) {
       <p className="mt-0.5 text-sm text-muted-foreground">
         Solo lo ves tú. Si no eliges uno, ves el general: <span className="font-medium text-foreground">{nombreGeneral}</span>.
       </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => { setPruebaVoz("Probando…"); void probarVoz(actual).then(setPruebaVoz); }}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium hover:bg-muted"
+        >
+          <Volume2 className="h-3.5 w-3.5" /> Probar voz
+        </button>
+        <span className="text-[11px] text-muted-foreground">
+          {pruebaVoz ?? "Para que hable de diario necesitas el permiso «Voz del avatar»; los avisos con «En voz alta» hablan siempre."}
+        </span>
+      </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         <Opcion

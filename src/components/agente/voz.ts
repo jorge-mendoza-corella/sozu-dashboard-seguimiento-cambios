@@ -138,3 +138,31 @@ export function audioDeAviso(src: string): HTMLAudioElement {
   audioCompartido.load();
   return audioCompartido;
 }
+
+/**
+ * Botón «Probar voz»: habla dentro del clic (así también desbloquea el celular)
+ * y dice qué pasó, para saber por qué no se oye en un equipo.
+ */
+export function probarVoz(skin: Skin): Promise<string> {
+  if (typeof speechSynthesis === "undefined") return Promise.resolve("Este navegador no tiene voz (síntesis de voz).");
+  desbloquear();
+  const voces = speechSynthesis.getVoices();
+  const es = voces.filter((v) => v.lang.toLowerCase().startsWith("es")).length;
+  const v = VOZ[skin] ?? VOZ_DEFAULT;
+  const u = new SpeechSynthesisUtterance("¡Hola! Así sueno.");
+  u.lang = "es-MX";
+  u.pitch = v.tono;
+  u.rate = v.velocidad;
+  const sistema = vozDelSistema(v.genero);
+  if (sistema) u.voice = sistema;
+  calladoHasta = 0;
+  speechSynthesis.cancel();
+  speechSynthesis.resume();
+  const datos = `${voces.length} voces, ${es} en español${sistema ? ` (usa «${sistema.name}»)` : ""}`;
+  return new Promise((ok) => {
+    const t = setTimeout(() => ok(`No arrancó: el navegador no reprodujo nada. ${datos}. Revisa el volumen y, en iPhone, el switch de silencio.`), 4000);
+    u.onstart = () => { clearTimeout(t); ok(`Sí habló. ${datos}.`); };
+    u.onerror = (e) => { clearTimeout(t); ok(`Falló (${e.error}). ${datos}.`); };
+    speechSynthesis.speak(u);
+  });
+}

@@ -2303,16 +2303,19 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
       data-oculto={pausado || undefined}
       aria-hidden={pausado || undefined}
       tabIndex={pausado ? -1 : undefined}
-      onClick={(e) => {
+      onClick={() => {
         const alerta = alertaRef.current;
+        // Con un aviso en curso, el clic al propio abre el panel normal; el aviso
+        // sigue al cerrarlo (para contestarlo se le da clic al globo).
+        if (alerta?.motivo === "avisos") {
+          marcarAtrapado();
+          onClick("chat");
+          return;
+        }
         alerta?.apagar();
         alertaRef.current = null;
         marcarAtrapado();
-        onClick(
-          alerta?.motivo === "avisos" ? "avisos" : alerta && alerta.motivo !== "chat" ? "tickets" : "chat",
-          alerta?.convId,
-          e.currentTarget.getBoundingClientRect(),
-        );
+        onClick(alerta && alerta.motivo !== "chat" ? "tickets" : "chat");
       }}
       onPointerEnter={congelar(true)}
       onPointerLeave={congelar(false)}
@@ -2530,18 +2533,12 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
             }}
             role="button"
             tabIndex={0}
-            title={`Aviso de ${mensajero.deNombre}: clic para contestar`}
-            onClick={(e) => {
-              alertaRef.current?.apagar();
-              alertaRef.current = null;
-              onClick("avisos", mensajero.convId, e.currentTarget.getBoundingClientRect());
-            }}
+            title="Abrir GeorgIA (para contestar, clic en su globo)"
+            onClick={() => onClick("chat")}
             onKeyDown={(e) => {
               if (e.key !== "Enter" && e.key !== " ") return;
               e.preventDefault();
-              alertaRef.current?.apagar();
-              alertaRef.current = null;
-              onClick("avisos", mensajero.convId, e.currentTarget.getBoundingClientRect());
+              onClick("chat");
             }}
           >
             {/* Entra mirando hacia el propio; al irse se voltea. */}
@@ -2557,9 +2554,33 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
             </div>
             <span className="agente-volador__gafete">{mensajero.deNombre}</span>
             {mensajero.fase === "grita" && (
-              <span className="agente-volador__dialogo agente-mensajero__globo" data-tipo="grito">
+              <span
+                className="agente-volador__dialogo agente-mensajero__globo"
+                data-tipo="grito"
+                role="button"
+                tabIndex={0}
+                title="Clic para contestar"
+                onClick={(e) => {
+                  // El globo abre la ventanita para contestar; el avatar, el panel.
+                  e.stopPropagation();
+                  const donde = e.currentTarget.getBoundingClientRect();
+                  alertaRef.current?.apagar();
+                  alertaRef.current = null;
+                  onClick("avisos", mensajero.convId, donde);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" && e.key !== " ") return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const donde = e.currentTarget.getBoundingClientRect();
+                  alertaRef.current?.apagar();
+                  alertaRef.current = null;
+                  onClick("avisos", mensajero.convId, donde);
+                }}
+              >
                 <b className="agente-mensajero__quien">{mensajero.deNombre}{mensajero.recordatorio ? " (sigue esperando)" : ""}</b>
                 {mensajero.texto || "🔊 …"}
+                <em className="agente-mensajero__hint">Clic aquí para contestar</em>
               </span>
             )}
           </div>,
