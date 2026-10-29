@@ -213,6 +213,58 @@ async function conManuales(gh: Octokit, base: PrsExternos, manuales: string[]): 
 const esMergeado = (estado: string) => estado === "en_dev" || estado === "en_main" || estado === "en_prd";
 const URL_PR = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)$/;
 
+/** PR encontrado por texto en el historial (para agregarlo a mano al ticket). */
+export interface PrDeHistorial {
+  repo: string;
+  numero: number;
+  titulo: string;
+  url: string;
+  base: string;
+  autor: string;
+  fusionadoEn: string;
+  /** Inicio de la descripción, para reconocerlo. */
+  extracto: string;
+}
+
+/**
+ * PRs fusionados en los repos de Sozu que mencionan `texto` en el título o la
+ * descripción (sin texto: los de los últimos 7 días), el más reciente primero.
+ * Para el cierre de un ticket trabajado por fuera: encontrar el PR por lo que
+ * hace aunque no traiga el folio, y agregarlo con `agregarPrManual`.
+ */
+export async function buscarPrsPorTexto(gh: Octokit, texto: string): Promise<PrDeHistorial[]> {
+  const repos = await reposDeSozu();
+  const permitidos = new Set(repos.map((r) => clave(r.owner, r.repo)));
+  const limpio = texto.replace(/["\\]/g, " ").trim().slice(0, 80);
+  const desde = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+  const filtro = limpio ? `${limpio} in:title,body` : `merged:>=${desde}`;
+  type Nodo = { number: number; title: string; url: string; baseRefName: string; mergedAt: string | null; bodyText: string; author: { login: string } | null; repository: { name: string; owner: { login: string } } };
+  const grupos = gruposDeDuenos([...new Set(repos.map((r) => r.owner))], `is:pr is:merged ${filtro} sort:updated-desc`);
+  const nodos = (await Promise.all(grupos.map(async (q) => {
+    const data = await gh.graphql<{ search: { nodes: Nodo[] } }>(
+      `query($q: String!) { search(query: $q, type: ISSUE, first: 40) { nodes { ... on PullRequest {
+        number title url baseRefName mergedAt bodyText author { login } repository { name owner { login } }
+      } } } }`,
+      { q },
+    );
+    return data.search.nodes;
+  }))).flat();
+  return nodos
+    .filter((n) => n.number && n.mergedAt && permitidos.has(clave(n.repository.owner.login, n.repository.name)))
+    .map((n) => ({
+      repo: n.repository.name,
+      numero: n.number,
+      titulo: n.title,
+      url: n.url,
+      base: n.baseRefName,
+      autor: n.author?.login ?? "?",
+      fusionadoEn: n.mergedAt!,
+      extracto: n.bodyText.replace(/\s+/g, " ").trim().slice(0, 160),
+    }))
+    .sort((a, b) => b.fusionadoEn.localeCompare(a.fusionadoEn))
+    .slice(0, 40);
+}
+
 /**
  * Agrega (o quita) a mano un PR al ticket, para cuando se trabajó por fuera y el
  * PR no trae el folio, la rama ni el trailer. Tiene que ser de un repo de Sozu.

@@ -22,7 +22,7 @@ import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
 import { cerrarRelacionados, cerrarTicket, clienteSupabase, ticketsAsignados, ticketsResueltos, tomarTicket } from "./agente/tickets.js";
 import { desligarTicket, relacionadosConDashboard, relacionarTicket } from "./agente/relaciones.js";
-import { agregarPrManual, buscarPrsExternos, notaConPrs, verificarPrsExternos } from "./agente/prsExternos.js";
+import { agregarPrManual, buscarPrsExternos, buscarPrsPorTexto, notaConPrs, verificarPrsExternos } from "./agente/prsExternos.js";
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
 import { issueDelTicket, responderAClaude, seguimientoClaude, type AdjuntoRespuesta } from "./agente/claude.js";
 import { abrirSubida } from "./agente/adjuntos.js";
@@ -564,9 +564,10 @@ export const agenteClaudeLog = onCall<{ accion: string; issue: number; jwt?: str
  * ver agente/prsExternos.ts), con en qué va cada uno. Solo tickets asignados a
  * quien pregunta. Para cerrarlo desde aquí eligiendo qué PRs lo resolvieron.
  * Con `agregar` (o `quitar`) y la URL de un PR, lo liga a mano al ticket: para
- * los que no traen nada que los relacione.
+ * los que no traen nada que los relacione. Con `texto`, busca PRs fusionados de
+ * Sozu por título o descripción (vacío: los de la última semana).
  */
-export const agenteBuscarPrsTicket = onCall<{ ticketId: string; forzar?: boolean; agregar?: string; quitar?: string }>(
+export const agenteBuscarPrsTicket = onCall<{ ticketId: string; forzar?: boolean; agregar?: string; quitar?: string; texto?: string }>(
   {
     region: "us-central1",
     secrets: [GITHUB_TOKEN, SUPABASE_SERVICE_KEY],
@@ -586,6 +587,8 @@ export const agenteBuscarPrsTicket = onCall<{ ticketId: string; forzar?: boolean
       const agregar = typeof req.data?.agregar === "string" ? req.data.agregar : "";
       const quitar = typeof req.data?.quitar === "string" ? req.data.quitar : "";
       if (agregar || quitar) return await agregarPrManual(gh, usuario.email, t, agregar || quitar, !!quitar);
+      // Buscar en el historial por texto (título o descripción) para agregarlos a mano.
+      if (typeof req.data?.texto === "string") return { historial: await buscarPrsPorTexto(gh, req.data.texto) };
       return await buscarPrsExternos(gh, usuario.email, t, req.data?.forzar === true);
     } catch (e) {
       const conocidos: Record<string, string> = {
