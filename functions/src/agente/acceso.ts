@@ -36,7 +36,7 @@ export interface Usuario {
   mandaClaude: boolean;
 }
 
-export type Permiso = "agente" | "docs" | "tickets" | "claude";
+export type Permiso = "agente" | "docs" | "tickets" | "claude" | "megafono";
 
 /**
  * Mismo criterio que `esRootVerificado()` de las reglas: email verificado y
@@ -71,6 +71,10 @@ export async function verificarAcceso(req: CallableRequest, permiso: Permiso = "
   }
   if (permiso === "claude" && !mandaClaude) {
     throw new HttpsError("permission-denied", "No tienes permiso para mandar tickets a Claude.");
+  }
+  // Megáfono: mandar mensajes que gritan los avatares de los demás.
+  if (permiso === "megafono" && !(esRoot || (usaAgente && lista(cfg.megafono).includes(email)))) {
+    throw new HttpsError("permission-denied", "No tienes permiso para mandar mensajes con el avatar.");
   }
   const limite = Number(cfg.limitePorHora);
   return { email, esRoot, verDocs, verTickets, mandaClaude, limitePorHora: Number.isFinite(limite) && limite > 0 ? limite : LIMITE_HORA_DEFAULT };

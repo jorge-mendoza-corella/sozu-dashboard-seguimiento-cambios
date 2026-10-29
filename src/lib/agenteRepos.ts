@@ -148,6 +148,10 @@ export interface PermisosAgente {
   tickets: boolean;
   /** Manda tickets a Claude Code y le contesta (requiere tickets). */
   claude: boolean;
+  /** Manda mensajes que gritan los avatares de los demás (requiere agente). */
+  megafono?: boolean;
+  /** Su avatar habla en voz alta (requiere agente). */
+  voz?: boolean;
 }
 
 const listaDe = (v: unknown): string[] =>
@@ -178,10 +182,16 @@ export async function permisosAgente(email: string | null | undefined): Promise<
       // El root lo tiene prendido salvo que lo haya apagado.
       tickets: esRoot ? !listaDe(d?.ticketsApagados).includes(email) : agente && listaDe(d?.tickets).includes(email),
     };
-    return { ...p, claude: esRoot || (p.tickets && listaDe(d?.claude).includes(email)) };
+    return {
+      ...p,
+      claude: esRoot || (p.tickets && listaDe(d?.claude).includes(email)),
+      megafono: esRoot || (agente && listaDe(d?.megafono).includes(email)),
+      // Sin el root de regalo: la voz se prende a mano, también para él.
+      voz: agente && listaDe(d?.voz).includes(email),
+    };
   } catch {
     // Sin doc (o sin poder leerlo) el root conserva todo por default.
-    return esRoot ? { agente: true, docs: true, tickets: true, claude: true } : nada;
+    return esRoot ? { agente: true, docs: true, tickets: true, claude: true, megafono: true } : nada;
   }
 }
 
@@ -193,6 +203,10 @@ export interface AccesoAgente {
   tickets: string[];
   /** Mandan tickets a Claude Code. */
   claude: string[];
+  /** Mandan mensajes con el megáfono. */
+  megafono: string[];
+  /** Su avatar habla en voz alta. */
+  voz: string[];
   ticketsApagados: string[];
 }
 
@@ -205,6 +219,8 @@ export async function leerAccesoAgente(): Promise<AccesoAgente> {
     docs: listaDe(d?.docs),
     tickets: listaDe(d?.tickets),
     claude: listaDe(d?.claude),
+    megafono: listaDe(d?.megafono),
+    voz: listaDe(d?.voz),
     ticketsApagados: listaDe(d?.ticketsApagados),
   };
 }
@@ -290,6 +306,16 @@ export async function cambiarTickets(email: string, activar: boolean): Promise<v
     return;
   }
   await setDoc(ACCESO(), { tickets: activar ? arrayUnion(email) : arrayRemove(email) }, { merge: true });
+}
+
+/** Voz del avatar: que hable en voz alta para esta persona (requiere GeorgIA). */
+export async function cambiarVoz(email: string, activar: boolean): Promise<void> {
+  await setDoc(ACCESO(), { voz: activar ? arrayUnion(email) : arrayRemove(email) }, { merge: true });
+}
+
+/** Megáfono: mandar mensajes que gritan los avatares (requiere GeorgIA). */
+export async function cambiarMegafono(email: string, permitir: boolean): Promise<void> {
+  await setDoc(ACCESO(), { megafono: permitir ? arrayUnion(email) : arrayRemove(email) }, { merge: true });
 }
 
 /** Mandar tickets a Claude Code (requiere Tickets). El root lo tiene siempre. */

@@ -23,6 +23,7 @@ import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
 import { cerrarRelacionados, cerrarTicket, clienteSupabase, ticketsAsignados, ticketsResueltos, tomarTicket } from "./agente/tickets.js";
 import { desligarTicket, relacionadosConDashboard, relacionarTicket } from "./agente/relaciones.js";
+import { destinatarios, mandarMegafono } from "./agente/megafono.js";
 import { agregarPrManual, buscarPrsExternos, buscarPrsPorTexto, notaConPrs, verificarPrsExternos } from "./agente/prsExternos.js";
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
 import { issueDelTicket, responderAClaude, seguimientoClaude, type AdjuntoRespuesta } from "./agente/claude.js";
@@ -718,6 +719,26 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string; prsSe
       console.error("[agenteCerrarTicket]", e);
       throw new HttpsError("unavailable", "No se pudo cerrar el ticket en el portal.");
     }
+  },
+);
+
+/**
+ * `agenteMegafono`: mensaje (texto y/o audio) que el avatar de los destinatarios
+ * grita en cuanto les llega. Pide el permiso «Megáfono». Con `accion:
+ * "destinatarios"` devuelve a quién se le puede mandar. Ver agente/megafono.ts.
+ */
+export const agenteMegafono = onCall<{ accion?: string; texto?: string; audio?: string; para?: string[]; skin?: string }>(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    maxInstances: 5,
+    cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
+  },
+  async (req) => {
+    const usuario = await verificarAcceso(req, "megafono");
+    if (req.data?.accion === "destinatarios") return { destinatarios: await destinatarios() };
+    return mandarMegafono(usuario.email, req.data ?? {});
   },
 );
 
