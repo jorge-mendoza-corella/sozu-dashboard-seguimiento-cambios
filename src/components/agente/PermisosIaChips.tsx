@@ -7,6 +7,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BellRing, Bot, FileText, Loader2, Send } from "lucide-react";
 import { useState } from "react";
+import { AyudaTooltip } from "@/components/ui/ayuda-tooltip";
 import { cambiarClaude, cambiarTickets, cambiarVerDocs, darAccesoAgente, leerAccesoAgente, quitarAccesoAgente } from "@/lib/agenteRepos";
 
 const CLAVE_ACCESO_AGENTE = ["agente-acceso"];
@@ -47,47 +48,51 @@ export function PermisosIaChips({ email, disabled }: { email: string; disabled?:
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={disabled || busy !== null}
-          className={claseChip(agente)}
-          onClick={() => void run("agente", () => (agente ? quitarAccesoAgente(email) : darAccesoAgente(email)))}
-          title={agente ? "Quitar GeorgIA (también quita docs y tickets)" : "Dar acceso a GeorgIA, el agente de repos"}
-        >
-          {busy === "agente" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bot className="h-3 w-3" />}
-          GeorgIA
-        </button>
-        <button
-          type="button"
-          // Sin agente no hay dónde ver los documentos: primero el agente.
-          disabled={disabled || busy !== null || !agente}
-          className={claseChip(docs)}
-          onClick={() => void run("docs", () => cambiarVerDocs(email, !docs))}
-          title={!agente ? "Primero dale acceso a GeorgIA" : docs ? "Quitar permiso para abrir documentación" : "Dejarle abrir la documentación que cita GeorgIA"}
-        >
-          {busy === "docs" ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
-          Ver documentación
-        </button>
-        <button
-          type="button"
-          disabled={disabled || busy !== null || !agente}
-          className={claseChip(tickets)}
-          onClick={() => void run("tickets", () => cambiarTickets(email, !tickets))}
-          title={!agente ? "Primero dale acceso a GeorgIA" : tickets ? "Dejar de revisar sus tickets" : "GeorgIA revisa cada 15 min sus tickets del portal y le avisa"}
-        >
-          {busy === "tickets" ? <Loader2 className="h-3 w-3 animate-spin" /> : <BellRing className="h-3 w-3" />}
-          Revisar tickets
-        </button>
-        <button
-          type="button"
-          disabled={disabled || busy !== null || !agente || !tickets}
-          className={claseChip(claude && tickets)}
-          onClick={() => void run("claude", () => cambiarClaude(email, !claude))}
-          title={!tickets ? "Primero prende Revisar tickets" : claude ? "Quitar permiso de mandar tickets a Claude" : "Dejarle mandar sus tickets a Claude Code"}
-        >
-          {busy === "claude" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-          Mandar a Claude
-        </button>
+        <AyudaTooltip texto={"Usar a GeorgIA, el agente que contesta dudas de los repos de Sozu (técnicas y de cómo se usa la plataforma)." + (agente ? " Quitarlo quita también documentación y tickets." : "")}>
+          <button
+            type="button"
+            disabled={disabled || busy !== null}
+            className={claseChip(agente)}
+            onClick={() => void run("agente", () => (agente ? quitarAccesoAgente(email) : darAccesoAgente(email)))}
+          >
+            {busy === "agente" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Bot className="h-3 w-3" />}
+            GeorgIA
+          </button>
+        </AyudaTooltip>
+        <AyudaTooltip texto={"Abrir los documentos de sozu-docs que GeorgIA cita en sus respuestas." + (!agente ? " Primero dale acceso a GeorgIA." : "")}>
+          <button
+            type="button"
+            // Sin agente no hay dónde ver los documentos: primero el agente.
+            disabled={disabled || busy !== null || !agente}
+            className={claseChip(docs)}
+            onClick={() => void run("docs", () => cambiarVerDocs(email, !docs))}
+          >
+            {busy === "docs" ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
+            Ver documentación
+          </button>
+        </AyudaTooltip>
+        <AyudaTooltip texto={"Pestaña Tickets: sus tickets pendientes del portal, cerrarlos con sus PRs; GeorgIA los revisa cada 15 min y le avisa." + (!agente ? " Primero dale acceso a GeorgIA." : "")}>
+          <button
+            type="button"
+            disabled={disabled || busy !== null || !agente}
+            className={claseChip(tickets)}
+            onClick={() => void run("tickets", () => cambiarTickets(email, !tickets))}
+          >
+            {busy === "tickets" ? <Loader2 className="h-3 w-3 animate-spin" /> : <BellRing className="h-3 w-3" />}
+            Revisar tickets
+          </button>
+        </AyudaTooltip>
+        <AyudaTooltip texto={"Mandar sus tickets a Claude Code, que los trabaja y abre los PRs hacia dev." + (!tickets ? " Primero prende «Revisar tickets»." : "")}>
+          <button
+            type="button"
+            disabled={disabled || busy !== null || !agente || !tickets}
+            className={claseChip(claude && tickets)}
+            onClick={() => void run("claude", () => cambiarClaude(email, !claude))}
+          >
+            {busy === "claude" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+            Mandar a Claude
+          </button>
+        </AyudaTooltip>
       </div>
       {error && <p className="mt-2 text-[11px] text-destructive">{error}</p>}
     </>
