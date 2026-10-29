@@ -52,7 +52,7 @@ function vozDelSistema(genero: Voz["genero"]): SpeechSynthesisVoice | null {
 }
 
 let calladoHasta = 0;
-/** No hablar por un rato (mientras suena el audio del megáfono). */
+/** No hablar por un rato (mientras suena el audio de un aviso). */
 export function callarVoz(ms: number) {
   calladoHasta = Date.now() + ms;
   if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();

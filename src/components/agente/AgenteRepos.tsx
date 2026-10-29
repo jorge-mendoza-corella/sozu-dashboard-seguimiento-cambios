@@ -26,8 +26,8 @@ import {
   type AdjuntoChat,
 } from "@/lib/agenteRepos";
 import { ElegirAvatar } from "./ElegirAvatar";
-import { Megafono } from "./Megafono";
-import { EVENTO_MEGAFONO, escucharBuzon } from "@/lib/megafono";
+import { Avisos } from "./Avisos";
+import { useAvisosGeorgia } from "@/hooks/useAvisosGeorgia";
 import { avatarDeCorreo, setSkinTicket } from "./skinsDatos";
 import { AdjuntoEnMensaje, AdjuntosPendientes, BotonesAdjuntar, CapaSoltar } from "./Adjuntos";
 import { useAdjuntos } from "@/hooks/useAdjuntos";
@@ -83,16 +83,15 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
   }, [email]);
   const [permisos, setPermisos] = useState<PermisosAgente>({ agente: false, docs: false, tickets: false, claude: false });
   const [abierto, setAbierto] = useState(false);
-  const [pestana, setPestana] = useState<"chat" | "tickets" | "avatar" | "megafono">("chat");
+  const [pestana, setPestana] = useState<"chat" | "tickets" | "avatar" | "avisos">("chat");
   const acceso = permisos.agente;
   // Vigía global: reacciona a los deploys de todos los repos, estén o no en pantalla.
   const { realUser } = useAuth();
   useVigiaDeploys(acceso ? realUser : null, permisos.tickets);
-  // Megáfono: los mensajes que me mandan se los pasa al avatar para que los grite.
-  useEffect(() => {
-    if (!acceso || !email) return;
-    return escucharBuzon(email, (m) => window.dispatchEvent(new CustomEvent(EVENTO_MEGAFONO, { detail: m })));
-  }, [acceso, email]);
+  // Avisos: lo que me toca se lo pasa al avatar (entra el de quien lo manda a gritarlo).
+  const avisos = useAvisosGeorgia(email ?? null, acceso);
+  const [abrirAviso, setAbrirAviso] = useState<string | null>(null);
+  const avisoAbierto = useCallback(() => setAbrirAviso(null), []);
 
   // ── Tickets: revisión cada 15 min mientras el dashboard está abierto ──────
   const [tickets, setTickets] = useState<TicketAgente[] | null>(null);
@@ -264,8 +263,12 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
     if (tickets === null && !cargandoTickets) void revisarTickets(false);
   };
 
-  const abrir = (motivo: "chat" | "tickets") => {
-    if (motivo === "tickets" && permisos.tickets) {
+  const abrir = (motivo: "chat" | "tickets" | "avisos", convId?: string) => {
+    if (motivo === "avisos") {
+      setPestana("avisos");
+      setAbrirAviso(convId ?? null);
+    }
+    else if (motivo === "tickets" && permisos.tickets) {
       irATickets();
       // Si Claude espera respuesta, eso va primero: directo al cuadro para contestar.
       if (porResponder.length) {
@@ -324,7 +327,8 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
               ["chat", "Chat", MessageSquare],
               ...(permisos.tickets ? [["tickets", `Tickets${tickets ? ` (${tickets.length})` : ""}`, BellRing] as const] : []),
               ["avatar", "Avatar", Palette],
-              ...(permisos.megafono ? [["megafono", "Megáfono", Megaphone] as const] : []),
+              // Todos la ven para contestar; abrir avisos pide el permiso.
+              ["avisos", `Avisos${avisos.pendientes ? ` (${avisos.pendientes})` : ""}`, Megaphone],
             ] as const).map(([v, etiqueta, Icono]) => (
               <button
                 key={v}
@@ -336,6 +340,7 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
                   "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors",
                   pestana === v ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   v === "tickets" && !!tickets?.length && pestana !== v && "text-amber-700 dark:text-amber-300",
+                  v === "avisos" && avisos.pendientes > 0 && pestana !== v && "text-amber-700 dark:text-amber-300",
                 )}
               >
                 <Icono className="h-3.5 w-3.5" />
@@ -347,10 +352,16 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
           <div className={cn("flex min-h-0 flex-1 flex-col", pestana !== "chat" && "hidden")}>
             <PanelAgente email={email} verDocs={permisos.docs} />
           </div>
-          {pestana === "megafono" && permisos.megafono && (
+          {pestana === "avisos" && (
             <>
-              <Dialog.Title className="sr-only">Megáfono</Dialog.Title>
-              <Megafono email={email} />
+              <Dialog.Title className="sr-only">Avisos</Dialog.Title>
+              <Avisos
+                email={email}
+                puedeIniciar={!!permisos.megafono}
+                conversaciones={avisos.conversaciones}
+                abrirId={abrirAviso}
+                onAbierto={avisoAbierto}
+              />
             </>
           )}
           {pestana === "avatar" && (

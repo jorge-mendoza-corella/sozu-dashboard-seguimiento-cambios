@@ -95,7 +95,7 @@ export function PermisosIaChips({ email, disabled }: { email: string; disabled?:
             Mandar a Claude
           </button>
         </AyudaTooltip>
-        <AyudaTooltip texto={"Megáfono: escribir un mensaje (o grabar un audio) para que el avatar de los demás aterrice y lo grite. Elige a quién le llega." + (!agente ? " Primero dale acceso a GeorgIA." : "")}>
+        <AyudaTooltip texto={"Avisos: abrir conversaciones con los demás; su avatar entra a la pantalla del otro y le grita el mensaje (texto o audio). Contestar no pide este permiso." + (!agente ? " Primero dale acceso a GeorgIA." : "")}>
           <button
             type="button"
             disabled={disabled || busy !== null || !agente}
@@ -103,7 +103,7 @@ export function PermisosIaChips({ email, disabled }: { email: string; disabled?:
             onClick={() => void run("megafono", () => cambiarMegafono(email, !megafono))}
           >
             {busy === "megafono" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Megaphone className="h-3 w-3" />}
-            Megáfono
+            Avisos
           </button>
         </AyudaTooltip>
         <AyudaTooltip texto={"Voz del avatar: su GeorgIA dice en voz alta lo que pone en sus globos, cada personaje con su tono (voz del navegador)." + (!agente ? " Primero dale acceso a GeorgIA." : "")}>

@@ -203,7 +203,7 @@ export interface AccesoAgente {
   tickets: string[];
   /** Mandan tickets a Claude Code. */
   claude: string[];
-  /** Mandan mensajes con el megáfono. */
+  /** Abren avisos (pestaña Avisos). */
   megafono: string[];
   /** Su avatar habla en voz alta. */
   voz: string[];
@@ -313,7 +313,7 @@ export async function cambiarVoz(email: string, activar: boolean): Promise<void>
   await setDoc(ACCESO(), { voz: activar ? arrayUnion(email) : arrayRemove(email) }, { merge: true });
 }
 
-/** Megáfono: mandar mensajes que gritan los avatares (requiere GeorgIA). */
+/** Avisos: abrir conversaciones que gritan los avatares (requiere GeorgIA). */
 export async function cambiarMegafono(email: string, permitir: boolean): Promise<void> {
   await setDoc(ACCESO(), { megafono: permitir ? arrayUnion(email) : arrayRemove(email) }, { merge: true });
 }

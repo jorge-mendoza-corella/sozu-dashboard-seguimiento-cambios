@@ -23,7 +23,7 @@ import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
 import { cerrarRelacionados, cerrarTicket, clienteSupabase, ticketsAsignados, ticketsResueltos, tomarTicket } from "./agente/tickets.js";
 import { desligarTicket, relacionadosConDashboard, relacionarTicket } from "./agente/relaciones.js";
-import { destinatarios, mandarMegafono } from "./agente/megafono.js";
+import { destinatarios, iniciarAviso, marcarEntregado, responderAviso, terminarAviso } from "./agente/avisos.js";
 import { agregarPrManual, buscarPrsExternos, buscarPrsPorTexto, notaConPrs, verificarPrsExternos } from "./agente/prsExternos.js";
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
 import { issueDelTicket, responderAClaude, seguimientoClaude, type AdjuntoRespuesta } from "./agente/claude.js";
@@ -723,11 +723,13 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string; prsSe
 );
 
 /**
- * `agenteMegafono`: mensaje (texto y/o audio) que el avatar de los destinatarios
- * grita en cuanto les llega. Pide el permiso «Megáfono». Con `accion:
- * "destinatarios"` devuelve a quién se le puede mandar. Ver agente/megafono.ts.
+ * `agenteMegafono`: Avisos, conversaciones 1 a 1 que el avatar de quien manda
+ * va a gritar a la pantalla del otro. Abrir una (`accion` "iniciar", por
+ * defecto) y ver a quién se le puede mandar ("destinatarios") pide el permiso
+ * «Avisos»; contestar, marcar entregado y terminar solo pide ser parte de la
+ * conversación. Ver agente/avisos.ts.
  */
-export const agenteMegafono = onCall<{ accion?: string; texto?: string; audio?: string; para?: string[]; skin?: string; voz?: boolean }>(
+export const agenteMegafono = onCall<{ accion?: string; id?: string; msgId?: string; texto?: string; audio?: string; para?: string[]; skin?: string; voz?: boolean }>(
   {
     region: "us-central1",
     timeoutSeconds: 30,
@@ -736,9 +738,18 @@ export const agenteMegafono = onCall<{ accion?: string; texto?: string; audio?: 
     cors: [/^https:\/\/dashboard\.sozu\.com$/, /^https:\/\/sozu-dashboard-dev\.web\.app$/, /^http:\/\/localhost:\d+$/],
   },
   async (req) => {
-    const usuario = await verificarAcceso(req, "megafono");
-    if (req.data?.accion === "destinatarios") return { destinatarios: await destinatarios() };
-    return mandarMegafono(usuario.email, req.data ?? {});
+    const accion = req.data?.accion ?? "iniciar";
+    const datos = req.data ?? {};
+    if (accion === "destinatarios" || accion === "iniciar") {
+      const usuario = await verificarAcceso(req, "megafono");
+      if (accion === "destinatarios") return { destinatarios: await destinatarios() };
+      return iniciarAviso(usuario.email, datos);
+    }
+    const usuario = await verificarAcceso(req, "agente");
+    if (accion === "responder") return responderAviso(usuario.email, datos);
+    if (accion === "entregado") return marcarEntregado(usuario.email, datos);
+    if (accion === "terminar") return terminarAviso(usuario.email, datos);
+    throw new HttpsError("invalid-argument", "Acción desconocida.");
   },
 );
 
