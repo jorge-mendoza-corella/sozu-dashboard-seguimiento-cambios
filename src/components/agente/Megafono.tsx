@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Check, Loader2, Megaphone, Mic, Square, Trash2 } from "lucide-react";
+import { Check, Loader2, Megaphone, Mic, Square, Trash2, Volume2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import { destinatariosMegafono, mandarMegafono } from "@/lib/megafono";
@@ -29,6 +29,7 @@ export function Megafono({ email }: { email: string }) {
   const [todos, setTodos] = useState(true);
   const [para, setPara] = useState<Set<string>>(new Set());
   const [audio, setAudio] = useState<string | null>(null);
+  const [enVoz, setEnVoz] = useState(true);
   const [grabando, setGrabando] = useState(0);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +92,7 @@ export function Megafono({ email }: { email: string }) {
     setError(null);
     setHecho(null);
     try {
-      const n = await mandarMegafono(texto.trim(), destinos, audio ?? undefined, skin);
+      const n = await mandarMegafono(texto.trim(), destinos, audio ?? undefined, skin, enVoz && !audio);
       setHecho(n);
       setTexto("");
       setAudio(null);
@@ -117,7 +118,14 @@ export function Megafono({ email }: { email: string }) {
         placeholder="¡Ya salió el release! 🎉"
         className="mt-1 w-full resize-y rounded-lg border bg-background p-3 text-sm outline-none focus:ring-2 focus:ring-ring"
       />
-      <p className="text-right text-[11px] text-muted-foreground">{texto.length}/{MAX_TEXTO}</p>
+      <div className="flex items-center justify-between gap-2">
+        <label className={cn("inline-flex items-center gap-1.5 text-xs", audio ? "text-muted-foreground/60" : "cursor-pointer")}>
+          <input type="checkbox" checked={enVoz && !audio} disabled={!!audio} onChange={(e) => setEnVoz(e.target.checked)} className="accent-primary" />
+          <Volume2 className="h-3.5 w-3.5" />
+          {audio ? "Con audio suena tu grabación, no la voz del personaje" : "Que el personaje lo diga en voz alta (si no, solo en texto)"}
+        </label>
+        <span className="text-[11px] text-muted-foreground">{texto.length}/{MAX_TEXTO}</span>
+      </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {grabando ? (

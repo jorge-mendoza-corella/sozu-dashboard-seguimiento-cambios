@@ -34,7 +34,7 @@ export async function destinatarios(): Promise<{ email: string; nombre: string }
 
 export async function mandarMegafono(
   de: string,
-  datos: { texto?: unknown; audio?: unknown; para?: unknown; skin?: unknown },
+  datos: { texto?: unknown; audio?: unknown; para?: unknown; skin?: unknown; voz?: unknown },
 ): Promise<{ enviados: number }> {
   const texto = typeof datos.texto === "string" ? datos.texto.trim().slice(0, MAX_TEXTO) : "";
   const audio = typeof datos.audio === "string" ? datos.audio : "";
@@ -54,6 +54,8 @@ export async function mandarMegafono(
   for (const email of para) {
     lote.set(fs.collection(`agente_buzon/${email}/mensajes`).doc(), {
       de, deNombre: remitente, texto, ...(audio ? { audio } : {}),
+      // El avatar lo dice en voz alta (si no trae audio).
+      voz: datos.voz === true && !!texto && !audio,
       skin: typeof datos.skin === "string" ? datos.skin.slice(0, 20) : null,
       creadoEn: FieldValue.serverTimestamp(),
     });

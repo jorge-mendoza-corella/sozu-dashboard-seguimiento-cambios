@@ -80,7 +80,17 @@ export function hablar(texto: string, skin: Skin) {
   u.rate = v.velocidad;
   const sistema = vozDelSistema(v.genero);
   if (sistema) u.voice = sistema;
-  // Una a la vez: la nueva corta a la anterior.
-  speechSynthesis.cancel();
-  speechSynthesis.speak(u);
+  // Una a la vez: la nueva corta a la anterior. Chrome a veces se traga la
+  // línea si se habla justo después de cancelar: se le da un respiro.
+  if (speechSynthesis.speaking || speechSynthesis.pending) {
+    speechSynthesis.cancel();
+    setTimeout(() => speechSynthesis.speak(u), 60);
+  } else speechSynthesis.speak(u);
+}
+
+// Las voces cargan en segundo plano: pedirlas desde el inicio para que la
+// primera línea ya salga con la voz en español y no con la del sistema.
+if (typeof speechSynthesis !== "undefined") {
+  speechSynthesis.getVoices();
+  speechSynthesis.addEventListener?.("voiceschanged", () => speechSynthesis.getVoices());
 }
