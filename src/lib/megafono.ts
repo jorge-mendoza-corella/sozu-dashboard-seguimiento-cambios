@@ -9,13 +9,13 @@ import { collection, deleteDoc, doc, onSnapshot, orderBy, query, Timestamp, wher
 import { app, db } from "./firebase";
 
 export type Destinatario = { email: string; nombre: string };
-export type MensajeMegafono = { id: string; de: string; deNombre: string; texto: string; audio?: string };
+export type MensajeMegafono = { id: string; de: string; deNombre: string; texto: string; audio?: string; voz?: boolean };
 
 /** Lo despacha el panel; lo escucha el avatar (AgenteVolador). */
 export const EVENTO_MEGAFONO = "agente:megafono";
 
 const llamar = httpsCallable<
-  { accion?: "destinatarios"; texto?: string; audio?: string; para?: string[]; skin?: string },
+  { accion?: "destinatarios"; texto?: string; audio?: string; para?: string[]; skin?: string; voz?: boolean },
   { destinatarios?: Destinatario[]; enviados?: number }
 >(getFunctions(app, "us-central1"), "agenteMegafono", { timeout: 30_000 });
 
@@ -23,9 +23,9 @@ export async function destinatariosMegafono(): Promise<Destinatario[]> {
   return (await llamar({ accion: "destinatarios" })).data.destinatarios ?? [];
 }
 
-/** `para`: correos, o ["todos"]. */
-export async function mandarMegafono(texto: string, para: string[], audio?: string, skin?: string): Promise<number> {
-  return (await llamar({ texto, para, ...(audio ? { audio } : {}), ...(skin ? { skin } : {}) })).data.enviados ?? 0;
+/** `para`: correos, o ["todos"]. `voz`: el avatar lo dice en voz alta (sin audio). */
+export async function mandarMegafono(texto: string, para: string[], audio?: string, skin?: string, voz = false): Promise<number> {
+  return (await llamar({ texto, para, voz, ...(audio ? { audio } : {}), ...(skin ? { skin } : {}) })).data.enviados ?? 0;
 }
 
 /**
@@ -39,7 +39,7 @@ export function escucharBuzon(email: string, alLlegar: (m: MensajeMegafono) => v
     for (const c of snap.docChanges()) {
       if (c.type !== "added") continue;
       const d = c.doc.data();
-      alLlegar({ id: c.doc.id, de: String(d.de ?? ""), deNombre: String(d.deNombre ?? ""), texto: String(d.texto ?? ""), audio: typeof d.audio === "string" ? d.audio : undefined });
+      alLlegar({ id: c.doc.id, de: String(d.de ?? ""), deNombre: String(d.deNombre ?? ""), texto: String(d.texto ?? ""), audio: typeof d.audio === "string" ? d.audio : undefined, voz: d.voz === true });
       void deleteDoc(doc(db, `agente_buzon/${email}/mensajes/${c.doc.id}`)).catch(() => {});
     }
   }, () => {});

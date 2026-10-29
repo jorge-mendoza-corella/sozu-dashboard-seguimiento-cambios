@@ -761,6 +761,8 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
       alertaDur: 0,
       /** La alerta en curso (o pendiente) es un mensaje del megáfono. */
       megafono: false,
+      /** El mensaje del megáfono se dice en voz alta. */
+      megafonoVoz: false,
       /** El clic atendió la escena de Claude: se corta al volver. */
       cortarEscena: false,
       alertaIdx: 0,
@@ -794,11 +796,12 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
     /** Audio del megáfono: suena junto con el mensaje, después de la llamada. */
     let tocarAudio: (() => void) | null = null;
     let proximaFrase = performance.now() + azar(1500, 4000);
-    const decir = (texto: string, tipo: Dialogo["tipo"] = "habla", ms = 2400) => {
+    /** `voz`: decirlo en voz alta; por defecto, si la persona tiene la voz prendida. */
+    const decir = (texto: string, tipo: Dialogo["tipo"] = "habla", ms = 2400, voz = vozRef.current) => {
       idDialogo += 1;
       finDialogo = performance.now() + ms;
       setDialogo({ id: idDialogo, texto, tipo });
-      if (vozRef.current && tipo !== "zzz" && !pausaRef.current) hablar(texto, skinRef.current);
+      if (voz && tipo !== "zzz" && !pausaRef.current) hablar(texto, skinRef.current);
     };
 
     let snackActual: Snack | null = null;
@@ -1669,13 +1672,16 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
               tocarAudio();
               tocarAudio = null;
             }
-            decir(s.alertaGritos[s.alertaIdx % s.alertaGritos.length], "grito", 2600);
+            const grito = s.alertaGritos[s.alertaIdx % s.alertaGritos.length];
+            // El megáfono manda su propia voz (una vez, no en cada vuelta).
+            decir(grito, "grito", 2600, s.megafono ? s.megafonoVoz && s.alertaIdx === 0 : vozRef.current);
             s.alertaIdx += 1;
             proximaFrase = ahora + 3000;
           }
           if (ahora >= s.alertaHasta || !s.alertaGritos.length) {
             s.alertaGritos = [];
             s.megafono = false;
+            s.megafonoVoz = false;
             llamadaHasta = 0;
             setLlamando(false);
             alertaRef.current = null;
@@ -2124,6 +2130,9 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
       const gritos = [m.texto || "🔊 …"];
       s.alertaGritos = gritos;
       s.megafono = true;
+      // Lo dice en voz alta si quien lo mandó lo pidió (aunque aquí no esté
+      // prendida la voz de diario); si no, solo el globo.
+      s.megafonoVoz = !!m.voz;
       s.alertaIdx = 0;
       // Lo grita dos vueltas (o lo que dure el audio, si es más).
       s.alertaDur = gritos.length * 3000 * 2;

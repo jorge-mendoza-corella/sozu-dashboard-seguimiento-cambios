@@ -727,7 +727,7 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string; prsSe
  * grita en cuanto les llega. Pide el permiso «Megáfono». Con `accion:
  * "destinatarios"` devuelve a quién se le puede mandar. Ver agente/megafono.ts.
  */
-export const agenteMegafono = onCall<{ accion?: string; texto?: string; audio?: string; para?: string[]; skin?: string }>(
+export const agenteMegafono = onCall<{ accion?: string; texto?: string; audio?: string; para?: string[]; skin?: string; voz?: boolean }>(
   {
     region: "us-central1",
     timeoutSeconds: 30,
