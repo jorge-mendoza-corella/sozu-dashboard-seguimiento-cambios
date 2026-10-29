@@ -113,8 +113,9 @@ export function TicketsAgente({
   };
 
   // Mismo seguimiento que leen los renglones (misma caché): no agrega llamadas.
+  // También los que ya están en PRD: Claude puede volver a preguntar después.
   const conIssue = useMemo(
-    () => (tickets ?? []).filter((t) => enviados.some((e) => e.ticketId === t.id && e.issue && !e.listo)),
+    () => (tickets ?? []).filter((t) => enviados.some((e) => e.ticketId === t.id && e.issue)),
     [tickets, enviados],
   );
   const seguimientos = useQueries({ queries: conIssue.map((t) => consultaSeguimiento(t.id)) });
@@ -186,14 +187,17 @@ export function TicketsAgente({
       const g = buscar(t.id);
       const miembros = grupos.get(g)!;
       const papa = miembros.reduce((a, b) => (b.numero > a.numero ? b : a));
-      if (puestos.has(g) || t !== papa) continue;
+      // El grupo va donde cae el papá, salvo que un hijo tenga preguntas: entonces
+      // sube con él (las preguntas van primero).
+      const pregunta = miembros.some((m) => grupoDe(m) === 0);
+      if (puestos.has(g) || (t !== papa && !(pregunta && grupoDe(t) === 0))) continue;
       puestos.add(g);
       const hijos = miembros.filter((h) => h !== papa);
       salida.push({ t: papa, papa: null, hijos });
       for (const h of hijos) salida.push({ t: h, papa, hijos: [] });
     }
     return salida;
-  }, [filtrados]);
+  }, [filtrados, grupoDe]);
 
   // Lo que pide GeorgIA (contestar o cerrar) manda sobre lo elegido a mano. Se
   // busca en todos los tickets, no solo en los filtrados: un filtro no lo esconde.
@@ -294,6 +298,9 @@ export function TicketsAgente({
             const abierto = hijos.length > 0 && abiertoGrupo(t, hijos);
             const env = enviadoDe(t);
             const rels = t.relacionados ?? [];
+            const pregunta = grupoDe(t) === 0;
+            // Hijos con preguntas: se avisa en el papá aunque el grupo esté contraído.
+            const hijosPregunta = hijos.filter((h) => grupoDe(h) === 0);
             return (
               <button
                 key={t.id}
@@ -315,7 +322,9 @@ export function TicketsAgente({
                 <span className="flex items-center gap-1.5">
                   <span className="font-mono text-[10px] text-muted-foreground">{t.folio}</span>
                   {t.prioridad && <span className={cn("rounded px-1 text-[9px] font-semibold uppercase", COLOR_PRIORIDAD[t.prioridad])}>{t.prioridad}</span>}
-                  {env && (env.listo
+                  {env && (pregunta && env.issue
+                    ? <EstadoClaudeMini ticketId={t.id} />
+                    : env.listo
                     ? <span className="rounded bg-emerald-100 px-1 text-[9px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" title="Todo en PRD: ya se puede cerrar">en PRD</span>
                     : env.issue
                       ? <EstadoClaudeMini ticketId={t.id} />
@@ -341,6 +350,14 @@ export function TicketsAgente({
                       <Link2 className="h-2.5 w-2.5" /> {hijos.length}
                     </span>
                   )}
+                  {hijosPregunta.length > 0 && (
+                    <span
+                      className="inline-flex animate-pulse items-center gap-0.5 rounded bg-amber-100 px-1 text-[9px] font-semibold text-amber-800 ring-1 ring-amber-400 motion-reduce:animate-none dark:bg-amber-950/40 dark:text-amber-300"
+                      title="Claude te hizo preguntas en un ticket relacionado"
+                    >
+                      ? {hijosPregunta.map((h) => h.folio).join(", ")} te pregunta
+                    </span>
+                  )}
                   <span className="ml-auto text-[10px] text-muted-foreground">{t.etapa}</span>
                 </span>
                 <span className={cn("mt-0.5 block truncate font-medium", actual?.id === t.id && "text-primary")}>{t.titulo}</span>
@@ -353,7 +370,7 @@ export function TicketsAgente({
                     Relacionado con {[papa?.folio, ...rels.filter((r) => r.id !== papa?.id).map((r) => r.folio)].filter(Boolean).join(", ")}
                   </span>
                 )}
-                {env?.issue && !env.listo && <BarraClaudeMini ticketId={t.id} />}
+                {env?.issue && (!env.listo || pregunta) && <BarraClaudeMini ticketId={t.id} />}
               </button>
             );
           })}
