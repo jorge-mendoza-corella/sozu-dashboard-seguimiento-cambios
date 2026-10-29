@@ -285,6 +285,56 @@ export async function resolverIssuesDeTicket(issues: IssueDeTicket[], folio: str
   return hechos;
 }
 
+/**
+ * Issues cuyo ticket se cerró FUERA del dashboard (en el portal): se resuelven
+ * en Sentry igual que al cerrar desde aquí. Lo dispara al momento el trigger de
+ * la base al cerrar un ticket (`sentryTicketCerrado`) y, de respaldo, una
+ * corrida cada 10 min (`sentryTicketsCerrados`). Cada ticket se
+ * aplica una sola vez (`cierreAplicado`): si después alguien reabre el issue en
+ * Sentry a mano, no se le vuelve a cerrar. Si el error volvió después del
+ * cierre (último evento posterior), no se resuelve: es una regresión.
+ */
+export async function resolverPorTicketsCerrados(
+  sb: SupabaseClient,
+  /** Solo este ticket (aviso del trigger de la base al cerrarse); sin él, todos. */
+  solo?: { ticketId: number; numero: number },
+): Promise<string[]> {
+  const fs = getFirestore();
+  const base = solo ? fs.collection("sentryTickets").where("ticketId", "==", solo.ticketId) : fs.collection("sentryTickets");
+  const docs = (await base.get()).docs.filter((d) =>
+    d.data().cierreAplicado !== d.data().ticketId &&
+    // El aviso trae también el folio: uno de otra base (dev) con el mismo id no cuenta.
+    (!solo || numero(d.data().numero) === solo.numero));
+  if (!docs.length) return [];
+  const token = await secretoGlobal("SENTRY_AUTH_TOKEN");
+  if (!token) return [];
+  const hechos: string[] = [];
+  for (const d of docs) {
+    const x = d.data();
+    try {
+      const estado = await estadoTicket(sb, numero(x.ticketId));
+      if (!estado.resuelto) continue;
+      const issue = await sentry(token, `issues/${d.id}/`);
+      const regreso = !!estado.cerradoEn && Date.parse(texto(issue.lastSeen)) > Date.parse(estado.cerradoEn);
+      if (texto(issue.status) === "unresolved" && !regreso) {
+        await sentry(token, `issues/${d.id}/`, { method: "PUT", body: JSON.stringify({ status: "resolved" }) });
+        await sentry(token, `issues/${d.id}/comments/`, {
+          method: "POST",
+          body: JSON.stringify({ text: `Resuelto porque el ticket SOZU-${numero(x.numero)} se cerró en el portal.` }),
+        }).catch(() => undefined);
+        const pid = String(mapa(issue.project).id ?? "");
+        const resumen = (await fs.collection("sentry").where("sentryProjectId", "==", pid).limit(1).get()).docs[0];
+        if (resumen) await pasarAResueltos(resumen.ref, d.id, "resolved");
+        hechos.push(texto(issue.shortId) || d.id);
+      }
+      await d.ref.set({ cierreAplicado: x.ticketId }, { merge: true });
+    } catch (e) {
+      console.warn(`[sentry] ticket cerrado ${x.numero}`, (e as Error).message);
+    }
+  }
+  return hechos;
+}
+
 // --- Ticket en el portal ------------------------------------------------------
 
 /** Pipeline al que van los errores: "SOZU - Sistemas Soporte técnico". */
