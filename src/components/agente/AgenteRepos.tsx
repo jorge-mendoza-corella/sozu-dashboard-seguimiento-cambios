@@ -29,7 +29,7 @@ import { ElegirAvatar } from "./ElegirAvatar";
 import { Megafono } from "./Megafono";
 import { EVENTO_MEGAFONO, escucharBuzon } from "@/lib/megafono";
 import { avatarDeCorreo, setSkinTicket } from "./skinsDatos";
-import { AdjuntoEnMensaje, AdjuntosPendientes, BotonesAdjuntar } from "./Adjuntos";
+import { AdjuntoEnMensaje, AdjuntosPendientes, BotonesAdjuntar, CapaSoltar } from "./Adjuntos";
 import { useAdjuntos } from "@/hooks/useAdjuntos";
 import { AgenteVolador, EVENTO_ALERTA_TICKETS, EVENTO_CLAUDE, type DetalleAlerta, type DetalleClaude } from "./AgenteVolador";
 import { TicketsAgente } from "./TicketsAgente";
@@ -859,7 +859,8 @@ function Composer({
     <div className="border-t px-4 py-3 sm:px-8">
       <div className="mx-auto max-w-3xl">
         <AdjuntosPendientes a={adj} className="mb-2 max-h-64 overflow-y-auto" />
-        <div className="flex items-end gap-1 rounded-xl border bg-background px-2 py-2 focus-within:ring-2 focus-within:ring-ring">
+        <div {...adj.soltar} className="relative flex items-end gap-1 rounded-xl border bg-background px-2 py-2 focus-within:ring-2 focus-within:ring-ring">
+          <CapaSoltar a={adj} />
           <BotonesAdjuntar a={adj} compacto />
           <textarea
             ref={ref}

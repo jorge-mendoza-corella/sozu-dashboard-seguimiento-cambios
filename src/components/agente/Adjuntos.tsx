@@ -57,6 +57,16 @@ export function AdjuntosPendientes({ a, className }: { a: Adjuntos; className?: 
   );
 }
 
+/** Aviso encima de la caja mientras se arrastran archivos (la caja va `relative`). */
+export function CapaSoltar({ a }: { a: Adjuntos }) {
+  if (!a.arrastrando) return null;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-violet-500 bg-violet-50/90 text-xs font-semibold text-violet-700 dark:bg-violet-950/80 dark:text-violet-200">
+      <Paperclip className="mr-1.5 h-4 w-4" /> Suelta aquí para adjuntar
+    </div>
+  );
+}
+
 /** Botones "Adjuntar" y "Nota de voz". */
 export function BotonesAdjuntar({ a, compacto = false }: { a: Adjuntos; compacto?: boolean }) {
   const selector = useRef<HTMLInputElement>(null);
@@ -77,7 +87,7 @@ export function BotonesAdjuntar({ a, compacto = false }: { a: Adjuntos; compacto
         type="button"
         onClick={() => selector.current?.click()}
         className={boton}
-        title={`${a.documentos ? "Imagen, video, audio o documento (.md, .pdf, .doc, .docx, .csv, .json, .xls, .xlsx)" : "Imagen, video o audio"} (hasta ${MAX_ADJUNTO_MB} MB). También puedes pegar una captura.`}
+        title={`${a.documentos ? "Imagen, video, audio o documento (.md, .pdf, .doc, .docx, .csv, .json, .xls, .xlsx)" : "Imagen, video o audio"} (hasta ${MAX_ADJUNTO_MB} MB). También puedes pegar una captura o arrastrar archivos.`}
         aria-label="Adjuntar"
       >
         <Paperclip className={compacto ? "h-4 w-4" : "h-3 w-3"} />{!compacto && " Adjuntar"}
