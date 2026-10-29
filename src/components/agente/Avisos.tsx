@@ -6,8 +6,9 @@
  * terminada. Se ve a quién ya le llegó cada mensaje.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Check, CheckCheck, CircleSlash, Loader2, Megaphone, Mic, Plus, Send, Square, Trash2, Volume2 } from "lucide-react";
+import { ArrowLeft, Check, CheckCheck, CircleSlash, Loader2, Megaphone, Mic, Plus, Send, Square, Trash2, Volume2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { mensajeDeError } from "@/lib/agenteRepos";
 import {
@@ -232,14 +233,18 @@ function NuevoAviso({ yo, onListo }: { yo: string; onListo: () => void }) {
   );
 }
 
-function Hilo({ c, yo }: { c: Conversacion; yo: string }) {
+/**
+ * Una conversación. `compacto`: la ventanita que se abre junto al avatar que
+ * trajo el aviso (se cierra con `onCerrar`, también al contestar).
+ */
+export function Hilo({ c, yo, compacto = false, onCerrar }: { c: Conversacion; yo: string; compacto?: boolean; onCerrar?: () => void }) {
   const skin = useSkinGeorgIA();
   const [mensajes, setMensajes] = useState<MensajeAviso[] | null>(null);
   const [terminando, setTerminando] = useState(false);
   const fin = useRef<HTMLDivElement>(null);
   const otro = otroDe(c, yo);
   useEffect(() => escucharMensajes(c.id, setMensajes), [c.id]);
-  useEffect(() => { fin.current?.scrollIntoView({ block: "end" }); }, [mensajes?.length]);
+  useEffect(() => { fin.current?.scrollIntoView({ block: "nearest" }); }, [mensajes?.length]);
   // Verlo aquí cuenta como entregado.
   useEffect(() => {
     if (meToca(c, yo) && c.ultimo.id && c.entregadoId !== c.ultimo.id) void marcarEntregado(c.id, c.ultimo.id).catch(() => {});
@@ -247,9 +252,9 @@ function Hilo({ c, yo }: { c: Conversacion; yo: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b px-4 py-2.5">
+      <div className={cn("flex items-center gap-2 border-b py-2.5", compacto ? "px-3" : "px-4")}>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{otro.nombre}</p>
+          <p className="truncate text-sm font-semibold">{compacto ? `Aviso · ${otro.nombre}` : otro.nombre}</p>
           <p className="text-[11px] text-muted-foreground">Inició {c.de === yo ? "tú" : c.deNombre} · {hora(c.creadoEn)}</p>
         </div>
         <Estado c={c} yo={yo} />
@@ -265,11 +270,16 @@ function Hilo({ c, yo }: { c: Conversacion; yo: string }) {
             className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
             title="Ya no se le vuelve a aparecer a ninguno de los dos"
           >
-            {terminando ? <Loader2 className="h-3 w-3 animate-spin" /> : <CircleSlash className="h-3 w-3" />} Terminar conversación
+            {terminando ? <Loader2 className="h-3 w-3 animate-spin" /> : <CircleSlash className="h-3 w-3" />} {compacto ? "Terminar" : "Terminar conversación"}
+          </button>
+        )}
+        {onCerrar && (
+          <button type="button" onClick={onCerrar} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Cerrar">
+            <X className="h-4 w-4" />
           </button>
         )}
       </div>
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-muted/20 px-4 py-3">
+      <div className={cn("min-h-0 space-y-2 overflow-y-auto bg-muted/20 py-3", compacto ? "max-h-60 px-3" : "flex-1 px-4")}>
         {!mensajes && <Loader2 className="mx-auto h-4 w-4 animate-spin text-muted-foreground" />}
         {mensajes?.map((m) => {
           const mio = m.de === yo;
@@ -299,7 +309,15 @@ function Hilo({ c, yo }: { c: Conversacion; yo: string }) {
       </div>
       {!c.cerrada && (
         <div className="border-t p-3">
-          <Redactor boton="Contestar" placeholder={`Contéstale a ${otro.nombre}…`} onMandar={(m) => responderAviso(c.id, { ...m, skin })} />
+          <Redactor
+            boton="Contestar"
+            placeholder={`Contéstale a ${otro.nombre}…`}
+            onMandar={async (m) => {
+              await responderAviso(c.id, { ...m, skin });
+              // En la ventanita, contestar la cierra: tu avatar se lo lleva.
+              if (compacto) onCerrar?.();
+            }}
+          />
         </div>
       )}
     </div>
@@ -429,5 +447,47 @@ export function Avisos({ email, puedeIniciar, conversaciones, abrirId, onAbierto
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * Ventanita para contestar ahí mismo, junto al avatar que trajo el aviso (en
+ * celular, abajo a todo lo ancho). Escape o la X la cierran.
+ */
+export function MiniAviso({ c, yo, donde, onCerrar, onVerTodo }: {
+  c: Conversacion;
+  yo: string;
+  donde: DOMRect | null;
+  onCerrar: () => void;
+  onVerTodo: () => void;
+}) {
+  useEffect(() => {
+    const alTeclear = (e: KeyboardEvent) => e.key === "Escape" && onCerrar();
+    window.addEventListener("keydown", alTeclear);
+    return () => window.removeEventListener("keydown", alTeclear);
+  }, [onCerrar]);
+  const ancho = Math.min(360, window.innerWidth - 16);
+  const celular = window.innerWidth < 640 || !donde;
+  const estilo = celular
+    ? { left: 8, right: 8, bottom: 8 }
+    : {
+        width: ancho,
+        left: Math.min(Math.max(8, donde.left + donde.width / 2 - ancho / 2), window.innerWidth - ancho - 8),
+        // Arriba del avatar (están en el piso).
+        bottom: Math.max(8, window.innerHeight - donde.top + 10),
+      };
+  return createPortal(
+    <div
+      role="dialog"
+      aria-label={`Aviso de ${otroDe(c, yo).nombre}`}
+      className="fixed z-[45] flex max-h-[min(520px,calc(100vh-16px))] flex-col overflow-hidden rounded-xl border bg-background shadow-2xl animate-in fade-in-0 zoom-in-95 duration-150"
+      style={estilo}
+    >
+      <Hilo c={c} yo={yo} compacto onCerrar={onCerrar} />
+      <button type="button" onClick={onVerTodo} className="border-t px-3 py-1.5 text-left text-[11px] text-primary hover:bg-muted">
+        Ver en la pestaña Avisos →
+      </button>
+    </div>,
+    document.body,
   );
 }

@@ -73,6 +73,8 @@ export function hablar(texto: string, skin: Skin) {
   }
   const dicho = limpiar(linea);
   if (!dicho || /^[.…\s]+$/.test(dicho)) return;
+  // Chrome en Android a veces deja la síntesis en pausa.
+  speechSynthesis.resume();
   const v = VOZ[quien] ?? VOZ_DEFAULT;
   const u = new SpeechSynthesisUtterance(dicho);
   u.lang = "es-MX";
@@ -93,4 +95,46 @@ export function hablar(texto: string, skin: Skin) {
 if (typeof speechSynthesis !== "undefined") {
   speechSynthesis.getVoices();
   speechSynthesis.addEventListener?.("voiceschanged", () => speechSynthesis.getVoices());
+}
+
+/**
+ * Celular: Safari (iOS) y Chrome (Android) no dejan hablar ni sonar audio si la
+ * primera vez no fue dentro de un toque. Al primer toque en la página se dice
+ * una línea muda y se reproduce silencio en un <audio> que se reutiliza para
+ * los avisos: desde ahí ya pueden sonar solos.
+ */
+const SILENCIO = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+const audioCompartido: HTMLAudioElement | null = typeof Audio !== "undefined" ? new Audio() : null;
+let desbloqueado = false;
+const EVENTOS_TOQUE = ["pointerdown", "touchend", "keydown"] as const;
+function desbloquear() {
+  if (desbloqueado) return;
+  desbloqueado = true;
+  for (const ev of EVENTOS_TOQUE) window.removeEventListener(ev, desbloquear, true);
+  try {
+    if (typeof speechSynthesis !== "undefined") {
+      const u = new SpeechSynthesisUtterance(" ");
+      u.volume = 0;
+      speechSynthesis.speak(u);
+    }
+  } catch { /* sin síntesis */ }
+  if (audioCompartido && !audioCompartido.src) {
+    audioCompartido.src = SILENCIO;
+    void audioCompartido.play().then(() => audioCompartido.pause()).catch(() => {});
+  }
+}
+if (typeof window !== "undefined") {
+  for (const ev of EVENTOS_TOQUE) window.addEventListener(ev, desbloquear, { capture: true, passive: true });
+}
+
+/** <audio> para el audio de un aviso: el mismo que se desbloqueó con el primer toque. */
+export function audioDeAviso(src: string): HTMLAudioElement {
+  if (!audioCompartido) return new Audio(src);
+  audioCompartido.pause();
+  audioCompartido.onended = null;
+  audioCompartido.onloadedmetadata = null;
+  audioCompartido.src = src;
+  audioCompartido.preload = "auto";
+  audioCompartido.load();
+  return audioCompartido;
 }
