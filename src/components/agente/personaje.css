@@ -1849,7 +1849,17 @@
 .agente-mensajero[data-fase="sale"] { animation: pj-mensajero-sale 1400ms cubic-bezier(0.55, 0, 0.75, 0.2) both; }
 @keyframes pj-mensajero-entra { from { transform: translateX(var(--desde)); } }
 @keyframes pj-mensajero-sale { to { transform: translateX(var(--desde)); } }
-.agente-mensajero__globo { max-width: 260px; text-align: left; }
+.agente-mensajero__globo { max-width: 260px; text-align: left; pointer-events: auto; cursor: pointer; }
+.agente-mensajero__globo:hover { box-shadow: 0 0 0 3px rgb(251 191 36 / 0.45), 0 6px 16px -8px rgb(0 0 0 / 0.35); }
+.agente-mensajero__hint {
+  display: block;
+  margin-top: 3px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 600;
+  color: #92400e;
+  opacity: 0.75;
+}
 .agente-mensajero__quien {
   display: block;
   margin-bottom: 1px;
