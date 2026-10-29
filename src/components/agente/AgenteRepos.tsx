@@ -26,7 +26,7 @@ import {
   type AdjuntoChat,
 } from "@/lib/agenteRepos";
 import { ElegirAvatar } from "./ElegirAvatar";
-import { Avisos } from "./Avisos";
+import { Avisos, MiniAviso } from "./Avisos";
 import { useAvisosGeorgia } from "@/hooks/useAvisosGeorgia";
 import { avatarDeCorreo, setSkinTicket } from "./skinsDatos";
 import { AdjuntoEnMensaje, AdjuntosPendientes, BotonesAdjuntar, CapaSoltar } from "./Adjuntos";
@@ -92,6 +92,10 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
   const avisos = useAvisosGeorgia(email ?? null, acceso);
   const [abrirAviso, setAbrirAviso] = useState<string | null>(null);
   const avisoAbierto = useCallback(() => setAbrirAviso(null), []);
+  // Clic en el avatar que trajo el aviso: ventanita ahí mismo para contestar.
+  const [miniAviso, setMiniAviso] = useState<{ convId: string; donde: DOMRect | null } | null>(null);
+  const cerrarMini = useCallback(() => setMiniAviso(null), []);
+  const convMini = miniAviso ? avisos.conversaciones.find((c) => c.id === miniAviso.convId) ?? null : null;
 
   // ── Tickets: revisión cada 15 min mientras el dashboard está abierto ──────
   const [tickets, setTickets] = useState<TicketAgente[] | null>(null);
@@ -263,7 +267,11 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
     if (tickets === null && !cargandoTickets) void revisarTickets(false);
   };
 
-  const abrir = (motivo: "chat" | "tickets" | "avisos", convId?: string) => {
+  const abrir = (motivo: "chat" | "tickets" | "avisos", convId?: string, donde?: DOMRect) => {
+    if (motivo === "avisos" && convId && avisos.conversaciones.some((c) => c.id === convId)) {
+      setMiniAviso({ convId, donde: donde ?? null });
+      return;
+    }
     if (motivo === "avisos") {
       setPestana("avisos");
       setAbrirAviso(convId ?? null);
@@ -312,6 +320,20 @@ export function AgenteRepos({ email, personajeVisible = true }: Props) {
       {/* El personaje vuela por la pantalla; clic abre el chat. Va en z-30,
           debajo de los botones flotantes del dashboard (Actualizar, z-40). */}
       {/* Escondido por preferencia: el chat sigue en Alt+K (y los tickets se siguen revisando). */}
+      {convMini && !abierto && (
+        <MiniAviso
+          c={convMini}
+          yo={email}
+          donde={miniAviso?.donde ?? null}
+          onCerrar={cerrarMini}
+          onVerTodo={() => {
+            setMiniAviso(null);
+            setPestana("avisos");
+            setAbrirAviso(convMini.id);
+            setAbierto(true);
+          }}
+        />
+      )}
       {visible && <AgenteVolador pausado={abierto} nombreUsuario={nombreDeEmail(email)} onClick={abrir} voz={!!permisos.voz} />}
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 data-[state=open]:animate-in data-[state=open]:fade-in-0" />

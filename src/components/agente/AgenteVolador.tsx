@@ -23,7 +23,7 @@ import { createPortal } from "react-dom";
 import "./personaje.css";
 import { Antojos, Bata, Blusa, BrazoHumano, CabezaCartoon, Camisa, Camiseta, Cola, Filipina, Gi, HojasVestido, Playera, Saco, Vestido } from "./skins";
 import { PERSONALIDAD } from "./personalidades";
-import { callarVoz, hablar } from "./voz";
+import { audioDeAviso, callarVoz, hablar } from "./voz";
 import { EVENTO_AVISO, EVENTO_AVISO_ENTREGADO, type AvisoParaAvatar } from "@/lib/avisos";
 import { nombreAvatar, PALETA, PAREJA, SKINS, useCorreosAvatar, useNombresAvatar, useSkinGeorgIA, type Skin } from "./skinsDatos";
 import { ANCHO_UTILERIA, ARRIBA_UTILERIA, partidoDeHoy, partidoEnVivo, partidosSeleccion, setPartidosSeleccion, type TipoUtileria, type Utileria } from "./escenasDatos";
@@ -593,9 +593,10 @@ interface Props {
   nombreUsuario: string;
   /**
    * `motivo` = "tickets" si se le dio clic mientras gritaba la alerta; "avisos"
-   * (con la conversación) si fue mientras le traían un aviso.
+   * (con la conversación y dónde está quien lo trajo, para abrir ahí la
+   * ventanita) si fue mientras le traían un aviso.
    */
-  onClick: (motivo: "chat" | "tickets" | "avisos", convId?: string) => void;
+  onClick: (motivo: "chat" | "tickets" | "avisos", convId?: string, donde?: DOMRect) => void;
   /** Permiso «Voz del avatar»: dice en voz alta lo que pone en sus globos. */
   voz?: boolean;
 }
@@ -820,7 +821,7 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
       if (avisoActual || !colaAvisos.length || s.alertaGritos.length) return;
       const a = colaAvisos.shift()!;
       avisoActual = a;
-      audioAviso = a.audio && !a.recordatorio ? Object.assign(new Audio(a.audio), { preload: "auto" }) : null;
+      audioAviso = a.audio && !a.recordatorio ? audioDeAviso(a.audio) : null;
       // Marcador: la pose «alerta» sigue mientras dure el aviso (la termina el mensajero).
       s.alertaGritos = ["…"];
       s.alertaDur = 10 * 60_000;
@@ -2302,12 +2303,16 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
       data-oculto={pausado || undefined}
       aria-hidden={pausado || undefined}
       tabIndex={pausado ? -1 : undefined}
-      onClick={() => {
+      onClick={(e) => {
         const alerta = alertaRef.current;
         alerta?.apagar();
         alertaRef.current = null;
         marcarAtrapado();
-        onClick(alerta?.motivo === "avisos" ? "avisos" : alerta && alerta.motivo !== "chat" ? "tickets" : "chat", alerta?.convId);
+        onClick(
+          alerta?.motivo === "avisos" ? "avisos" : alerta && alerta.motivo !== "chat" ? "tickets" : "chat",
+          alerta?.convId,
+          e.currentTarget.getBoundingClientRect(),
+        );
       }}
       onPointerEnter={congelar(true)}
       onPointerLeave={congelar(false)}
@@ -2526,17 +2531,17 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
             role="button"
             tabIndex={0}
             title={`Aviso de ${mensajero.deNombre}: clic para contestar`}
-            onClick={() => {
+            onClick={(e) => {
               alertaRef.current?.apagar();
               alertaRef.current = null;
-              onClick("avisos", mensajero.convId);
+              onClick("avisos", mensajero.convId, e.currentTarget.getBoundingClientRect());
             }}
             onKeyDown={(e) => {
               if (e.key !== "Enter" && e.key !== " ") return;
               e.preventDefault();
               alertaRef.current?.apagar();
               alertaRef.current = null;
-              onClick("avisos", mensajero.convId);
+              onClick("avisos", mensajero.convId, e.currentTarget.getBoundingClientRect());
             }}
           >
             {/* Entra mirando hacia el propio; al irse se voltea. */}
