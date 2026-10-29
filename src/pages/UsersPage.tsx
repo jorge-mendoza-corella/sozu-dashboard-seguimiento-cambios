@@ -7,6 +7,7 @@ import {
   MessageCircle, Bot, ToggleRight, Siren, CircleCheck, Activity, Ticket, History,
 } from "lucide-react";
 import { PermisosIaChips } from "@/components/agente/PermisosIaChips";
+import { AyudaTooltip } from "@/components/ui/ayuda-tooltip";
 import { MostrarGeorgIA } from "@/components/agente/MostrarGeorgIA";
 import { PermisosPorAlcance } from "@/components/users/PermisosPorAlcance";
 import { cn } from "@/lib/utils";
@@ -46,20 +47,20 @@ import {
   scopeKeyOf,
 } from "@/lib/firestoreUsers";
 
-const PERMISSION_DEFS: { key: keyof CicdPermissions; label: string; icon: React.ReactNode }[] = [
-  { key: "createPR", label: "Generar PRs", icon: <GitPullRequest className="h-3 w-3" /> },
-  { key: "approve", label: "Aprobar", icon: <UserCheck className="h-3 w-3" /> },
-  { key: "mergeDev", label: "Merge a dev", icon: <GitMerge className="h-3 w-3" /> },
-  { key: "mergeMain", label: "Merge a main", icon: <Rocket className="h-3 w-3" /> },
-  { key: "buildApp", label: "Builds App", icon: <Smartphone className="h-3 w-3" /> },
-  { key: "deployDev", label: "Desplegar dev", icon: <Rocket className="h-3 w-3" /> },
-  { key: "switchDeployDev", label: "Switch deploy a dev", icon: <ToggleRight className="h-3 w-3" /> },
-  { key: "viewOthers", label: "Ver cambios de otros", icon: <Eye className="h-3 w-3" /> },
-  { key: "verHistorialPRs", label: "Ver historial de PRs", icon: <History className="h-3 w-3" /> },
-  { key: "verMonitoreo", label: "Ver monitoreo", icon: <Siren className="h-3 w-3" /> },
-  { key: "resolverMonitoreo", label: "Resolver errores", icon: <CircleCheck className="h-3 w-3" /> },
-  { key: "verEstadoRepos", label: "Ver estado de repos", icon: <Activity className="h-3 w-3" /> },
-  { key: "crearTicketMonitoreo", label: "Crear tickets de errores", icon: <Ticket className="h-3 w-3" /> },
+const PERMISSION_DEFS: { key: keyof CicdPermissions; label: string; icon: React.ReactNode; desc: string }[] = [
+  { key: "createPR", label: "Generar PRs", icon: <GitPullRequest className="h-3 w-3" />, desc: "Abrir PRs desde el dashboard (de una rama a dev, o de dev a main) y cerrarlos sin hacer merge." },
+  { key: "approve", label: "Aprobar", icon: <UserCheck className="h-3 w-3" />, desc: "Aprobar un PR, pedir cambios o comentar su revisión." },
+  { key: "mergeDev", label: "Merge a dev", icon: <GitMerge className="h-3 w-3" />, desc: "Hacer merge de un PR hacia dev: el cambio entra al ambiente de desarrollo." },
+  { key: "mergeMain", label: "Merge a main", icon: <Rocket className="h-3 w-3" />, desc: "Hacer merge hacia main: el cambio sale a producción (PRD)." },
+  { key: "buildApp", label: "Builds App", icon: <Smartphone className="h-3 w-3" />, desc: "Lanzar o cancelar los builds de las apps móviles en Codemagic." },
+  { key: "deployDev", label: "Desplegar dev", icon: <Rocket className="h-3 w-3" />, desc: "Botón «Desplegar dev»: publicar el ambiente de dev en ese momento." },
+  { key: "switchDeployDev", label: "Switch deploy a dev", icon: <ToggleRight className="h-3 w-3" />, desc: "Prender o apagar el deploy automático a dev del repo. Cambia cómo trabaja todo el equipo." },
+  { key: "viewOthers", label: "Ver cambios de otros", icon: <Eye className="h-3 w-3" />, desc: "Ver las ramas, PRs e historial de todo el equipo. Sin él, solo lo suyo (main y dev se ven siempre)." },
+  { key: "verHistorialPRs", label: "Ver historial de PRs", icon: <History className="h-3 w-3" />, desc: "Ver el «Historial a main» de cada repo: lo que llegó a PRD en los últimos 7 días, con sus PRs de dev y commits." },
+  { key: "verMonitoreo", label: "Ver monitoreo", icon: <Siren className="h-3 w-3" />, desc: "Ver la pestaña Monitoreo: los errores de producción (Sentry) de los repos que tiene asignados." },
+  { key: "resolverMonitoreo", label: "Resolver errores", icon: <CircleCheck className="h-3 w-3" />, desc: "Resolver, ignorar o reabrir errores de Sentry desde Monitoreo. Necesita «Ver monitoreo»." },
+  { key: "verEstadoRepos", label: "Ver estado de repos", icon: <Activity className="h-3 w-3" />, desc: "Ver la pestaña Estado de Monitoreo: días sin errores y % de los últimos 90 días por repo. Necesita «Ver monitoreo»." },
+  { key: "crearTicketMonitoreo", label: "Crear tickets de errores", icon: <Ticket className="h-3 w-3" />, desc: "Levantar o actualizar en el portal el ticket de soporte de un error de Sentry. Necesita «Ver monitoreo»." },
 ];
 
 function PermissionChips({
@@ -76,20 +77,21 @@ function PermissionChips({
       {PERMISSION_DEFS.map((d) => {
         const on = value[d.key];
         return (
-          <button
-            key={d.key}
-            type="button"
-            disabled={disabled}
-            onClick={() => onToggle(d.key)}
-            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:opacity-50 ${
-              on
-                ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:border-emerald-700/60 dark:bg-emerald-950/30 dark:text-emerald-300"
-                : "border-border text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            {d.icon}
-            {d.label}
-          </button>
+          <AyudaTooltip key={d.key} texto={d.desc}>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onToggle(d.key)}
+              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:opacity-50 ${
+                on
+                  ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:border-emerald-700/60 dark:bg-emerald-950/30 dark:text-emerald-300"
+                  : "border-border text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              {d.icon}
+              {d.label}
+            </button>
+          </AyudaTooltip>
         );
       })}
     </div>
