@@ -26,7 +26,7 @@ import { AvisoTokenClaude, ConectarClaude, EstadoTokenClaude } from "./AvisoToke
 import { useTokenClaude } from "@/hooks/useTokenClaude";
 import { BarraClaudeMini, EstadoClaudeMini, SeguimientoClaude } from "./SeguimientoClaude";
 import {
-  analisisGuardado, avancePrs, buscarPrsTicket, cerrarTicketPortal, COLOR_PR, consultaSeguimiento, convencionPrs, desligarTicket, esSoloFecha, ETIQUETA_PR, fechaTicket, guardarBorradorMd, leerBorradorMd, mandarAClaude, marcarEnviado, misEnviados, prManualTicket, misTicketsResueltos, notaDeCierre, origenTicket, promptDeTicket, relacionarTicket,
+  analisisGuardado, avancePrs, buscarPrsTicket, cerrarTicketPortal, COLOR_PR, consultaSeguimiento, convencionPrs, desligarTicket, esSoloFecha, ETIQUETA_PR, fechaTicket, guardarBorradorMd, leerBorradorMd, buscarPrsHistorial, mandarAClaude, marcarEnviado, misEnviados, prManualTicket, misTicketsResueltos, notaDeCierre, origenTicket, promptDeTicket, relacionarTicket,
   type AnalisisTicket, type PrExterno, type PrsExternos as ListaPrsExternos, type RazonMatch, type TicketAgente, type TicketEnviado,
 } from "@/lib/agenteTickets";
 
@@ -1065,6 +1065,86 @@ function PrsExternos({ t, prs, buscando, error, seleccion, onAlternar, onReinten
         </form>
       )}
       {errorManual && <p className="mt-1 text-xs text-destructive">{errorManual}</p>}
+      {prs && (
+        <BuscarEnHistorial
+          ticketId={t.id}
+          yaAgregados={new Set(prs.map((p) => p.url))}
+          agregando={ocupado}
+          onAgregar={(url) => void manual(url, false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Buscar en el historial de PRs fusionados de Sozu por lo que hacen (título o
+ * descripción) y agregarlos al ticket con un clic. Vacío: los de la última semana.
+ */
+function BuscarEnHistorial({ ticketId, yaAgregados, agregando, onAgregar }: {
+  ticketId: string;
+  yaAgregados: Set<string>;
+  agregando: string | null;
+  onAgregar: (url: string) => void;
+}) {
+  const [texto, setTexto] = useState("");
+  const [consulta, setConsulta] = useState("");
+  // Se busca cuando se deja de escribir.
+  useEffect(() => {
+    const id = setTimeout(() => setConsulta(texto.trim()), 450);
+    return () => clearTimeout(id);
+  }, [texto]);
+  const { data, isFetching, error } = useQuery({
+    queryKey: ["historial-prs-texto", ticketId, consulta],
+    queryFn: () => buscarPrsHistorial(ticketId, consulta),
+    staleTime: 5 * 60_000,
+  });
+  return (
+    <div className="mt-2.5 border-t pt-2.5">
+      <p className="mb-1 text-[11px] font-medium">Buscar en el historial de PRs</p>
+      <div className="flex items-center gap-1.5 rounded-md border bg-background px-2">
+        <Search className="h-3 w-3 text-muted-foreground" />
+        <input
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          placeholder="Lo que hace el PR: «aviso SAT», «antilavado»…"
+          className="h-7 w-full bg-transparent text-xs outline-none"
+        />
+        {isFetching && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+      </div>
+      <p className="mt-1 text-[10px] text-muted-foreground">
+        {consulta ? "PRs fusionados de Sozu con eso en el título o la descripción." : "Sin texto: los fusionados en la última semana."}
+      </p>
+      {error && <p className="mt-1 text-xs text-destructive">{mensajeDeError(error)}</p>}
+      {data && data.length === 0 && <p className="mt-1 text-xs text-muted-foreground">Sin resultados.</p>}
+      {data && data.length > 0 && (
+        <ul className="mt-1.5 max-h-56 space-y-1 overflow-y-auto pr-1">
+          {data.map((p) => {
+            const ya = yaAgregados.has(p.url);
+            return (
+              <li key={p.url} className="flex items-start gap-2 rounded-md border bg-background px-2 py-1.5 text-xs">
+                <span className="min-w-0 flex-1">
+                  <a href={p.url} target="_blank" rel="noreferrer" className="font-medium text-primary hover:underline">{p.repo} #{p.numero}</a>
+                  <span className={cn("ml-1 rounded px-1 text-[9px] font-semibold", p.base === "main" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300")}>
+                    → {p.base}
+                  </span>
+                  <span className="block truncate" title={p.titulo}>{p.titulo}</span>
+                  {p.extracto && <span className="block truncate text-[10px] text-muted-foreground" title={p.extracto}>{p.extracto}</span>}
+                  <span className="block text-[10px] text-muted-foreground">{p.autor} · {fechaTicket(p.fusionadoEn, "dia")}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onAgregar(p.url)}
+                  disabled={ya || !!agregando}
+                  className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] font-medium hover:bg-muted disabled:opacity-50"
+                >
+                  {ya ? <><Check className="h-3 w-3" /> Agregado</> : <><Plus className="h-3 w-3" /> Agregar</>}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

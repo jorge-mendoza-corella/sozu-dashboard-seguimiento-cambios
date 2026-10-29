@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, ExternalLink, GitMerge, GitPullRequestClosed, History, Loader2 } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, ExternalLink, GitMerge, GitPullRequestClosed, History, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "@/lib/timeUtils";
 import { DIAS_HISTORIAL_PRS, getHistorialMain, type CommitHistorial, type PrDevHistorial, type PrMainHistorial } from "@/lib/github";
@@ -119,6 +119,7 @@ function FilaMain({ owner, repo, pr, esMio }: { owner: string; repo: string; pr:
             )}
           </span>
         </button>
+        <CopiarLink url={pr.url} />
         <a href={pr.url} target="_blank" rel="noreferrer" className="shrink-0 text-muted-foreground hover:text-primary" title="Abrir en GitHub">
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
@@ -157,12 +158,34 @@ function FilaDev({ owner, repo, pr, esMio }: { owner: string; repo: string; pr: 
             </span>
           </span>
         </button>
+        <CopiarLink url={pr.url} chico />
         <a href={pr.url} target="_blank" rel="noreferrer" className="shrink-0 text-muted-foreground hover:text-primary" title="Abrir en GitHub">
           <ExternalLink className="h-3 w-3" />
         </a>
       </div>
       {abierto && <div className="border-t px-1 py-1"><Commits owner={owner} repo={repo} commits={pr.commits} /></div>}
     </div>
+  );
+}
+
+/** Copia el link del PR (para pegarlo en un ticket o en el chat). */
+function CopiarLink({ url, chico = false }: { url: string; chico?: boolean }) {
+  const [copiado, setCopiado] = useState(false);
+  const icono = chico ? "h-3 w-3" : "h-3.5 w-3.5";
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard.writeText(url).then(() => {
+          setCopiado(true);
+          setTimeout(() => setCopiado(false), 1500);
+        }).catch(() => {});
+      }}
+      className="shrink-0 text-muted-foreground hover:text-primary"
+      title={copiado ? "Copiado" : "Copiar link del PR"}
+    >
+      {copiado ? <Check className={cn(icono, "text-emerald-600")} /> : <Copy className={icono} />}
+    </button>
   );
 }
 

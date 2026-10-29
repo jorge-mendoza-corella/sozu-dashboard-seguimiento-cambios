@@ -62,8 +62,8 @@ export function AportesRepo({ owner, repo, selfLogin, myLogin }: {
         {lider && !selfLogin ? (
           <span className="min-w-0 truncate">
             Más commits hoy en PRD: <b className={cn("font-mono", esYo(lider.login) && "text-fuchsia-700 dark:text-fuchsia-300")}>{lider.login}</b>
-            {" · "}{lider.commits} commit{lider.commits !== 1 ? "s" : ""}
             {" · "}{lider.prs} PR{lider.prs !== 1 ? "s" : ""}
+            {" · "}{lider.commits} commit{lider.commits !== 1 ? "s" : ""}
           </span>
         ) : (
           <span className="min-w-0 truncate">{isLoading ? "Contando commits…" : selfLogin ? "Tus PRs y commits en PRD" : "Hoy no ha llegado nada a PRD"}</span>
