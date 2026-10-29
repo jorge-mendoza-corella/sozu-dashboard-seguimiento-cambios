@@ -19,13 +19,17 @@ export function HistorialPRs({ owner, repo, soloDe = null, esMio }: {
   esMio: (login?: string | null) => boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
+  // Hacia dev (ramas de trabajo), hacia main (releases y hotfixes) o todos.
+  const [hacia, setHacia] = useState<"todos" | "dev" | "main">("todos");
   const { data, isLoading, error } = useQuery({
     queryKey: ["historial-prs", owner, repo],
     queryFn: () => getHistorialPRs(owner, repo),
     enabled: abierto,
     staleTime: 5 * 60_000,
   });
-  const prs = (data ?? []).filter((p) => soloDe === null || p.author.toLowerCase() === soloDe.toLowerCase());
+  const propios = (data ?? []).filter((p) => soloDe === null || p.author.toLowerCase() === soloDe.toLowerCase());
+  const prs = propios.filter((p) => hacia === "todos" || p.base === hacia);
+  const cuantos = (h: typeof hacia) => (h === "todos" ? propios.length : propios.filter((p) => p.base === h).length);
 
   return (
     <div>
@@ -40,9 +44,30 @@ export function HistorialPRs({ owner, repo, soloDe = null, esMio }: {
       </button>
       {abierto && (
         <div className="mt-2 space-y-1">
+          {data && (
+            <div className="mb-1.5 inline-flex rounded-md border p-0.5 text-[11px]">
+              {(["todos", "dev", "main"] as const).map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => setHacia(h)}
+                  className={cn(
+                    "rounded px-2 py-0.5 font-medium",
+                    hacia === h ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {h === "todos" ? "Todos" : `Hacia ${h}`} ({cuantos(h)})
+                </button>
+              ))}
+            </div>
+          )}
           {isLoading && <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Leyendo GitHub…</p>}
           {error && <p className="text-xs text-destructive">No se pudo leer el historial de GitHub.</p>}
-          {data && prs.length === 0 && <p className="text-xs text-muted-foreground">Sin PRs cerrados en los últimos {DIAS_HISTORIAL_PRS} días.</p>}
+          {data && prs.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              Sin PRs cerrados{hacia === "todos" ? "" : ` hacia ${hacia}`} en los últimos {DIAS_HISTORIAL_PRS} días.
+            </p>
+          )}
           {prs.map((p) => <FilaPR key={p.number} owner={owner} repo={repo} pr={p} esMio={esMio} />)}
         </div>
       )}
