@@ -1162,6 +1162,10 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
   const seguimiento = useQuery({ ...consultaSeguimiento(t.id), enabled: !!enviado?.issue });
   const sinCambios = !!enviado?.issue && !enviado.listo && seguimiento.data?.sinCambios === true;
   const buscaPrs = externo || sinCambios;
+  // Con PRs ya en PRD (Claude o el trailer) también se pueden sumar otros: los que se
+  // trabajaron por fuera o los que ya lo habían resuelto. Se abre a mano.
+  const [agregarOtros, setAgregarOtros] = useState(false);
+  const conOtros = buscaPrs || agregarOtros;
   // Externo: los PRs del ticket por la convención. `intento` > 0 = "Volver a
   // buscar", que se salta lo guardado de los últimos 10 min.
   const [intento, setIntento] = useState(0);
@@ -1169,13 +1173,16 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
   const busqueda = useQuery({
     queryKey: ["prs-externos", t.id, intento],
     queryFn: () => buscarPrsTicket(t.id, intento > 0),
-    enabled: buscaPrs,
+    enabled: conOtros,
     staleTime: Infinity,
   });
-  const encontrados = busqueda.data?.prs;
+  // Los que ya van en la lista de «Se pasó a PRD» no se repiten.
+  const yaEnPrd = new Set((enviado?.prs ?? []).map((p) => p.url));
+  const encontrados = busqueda.data?.prs.filter((p) => buscaPrs || !yaEnPrd.has(p.prMain?.url ?? p.url));
   // Sin tocar nada, van marcados los que ya están en main.
   const [marcados, setMarcados] = useState<Set<string> | null>(null);
-  const seleccion = marcados ?? new Set((encontrados ?? []).filter((p) => p.mergeado).map((p) => p.url));
+  // Agregando otros a los que ya estaban, ninguno va marcado de entrada.
+  const seleccion = marcados ?? new Set(buscaPrs ? (encontrados ?? []).filter((p) => p.mergeado).map((p) => p.url) : []);
   const elegidos = (encontrados ?? []).filter((p) => seleccion.has(p.url));
   const alternar = (url: string) => {
     const nueva = new Set(seleccion);
@@ -1185,7 +1192,7 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
   // La nota se arma con los PRs elegidos hasta que se edite a mano.
   const [notaEditada, setNotaEditada] = useState<string | null>(null);
   const nota = notaEditada
-    ?? (enviado?.prs.length ? notaDeCierre(enviado.prs)
+    ?? (enviado?.prs.length ? notaDeCierre([...enviado.prs, ...elegidos.map(comoPrDeTicket)])
       : buscaPrs && elegidos.length ? notaDeCierre(elegidos.map(comoPrDeTicket))
         : sinCambios
           ? `Listo, favor de validar.\n\nSin cambios de código: Claude revisó el ticket y el arreglo ya estaba en producción (issue #${enviado?.issue?.numero ?? "?"} del orquestador).`
@@ -1208,7 +1215,7 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
     setEnviando(true);
     setError(null);
     try {
-      const r = await cerrarTicketPortal(t.id, nota, buscaPrs ? [...seleccion] : undefined);
+      const r = await cerrarTicketPortal(t.id, nota, conOtros && seleccion.size ? [...seleccion] : undefined);
       setHecho(r.etapa);
       setSentryResueltos(r.sentryResueltos ?? []);
       setCascada({ cerrados: r.relacionadosCerrados ?? [], fallidos: r.relacionadosFallidos ?? [] });
@@ -1284,7 +1291,7 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
                   los PRs que lo resolvieron, márcalos para dejarlos en la nota; si no, se puede cerrar sin PRs.
                 </p>
               )}
-              {buscaPrs && (
+              {conOtros && (
                 <PrsExternos
                   t={t}
                   prs={encontrados}
@@ -1305,7 +1312,7 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
                   }}
                 />
               )}
-              {buscaPrs && faltaPrd.length > 0 && (
+              {conOtros && faltaPrd.length > 0 && (
                 <p className="mt-2 flex items-start gap-1.5 rounded-md bg-red-50 p-2 text-[11px] text-red-900 dark:bg-red-950/30 dark:text-red-200">
                   <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
@@ -1330,6 +1337,11 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
                       </li>
                     ))}
                   </ul>
+                  {!buscaPrs && !agregarOtros && (
+                    <button type="button" onClick={() => setAgregarOtros(true)} className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline">
+                      <Plus className="h-3 w-3" /> Agregar otros PRs (trabajados por fuera o que ya lo habían resuelto)
+                    </button>
+                  )}
                 </div>
               )}
               <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-amber-400/60 bg-amber-50 p-2.5 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
@@ -1356,7 +1368,7 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
               {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
               <div className="mt-4 flex justify-end gap-2">
                 <button type="button" onClick={onCancelar} disabled={enviando} className="h-9 rounded-md px-3 text-sm font-medium hover:bg-muted">No, todavía no</button>
-                <button type="button" onClick={() => void cerrar()} disabled={enviando || !nota.trim() || !revisado || (externo && seleccion.size === 0) || (buscaPrs && faltaPrd.length > 0)} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:opacity-50">
+                <button type="button" onClick={() => void cerrar()} disabled={enviando || !nota.trim() || !revisado || (externo && seleccion.size === 0) || (conOtros && faltaPrd.length > 0)} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:opacity-50">
                   {enviando && <Loader2 className="h-4 w-4 animate-spin" />} Sí, cerrar ticket
                 </button>
               </div>
@@ -1368,7 +1380,6 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
   );
 }
 
-/** Issue de Sentry ligado al ticket (levantado desde Monitoreo), con su estado y enlaces. */
 /**
  * Issue de Sentry del ticket. `cerradoEn` (ticket resuelto): si el issue sigue
  * abierto con eventos después del cierre, el error volvió.

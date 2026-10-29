@@ -642,7 +642,9 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string; prsSe
     // los PRs que lo habían resuelto si quien cierra los encontró y eligió.
     const sinCambios = !!enviado?.issue && enviado.sinCambios === true && enviado.listoParaCerrar !== true;
     let registroExterno: Record<string, unknown> | null = null;
-    if (externo || (sinCambios && seleccionados.length > 0)) {
+    // Ya listo (sus PRs en PRD) y quien cierra sumó otros: se verifican igual y se agregan.
+    const listoConOtros = !externo && !sinCambios && enviado?.listoParaCerrar === true && seleccionados.length > 0;
+    if (externo || listoConOtros || (sinCambios && seleccionados.length > 0)) {
       if (!seleccionados.length) {
         throw new HttpsError("failed-precondition", "Elige al menos un PR que haya cerrado este ticket (busca sus PRs primero).");
       }
@@ -666,10 +668,14 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string; prsSe
         throw new HttpsError("unavailable", "No se pudieron verificar los PRs en GitHub.");
       }
       const sinEnPrd = prs.map((p) => ({ repo: p.repo, pr: p.pr, url: p.url, cambios: p.cambios }));
-      nota = notaConPrs(nota, sinEnPrd);
+      // Con los que ya tenía (listo): la nota y el registro llevan todos, sin repetir.
+      const previos = listoConOtros && Array.isArray(enviado?.prs) ? (enviado.prs as { repo: string; pr: number; url: string; cambios: string[] }[]) : [];
+      const todos = [...previos, ...sinEnPrd.filter((p) => !previos.some((x) => x.url === p.url))];
+      nota = notaConPrs(nota, todos);
       registroExterno = {
         owner: usuario.email, ticketId, numero: t.numero, folio: t.folio, titulo: t.titulo,
-        prs: sinEnPrd, origen: sinCambios ? "claude_sin_cambios" : "externo", listoParaCerrar: true,
+        prs: todos, listoParaCerrar: true,
+        ...(listoConOtros ? {} : { origen: sinCambios ? "claude_sin_cambios" : "externo" }),
       };
     // Mandado a Claude: todos sus PRs en PRD. Copiado a mano: algún PR con el trailer en PRD.
     } else if (!sinCambios && (enviado?.issue ? enviado.listoParaCerrar !== true : !Array.isArray(enviado?.prs) || enviado.prs.length === 0)) {
