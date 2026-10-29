@@ -41,6 +41,8 @@ export interface DetalleAlerta {
 }
 /** Cuánto grita antes de rendirse y volver a volar (la próxima revisión insiste). */
 const ALERTA_MS = 90_000;
+/** Megáfono: lo que dura el «¡quiere decirte algo!» antes del mensaje. */
+const LLAMADA_MS = 2200;
 
 /**
  * Una corrida de Claude Code (tickets) terminó: GeorgIA baja y lo actúa.
@@ -635,6 +637,8 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
   const [enMano, setEnMano] = useState<"elote" | "cafe" | "termo" | "bandera" | "palo" | null>(null);
   /** Encima de la cabeza o la cara: el foco de la idea o la venda de la piñata. */
   const [extra, setExtra] = useState<"foco" | "venda" | null>(null);
+  /** Megáfono: antes del mensaje, «¡quiere decirte algo!» (signo y ondas). */
+  const [llamando, setLlamando] = useState(false);
   // Avatares que son usuarios (con correo): los socios de la tanda.
   const correosAvatar = useCorreosAvatar();
   const usuariosRef = useRef<{ skin: Skin; nombre: string }[]>([]);
@@ -755,6 +759,8 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
       alertaHasta: 0,
       /** Duración de la próxima alerta (el megáfono dura lo que su mensaje); 0 = ALERTA_MS. */
       alertaDur: 0,
+      /** La alerta en curso (o pendiente) es un mensaje del megáfono. */
+      megafono: false,
       /** El clic atendió la escena de Claude: se corta al volver. */
       cortarEscena: false,
       alertaIdx: 0,
@@ -784,6 +790,9 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
       quitarLetrero = setTimeout(() => setLetrero((l) => (l && l.id === id ? null : l)), LETRERO_EXTRA_MS);
     };
     let finDialogo = 0;
+    let llamadaHasta = 0;
+    /** Audio del megáfono: suena junto con el mensaje, después de la llamada. */
+    let tocarAudio: (() => void) | null = null;
     let proximaFrase = performance.now() + azar(1500, 4000);
     const decir = (texto: string, tipo: Dialogo["tipo"] = "habla", ms = 2400) => {
       idDialogo += 1;
@@ -1474,6 +1483,11 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
         }
       }
 
+      // El megáfono no espera a que acabe la escena (arcade, pesca…): la acelera.
+      if (s.megafono && s.alertaGritos.length && s.pose !== "alerta" && enEscena() && !guion && s.hasta) {
+        s.hasta = Math.min(s.hasta, ahora + 300);
+      }
+
       // Alerta de tickets: baja al piso y se queda gritando (el festejo manda más).
       if (s.alertaGritos.length && s.pose !== "alerta" && !enEscena()) {
         cambiarPose("alerta");
@@ -1482,6 +1496,15 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
         s.alertaDur = 0;
         s.alertaIdx = 0;
         proximaFrase = ahora;
+        if (s.megafono) {
+          // Primero llama la atención (sin texto) y luego dice el mensaje.
+          finDialogo = 0;
+          setDialogo(null);
+          setLlamando(true);
+          llamadaHasta = ahora + LLAMADA_MS;
+          proximaFrase = llamadaHasta;
+          s.alertaHasta += LLAMADA_MS;
+        }
       }
 
       // Helado en pleno vuelo, de vez en cuando (y se lo termina en unos segundos).
@@ -1637,13 +1660,24 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
         case "alerta": {
           // Cae rápido al piso donde esté y ahí se para a gritar.
           if (s.y < piso()) s.y = Math.min(piso(), s.y + 520 * dt);
+          if (llamadaHasta && ahora >= llamadaHasta) {
+            llamadaHasta = 0;
+            setLlamando(false);
+          }
           if (!finDialogo && ahora >= proximaFrase) {
+            if (tocarAudio) {
+              tocarAudio();
+              tocarAudio = null;
+            }
             decir(s.alertaGritos[s.alertaIdx % s.alertaGritos.length], "grito", 2600);
             s.alertaIdx += 1;
             proximaFrase = ahora + 3000;
           }
           if (ahora >= s.alertaHasta || !s.alertaGritos.length) {
             s.alertaGritos = [];
+            s.megafono = false;
+            llamadaHasta = 0;
+            setLlamando(false);
             alertaRef.current = null;
             cambiarPose("agachar", 180);
             s.siguiente = "despegar";
@@ -2086,25 +2120,31 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
       const m = (e as CustomEvent<MensajeMegafono>).detail;
       if (!m) return;
       audioMegafono?.pause();
-      const gritos = [`📣 ¡Mensaje de ${m.deNombre}!`, ...(m.texto ? [`📣 ${m.texto}`] : [`🔊 ${m.deNombre} dice…`])];
+      // Solo el mensaje (sin «Mensaje de…»); si es puro audio, la bocina.
+      const gritos = [m.texto || "🔊 …"];
       s.alertaGritos = gritos;
+      s.megafono = true;
       s.alertaIdx = 0;
       // Lo grita dos vueltas (o lo que dure el audio, si es más).
       s.alertaDur = gritos.length * 3000 * 2;
       if (s.pose === "alerta") s.alertaHasta = performance.now() + s.alertaDur;
+      tocarAudio = null;
       if (m.audio) {
         const a = new Audio(m.audio);
+        a.preload = "auto";
         audioMegafono = a;
-        a.onloadedmetadata = () => {
-          if (Number.isFinite(a.duration)) s.alertaHasta = Math.max(s.alertaHasta, performance.now() + a.duration * 1000 + 2500);
+        // Suena cuando empieza el mensaje (después de la llamada).
+        tocarAudio = () => {
+          const dura = Number.isFinite(a.duration) ? a.duration * 1000 : 0;
+          s.alertaHasta = Math.max(s.alertaHasta, performance.now() + dura + 2500);
+          // Mientras suena su audio, la voz del avatar no lo tapa.
+          callarVoz(Math.max(dura, 6000));
+          a.onended = () => callarVoz(0);
+          // Sin interacción previa el navegador puede bloquearlo: entonces solo grita el texto.
+          void a.play().catch(() => callarVoz(0));
         };
-        // Mientras suena su audio, la voz del avatar no lo tapa.
-        callarVoz(gritos.length * 3000 * 2);
-        a.onended = () => callarVoz(0);
-        // Sin interacción previa el navegador puede bloquearlo: entonces solo grita el texto.
-        void a.play().catch(() => callarVoz(0));
       }
-      alertaRef.current = { apagar: () => { s.alertaGritos = []; audioMegafono?.pause(); }, motivo: "chat" };
+      alertaRef.current = { apagar: () => { s.alertaGritos = []; s.megafono = false; tocarAudio = null; audioMegafono?.pause(); }, motivo: "chat" };
     };
     window.addEventListener(EVENTO_MEGAFONO, alMegafono);
     const alClaude = (e: Event) => {
@@ -2421,6 +2461,11 @@ export function AgenteVolador({ pausado, nombreUsuario, onClick, voz = false }: 
       {pose === "chispazo" && (
         <span className="agente-volador__claude-fallo" aria-hidden>
           <i>⚡</i><i>💥</i><i>⚡</i><em />
+        </span>
+      )}
+      {llamando && pose === "alerta" && !pausado && (
+        <span className="agente-volador__llamada" aria-hidden>
+          <em /><em /><b>!</b>
         </span>
       )}
       {pose === "llorar" && (
