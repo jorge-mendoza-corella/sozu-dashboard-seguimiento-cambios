@@ -817,8 +817,32 @@ export const sentryCambiarIssue = onCall<{ issueId: string; estado: Estado }>(
 );
 
 /**
- * `sentryTicketsCerrados`: cada 10 min resuelve en Sentry los issues cuyo
- * ticket se cerró en el portal (fuera del dashboard). Ver sentryIssues.ts.
+ * `sentryTicketCerrado`: lo llama el trigger de Supabase en cuanto un ticket
+ * pasa a una etapa cerrada (`{ ticket_id, numero }`), desde el portal o donde
+ * sea; si es de un issue de Sentry, lo resuelve al momento. No necesita
+ * secreto: no confía en el aviso, vuelve a leer el ticket en el portal y solo
+ * resuelve si de verdad está cerrado y el folio coincide.
+ */
+export const sentryTicketCerrado = onRequest(
+  { region: "us-central1", secrets: [SUPABASE_SERVICE_KEY], timeoutSeconds: 60, memory: "256MiB", maxInstances: 3 },
+  async (req, res) => {
+    const ticketId = Number(req.body?.ticket_id);
+    const folio = Number(req.body?.numero);
+    if (req.method !== "POST" || !Number.isInteger(ticketId) || !Number.isInteger(folio)) {
+      res.status(400).json({ ok: false });
+      return;
+    }
+    const hechos = await resolverPorTicketsCerrados(clienteSupabase(SUPABASE_SERVICE_KEY.value()), { ticketId, numero: folio })
+      .catch((e) => { console.error("[sentryTicketCerrado]", e); return [] as string[]; });
+    if (hechos.length) console.log(`[sentryTicketCerrado] #${folio}: resueltos`, hechos.join(", "));
+    res.json({ ok: true, resueltos: hechos });
+  },
+);
+
+/**
+ * `sentryTicketsCerrados`: respaldo del aviso de arriba (si pg_net falló o el
+ * ticket se cerró antes de existir el trigger): cada 10 min resuelve los issues
+ * cuyo ticket ya está cerrado. Ver sentryIssues.ts.
  */
 export const sentryTicketsCerrados = onSchedule(
   { schedule: "every 10 minutes", region: "us-central1", secrets: [SUPABASE_SERVICE_KEY], timeoutSeconds: 120, memory: "256MiB" },

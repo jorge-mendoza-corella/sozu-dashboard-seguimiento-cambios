@@ -287,14 +287,24 @@ export async function resolverIssuesDeTicket(issues: IssueDeTicket[], folio: str
 
 /**
  * Issues cuyo ticket se cerró FUERA del dashboard (en el portal): se resuelven
- * en Sentry igual que al cerrar desde aquí. Corre cada 10 min. Cada ticket se
+ * en Sentry igual que al cerrar desde aquí. Lo dispara al momento el trigger de
+ * la base al cerrar un ticket (`sentryTicketCerrado`) y, de respaldo, una
+ * corrida cada 10 min (`sentryTicketsCerrados`). Cada ticket se
  * aplica una sola vez (`cierreAplicado`): si después alguien reabre el issue en
  * Sentry a mano, no se le vuelve a cerrar. Si el error volvió después del
  * cierre (último evento posterior), no se resuelve: es una regresión.
  */
-export async function resolverPorTicketsCerrados(sb: SupabaseClient): Promise<string[]> {
+export async function resolverPorTicketsCerrados(
+  sb: SupabaseClient,
+  /** Solo este ticket (aviso del trigger de la base al cerrarse); sin él, todos. */
+  solo?: { ticketId: number; numero: number },
+): Promise<string[]> {
   const fs = getFirestore();
-  const docs = (await fs.collection("sentryTickets").get()).docs.filter((d) => d.data().cierreAplicado !== d.data().ticketId);
+  const base = solo ? fs.collection("sentryTickets").where("ticketId", "==", solo.ticketId) : fs.collection("sentryTickets");
+  const docs = (await base.get()).docs.filter((d) =>
+    d.data().cierreAplicado !== d.data().ticketId &&
+    // El aviso trae también el folio: uno de otra base (dev) con el mismo id no cuenta.
+    (!solo || numero(d.data().numero) === solo.numero));
   if (!docs.length) return [];
   const token = await secretoGlobal("SENTRY_AUTH_TOKEN");
   if (!token) return [];
