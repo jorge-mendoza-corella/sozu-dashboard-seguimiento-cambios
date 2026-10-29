@@ -5,7 +5,10 @@
 import { useSyncExternalStore } from "react";
 
 export type Skin = "cyborg" | "abuelo" | "heroe" | "chibi" | "cientifico" | "raton" | "travieso" | "ramon" | "tomaso" | "licesita"
-  | "keity" | "abel" | "pablo" | "rodrigo" | "manuel";
+  | "keity" | "abel" | "pablo" | "rodrigo" | "manuel"
+  | "cotorrisa" | "cantinflas" | "pantera" | "dino" | "homero" | "stitch" | "linguini" | "ryu"
+  // Solo de pareja (salen junto al principal, no se eligen solos): ver PAREJA.
+  | "ricardo" | "lilo" | "ken";
 
 export const SKINS: { id: Skin; nombre: string; desc: string }[] = [
   { id: "abuelo", nombre: "Abuelo inventor", desc: "Canas, bigote blanco y sonrisa pícara" },
@@ -23,7 +26,20 @@ export const SKINS: { id: Skin; nombre: string; desc: string }[] = [
   { id: "rodrigo", nombre: "Rodrigo", desc: "Copete, candado, traje azul y corbata" },
   { id: "manuel", nombre: "Manuel", desc: "Pelo al ras, barba de días y todo de negro" },
   { id: "cyborg", nombre: "Cyborg (original)", desc: "Media cara de acero y brazo robótico" },
+  { id: "cotorrisa", nombre: "La Cotorrisa", desc: "Slobotzky y Ricardo, con audífonos y risa contagiosa" },
+  { id: "cantinflas", nombre: "Cantinflas", desc: "Bigotito, sombrerito y pantalón con mecate" },
+  { id: "pantera", nombre: "Pantera Rosa", desc: "Rosa, flaca y muy sigilosa" },
+  { id: "dino", nombre: "Dinosaurio", desc: "T-rex verde de bracitos cortos" },
+  { id: "homero", nombre: "Homero", desc: "Dos pelos, barba de días y camisa blanca" },
+  { id: "stitch", nombre: "Lilo & Stitch", desc: "Experimento 626 con Lilo a un lado" },
+  { id: "linguini", nombre: "Ratatouille", desc: "Linguini de cocinero con Remy en el gorro" },
+  { id: "ryu", nombre: "Ryu y Ken", desc: "Karategis, cinta roja y hadoukens" },
 ];
+/**
+ * Avatares de dos: el compañero sale junto al principal, con la misma pose, y
+ * en los chistes se contestan. No se eligen solos.
+ */
+export const PAREJA: Partial<Record<Skin, Skin>> = { cotorrisa: "ricardo", stitch: "lilo", ryu: "ken" };
 export const SKIN_DEFAULT: Skin = "abuelo";
 export const esSkin = (v: unknown): v is Skin => SKINS.some((s) => s.id === v);
 
@@ -150,6 +166,10 @@ export const PALETA: Record<Skin, {
   sinEmblema?: boolean;
   /** Faja de tela en lugar del cinturón con hebilla (y sin la línea de botones). */
   faja?: string;
+  /** Sin el cuello de camisa (camiseta, o el pelaje de un animal). */
+  sinCuello?: boolean;
+  /** Cola detrás del cuerpo. */
+  cola?: "pantera" | "dino" | "stitch";
 }> = {
   cyborg: { piel: ["#f0c4a0", "#c98c65"], camisa: ["#7d8591", "#9aa1ab", "#5c636e"], iris: "#3b5240", ceja: "#111827", pielSolida: "#d9a07a" },
   abuelo: { piel: ["#ffd9bd", "#e09b74"], camisa: ["#8b95a5", "#b8c1cd", "#717c8c"], iris: "#3f6212", ceja: "#e5e7eb", pielSolida: "#f2b993" },
@@ -203,6 +223,60 @@ export const PALETA: Record<Skin, {
   manuel: {
     piel: ["#dba57d", "#a86d48"], camisa: ["#111827", "#1f2937", "#030712"], iris: "#1c1917", ceja: "#0c0a09", pielSolida: "#c28b62",
     pantalon: ["#111827", "#1f2937", "#030712"], zapato: "#0c0a09", sinEmblema: true,
+  },
+  // La Cotorrisa: Slobotzky (gorra blanca, barba, playera rosa) y Ricardo (playera azul).
+  cotorrisa: {
+    sinCuello: true, piel: ["#f1c7a3", "#c8906b"], camisa: ["#db2777", "#ec4899", "#be185d"], iris: "#3f2a1d", ceja: "#1c1917", pielSolida: "#d9a07c",
+    pantalon: ["#1f2937", "#374151", "#111827"], zapato: "#f8fafc", sinEmblema: true, faja: "#1f2937",
+  },
+  ricardo: {
+    sinCuello: true, piel: ["#f3cdb0", "#cd9a76"], camisa: ["#1d4ed8", "#3b82f6", "#1e40af"], iris: "#3f2a1d", ceja: "#3f2a1d", pielSolida: "#dda887",
+    pantalon: ["#334155", "#475569", "#1e293b"], zapato: "#111827", sinEmblema: true, faja: "#334155",
+  },
+  // Camiseta blanca, pantalón caído amarrado con mecate.
+  cantinflas: {
+    sinCuello: true, piel: ["#d9a27a", "#a8704b"], camisa: ["#e7e5e4", "#fafaf9", "#d6d3d1"], iris: "#2b1a12", ceja: "#111827", pielSolida: "#bf8a63",
+    pantalon: ["#78716c", "#a8a29e", "#57534e"], zapato: "#3f2a1d", sinEmblema: true, faja: "#ca8a04", brazosDescubiertos: true,
+  },
+  // Todo rosa: sin ropa ni cinturón (la faja es del mismo rosa).
+  pantera: {
+    sinCuello: true, cola: "pantera", piel: ["#f9a8d4", "#ec4899"], camisa: ["#f472b6", "#f9a8d4", "#db2777"], iris: "#ca8a04", ceja: "#be185d", pielSolida: "#ec4899",
+    pantalon: ["#f472b6", "#f9a8d4", "#db2777"], mano: "#f9a8d4", cuello: "#f472b6", zapato: "#f472b6", sinEmblema: true, faja: "#f472b6",
+    brazosDescubiertos: true,
+  },
+  dino: {
+    sinCuello: true, cola: "dino", piel: ["#86efac", "#16a34a"], camisa: ["#22c55e", "#4ade80", "#15803d"], iris: "#ca8a04", ceja: "#14532d", pielSolida: "#16a34a",
+    pantalon: ["#22c55e", "#4ade80", "#15803d"], mano: "#4ade80", cuello: "#22c55e", zapato: "#15803d", sinEmblema: true, faja: "#86efac",
+    brazosDescubiertos: true,
+  },
+  // Camisa blanca de manga corta, pantalón azul.
+  homero: {
+    piel: ["#fde047", "#eab308"], camisa: ["#f8fafc", "#ffffff", "#e2e8f0"], iris: "#0f172a", ceja: "#a16207", pielSolida: "#d4a20a",
+    pantalon: ["#1d4ed8", "#3b82f6", "#1e40af"], zapato: "#1e293b", sinEmblema: true,
+  },
+  stitch: {
+    sinCuello: true, cola: "stitch", piel: ["#60a5fa", "#2563eb"], camisa: ["#3b82f6", "#60a5fa", "#1d4ed8"], iris: "#0f172a", ceja: "#1e3a8a", pielSolida: "#2563eb",
+    pantalon: ["#3b82f6", "#60a5fa", "#1d4ed8"], mano: "#60a5fa", cuello: "#3b82f6", zapato: "#1d4ed8", sinEmblema: true, faja: "#93c5fd",
+    brazosDescubiertos: true,
+  },
+  // Vestido rojo con hojas blancas, descalza.
+  lilo: {
+    sinCuello: true, piel: ["#d8a07a", "#a86f4a"], camisa: ["#dc2626", "#ef4444", "#b91c1c"], iris: "#1c1917", ceja: "#111827", pielSolida: "#bb8560",
+    pantalon: ["#dc2626", "#ef4444", "#b91c1c"], zapato: "#bb8560", labios: "#9f1239", brazosDescubiertos: true, sinEmblema: true, faja: "#dc2626",
+  },
+  // Filipina blanca de cocinero.
+  linguini: {
+    piel: ["#f8d5bc", "#d9a587"], camisa: ["#f8fafc", "#ffffff", "#e2e8f0"], iris: "#3f2a1d", ceja: "#9a3412", pielSolida: "#e2b090",
+    pantalon: ["#334155", "#475569", "#1e293b"], zapato: "#111827", sinEmblema: true, faja: "#e2e8f0",
+  },
+  // Karategi blanco con cinta negra, descalzo.
+  ryu: {
+    piel: ["#f0c29c", "#c48a62"], camisa: ["#f1f5f9", "#ffffff", "#e2e8f0"], iris: "#2b1a12", ceja: "#111827", pielSolida: "#d49c74",
+    pantalon: ["#f1f5f9", "#ffffff", "#e2e8f0"], zapato: "#d49c74", sinEmblema: true, faja: "#111827",
+  },
+  ken: {
+    piel: ["#f6d0b0", "#d29b76"], camisa: ["#dc2626", "#ef4444", "#b91c1c"], iris: "#1e3a8a", ceja: "#ca8a04", pielSolida: "#dfa784",
+    pantalon: ["#dc2626", "#ef4444", "#b91c1c"], zapato: "#dfa784", sinEmblema: true, faja: "#111827",
   },
 };
 
