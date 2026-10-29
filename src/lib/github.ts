@@ -767,6 +767,36 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
       // reordena para que "los últimos deploys" sean de verdad los últimos.
       .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
 
+    // Los detalles de los PRs abiertos no dependen de las ramas: van en paralelo
+    // con el cálculo de ramas (antes esperaban a que terminara).
+    const openPRsP: Promise<PullRequest[]> = Promise.all(
+      prsResp.data.map(async (pr) => {
+        const requestedReviewers = pr.requested_reviewers?.map((r) => r.login) ?? [];
+        const [reviewDecision, prDetail] = await Promise.all([
+          getPRReviewDecision(owner, repo, pr.number, requestedReviewers),
+          octokit.pulls.get({ owner, repo, pull_number: pr.number }).catch(() => null),
+        ]);
+        return {
+          number: pr.number,
+          title: pr.title,
+          state: pr.state,
+          head: pr.head.ref,
+          headSha: pr.head.sha,
+          base: pr.base.ref,
+          url: pr.html_url,
+          createdAt: pr.created_at,
+          draft: pr.draft ?? false,
+          checksState: "unknown" as const,
+          author: pr.user?.login ?? "",
+          authors: autoresDelCuerpo(prDetail?.data.body ?? pr.body, pr.user?.login),
+          requestedReviewers,
+          reviewDecision,
+          hasConflict: prDetail?.data.mergeable === false,
+        };
+      }),
+    );
+    openPRsP.catch(() => {}); // se espera más abajo; esto solo evita el aviso de promesa sin manejar
+
     // listBranches devuelve las ramas en orden alfabético y paginado, así que
     // en repos con muchas ramas (cambios_*, feat/*) "main" puede quedar fuera.
     // Traemos main y dev explícitamente si no vinieron en la lista. Solo si la
@@ -852,32 +882,7 @@ export async function fetchRepoStatus(owner: string, repo: string, label: string
       );
     }
 
-    const openPRs: PullRequest[] = await Promise.all(
-      prsResp.data.map(async (pr) => {
-        const requestedReviewers = pr.requested_reviewers?.map((r) => r.login) ?? [];
-        const [reviewDecision, prDetail] = await Promise.all([
-          getPRReviewDecision(owner, repo, pr.number, requestedReviewers),
-          octokit.pulls.get({ owner, repo, pull_number: pr.number }).catch(() => null),
-        ]);
-        return {
-          number: pr.number,
-          title: pr.title,
-          state: pr.state,
-          head: pr.head.ref,
-          headSha: pr.head.sha,
-          base: pr.base.ref,
-          url: pr.html_url,
-          createdAt: pr.created_at,
-          draft: pr.draft ?? false,
-          checksState: "unknown" as const,
-          author: pr.user?.login ?? "",
-          authors: autoresDelCuerpo(prDetail?.data.body ?? pr.body, pr.user?.login),
-          requestedReviewers,
-          reviewDecision,
-          hasConflict: prDetail?.data.mergeable === false,
-        };
-      }),
-    );
+    const openPRs = await openPRsP;
 
     const aRun = (r: (typeof todosLosRuns)[number]): WorkflowRun => ({
       name: r.name ?? "Workflow",
@@ -1122,6 +1127,32 @@ export async function getPendingReleasePRs(owner: string, repo: string): Promise
 
 /** Dado un PR dev→main, devuelve los PRs de dev incluidos con sus commits. */
 export async function getMergedDevPRsForRelease(
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<PRWithCommits[]> {
+  // Una sola consulta GraphQL con los commits y sus padres; el reparto entre
+  // PRs de dev sale del grafo (ver `repartirCommits`). Por REST eran 1 + 2
+  // llamadas por cada PR de dev (~5 s con 7).
+  try {
+    return await prsDevPorGraphql(owner, repo, prNumber);
+  } catch {
+    return prsDevPorRest(owner, repo, prNumber);
+  }
+}
+
+async function prsDevPorGraphql(owner: string, repo: string, prNumber: number): Promise<PRWithCommits[]> {
+  const data = await octokit.graphql<{ repository: { pullRequest: { commits: { nodes: { commit: NodoCommitGrafo }[] } } } }>(
+    `query($o: String!, $r: String!, $n: Int!) {
+      repository(owner: $o, name: $r) { pullRequest(number: $n) { commits(first: 250) { nodes { commit { ${CAMPOS_COMMIT} } } } } }
+    }`,
+    { o: owner, r: repo, n: prNumber },
+  );
+  const { devPrs, fechas } = repartirCommits(owner, repo, data.repository.pullRequest.commits.nodes.map((x) => x.commit));
+  return devPrs.map((d) => ({ ...d, mergedAt: fechas.get(d.number) ?? "" }));
+}
+
+async function prsDevPorRest(
   owner: string,
   repo: string,
   prNumber: number,
@@ -1846,65 +1877,165 @@ export async function reintentarDocs(owner: string, repo: string, run: WorkflowR
 /** Días hacia atrás del historial de PRs de cada repo. */
 export const DIAS_HISTORIAL_PRS = 7;
 
-export interface PrHistorial {
+export interface CommitHistorial {
+  sha: string;
+  message: string;
+  author: string;
+}
+
+/** PR hacia dev dentro de un PR a main, con sus commits. */
+export interface PrDevHistorial {
+  number: number;
+  title: string;
+  url: string;
+  author: string;
+  commits: CommitHistorial[];
+}
+
+/** PR fusionado (o cerrado) hacia main en el rango, con todo lo que trajo. */
+export interface PrMainHistorial {
   number: number;
   title: string;
   url: string;
   head: string;
-  base: string;
-  /** Autor real (marcador `pr_author`) o quien lo abrió. */
-  author: string;
+  /** Quién lo abrió en GitHub. */
+  abrio: string;
   merged: boolean;
   /** Cuándo se fusionó o, si no, cuándo se cerró. */
   closedAt: string;
+  /** PRs hacia dev que trajo (un release), en el orden en que entraron. */
+  devPrs: PrDevHistorial[];
+  /** Commits que no vinieron por un PR de dev (hotfix o directo sobre dev). */
+  directos: CommitHistorial[];
+  /** Autores de todos sus commits, el que más aportó primero. */
+  autores: string[];
+}
+
+/** Commit de un PR tal como lo trae la consulta GraphQL (sin PRs asociados: eso es lo caro). */
+interface NodoCommitGrafo {
+  oid: string;
+  messageHeadline: string;
+  messageBody: string;
+  committedDate: string;
+  author: { user: { login: string } | null; name: string | null } | null;
+  parents: { nodes: { oid: string }[] };
+}
+
+const CAMPOS_COMMIT = "oid messageHeadline messageBody committedDate author { user { login } name } parents(first: 2) { nodes { oid } }";
+
+/**
+ * Reparte los commits de un PR a main entre los PRs de dev que trae, mirando el
+ * grafo: los commits de «Merge pull request #N» son los que se alcanzan desde su
+ * segundo padre y no desde el primero. Así no hace falta preguntar a GitHub el
+ * PR de cada commit (`associatedPullRequests`), que hacía la consulta 4× más lenta.
+ */
+function repartirCommits(owner: string, repo: string, nodos: NodoCommitGrafo[]): { devPrs: PrDevHistorial[]; directos: CommitHistorial[]; fechas: Map<number, string> } {
+  const porOid = new Map(nodos.map((n) => [n.oid, n]));
+  const alcance = (desde: string | undefined): Set<string> => {
+    const vistos = new Set<string>();
+    const pila = desde ? [desde] : [];
+    while (pila.length) {
+      const oid = pila.pop()!;
+      if (vistos.has(oid) || !porOid.has(oid)) continue;
+      vistos.add(oid);
+      for (const p of porOid.get(oid)!.parents.nodes) pila.push(p.oid);
+    }
+    return vistos;
+  };
+  const esMerge = (n: NodoCommitGrafo) => n.parents.nodes.length > 1 || /^Merge (pull request|branch|remote-tracking)/.test(n.messageHeadline);
+  const aCommit = (n: NodoCommitGrafo): CommitHistorial => ({ sha: n.oid.slice(0, 7), message: n.messageHeadline, author: n.author?.user?.login ?? n.author?.name ?? "?" });
+  const asignados = new Set<string>();
+  const devPrs: PrDevHistorial[] = [];
+  const fechas = new Map<number, string>();
+  const merges = nodos
+    .filter((n) => /^Merge pull request #\d+/.test(n.messageHeadline) && n.parents.nodes.length > 1)
+    .sort((a, b) => a.committedDate.localeCompare(b.committedDate));
+  for (const m of merges) {
+    const numero = Number(m.messageHeadline.match(/#(\d+)/)![1]);
+    const base = alcance(m.parents.nodes[0].oid);
+    const commits = [...alcance(m.parents.nodes[1].oid)]
+      .filter((oid) => !base.has(oid) && !asignados.has(oid))
+      .map((oid) => porOid.get(oid)!)
+      .sort((a, b) => a.committedDate.localeCompare(b.committedDate));
+    commits.forEach((c) => asignados.add(c.oid));
+    const propios = commits.filter((c) => !esMerge(c)).map(aCommit);
+    // Autor: quien más commits puso (el merge commit es de quien lo fusionó).
+    const cuenta = new Map<string, number>();
+    for (const c of propios) cuenta.set(c.author, (cuenta.get(c.author) ?? 0) + 1);
+    // GitHub corta el titular largo con «…» y sigue en la primera línea del cuerpo.
+    const lineas = m.messageBody.split("\n").map((l) => l.trim()).filter(Boolean);
+    const cola = lineas[0]?.startsWith("…") ? lineas.shift()!.slice(1) : "";
+    const rama = (m.messageHeadline.replace(/…$/, "") + cola).match(/ from (\S+)/)?.[1] ?? "";
+    devPrs.push({
+      number: numero,
+      title: lineas[0] ?? rama,
+      url: `https://github.com/${owner}/${repo}/pull/${numero}`,
+      author: [...cuenta.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? m.author?.user?.login ?? "?",
+      commits: propios,
+    });
+    fechas.set(numero, m.committedDate);
+  }
+  const directos = nodos.filter((n) => !asignados.has(n.oid) && !esMerge(n)).map(aCommit);
+  return { devPrs, directos, fechas };
 }
 
 /**
- * PRs cerrados (fusionados o no) en los últimos DIAS_HISTORIAL_PRS días, el más
- * reciente primero. Vienen por fecha de actualización: se para al salir del rango.
+ * Historial de PRs hacia main de los últimos DIAS_HISTORIAL_PRS días con su
+ * contenido completo (PRs de dev → commits). Una búsqueda y luego el contenido
+ * de varios PRs por consulta GraphQL (alias), en paralelo: con 20+ releases eran
+ * decenas de llamadas REST, una tras otra al abrir cada uno.
  */
-export async function getHistorialPRs(owner: string, repo: string): Promise<PrHistorial[]> {
-  const desde = Date.now() - DIAS_HISTORIAL_PRS * 86_400_000;
-  const salida: PrHistorial[] = [];
-  for (let page = 1; page <= 3; page++) {
-    const { data } = await octokit.pulls.list({ owner, repo, state: "closed", sort: "updated", direction: "desc", per_page: 100, page });
-    for (const pr of data) {
-      const cerrado = pr.merged_at ?? pr.closed_at;
-      if (!cerrado || Date.parse(cerrado) < desde) continue;
-      salida.push({
+export async function getHistorialMain(owner: string, repo: string): Promise<PrMainHistorial[]> {
+  const desde = new Date(Date.now() - DIAS_HISTORIAL_PRS * 86_400_000).toISOString().slice(0, 19) + "Z";
+  type NodoBusqueda = { number: number; title: string; url: string; headRefName: string; merged: boolean; mergedAt: string | null; closedAt: string | null; author: { login: string } | null };
+  const base: NodoBusqueda[] = [];
+  let after: string | null = null;
+  for (let page = 0; page < 3; page++) {
+    const data: { search: { nodes: NodoBusqueda[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await octokit.graphql(
+      `query($q: String!, $after: String) {
+        search(query: $q, type: ISSUE, first: 100, after: $after) {
+          pageInfo { hasNextPage endCursor }
+          nodes { ... on PullRequest { number title url headRefName merged mergedAt closedAt author { login } } }
+        }
+      }`,
+      { q: `repo:${owner}/${repo} is:pr is:closed base:main closed:>=${desde}`, after },
+    );
+    base.push(...data.search.nodes.filter((n) => n.number));
+    if (!data.search.pageInfo.hasNextPage) break;
+    after = data.search.pageInfo.endCursor;
+  }
+
+  // Contenido: hasta 6 PRs por consulta (alias), los lotes en paralelo.
+  const LOTE = 6;
+  const contenido = new Map<number, NodoCommitGrafo[]>();
+  const lotes: number[][] = [];
+  for (let i = 0; i < base.length; i += LOTE) lotes.push(base.slice(i, i + LOTE).map((p) => p.number));
+  await Promise.all(lotes.map(async (nums) => {
+    const partes = nums.map((n) => `p${n}: pullRequest(number: ${n}) { commits(first: 250) { nodes { commit { ${CAMPOS_COMMIT} } } } }`);
+    const data = await octokit.graphql<{ repository: Record<string, { commits: { nodes: { commit: NodoCommitGrafo }[] } }> }>(
+      `query($o: String!, $r: String!) { repository(owner: $o, name: $r) { ${partes.join("\n")} } }`,
+      { o: owner, r: repo },
+    );
+    for (const n of nums) contenido.set(n, (data.repository[`p${n}`]?.commits.nodes ?? []).map((x) => x.commit));
+  }));
+
+  return base
+    .map((pr): PrMainHistorial => {
+      const { devPrs, directos } = repartirCommits(owner, repo, contenido.get(pr.number) ?? []);
+      const cuenta = new Map<string, number>();
+      for (const c of [...devPrs.flatMap((d) => d.commits), ...directos]) cuenta.set(c.author, (cuenta.get(c.author) ?? 0) + 1);
+      return {
         number: pr.number,
         title: pr.title,
-        url: pr.html_url,
-        head: pr.head.ref,
-        base: pr.base.ref,
-        author: (pr.body ?? "").match(/<!-- pr_author: ([\w.-]+) -->/)?.[1] ?? pr.user?.login ?? "?",
-        merged: !!pr.merged_at,
-        closedAt: cerrado,
-      });
-    }
-    if (data.length < 100 || Date.parse(data[data.length - 1].updated_at) < desde) break;
-  }
-  return salida.sort((a, b) => b.closedAt.localeCompare(a.closedAt));
-}
-
-/** Qué contenía un PR: su descripción (sin marcadores internos) y sus commits. */
-export async function getContenidoPR(owner: string, repo: string, prNumber: number): Promise<{
-  descripcion: string;
-  archivos: number;
-  commits: { sha: string; url: string; message: string; author: string }[];
-}> {
-  const [{ data: pr }, commits] = await Promise.all([
-    octokit.pulls.get({ owner, repo, pull_number: prNumber }),
-    octokit.paginate(octokit.pulls.listCommits, { owner, repo, pull_number: prNumber, per_page: 100 }),
-  ]);
-  return {
-    descripcion: (pr.body ?? "").replace(/<!--[\s\S]*?-->/g, "").replace(/^> 👤 Cambios de:.*$/m, "").trim(),
-    archivos: pr.changed_files ?? 0,
-    commits: commits.map((c) => ({
-      sha: c.sha.slice(0, 7),
-      url: c.html_url,
-      message: c.commit.message.split("\n")[0],
-      author: c.author?.login ?? c.commit.author?.name ?? "?",
-    })),
-  };
+        url: pr.url,
+        head: pr.headRefName,
+        abrio: pr.author?.login ?? "?",
+        merged: pr.merged,
+        closedAt: pr.mergedAt ?? pr.closedAt ?? "",
+        devPrs,
+        directos,
+        autores: [...cuenta.entries()].sort((a, b) => b[1] - a[1]).map(([a]) => a),
+      };
+    })
+    .sort((a, b) => b.closedAt.localeCompare(a.closedAt));
 }
