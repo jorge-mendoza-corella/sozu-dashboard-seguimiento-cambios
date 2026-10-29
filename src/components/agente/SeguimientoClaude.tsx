@@ -14,7 +14,7 @@ import { Bot, ChevronDown, Terminal, ExternalLink, GitPullRequest, Loader2, Mess
 import { cn } from "@/lib/utils";
 import { ConsolaFlotante } from "./ConsolaClaude";
 import { AvisoTokenClaude } from "./AvisoTokenClaude";
-import { AdjuntoEnMensaje, AdjuntosPendientes, BotonesAdjuntar } from "./Adjuntos";
+import { AdjuntoEnMensaje, AdjuntosPendientes, BotonesAdjuntar, CapaSoltar } from "./Adjuntos";
 import { useAdjuntos } from "@/hooks/useAdjuntos";
 import { useConsola, type Consola } from "@/hooks/useConsolaClaude";
 import { mensajeDeError } from "@/lib/agenteRepos";
@@ -603,7 +603,8 @@ export function SeguimientoClaude({ ticketId, folio, titulo, issue, enfocar = fa
         </div>
       )}
 
-      <div ref={cuadro} className={cn("scroll-mt-4 rounded-lg border p-2", esperando && "border-amber-400 ring-2 ring-amber-300/50 dark:ring-amber-700/40")}>
+      <div ref={cuadro} {...adj.soltar} className={cn("relative scroll-mt-4 rounded-lg border p-2", esperando && "border-amber-400 ring-2 ring-amber-300/50 dark:ring-amber-700/40")}>
+        <CapaSoltar a={adj} />
         {esperando && <p className="mb-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">Claude se detuvo a preguntarte algo. Contéstale aquí:</p>}
         <textarea
           ref={campo}

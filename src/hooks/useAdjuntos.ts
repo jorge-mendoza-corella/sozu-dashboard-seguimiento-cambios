@@ -2,7 +2,7 @@
  * Estado de los adjuntos (imagen, video, audio, nota de voz y, en los tickets,
  * documentos) de un mensaje a Claude. La vista está en components/agente/Adjuntos.tsx.
  */
-import { useCallback, useEffect, useRef, useState, type ClipboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { mensajeDeError, procesarAdjunto, type AdjuntoChat } from "@/lib/agenteRepos";
 import { subirAdjunto, tipoAdjunto, type AdjuntoRespuesta } from "@/lib/agenteTickets";
 
@@ -108,8 +108,41 @@ export function useAdjuntos({ carpeta, transcribir = false, documentos = false }
     }
   };
 
+  // Arrastrar y soltar archivos sobre la caja. Solo archivos: lo demás que se
+  // arrastra en la página (un ticket a relacionar, texto) sigue su camino.
+  const [arrastrando, setArrastrando] = useState(false);
+  const capas = useRef(0);
+  const conArchivos = (e: DragEvent) => [...e.dataTransfer.types].includes("Files");
+  const soltar = {
+    onDragEnter: (e: DragEvent) => {
+      if (!conArchivos(e)) return;
+      e.preventDefault();
+      capas.current += 1;
+      setArrastrando(true);
+    },
+    onDragOver: (e: DragEvent) => {
+      if (!conArchivos(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    },
+    onDragLeave: (e: DragEvent) => {
+      if (!conArchivos(e)) return;
+      capas.current = Math.max(0, capas.current - 1);
+      if (capas.current === 0) setArrastrando(false);
+    },
+    onDrop: (e: DragEvent) => {
+      if (!conArchivos(e)) return;
+      e.preventDefault();
+      capas.current = 0;
+      setArrastrando(false);
+      agregar([...e.dataTransfer.files]);
+    },
+  };
+
   return {
     adjuntos,
+    arrastrando,
+    soltar,
     documentos,
     listos: adjuntos.flatMap((x) => (x.listo ? [x.listo] : [])),
     /** Alguno se sigue subiendo o transcribiendo. */
