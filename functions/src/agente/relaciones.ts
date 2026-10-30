@@ -140,3 +140,54 @@ export async function desligarTicket(sb: SupabaseClient, email: string, idTicket
   const { data: otro } = await sb.from("tickets").select("numero").eq("id", idRel).maybeSingle();
   await nota(sb, email, idTicket, `Se quita la relación con el ticket #${otro?.numero ?? idRel} desde el dashboard de cambios.`).catch(() => {});
 }
+
+/**
+ * Todo el grupo de cada ticket: los relacionados de sus relacionados, y así
+ * (también a través de los ya cerrados: #1437 → #1442 cerrado → #1447). Lo usa
+ * el cierre en cascada, que cierra el grupo entero y no solo los directos.
+ */
+export async function grupoDeRelacionados(
+  sb: SupabaseClient,
+  ids: number[],
+  maxNiveles = 6,
+): Promise<Map<number, TicketRelacionado[]>> {
+  const info = new Map<number, TicketRelacionado>();
+  const aristas: [number, number][] = [];
+  const vistos = new Set<number>(ids);
+  let frontera = [...ids];
+  for (let nivel = 0; nivel < maxNiveles && frontera.length; nivel++) {
+    const rel = await relacionadosConDashboard(sb, frontera);
+    const nuevos: number[] = [];
+    for (const [id, rs] of rel) {
+      for (const r of rs) {
+        const otro = Number(r.id);
+        info.set(otro, r);
+        aristas.push([id, otro]);
+        if (!vistos.has(otro)) {
+          vistos.add(otro);
+          nuevos.push(otro);
+        }
+      }
+    }
+    frontera = nuevos.slice(0, 50);
+  }
+  // Componentes conexas (union-find).
+  const padre = new Map<number, number>();
+  const raiz = (x: number): number => {
+    const p = padre.get(x) ?? x;
+    if (p === x) return x;
+    const r = raiz(p);
+    padre.set(x, r);
+    return r;
+  };
+  for (const [a, b] of aristas) {
+    const [ra, rb] = [raiz(a), raiz(b)];
+    if (ra !== rb) padre.set(ra, rb);
+  }
+  const salida = new Map<number, TicketRelacionado[]>();
+  for (const id of ids) {
+    const r = raiz(id);
+    salida.set(id, [...vistos].filter((x) => x !== id && raiz(x) === r && info.has(x)).map((x) => info.get(x)!).sort((a, b) => b.numero - a.numero));
+  }
+  return salida;
+}

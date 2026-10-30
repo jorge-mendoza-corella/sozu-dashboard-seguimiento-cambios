@@ -90,6 +90,8 @@ export interface TicketAgente {
    * cierran también los que sigan abiertos. Falta en respuestas viejas.
    */
   relacionados?: TicketRelacionado[];
+  /** Todo el grupo (relacionados de relacionados): lo que se cierra junto con este. */
+  grupo?: TicketRelacionado[];
 }
 
 export interface TicketRelacionado {
