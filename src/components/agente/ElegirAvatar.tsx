@@ -4,10 +4,10 @@
  * GeorgIA). Se guarda en `agente_skins/{email}`.
  */
 import { useState } from "react";
-import { Check, Loader2, RotateCcw, Volume2 } from "lucide-react";
+import { Check, Loader2, RotateCcw, Search, Volume2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Personaje } from "./AgenteVolador";
-import { SKINS, useNombresAvatar, useSkinGeneral, useSkinGeorgIA, useSkinPropio, type Skin } from "./skinsDatos";
+import { filtrarSkins, useCorreosAvatar, useNombresAvatar, useSkinGeneral, useSkinGeorgIA, useSkinPropio, type Skin } from "./skinsDatos";
 import { probarVoz } from "./voz";
 import { cambiarSkinPropio } from "@/lib/agenteRepos";
 
@@ -34,6 +34,9 @@ export function ElegirAvatar({ email }: { email: string }) {
   const nombreGeneral = nombreDe(general);
   const actual = useSkinGeorgIA();
   const [pruebaVoz, setPruebaVoz] = useState<string | null>(null);
+  const [busqueda, setBusqueda] = useState("");
+  const correos = useCorreosAvatar();
+  const visibles = filtrarSkins(busqueda, nombreDe, correos);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-5">
@@ -54,8 +57,9 @@ export function ElegirAvatar({ email }: { email: string }) {
         </span>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-        <Opcion
+      <BuscadorAvatar valor={busqueda} onCambio={setBusqueda} total={visibles.length} />
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+        {!busqueda.trim() && <Opcion
           sel={propio === null}
           ocupado={guardando === "general"}
           deshabilitado={guardando !== null}
@@ -64,8 +68,8 @@ export function ElegirAvatar({ email }: { email: string }) {
           nombre="General"
           desc={`El que pone el admin (hoy: ${nombreGeneral})`}
           icono={<RotateCcw className="h-3 w-3" />}
-        />
-        {SKINS.map((s) => (
+        />}
+        {visibles.map((s) => (
           <Opcion
             key={s.id}
             sel={propio === s.id}
@@ -78,6 +82,7 @@ export function ElegirAvatar({ email }: { email: string }) {
           />
         ))}
       </div>
+      {visibles.length === 0 && <p className="mt-2 text-sm text-muted-foreground">Ningún avatar con «{busqueda.trim()}».</p>}
       <p className="mt-2 text-[11px] text-muted-foreground">Cambia al momento, sin recargar.</p>
       {error && <p className="mt-1 text-[11px] text-destructive">{error}</p>}
     </div>
@@ -111,5 +116,30 @@ function Opcion({ sel, ocupado, deshabilitado, onClick, skin, nombre, desc, icon
       <span className="mt-1 inline-flex items-center gap-1 text-xs font-semibold">{icono}{nombre}</span>
       <span className="text-center text-[10px] leading-tight text-muted-foreground">{desc}</span>
     </button>
+  );
+}
+
+/** Caja de búsqueda de avatares (también la usa Configuración → GeorgIA). */
+export function BuscadorAvatar({ valor, onCambio, total }: { valor: string; onCambio: (v: string) => void; total: number }) {
+  return (
+    <div className="mt-4 flex items-center gap-2">
+      <div className="flex h-8 flex-1 items-center gap-1.5 rounded-md border bg-background px-2.5 focus-within:ring-2 focus-within:ring-ring">
+        <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <input
+          value={valor}
+          onChange={(e) => onCambio(e.target.value)}
+          onKeyDown={(e) => e.key === "Escape" && onCambio("")}
+          placeholder="Buscar avatar: nombre, «barba», «lentes», correo…"
+          className="h-full w-full bg-transparent text-sm outline-none"
+          aria-label="Buscar avatar"
+        />
+        {valor && (
+          <button type="button" onClick={() => onCambio("")} className="rounded p-0.5 text-muted-foreground hover:text-foreground" aria-label="Limpiar búsqueda">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      {valor.trim() && <span className="shrink-0 text-[11px] text-muted-foreground">{total} encontrado{total === 1 ? "" : "s"}</span>}
+    </div>
   );
 }

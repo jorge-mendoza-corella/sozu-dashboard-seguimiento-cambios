@@ -3,7 +3,8 @@ import { useState } from "react";
 import { Check, Loader2, Mail, Palette } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Personaje } from "@/components/agente/AgenteVolador";
-import { SKINS, useCorreosAvatar, useNombresAvatar, useSkinGeneral, type Skin } from "@/components/agente/skinsDatos";
+import { BuscadorAvatar } from "@/components/agente/ElegirAvatar";
+import { filtrarSkins, useCorreosAvatar, useNombresAvatar, useSkinGeneral, type Skin } from "@/components/agente/skinsDatos";
 import { cambiarCorreoAvatar, cambiarNombreAvatar, cambiarSkin } from "@/lib/agenteRepos";
 
 export function SelectorSkin() {
@@ -26,6 +27,8 @@ export function SelectorSkin() {
     }
   };
   const [editando, setEditando] = useState<Partial<Record<Skin, string>>>({});
+  const [busqueda, setBusqueda] = useState("");
+  const visibles = filtrarSkins(busqueda, nombreDe, correos);
   const [guardandoCorreo, setGuardandoCorreo] = useState<Skin | null>(null);
 
   const guardarCorreo = async (s: Skin) => {
@@ -64,8 +67,9 @@ export function SelectorSkin() {
       <p className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         <Palette className="h-3.5 w-3.5" /> Apariencia general
       </p>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-5">
-        {SKINS.map((s) => {
+      <BuscadorAvatar valor={busqueda} onCambio={setBusqueda} total={visibles.length} />
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-5">
+        {visibles.map((s) => {
           const sel = s.id === actual;
           return (
             <div key={s.id} className="flex flex-col gap-1">

@@ -288,3 +288,19 @@ export const PALETA: Record<Skin, {
   },
 };
 
+
+const normal = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/**
+ * Buscador de avatares: por su nombre (el editado y el del catálogo), su
+ * descripción o el correo de la persona. Sin texto, todos.
+ */
+export function filtrarSkins(
+  texto: string,
+  nombreDe: (s: Skin) => string,
+  correos: Partial<Record<Skin, string>> = {},
+): typeof SKINS {
+  const q = normal(texto.trim());
+  if (!q) return SKINS;
+  return SKINS.filter((s) => normal(`${nombreDe(s.id)} ${s.nombre} ${s.desc} ${correos[s.id] ?? ""}`).includes(q));
+}
