@@ -30,6 +30,7 @@ const VOZ: Partial<Record<Skin, Voz>> = {
   linguini: { tono: 1.1, velocidad: 1.05, genero: "h" },
   ryu: { tono: 0.85, velocidad: 1, genero: "h" },
   ken: { tono: 1.05, velocidad: 1.1, genero: "h" },
+  lemus: { tono: 0.75, velocidad: 1, genero: "h" },
 };
 const VOZ_DEFAULT: Voz = { tono: 1, velocidad: 1, genero: "h" };
 

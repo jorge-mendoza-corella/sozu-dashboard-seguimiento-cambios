@@ -21,7 +21,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./personaje.css";
-import { Antojos, Bata, Blusa, BrazoHumano, CabezaCartoon, Camisa, Camiseta, Cola, Filipina, Gi, HojasVestido, Playera, Saco, Vestido } from "./skins";
+import { Antojos, Bata, Blusa, BrazoHumano, CabezaCartoon, Camisa, Camiseta, Cola, Filipina, Gi, Henley, HojasVestido, Playera, Saco, Vestido } from "./skins";
 import { PERSONALIDAD } from "./personalidades";
 import { audioDeAviso, callarVoz, hablar } from "./voz";
 import { EVENTO_AVISO, EVENTO_AVISO_ENTREGADO, type AvisoParaAvatar } from "@/lib/avisos";
@@ -2782,7 +2782,8 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
   const pareja = anidado ? undefined : PAREJA[sk];
   const pal = PALETA[sk];
   // Vestido sin mangas: el brazo de atrás va con la piel.
-  const manga = calzones || pal.brazosDescubiertos ? `url(#pj-piel-${sk})` : `url(#pj-camisa-${sk})`;
+  const corta = !calzones && !!pal.mangaCorta;
+  const manga = calzones || pal.brazosDescubiertos || corta ? `url(#pj-piel-${sk})` : `url(#pj-camisa-${sk})`;
   const jean = calzones ? `url(#pj-piel-${sk})` : `url(#pj-jean-${sk})`;
   const piel = `url(#pj-piel-${sk})`;
   return (
@@ -2865,10 +2866,11 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         <g className="pj-brazo">
           {/* Brazo (hombro → codo) */}
           <path d="M35.4 38.6 C34.6 42.6 34.8 46.6 35.3 50.4 L40.5 50.4 C41 46.6 41.4 42.6 40.9 38.6 C39 37.2 37.2 37.2 35.4 38.6 Z" fill={manga} />
+          {corta && <path d="M35 38.6 C34.4 41 34.4 43 34.8 45 L41 45 C41.4 43 41.4 41 41.2 38.6 C39 36.8 37.2 36.8 35 38.6 Z" fill={`url(#pj-camisa-${sk})`} />}
           <g className="pj-antebrazo-b">
           <circle cx="37.9" cy="49.8" r="2.6" fill={manga} />
           <path d="M35.4 49.6 C35.2 52.6 35.3 55 35.6 57.6 L40 57.6 C40.3 55 40.4 52.6 40.4 49.6 Z" fill={manga} />
-          <path d="M35.3 55.6 C37 56.6 39 56.6 40.3 55.6 L40.1 58.2 C38.6 59 37 59 35.6 58.2 Z" fill={calzones || pal.brazosDescubiertos ? manga : "#6b727c"} />
+          <path d="M35.3 55.6 C37 56.6 39 56.6 40.3 55.6 L40.1 58.2 C38.6 59 37 59 35.6 58.2 Z" fill={calzones || pal.brazosDescubiertos || corta ? manga : "#6b727c"} />
           <path d="M35.8 58.4 C35.2 61.2 36.4 63.4 38.2 63.4 C40 63.4 41 61.4 40.4 58.4 Z" fill={pal.mano ?? `url(#pj-piel-${sk})`} />
           </g>
         </g>
@@ -2942,6 +2944,7 @@ export function Personaje({ pose, animo = "serio", snack = null, vuelo = "superm
         {sk === "pablo" && <Saco camisa="#f8fafc" cuello="#ffffff" solapa="#57534e" boton="#292524" />}
         {sk === "rodrigo" && <Saco camisa="#f8fafc" cuello="#ffffff" solapa="#0f172a" boton="#0f172a" corbata="#1e3a8a" />}
         {sk === "manuel" && <Saco camisa="#1f2937" cuello="#111827" solapa="#030712" boton="#111827" />}
+        {sk === "lemus" && <Henley />}
         {(sk === "ryu" || sk === "ken") && <Gi skin={sk} />}
         {sk === "lilo" && <HojasVestido />}
         {sk === "linguini" && <Filipina />}

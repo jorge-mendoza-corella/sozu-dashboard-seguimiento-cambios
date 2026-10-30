@@ -13,7 +13,7 @@
  *   ramon       Ramón: barba corta, pelo hacia atrás, saco oscuro y camisa gris
  *   tomaso      Tomaso: lentes al aire, cara delgada, traje gris y camisa blanca
  *   licesita    Licesita: pelo lacio oscuro, collar y vestido verde azulado
- *   keity, abel, pablo, rodrigo, manuel: el equipo; sus rasgos van en RASGOS
+ *   keity, abel, pablo, rodrigo, manuel, lemus: el equipo; sus rasgos van en RASGOS
  *   cotorrisa (con Ricardo), cantinflas, pantera, dino, homero, stitch (con Lilo),
  *   linguini (Remy en el gorro), ryu (con Ken): sus rasgos también en RASGOS; los
  *   compañeros salen junto al principal (PAREJA) y cada uno cuenta sus chistes
@@ -60,15 +60,19 @@ export function Antojos() {
 /** Brazo del frente de carne y hueso (mismas articulaciones que el robótico: hombro 58,39 · codo 58.1,51.6). */
 /** `desnudo`: sin manga (el oso se llevó la cobija y anda en calzones). */
 export function BrazoHumano({ skin, desnudo = false }: { skin: Skin; desnudo?: boolean }) {
-  const descubierto = desnudo || PALETA[skin].brazosDescubiertos;
+  const corta = !desnudo && !!PALETA[skin].mangaCorta;
+  const descubierto = desnudo || PALETA[skin].brazosDescubiertos || corta;
   const manga = descubierto ? `url(#pj-piel-${skin})` : skin === "cientifico" ? "url(#pj-bata)" : `url(#pj-camisa-${skin})`;
   return (
     <g className="pj-brazo-robot">
       <path d="M55.2 38.6 C54.6 42.6 54.8 46.6 55.3 51 L60.9 51 C61.4 46.6 61.6 42.6 61 38.6 C59 36.8 57 36.8 55.2 38.6 Z" fill={manga} />
+      {corta && <path d="M54.8 38.6 C54.4 41 54.4 43.4 54.7 45.6 L61.5 45.6 C61.8 43.4 61.8 41 61.4 38.6 C59 36.4 57 36.4 54.8 38.6 Z" fill={`url(#pj-camisa-${skin})`} />}
       <g className="pj-antebrazo">
         <circle cx="58.1" cy="51.4" r="2.9" fill={manga} />
         <path d="M55.4 51.2 C55.1 54.4 55.2 57.6 55.6 60.6 L60.6 60.6 C61 57.6 61.1 54.4 60.8 51.2 Z" fill={manga} />
         <path d="M55.4 58.6 C57.2 59.6 59.2 59.6 60.8 58.6 L60.6 61.2 C59 62 57.2 62 55.6 61.2 Z" fill={descubierto ? manga : "#6b727c"} />
+        {/* Pulsera roja de hilo (Lemus) */}
+        {skin === "lemus" && <path d="M55.3 60.2 Q58.1 61.6 60.9 60.2" fill="none" stroke="#b91c1c" strokeWidth="1.1" strokeLinecap="round" />}
         {/* Mano */}
         <path d="M55.2 61.2 C54.6 64.4 55.6 67.4 58.2 67.6 C60.8 67.8 61.8 65 61.2 61.2 Z" fill={PALETA[skin].mano ?? `url(#pj-piel-${skin})`} />
         <path d="M55.4 62.4 C54.2 63 54 64.6 55 65.4" fill="none" stroke={PALETA[skin].mano ? "#cbd5e1" : PALETA[skin].pielSolida} strokeWidth="1.3" strokeLinecap="round" />
@@ -167,6 +171,30 @@ const RASGOS: Partial<Record<Skin, {
       { d: "M60.4 81.4 Q62 84.6 63.6 81.4 Z", fill: "#111827", opacity: 0.9 },
     ],
     bigote: { d: "M49 74.4 Q55 69.4 62 72.4 Q69 69.4 75 74.4 Q70 74 66 74.6 Q63 74 62 75.2 Q61 74 58 74.6 Q54 74 49 74.4 Z", fill: "#111827", opacity: 0.95 },
+  },
+  // Pelo rizado con volumen, barba tupida con canas en la barbilla.
+  lemus: {
+    cara: "M30 46 Q30 17 60 17 Q90 17 90 46 Q90 74 76 83 Q60 90 44 83 Q30 74 30 46Z",
+    pelo: [
+      { d: "M30 50 Q29 34 35 28 L37 48 Z M90 48 Q91 33 85 27 L83 46 Z", fill: "#2b211c", opacity: 0.75 },
+      // Rizos: copa abultada de bolitas
+      {
+        d: "M30 46 Q24 34 31 25 Q28 14 39 12 Q42 3 53 5 Q60 -1 68 4 Q79 1 82 10 Q93 11 90 23 Q96 32 90 45 Q88 31 79 27 Q70 22 60 25 Q49 22 40 27 Q32 32 30 46Z",
+        fill: "#2b211c",
+      },
+    ],
+    mechas: {
+      d: "M35 22 q3 -4 7 -1 M46 12 q3 -4 7 -1 M60 9 q3 -4 7 -1 M73 12 q3 -4 7 -1 M83 20 q3 -3 5 1 M40 18 q3 -3 6 0 M53 16 q3 -3 6 0 M66 16 q3 -3 6 0 M78 18 q2 -3 5 0",
+      stroke: "#6b5446",
+    },
+    nariz: "ancha",
+    barba: [
+      // Tupida: de patilla a patilla, cubre mejillas y barbilla
+      { d: "M30 50 Q29 80 43 90 Q60 99 77 90 Q91 80 90 50 L87 54 Q86 70 75 75 Q67 78 62 75.6 Q57 78 49 75 Q38 70 33 54 Z", fill: "#2b2420" },
+      // Canas en la barbilla
+      { d: "M48 86 Q60 95 72 86 Q66 90 60 90.4 Q54 90 48 86 Z M44 84 Q47 88 51 89 M76 84 Q73 88 69 89", fill: "#a8a29e", opacity: 0.55 },
+    ],
+    bigote: { d: "M47 73.6 Q54.6 68.6 62 71.6 Q69.4 68.6 77 73.6 Q70 76.4 62 74.8 Q54 76.4 47 73.6 Z", fill: "#1c1917" },
   },
   // ── La Cotorrisa ──
   cotorrisa: {
@@ -808,6 +836,17 @@ export function Playera({ skin }: { skin: Skin }) {
       ) : (
         <text x="48" y="48.6" textAnchor="middle" fontSize="4.6" fontWeight="700" fill="#e0f2fe" opacity="0.9">JA</text>
       )}
+    </>
+  );
+}
+
+/** Henley: cuello redondo con tapeta de tres botones (Lemus). */
+export function Henley() {
+  return (
+    <>
+      <path d="M43.4 33.8 Q48 37.4 52.6 33.8" fill="none" stroke="#7f1d1d" strokeWidth="0.8" opacity="0.6" />
+      <path d="M47.2 35.8 L47.2 43.6 L49.2 43.6 L49.2 35.8" fill="none" stroke="#7f1d1d" strokeWidth="0.5" opacity="0.7" />
+      {[37.6, 40, 42.4].map((y) => <circle key={y} cx="48.2" cy={y} r="0.5" fill="#fecaca" />)}
     </>
   );
 }
