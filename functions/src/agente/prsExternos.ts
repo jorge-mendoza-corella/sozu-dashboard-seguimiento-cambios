@@ -242,6 +242,12 @@ export async function buscarPrsPorTexto(
   { autor, desde, hasta }: { autor?: string; desde?: string; hasta?: string } = {},
 ): Promise<PrDeHistorial[]> {
   const repos = await reposDeSozu();
+  // «#2476», «sozu-admin #2476», «sozu-admin#2476» o el link: ese PR directo
+  // (la búsqueda de GitHub no busca por número).
+  const ref = texto.trim().match(/^(?:https?:\/\/github\.com\/[\w.-]+\/)?(?:([a-z][\w.-]*?)\s*(?:#|\/pull\/)\s*|#?\s*)(\d{1,6})\/?$/i);
+  if (ref && (!ref[1] || repos.some((r) => r.repo.toLowerCase() === ref[1].toLowerCase()))) {
+    return prsPorNumero(gh, repos, ref[1], Number(ref[2]));
+  }
   const permitidos = new Set(repos.map((r) => clave(r.owner, r.repo)));
   const limpio = texto.replace(/["\\]/g, " ").trim().slice(0, 80);
   const fecha = (f?: string) => (f && /^\d{4}-\d{2}-\d{2}$/.test(f) ? f : "");
@@ -279,6 +285,42 @@ export async function buscarPrsPorTexto(
     }))
     .sort((a, b) => b.fusionadoEn.localeCompare(a.fusionadoEn))
     .slice(0, 40);
+}
+
+/** El PR `numero` en el repo `nombre` (o en todos los de Sozu), si ya se fusionó. */
+async function prsPorNumero(
+  gh: Octokit,
+  repos: { owner: string; repo: string }[],
+  nombre: string | undefined,
+  numero: number,
+): Promise<PrDeHistorial[]> {
+  const candidatos = nombre ? repos.filter((r) => r.repo.toLowerCase() === nombre.toLowerCase()) : repos;
+  type Nodo = { number: number; title: string; url: string; baseRefName: string; mergedAt: string | null; bodyText: string; author: { login: string } | null };
+  const encontrados = await Promise.all(candidatos.map(async (r) => {
+    try {
+      const d = await gh.graphql<{ repository: { pullRequest: Nodo | null } | null }>(
+        `query($o: String!, $r: String!, $n: Int!) { repository(owner: $o, name: $r) { pullRequest(number: $n) {
+          number title url baseRefName mergedAt bodyText author { login }
+        } } }`,
+        { o: r.owner, r: r.repo, n: numero },
+      );
+      const n = d.repository?.pullRequest;
+      return n?.mergedAt ? [{
+        repo: r.repo,
+        numero: n.number,
+        titulo: n.title,
+        url: n.url,
+        base: n.baseRefName,
+        autor: n.author?.login ?? "?",
+        fusionadoEn: n.mergedAt,
+        extracto: n.bodyText.replace(/\s+/g, " ").trim().slice(0, 160),
+      }] : [];
+    } catch {
+      // No existe ese número en ese repo (o es un issue).
+      return [];
+    }
+  }));
+  return encontrados.flat().sort((a, b) => b.fusionadoEn.localeCompare(a.fusionadoEn));
 }
 
 /**

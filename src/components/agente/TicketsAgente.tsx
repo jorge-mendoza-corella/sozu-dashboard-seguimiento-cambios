@@ -1133,7 +1133,7 @@ function BuscarEnHistorial({ ticketId, yaAgregados, agregando, onAgregar }: {
         <input
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
-          placeholder="Lo que hace el PR: «aviso SAT», «antilavado»…"
+          placeholder="Lo que hace el PR («aviso SAT») o su número («sozu-admin #2476»)"
           className="h-7 w-full bg-transparent text-xs outline-none"
         />
         {isFetching && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
