@@ -22,7 +22,7 @@ import { docPorRuta, indiceDocs, limpiarRuta, obtenerCorpus } from "./agente/doc
 import { describirLlamada, ejecutar, HERRAMIENTAS } from "./agente/herramientas.js";
 import { bloqueDocs, bloqueRepos, INSTRUCCIONES } from "./agente/instrucciones.js";
 import { cerrarRelacionados, cerrarTicket, clienteSupabase, ticketsAsignados, ticketsResueltos, tomarTicket } from "./agente/tickets.js";
-import { desligarTicket, relacionadosConDashboard, relacionarTicket } from "./agente/relaciones.js";
+import { desligarTicket, grupoDeRelacionados, relacionadosConDashboard, relacionarTicket } from "./agente/relaciones.js";
 import { destinatarios, iniciarAviso, marcarEntregado, responderAviso, terminarAviso } from "./agente/avisos.js";
 import { agregarPrManual, buscarPrsExternos, buscarPrsPorTexto, notaConPrs, verificarPrsExternos } from "./agente/prsExternos.js";
 import { mandarAClaude, ORQUESTADOR } from "./agente/mandar.js";
@@ -330,15 +330,18 @@ export const agenteTickets = onCall(
       // Issue de Sentry ligado (ticket levantado desde Monitoreo) y tickets
       // relacionados («¿Ya lo había reportado antes?»). Si fallan, los tickets
       // salen igual, sin eso.
-      const [deSentry, relacionados] = await Promise.all([
+      const [deSentry, relacionados, grupos] = await Promise.all([
         sentryDeTickets(ids).catch(() => new Map()),
         relacionadosConDashboard(sb, ids).catch(() => new Map()),
+        // El grupo completo (relacionados de relacionados): lo que se cierra en cascada.
+        grupoDeRelacionados(sb, ids).catch(() => new Map()),
       ]);
       return {
         tickets: tickets.map((t) => ({
           ...t,
           sentry: deSentry.get(Number(t.id)) ?? null,
           relacionados: relacionados.get(Number(t.id)) ?? [],
+          grupo: grupos.get(Number(t.id)) ?? [],
         })),
         revisado: new Date().toISOString(),
       };
@@ -691,8 +694,8 @@ export const agenteCerrarTicket = onCall<{ ticketId: string; nota: string; prsSe
     const deSentry = await issuesDeTicket(Number(ticketId)).catch(() => []);
     const abiertos = deSentry.filter((i) => i.abierto).map((i) => i.shortId);
     // Relacionados abiertos («¿Ya lo había reportado antes?»): se cierran con
-    // este, y la nota lo dice.
-    const relacionados = ((await relacionadosConDashboard(sb, [Number(ticketId)]).catch(() => new Map())).get(Number(ticketId)) ?? [])
+    // este, y la nota lo dice. Todo el grupo, no solo los directos.
+    const relacionados = ((await grupoDeRelacionados(sb, [Number(ticketId)]).catch(() => new Map())).get(Number(ticketId)) ?? [])
       .filter((r: { cerrado: boolean; sePuedeCerrar: boolean }) => !r.cerrado && r.sePuedeCerrar);
     if (relacionados.length) {
       nota = `${nota.trimEnd()}\n\nSe cierra${relacionados.length === 1 ? "" : "n"} también ${relacionados.length === 1 ? "el ticket relacionado" : "los tickets relacionados"} ${relacionados.map((r: { folio: string }) => r.folio).join(", ")}.`;

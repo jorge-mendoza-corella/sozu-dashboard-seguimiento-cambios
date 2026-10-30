@@ -1258,7 +1258,8 @@ function CerrarTicketDialog({ t, enviado, onCancelar, onCerrado }: {
   const [hecho, setHecho] = useState<string | null>(null);
   const [sentryResueltos, setSentryResueltos] = useState<string[]>([]);
   const [cascada, setCascada] = useState<{ cerrados: string[]; fallidos: string[] }>({ cerrados: [], fallidos: [] });
-  const relAbiertos = (t.relacionados ?? []).filter((r) => !r.cerrado);
+  // Se cierra el grupo entero (relacionados de relacionados), como en el servidor.
+  const relAbiertos = (t.grupo ?? t.relacionados ?? []).filter((r) => !r.cerrado && r.sePuedeCerrar);
 
   const cerrar = async () => {
     setEnviando(true);
