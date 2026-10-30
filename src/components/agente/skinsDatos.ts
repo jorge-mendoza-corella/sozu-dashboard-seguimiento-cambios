@@ -5,7 +5,7 @@
 import { useSyncExternalStore } from "react";
 
 export type Skin = "cyborg" | "abuelo" | "heroe" | "chibi" | "cientifico" | "raton" | "travieso" | "ramon" | "tomaso" | "licesita"
-  | "keity" | "abel" | "pablo" | "rodrigo" | "manuel"
+  | "keity" | "abel" | "pablo" | "rodrigo" | "manuel" | "lemus"
   | "cotorrisa" | "cantinflas" | "pantera" | "dino" | "homero" | "stitch" | "linguini" | "ryu"
   // Solo de pareja (salen junto al principal, no se eligen solos): ver PAREJA.
   | "ricardo" | "lilo" | "ken";
@@ -25,6 +25,7 @@ export const SKINS: { id: Skin; nombre: string; desc: string }[] = [
   { id: "pablo", nombre: "Pablo", desc: "Barba entrecana y saco gris de cuadros" },
   { id: "rodrigo", nombre: "Rodrigo", desc: "Copete, candado, traje azul y corbata" },
   { id: "manuel", nombre: "Manuel", desc: "Pelo al ras, barba de días y todo de negro" },
+  { id: "lemus", nombre: "Lemus", desc: "Pelo rizado, barba tupida y henley roja" },
   { id: "cyborg", nombre: "Cyborg (original)", desc: "Media cara de acero y brazo robótico" },
   { id: "cotorrisa", nombre: "La Cotorrisa", desc: "Slobotzky y Ricardo, con audífonos y risa contagiosa" },
   { id: "cantinflas", nombre: "Cantinflas", desc: "Bigotito, sombrerito y pantalón con mecate" },
@@ -162,6 +163,8 @@ export const PALETA: Record<Skin, {
   labios?: string;
   /** Sin mangas: brazos con la piel (vestido). */
   brazosDescubiertos?: boolean;
+  /** Manga corta: brazos de piel con solo la manga en el hombro (playera). */
+  mangaCorta?: boolean;
   /** Sin engrane ni botones de latón en el pecho (el saco o el vestido los tapan). */
   sinEmblema?: boolean;
   /** Faja de tela en lugar del cinturón con hebilla (y sin la línea de botones). */
@@ -223,6 +226,11 @@ export const PALETA: Record<Skin, {
   manuel: {
     piel: ["#dba57d", "#a86d48"], camisa: ["#111827", "#1f2937", "#030712"], iris: "#1c1917", ceja: "#0c0a09", pielSolida: "#c28b62",
     pantalon: ["#111827", "#1f2937", "#030712"], zapato: "#0c0a09", sinEmblema: true,
+  },
+  // Henley roja de manga corta (la tapeta con botones la pone <Henley />) y jeans.
+  lemus: {
+    piel: ["#f0c19c", "#c78c64"], camisa: ["#d2334a", "#e8566a", "#a91f36"], iris: "#3f2a1d", ceja: "#1c1917", pielSolida: "#d9a17b",
+    pantalon: ["#1e3a5f", "#2f5583", "#162b47"], zapato: "#292524", sinEmblema: true, mangaCorta: true,
   },
   // La Cotorrisa: Slobotzky (gorra blanca, barba, playera rosa) y Ricardo (playera azul).
   cotorrisa: {

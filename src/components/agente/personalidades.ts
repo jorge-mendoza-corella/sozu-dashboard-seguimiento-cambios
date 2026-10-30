@@ -245,6 +245,20 @@ export const PERSONALIDAD: Partial<Record<Skin, Personalidad>> = {
       ["¿El roadmap?", "Va al día. Al día de hace tres semanas."],
     ],
   },
+  // ── Lemus: puro gym, todo lo arregla con fuerza ──
+  lemus: {
+    pose: "victoria",
+    chistes: [
+      ["¿Cuántas repeticiones de deploy hoy?", "Tres series de diez… y la última al fallo. Literal."],
+      ["El código, como el bíceps:", "si no lo refactorizas, no crece."],
+      ["Me preguntaron si hago leg day…", "Hago merge day. Es más pesado."],
+      ["¿Proteína?", "No, gracias. Yo me alimento de PRs aprobados."],
+      ["Ese bug me quiso ganar…", "…le apliqué una llave y se rindió en el primer round."],
+      ["Calentamiento: git pull.", "Rutina: código.", "Estiramiento: esperar el CI."],
+    ],
+    caminar: ["Un, dos… ¡fuerza!", "Ese ticket no se va a levantar solo", "¿Quién trae el pre-entreno?", "Sin dolor no hay deploy"],
+    aburrido: ["Mientras corre el CI… unas lagartijas", "¿Y si hacemos una serie más?", "Hidratándome, ahorita sigo"],
+  },
   manuel: {
     pose: "pensar",
     chistes: [
