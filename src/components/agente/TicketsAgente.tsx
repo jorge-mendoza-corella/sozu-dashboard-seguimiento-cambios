@@ -140,6 +140,11 @@ export function TicketsAgente({
    * 3. Sin trabajar de prioridad media, baja o sin prioridad.
    * 4. Terminados, esperando a llegar a PRD o a que se cierren.
    */
+  // Claude lo está trabajando ahora (en cola o trabajando), aunque ya hubiera llegado a PRD.
+  const trabajandoAhora = useMemo(() => {
+    const ids = new Set(claveEstados.split(",").filter((x) => /:(en_cola|trabajando):/.test(x)).map((x) => x.split(":")[0]));
+    return (id: string) => ids.has(id);
+  }, [claveEstados]);
   const grupoDe = useMemo(() => {
     const estados = new Map(claveEstados.split(",").filter(Boolean).map((x) => {
       const [id, estado, sin] = x.split(":");
@@ -149,6 +154,8 @@ export function TicketsAgente({
       const env = enviados.find((e) => e.ticketId === t.id);
       const st = estados.get(t.id);
       if (st?.estado === "esperando_respuesta") return 0;
+      // Otra vuelta de Claude (aunque ya estuviera en PRD): se está trabajando.
+      if (st?.estado === "en_cola" || st?.estado === "trabajando") return 2;
       if (conPrs.has(t.id) || st?.sinCambios || st?.estado === "terminado") return 4;
       if (env || t.loAtiendoYo) return 2;
       return t.prioridad === "alta" ? 1 : 3;
@@ -299,6 +306,8 @@ export function TicketsAgente({
             const env = enviadoDe(t);
             const rels = t.relacionados ?? [];
             const pregunta = grupoDe(t) === 0;
+            // Se volvió a mandar a Claude después de llegar a PRD: chip y barra de avance.
+            const enCurso = pregunta || trabajandoAhora(t.id);
             // Hijos con preguntas: se avisa en el papá aunque el grupo esté contraído.
             const hijosPregunta = hijos.filter((h) => grupoDe(h) === 0);
             return (
@@ -322,7 +331,7 @@ export function TicketsAgente({
                 <span className="flex items-center gap-1.5">
                   <span className="font-mono text-[10px] text-muted-foreground">{t.folio}</span>
                   {t.prioridad && <span className={cn("rounded px-1 text-[9px] font-semibold uppercase", COLOR_PRIORIDAD[t.prioridad])}>{t.prioridad}</span>}
-                  {env && (pregunta && env.issue
+                  {env && (enCurso && env.issue
                     ? <EstadoClaudeMini ticketId={t.id} />
                     : env.listo
                     ? <span className="rounded bg-emerald-100 px-1 text-[9px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" title="Todo en PRD: ya se puede cerrar">en PRD</span>
@@ -370,7 +379,7 @@ export function TicketsAgente({
                     Relacionado con {[papa?.folio, ...rels.filter((r) => r.id !== papa?.id).map((r) => r.folio)].filter(Boolean).join(", ")}
                   </span>
                 )}
-                {env?.issue && (!env.listo || pregunta) && <BarraClaudeMini ticketId={t.id} />}
+                {env?.issue && (!env.listo || enCurso) && <BarraClaudeMini ticketId={t.id} />}
               </button>
             );
           })}
